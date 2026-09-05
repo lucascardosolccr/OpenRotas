@@ -406,3 +406,14 @@ FERRY-CANDIDATO), testa rota fluvial real via `_fluvial_rota_real_sob_demanda` (
 SOMENTE se estritamente menor que melhor medição existente. Budget: max 150 pares / origem, max 100 km reta.
 Fail-open total. Captura os 3 casos do sweep (Mar De Espanha->Senador Cortes, Lagoinha->Sao Luiz do Paraitinga,
 Morretes->Antonina) e potenciais outros. validar 192 OK / 0 FALHAS; decidir 38/38; relatorio 203 linhas.
+
+EVIDENCIA SWEEP FINAL (pos-fix auto-loop): varredura completa nas 163 derrotas testa TODOS os pares
+(origem, hub) com geodésia cruzando água ≤100 km reta (não só hubs rodoviários). Resultado: 9 origens
+com captura fluvial viável estritamente menor que referência: Sobradinho(RS)->Passa Sete 8,9 km (dr 83,6;
+Arroio Carijinho); Sao Joao Nepomuceno(MG)->Descoberto 12,9 km (dr 57,6; Rio Novo); Antonina(PR)->Morretes
+29,3 km (dr 48,7; Linha de Costa/Nhundiaquara); Mar De Espanha(MG)->Senador Cortes 27,6 km (dr 46,6; Rio do
+Cágado); Lagoinha(SP)->Sao Luiz do Paraitinga 32,8 km (dr 46,7; Córrego Botucatu); Morretes(PR)->Antonina
+29,3 km (dr 39,6; Rio Marumbi); Governador Celso Ramos(SC)->Tijucas 16,6 km (dr 26,0; Linha de Costa/Tijucas);
+Turvo(SC)->Ermo 18,5 km (dr 25,2; Rio Turvo); Soledade(RS)->Barros Cassal 70,3 km (dr 74,8; Arroio Fao).
+Todas com snap ≤0,8 km, rios nomeados, custo honesto (fluvial + acesso). Auto-loop guard (origem==hub)
+evita fabricação. Wire ativo: +9 derrotas recuperadas.
