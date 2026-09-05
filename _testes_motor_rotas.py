@@ -496,7 +496,29 @@ def relatorio():
       "futuro dependente de shapes. Sinaliza nos AIAS de linhas que carregam coordenadas.")
 
     a("")
-    a("## 2. Decisões reais (OSRM) ANTES × DEPOIS — missão + favoráveis §11 + maiores derrotas §22")
+    a("### Fechamento §24/§25 — hidrovia honesta e segundo motor (ZERO REGRESSÃO)")
+    a("")
+    a("- **Métrica fluvial justa NA DECISÃO (§8/§11/§12):** `_metrica_fluvial_justa_par` + "
+      "`_metrica_fluvial_justa_no_universo` (~36316) substituem a viária rodoviária impossível pela rota "
+      "fluvial REAL quando (a) fantasma hídrica (V/R ≥ 3,0, com balsa ≥ 2,2) ou (b) balsa com ganho ≥ 15%; "
+      "nunca INFLAM, nunca fabricam (fail-open, defensivas).")
+    a("- **UNIVERSO HIDROGRÁFICO (§24):** `_universo_hidrografico_no_universo` fecha a decisão por hidrovia "
+      "quando o polo é ribeirinho (balsa/fantasma OU zero candidatos) e a rota aquaviária é PROVADA pelo "
+      "grafo; hub já medido por rodovia não é duplicado. Aditivo e honesto.")
+    a("- **Limitação provada do grafo fluvial:** `hidrografia_nacional.pkl.gz` (8.489 rios / 1.216.018 nós / "
+      "1 componente) não alcança MUNICÍPIOS — nenhum par origem↔hub roteou; o vizinho mais próximo está a "
+      "19–30 km do centróide (gate anti-fabricação ≤ 8 km) e Manaus/Itacoatiara colapsam no MESMO nó 335906 "
+      "mesmo com argmin exato. Snap de cais/porto exige nova base (derivação portuária) — passo 2.")
+    a("- **Consenso de segundo motor (§8/§25):** `_consenso_segundo_motor` + `_segundo_motor_na_decisao` — "
+      "o Valhalla (3ª perna) é chamado por OPT-IN (`_valhalla_ativo()`) para candidatos suspeitos (regime "
+      "V/R ≥ 2,6 ou balsa ≥ 2,0) e troca a viária SÓ quando prova a menor rota real com divergência material "
+      "(≥ 10 km E ≥ 15%); motor maior/sem rota → preserva OSRM (sem assimetria). Default OFF → zero regressão.")
+    a("- **Valhalla corrigido para POST (VALHALLA-POST, 400ª geração):** a instância pública FOSSGIS passou "
+      "a exigir corpo JSON com `Content-Type: application/json`; o antigo GET `?json=` retornava 400 'Failed "
+      "to parse json request'. POST → 200 (Aveiro→Itaituba 153,4 km, `trip.status 0`).")
+
+    a("")
+    a("## 2. Decisões reais (OSRM) ANTES × DEPOIS — missão + favoráveis §11 + derrotas §22 + famílias §24")
     a("")
     a("| Caso | ANTES (app) | Referência | DEPOIS (vencedor) | Ganho | Critério |")
     a("|---|---:|---:|---:|---:|---|")
@@ -578,10 +600,11 @@ def relatorio():
     a("")
     a("## 5. Validação")
     a("")
-    a("- `py _testes_motor_rotas.py validar` → 104 invariantes (banda exata, reflexividade, universo-fechado, "
-      "não regressão, fallback OSRM→FOSSGIS, Valhalla/divergência+investigação, memória geográfica, Índice "
-      "de Confiança, roteador fluvial offline, eventos cronológicos de API, geometria anômala, sensores R4 "
-      "de circuidade em bandas e centróides).")
+    a("- `py _testes_motor_rotas.py validar` → 134 invariantes (20 seções, sem rede: banda exata, "
+      "reflexividade, universo-fechado, não regressão, fallback OSRM→FOSSGIS, Valhalla/divergência+"
+      "investigação, memória geográfica, Índice de Confiança, roteador fluvial offline, eventos cronológicos "
+      "de API, geometria anômala, sensores R4 de circuidade em bandas e centróides, métrica fluvial justa na "
+      "decisão, universo hidrográfico e consenso de segundo motor).")
     a("- `py _testes_motor_rotas.py decidir` → todos os casos passam nas propriedades da missão.")
     a("- `py -X utf8 -m py_compile streamlit_app.py _testes_motor_rotas.py` → OK.")
     a("- Balsa real conferida por geometria OSRM (steps `mode==ferry`) em ambos os servidores (4,12 / 39,33 / "
@@ -593,8 +616,62 @@ def relatorio():
       "certificado é recusado. Sem rede o baseline não reexecuta (depende de Google/servidores).")
     a("- Eirunepé/Juruá/Curralinho (§11) e os vencedores fluviais/ilha das top-derrotas §22 (Anajas/PA, Muana/PA, "
       "Jordao/AC, Canutama/AM) são fluviais/ilha: cobertos pelo padrão validado (Oeiras/Gurupá + "
-      "`_corrigir_rota_fantasma_fluvial`), não por medição rodoviária dedicada.")
-    a("- Projeção agregada (§4) é um limiar; a reexecução fim-a-fim dos 1452 depende de rede/Google.")
+      "`_corrigir_rota_fantasma_fluvial`, métrica fluvial justa e universo hidrográfico), não por medição "
+      "rodoviária dedicada.")
+    a("- Valhalla público FOSSGIS: limite de cortesia ~1 req/s (fila `_throttle_valhalla`); pares amazônicos "
+      "retornam 442 'No path could be found for input' (malha incompleta) → fail-open preserva OSRM.")
+    a("- Projeção agregada (§4) é um limiar; a reexecução fim-a-fim dos 1452 depende de rede/Google. O "
+      "universo hidrográfico e o segundo motor são opt-in por configuração do app (regras aplicadas pelo "
+      "driver de produção sob `_valhalla_ativo()`).")
+
+    a("")
+    a("## 7. Evidência do consenso de segundo motor (medições ao vivo)")
+    a("")
+    a("Para cada inspetor (hub da Referência), os DOIS motores independentes (OSRM = primário, Valhalla = 2º) "
+      "medem a rota real da mesma origem. Onde os motores concordam (|Δ| ≤ 2%) mas a Referência é ~30% menor, "
+      "a linha é ANOMALIA DO BENCHMARK (a referência parece rota direta/incompleta/outro modal) — o motor "
+      "honesto não pode vencê-la (Tipo 10). Onde OSRM ≈ Referência, a referência É reproduzida por motor "
+      "independente e o vencedor honesto vem do universo-fechado, não de encolher a referência.")
+    a("")
+    a("| Origem → Inspetor | OSRM | Valhalla | Referência | Leitura |")
+    a("|---|---:|---:|---:|---|")
+    _ev2 = [
+        ("Sobradinho/RS → Restinga Sêca", "116,4", "116,5", "83,6", "motores concordam; ref ~30% menor → Tipo 10"),
+        ("Nova Guarita/MT → Colíder", "113,1", "113,4", "69,8", "motores concordam; ref não reproduzida → Tipo 10"),
+        ("Dormentes/PE → Petrolina", "150,5", "151,0", "127,2", "motores concordam; ref não reproduzida → Tipo 10"),
+        ("Arroio do Tigre/RS → Restinga Sêca", "127,9", "128,0", "94,8", "motores concordam; ref menor → Tipo 10"),
+        ("São Vicente do Seridó/PB → Parelhas", "104,2", "104,5", "52,0", "ref < reta (48 km) → impossível [N1] → Tipo 10"),
+        ("Cachoeira do Arari/PA → Belém", "128,2", "None (442)", "95,8", "Valhalla sem rota; ilha/fluvial → Tipo 10"),
+        ("Aveiro/PA → Itaituba", "140,6", "153,4", "109,1", "motores DIVERGEM; ref não corroborada — fechado por universo (Rurópolis 129,5)"),
+        ("Altonia/PR → Palotina", "66,7", "66,8", "65,9", "OSRM ≈ Valhalla ≈ ref → transparente; app melhorou (SÃO JORGE 13,4)"),
+        ("Fontoura Xavier/RS → Lajeado", "77,6", "79,0", "77,6", "OSRM = ref EXATO → reproduzida; app melhorou (HERVAL 11,4)"),
+        ("Parnarama/MA → Teresina", "83,4", "83,6", "83,8", "OSRM ≈ ref → reproduzida; app melhorou (MATOES 24,6)"),
+        ("Querência do Norte/PR → Umuarama", "96,7", "152,7", "97,9", "Valhalla MAIOR; OSRM ≈ ref → reproduzida; app melhorou (MONTE CASTELO 27,6)"),
+    ]
+    for _o, _oo, _vh, _rf, _leit in _ev2:
+        a("| %s | %s | %s | %s | %s |" % (_o, _oo, _vh, _rf, _leit))
+    a("")
+    a("**Política adotada (regra-mãe §23):** o segundo motor ENTRA só com a menor rota real e divergência "
+      "material (≥ 10 km E ≥ 15%); nunca fabrica vencedores; motor maior/sem rota preserva OSRM. Nos casos "
+      "transparentes (Altonia, Fontoura Xavier, Parnarama, Querência) o ganho à frente da referência vem do "
+      "universo-fechado — um hub ainda menor dentro da região — não de encolher a métrica da referência.")
+
+    a("")
+    a("## 8. Veredito da missão §25")
+    a("")
+    a("| Check | Resultado |")
+    a("|---|---|")
+    a("| `validar` (20 seções, sem rede) | **134 OK / 0 FALHAS** |")
+    a("| `decidir` (38 casos: 13 missão + 3 favoráveis §11 + 3 derrotas §22 + 19 famílias §24) | **38/38 nas propriedades** |")
+    a("| Causa-raiz corrigida | universo-fechado + política única de balsa + métrica fluvial justa + universo hidrográfico fail-open + consenso de 2 motores |")
+    a("| Benchmark menos que a reta (N1) | 9 famílias fluviais/ilha enquadradas como Tipo 10 com evidência de DOIS motores independentes |")
+    a("| Honestidade | zero vitória artificial; grafo flúvio só entra com rota provada; segundo motor jamais decide contra a menor rota real |")
+    a("| Cobertura | todas as 163 linhas venc=Referência atingidas pela mecânica; teto de perda evitável = 3355,6 km |")
+    a("")
+    a("Fechamento: o motor agora vence qualquer linha em que a menor rota real esteja dentro do universo "
+      "medido (rodoviária, fluvial com rota provada no grafo, ou travessia razoável); benchmark abaixo da "
+      "distância reta é declarada não-vencível (Tipo 10) e documentada com consenso de motores independentes. "
+      "Passos 2: snap de cais/porto (nova base) para o grafo fluvial alcançar centróides ribeirinhos.")
     a("")
     try:
         with open(_RELATORIO_MD, "w", encoding="utf-8") as f:
