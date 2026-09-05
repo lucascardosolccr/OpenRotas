@@ -671,7 +671,7 @@ def relatorio():
     a("")
     a("| Check | Resultado |")
     a("|---|---|")
-    a("| `validar` (21 seções, sem rede) | **150 OK / 0 FALHAS** |")
+    a("| `validar` (21 seções, sem rede) | **154 OK / 0 FALHAS** |")
     a("| `decidir` (38 casos: 13 missão + 3 favoráveis §11 + 3 derrotas §22 + 19 famílias §24) | **38/38 nas propriedades** |")
     a("| Causa-raiz corrigida | universo-fechado + política única de balsa + métrica fluvial justa + universo hidrográfico fail-open + consenso de 2 motores |")
     a("| Benchmark menos que a reta (N1) | 9 famílias fluviais/ilha enquadradas como Tipo 10 com evidência de DOIS motores independentes |")
@@ -1254,22 +1254,31 @@ def validar():
               m._capturar_travessias_osrm(None) == [] and m._capturar_travessias_osrm("x") == [])
         import numpy as _np
         from scipy.sparse import csr_matrix as _csr
-        _C2 = _np.array([[-55.0, -2.0], [-54.99, -2.0], [-55.0, -2.5], [-54.99, -2.01]], dtype=float)
-        _E2 = _np.array([[0, 1], [0, 2], [1, 2]], dtype=int)
-        _W2 = _np.array([1.0, 1.0, 1.0], dtype=float)
+        _C2 = _np.array([[-55.0, -2.0], [-54.99, -2.0], [-55.0, -2.5], [-54.5, -2.5],
+                         [-55.28, -2.0], [-55.09, -2.0]], dtype=float)
+        _E2 = _np.array([[0, 1], [0, 2], [1, 2], [4, 5]], dtype=int)
+        _W2 = _np.array([1.0, 1.0, 1.0, 1.0], dtype=float)
         _row2 = _np.concatenate([_E2[:, 0], _E2[:, 1]]); _col2 = _np.concatenate([_E2[:, 1], _E2[:, 0]])
-        _M2 = _csr((_np.concatenate([_W2, _W2]), (_row2, _col2)), shape=(4, 4))
-        _g2 = {"C": _C2, "M": _M2, "names": ["Rio Sintético"], "edic": {
-            (0, 1): 0, (1, 0): 0, (0, 2): 0, (2, 0): 0, (1, 2): 99, (2, 1): 99}, "tree": None}
+        _M2 = _csr((_np.concatenate([_W2, _W2]), (_row2, _col2)), shape=(6, 6))
+        _g2 = {"C": _C2, "M": _M2, "names": ["Rio Sintético", "Rio Largo"], "edic": {
+            (0, 1): 0, (1, 0): 0, (0, 2): 0, (2, 0): 0, (1, 2): 99, (2, 1): 99,
+            (4, 5): 1, (5, 4): 1}, "tree": None}
+        _dseg = m._dist_ponto_segmento_km(-2.0, -54.99, (-55.0, -2.0), (-54.99, -2.0))
+        check("segmento: ponto sobre a aresta → 0.0 km", _dseg == 0.0)
+        _dseg2 = m._dist_ponto_segmento_km(-2.09, -55.10, (-55.2, -2.0), (-55.0, -2.0))
+        check("segmento: ponto lateral 10 km → ≈10 km", _dseg2 is not None and abs(_dseg2 - 10.0) < 0.3)
         _r1 = m._nome_rio_na_travessia(-2.0, -54.99, g=_g2)
         check("rio: ponto em nó de rio NOMEADO → 'Rio Sintético', confiança alta",
               _r1["nome_rio"] == "Rio Sintético" and _r1["confianca"] == "alta")
-        _r2 = m._nome_rio_na_travessia(-2.01, -54.99, g=_g2)
-        check("rio: nó isolado (sem nome) → 'corpo_sem_nome' (incerteza EXPLÍCITA)",
+        _r2 = m._nome_rio_na_travessia(-2.5, -54.5, g=_g2)
+        check("rio: nó de água isolado (sem nome) → 'corpo_sem_nome' (incerteza EXPLÍCITA)",
               _r2["nome_rio"] is None and _r2["confianca"] == "corpo_sem_nome")
         _r3 = m._nome_rio_na_travessia(-5.0, -57.0, g=_g2)
         check("rio: ponto longe de qualquer rio → 'nao_determinado'",
               _r3["nome_rio"] is None and _r3["confianca"] == "nao_determinado")
+        _r5 = m._nome_rio_na_travessia(-2.0, -55.185, g=_g2)
+        check("rio (413ª): travessia CRUZA rio no meio do trecho, nós a ~10 km → 'Rio Largo' alta",
+              _r5["nome_rio"] == "Rio Largo" and _r5["confianca"] == "alta" and _r5["dist_km"] == 0.0)
         _r4 = m._nome_rio_na_travessia(-2.0, -54.99, g={})
         check("rio: sem grafo → 'indisponivel' (fail-open)", _r4["confianca"] == "indisponivel")
         _en = m._enriquecer_travessias_rota(
@@ -1308,6 +1317,13 @@ def validar():
               m._travessias_de_res(_rp_n) == ("", 0))
         check("leitura: tupla legada sem idx 6 → ('', 0) (guarda len)",
               m._travessias_de_res((1.0, 2, "Sim")) == ("", 0))
+        _rag = m._preservar_ranking_polos({"ranking": [
+            {"hub": "PoloA", "dist_viaria": 10.0, "dist_reta": 5.0, "tempo_min": 30.0, "balsa": True,
+             "custo_efetivo": 12.0, "igq": 80,
+             "travessias_rio": "Travessia por balsa — Rio X", "quantidade_travessias": 1}]}, top=1)
+        check("linha: travessias chegam à linha do ranking (integração §7)",
+              bool(_rag) and _rag[0]["travessias_rio"] == "Travessia por balsa — Rio X"
+              and _rag[0]["quantidade_travessias"] == 1)
     except Exception as _e:
         check("testes da métrica fluvial justa + consenso de segundo motor executaram (%s)" % _e, False)
 

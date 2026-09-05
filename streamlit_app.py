@@ -27845,11 +27845,16 @@ def API_OSRM_Routing(lat_o, lon_o, lat_d, lon_d):
             except Exception:
                 snap_info = None
 
+            _trav_u = _capturar_travessias_osrm(rota)
+            # [TRAVESSIA-RIO · 413ª geração] Coerência balsa↔travessias: se o steps não declarou mode=ferry
+            # mas a travessia foi detectada pela manobra, a rota AINDA usa balsa (exibição/custo coerentes).
+            if _trav_u and usa_balsa == "Não":
+                usa_balsa = "Sim"
             registrar_telemetria("OSRM", True, time.time() - start_t)
             # Retorno ampliado (idx 4 = geometria, idx 5 = snap_info, idx 6 = travessias por balsa [TRAVESSIA-RIO]).
             # Consumidores antigos usam res[0..5] com guarda len() — os campos novos são aditivos, sem quebrar.
             _res_osrm = (distancia_km, tempo_min, usa_balsa, n_alternativas, geometria_polyline, snap_info,
-                         _capturar_travessias_osrm(rota))
+                         _trav_u)
             try:
                 if _ck_osrm is not None:
                     cache_rotas.set(_ck_osrm, _res_osrm, expire=2592000)
@@ -28161,6 +28166,10 @@ def API_OSRM_FOSSGIS_Routing(lat_o, lon_o, lat_d, lon_d):
                             _balsa = "Sim"; break
             except Exception:
                 pass
+            _trav_u = _capturar_travessias_osrm(_rota)
+            # [TRAVESSIA-RIO · 413ª geração] Coerência balsa↔travessias (mesma política do OSRM público).
+            if _trav_u and _balsa == "Não":
+                _balsa = "Sim"
             _snap = None
             try:
                 _wps = _r.get("waypoints", [])
@@ -28177,7 +28186,7 @@ def API_OSRM_FOSSGIS_Routing(lat_o, lon_o, lat_d, lon_d):
                 _snap = None
             registrar_telemetria("OSRM_FOSSGIS", True, time.time() - start_t)
             return (_dist_km, _tempo_min, _balsa, _n_alt, _geo_poly, _snap,
-                    _capturar_travessias_osrm(_rota))  # idx 6 [TRAVESSIA-RIO · §5/§8]
+                    _trav_u)  # idx 6 [TRAVESSIA-RIO · §5/§8]
     except Exception:
         pass
     registrar_telemetria("OSRM_FOSSGIS", False, time.time() - start_t)
@@ -34316,10 +34325,36 @@ def _capturar_travessias_osrm(rota_json):
         return []
 
 
+def _dist_ponto_segmento_km(lat, lon, a, b):
+    """[TRAVESSIA-RIO · MISSÃO §8 · 413ª geração] Distância (km) de um ponto (lat/lon) ao SEGMENTO
+    a→b (tuplas lon/lat), projeção equiretangular com cos(lat) — erro <1% em <50 km no Brasil. PURO;
+    retorna None para segmento degenerado/entrada inválida. Base do nome do rio em travessia longe dos nós."""
+    try:
+        _la = _num(lat); _lo = _num(lon)
+        if _la is None or _lo is None or not a or not b:
+            return None
+        import math as _m
+        _latm = _m.radians((_la + a[1] + b[1]) / 3.0)
+        _s = _m.cos(_latm)
+        _X = (_lo * _s, _la); _A = (a[0] * _s, a[1]); _B = (b[0] * _s, b[1])
+        _dx = _B[0] - _A[0]; _dy = _B[1] - _A[1]
+        _den = _dx * _dx + _dy * _dy
+        if _den <= 0.0:
+            return _m.hypot(_X[0] - _A[0], _X[1] - _A[1]) * 111.32
+        _t = ((_X[0] - _A[0]) * _dx + (_X[1] - _A[1]) * _dy) / _den
+        _t = max(0.0, min(1.0, _t))
+        _Px = _A[0] + _t * _dx; _Py = _A[1] + _t * _dy
+        return _m.hypot(_X[0] - _Px, _X[1] - _Py) * 111.32
+    except Exception:
+        return None
+
+
 def _nome_rio_na_travessia(lat, lon, raio_km=4.0, g=None):
     """[TRAVESSIA-RIO · MISSÃO §5/§8 · 403ª geração] Identificação geoespacial do CORPO D'ÁGUA atravessado:
-    cruza o ponto da travessia com o grafo hidrográfico REAL (nacional/Amazônia). Só devolve nome quando o
-    ponto está a ≤raio de um rio NOMEADO (confiança 'alta' ≤1 km, 'media' ≤raio); rio próximo porém SEM nome
+    cruza o ponto da travessia com o grafo hidrográfico REAL (nacional/Amazônia). [413ª melhoria] passa a
+    medir a distância ao SEGMENTO da aresta fluvial (ponto-à-aresta), não só ao nó mais próximo — uma travessia
+    pode cruzar um rio no meio de um trecho reto, longe dos nós. Só devolve nome quando a aresta NOMEADA está
+    a ≤raio da travessia (confiança 'alta' ≤1 km, 'media' ≤raio); corpo d'água presente porém SEM nome
     → 'corpo_sem_nome' (incerteza EXPLÍCITA — proibido inventar); sem grafo → 'indisponivel'; fora do raio
     → 'nao_determinado'. Determinístico, defensivo. Retorna {'nome_rio','dist_km','confianca'}."""
     try:
@@ -34334,42 +34369,70 @@ def _nome_rio_na_travessia(lat, lon, raio_km=4.0, g=None):
         if _C is None or len(_C) == 0:
             return {"nome_rio": None, "dist_km": None, "confianca": "nao_determinado"}
         import numpy as _np
+        _raio = max(0.1, float(raio_km))
         _tree = g.get("tree")
-        _i = None; _dist = None
+        _M = g.get("M"); _edic = g.get("edic"); _NMS = g.get("names")
+        _no = [_lo, _la]
+        _candidatos = []
+        _n_dist_min = None
         if _tree is not None:
-            _bb = float(raio_km) * 0.009   # cKDTree opera em graus (lon/lat) — ~111 km/grau
-            _d2, _i = _tree.query([_lo, _la], distance_upper_bound=_bb)
-            _i = int(_i)
-            if _np.isfinite(_d2) and 0 <= _i < len(_C):
-                _dist = _haversine_fluv((_lo, _la), (float(_C[_i, 0]), float(_C[_i, 1])))
-            else:
-                _i = None
+            # [413ª melhoria] k vizinhos num raio generoso (15 km) → avalia SEGMENTOS de arestas próximas,
+            # mesmo que os nós do rio estejam longe da travessia (custo desprezível: ~8 nós + grau típico 2-6).
+            _d2s, _is = _tree.query(_no, k=8, distance_upper_bound=max(_raio, 15.0) * 0.012)
+            for _d2, _i in zip(*(_np.atleast_1d(x) for x in [_d2s, _is])):
+                _i = int(_i)
+                if _np.isfinite(_d2) and 0 <= _i < len(_C):
+                    _candidatos.append(_i)
+                    _dk = _haversine_fluv((_lo, _la), (float(_C[_i, 0]), float(_C[_i, 1])))
+                    if _n_dist_min is None or _dk < _n_dist_min:
+                        _n_dist_min = _dk
         else:
-            _melhor = None
-            for _j in range(len(_C)):
-                _d = _haversine_fluv((_lo, _la), (float(_C[_j, 0]), float(_C[_j, 1])))
-                if _melhor is None or _d < _melhor[0]:
-                    _melhor = (_d, _j)
-            if _melhor and _melhor[0] <= float(raio_km):
-                _dist, _i = _melhor[0], _melhor[1]
-        if _i is None or (_dist is not None and _dist > float(raio_km)):
-            return {"nome_rio": None, "dist_km": None, "confianca": "nao_determinado"}
-        _nome = None
-        try:
-            _M = g.get("M"); _edic = g.get("edic"); _NMS = g.get("names")
-            if _M is not None and _edic is not None:
+            # Fallback defensivo (grafos pequenos/sintéticos): varredura completa; grafos grandes sem árvore
+            # param no nó mais próximo (evita O(N·deg) catastrófico).
+            if len(_C) <= 200000:
+                _candidatos = list(range(len(_C)))
+                _n_dist_min = None
+                for _j in _candidatos:
+                    _dk = _haversine_fluv((_lo, _la), (float(_C[_j, 0]), float(_C[_j, 1])))
+                    if _n_dist_min is None or _dk < _n_dist_min:
+                        _n_dist_min = _dk
+            else:
+                _melhor = None
+                for _j in range(len(_C)):
+                    _d = _haversine_fluv((_lo, _la), (float(_C[_j, 0]), float(_C[_j, 1])))
+                    if _melhor is None or _d < _melhor[0]:
+                        _melhor = (_d, _j)
+                if _melhor:
+                    _n_dist_min = _melhor[0]; _candidatos = [_melhor[1]]
+        _melhor_nome = None; _melhor_dist_nome = None
+        _min_dist_seg = None  # menor distância a QUALQUER aresta (rodeada de água, mesmo sem nome)
+        if _M is not None and _edic is not None and _candidatos:
+            for _i in _candidatos:
                 _nb = _M.indices[_M.indptr[int(_i)]:_M.indptr[int(_i) + 1]]
                 for _nn in _nb:
+                    _dst = _dist_ponto_segmento_km(_la, _lo, (float(_C[_i, 0]), float(_C[_i, 1])),
+                                                   (float(_C[int(_nn), 0]), float(_C[int(_nn), 1])))
+                    if _dst is None:
+                        continue
+                    if _min_dist_seg is None or _dst < _min_dist_seg:
+                        _min_dist_seg = _dst
                     _ni = _edic.get((int(_i), int(_nn)))
+                    _tnome = None
                     if _ni is not None and _NMS and 0 <= _ni < len(_NMS) and str(_NMS[_ni]).strip():
-                        _nome = str(_NMS[_ni]).strip()
-                        break
-        except Exception:
-            _nome = None
-        if _nome:
-            return {"nome_rio": _nome, "dist_km": round(float(_dist), 2),
-                    "confianca": "alta" if float(_dist) <= 1.0 else "media"}
-        return {"nome_rio": None, "dist_km": round(float(_dist), 2), "confianca": "corpo_sem_nome"}
+                        _tnome = str(_NMS[_ni]).strip()
+                    if _tnome and (_melhor_dist_nome is None or _dst < _melhor_dist_nome):
+                        _melhor_dist_nome = _dst
+                        _melhor_nome = _tnome
+        # [413ª geração] Nome só é aceito se a aresta nomeada estiver DENTRO do raio — uma travessia não
+        # "herda" o nome de um rio a 55 km só porque é a aresta nomeada mais próxima.
+        if _melhor_nome and float(_melhor_dist_nome) <= _raio:
+            return {"nome_rio": _melhor_nome, "dist_km": round(float(_melhor_dist_nome), 2),
+                    "confianca": "alta" if float(_melhor_dist_nome) <= 1.0 else "media"}
+        _cots = [x for x in (_min_dist_seg, _n_dist_min) if x is not None]
+        _cotado = min(_cots) if _cots else None
+        if _cotado is not None and _cotado <= _raio:
+            return {"nome_rio": None, "dist_km": round(float(_cotado), 2), "confianca": "corpo_sem_nome"}
+        return {"nome_rio": None, "dist_km": None, "confianca": "nao_determinado"}
     except Exception:
         return {"nome_rio": None, "dist_km": None, "confianca": "nao_determinado"}
 

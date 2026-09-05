@@ -1,6 +1,6 @@
 # RELATÓRIO ANTES × DEPOIS — Motor de Rotas (Prompt 1.1.1, §20/§25)
 
-Gerado em 2026-09-04 23:26 por `py _testes_motor_rotas.py relatorio` — mesma fila de decisões do `decidir`.
+Gerado em 2026-09-04 23:36 por `py _testes_motor_rotas.py relatorio` — mesma fila de decisões do `decidir`.
 
 ## 1. Funções alteradas (streamlit_app.py)
 
@@ -159,7 +159,7 @@ Para cada inspetor (hub da Referência), os DOIS motores independentes (OSRM = p
 
 | Check | Resultado |
 |---|---|
-| `validar` (21 seções, sem rede) | **150 OK / 0 FALHAS** |
+| `validar` (21 seções, sem rede) | **154 OK / 0 FALHAS** |
 | `decidir` (38 casos: 13 missão + 3 favoráveis §11 + 3 derrotas §22 + 19 famílias §24) | **38/38 nas propriedades** |
 | Causa-raiz corrigida | universo-fechado + política única de balsa + métrica fluvial justa + universo hidrográfico fail-open + consenso de 2 motores |
 | Benchmark menos que a reta (N1) | 9 famílias fluviais/ilha enquadradas como Tipo 10 com evidência de DOIS motores independentes |
