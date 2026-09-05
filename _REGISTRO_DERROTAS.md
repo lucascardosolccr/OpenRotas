@@ -288,5 +288,26 @@ Correcao implementada [FERRY-BUDGET]:
   [424b] Balsa manifesta cruza SEMPRE (`_vb0 or agua`): se o rio da balsa nao estiver no grafo hidrografico,
   o par NAO perde a medicao (cobertura da 421a 100% preservada); o gate de agua vale so para desvio puro.
 
+### 425a geracao: iteracao nacional AO VIVO (rede disponivel) — veredicto da evidencia ferry
+
+Rede disponivel -> medicao FOSSGIS (ferry-aware, fair-use <=1 req/s) dos pares hidro-plausiveis restantes
+do universo das 163 derrotas que ainda nao tinham rota FOSSGIS:
+  [LIVE] GOVERN.A CELSO RAMOS|ITAPEMA = 46,92 km, balsa Nao; GOVERN.A CELSO RAMOS|BRUSQUE = 81,68 km, balsa
+  Nao. A barreira insular/lagunar de SC NAO e reproduzida pelo FOSSGIS (sem ferry no grafo) -> nao ha o que
+  capturar; a derrota de Governador Celso Ramos (dr 26,0) permanece por diferenciacao legitima (candidato
+  realmente mais proximo em linha reta, sem travessia reproduzivel).
+Adjudicacao isolada das 163 derrotas com a evidencia ferry completa (cache OSRM-publico + 263 medioces
+FOSSGIS; adocao SO estritamente menor, mesma regra do wire): 9 pares ferry adotados (ex.: SALVATERRA|BELEM
+91,6 Sim; JURUA|JAPURA 144,1 Sim; MOSTARDAS|PELOTAS 222,1 Sim) e 1 origem troca o veredicto:
+  SALVATERRA (PA): viario 119,2 -> ferry BELEM 91,6 (ref 92,8) -> veredicto AFICACAO.
+  (total km 11089,4 -> 11027,4; -62,0 km). 31 Empates / 22 Aplicacao (viario) -> 31 / 23 (com ferry).
+As demais origens permanecem em "Referencia" strict por barreiras nao reproduziveis por ferry (OSRM-publico
+e FOSSGIS retornam a mesma rota rodoviaria sem travessia) ou por diferenciacao legitima do estudo de
+referencia. Nao resta evidencia ferry mensuravel no universo atual alem da ja integrada nas geracoes
+421a-424b.
+
+Evidencia: validar 182 OK / 0 FALHAS; decidir 38/38; veredicto_final.json (TEMP) = {viario: Ref 110 /
+Aplic 22 / Emp 31; ferry: Ref 109 / Aplic 23 / Emp 31}.
+
 Evidencia: validar 182 OK / 0 FALHAS (22 secoes, sem rede; FERRY-BUDGET na seccao 22);
 decidir 38/38; relatorio regenerado -> _RELATORIO_ANTES_DEPOIS.md.
