@@ -664,7 +664,7 @@ def relatorio():
     a("")
     a("## 5. Validação")
     a("")
-    a("- `py _testes_motor_rotas.py validar` → 186 invariantes (22 seções, sem rede: banda exata, "
+    a("- `py _testes_motor_rotas.py validar` → 187 invariantes (22 seções, sem rede: banda exata, "
       "reflexividade, universo-fechado, não regressão, fallback OSRM→FOSSGIS, Valhalla/divergência+"
       "investigação, memória geográfica, Índice de Confiança, roteador fluvial offline, eventos cronológicos "
       "de API, geometria anômala, sensores R4 de circuidade em bandas e centróides, métrica fluvial justa na "
@@ -672,7 +672,10 @@ def relatorio():
       "FLUVIAL-PLAUS (filtro hidrográfico que concentra o budget no par com travessia de água plausível) e "
       "FERRY-CANDIDATO (medição ferry-aware no HALL da decisão, pré-reeleição, com priorização por folga), "
       "FERRY-BUDGET (auto-engajamento do FOSSGIS só com evidência de travessia de água/balsa; 424b: balsa "
-      "manifesta cruza SEMPRE) e convergência do hall.")
+      "manifesta cruza SEMPRE), FLUVIAL-ROTA-DIRETA (rota fluvial REAL do grafo como candidato sem rede), "
+      "DETECÇÃO-POR-ARESTA (travessia validada no segmento do rio, não só no nó), MULTI-AMOSTRAGEM "
+      "(amostragem adaptativa da corda que alcança rios entre amostras esparsas), MULTI-RIO (nomes_rios com "
+      "TODOS os rios nomeados a ≤raio, não só o mais próximo) e convergência do hall.")
     a("- `py _testes_motor_rotas.py decidir` → todos os casos passam nas propriedades da missão.")
     a("- `py -X utf8 -m py_compile streamlit_app.py _testes_motor_rotas.py` → OK.")
     a("- Balsa real conferida por geometria OSRM (steps `mode==ferry`) em ambos os servidores (4,12 / 39,33 / "
@@ -729,7 +732,7 @@ def relatorio():
     a("")
     a("| Check | Resultado |")
     a("|---|---|")
-    a("| `validar` (22 seções, sem rede) | **186 OK / 0 FALHAS** |")
+    a("| `validar` (22 seções, sem rede) | **187 OK / 0 FALHAS** |")
     a("| `decidir` (38 casos: 13 missão + 3 favoráveis §11 + 3 derrotas §22 + 19 famílias §24) | **38/38 nas propriedades** |")
     a("| Causa-raiz corrigida | universo-fechado + política única de balsa + métrica fluvial justa + universo hidrográfico fail-open + consenso de 2 motores + resgate-FERRIES (FOSSGIS com ferry) |")
     a("| Benchmark menos que a reta (N1) | 9 famílias fluviais/ilha enquadradas como Tipo 10 com evidência de DOIS motores independentes |")
@@ -1344,6 +1347,8 @@ def validar():
         check("enriquecimento: metadados §6 (nome_rio, confianca, local_travessia, dist_hidro_km)",
               len(_en) == 1 and _en[0]["nome_rio"] == "Rio Sintético" and _en[0]["confianca"] == "alta"
               and _en[0]["dist_hidro_km"] == 0.0 and str(_en[0]["local_travessia"]).startswith("-2"))
+        check("MULTI-RIO (429ª): nomes_rios lista TODOS os rios nomeados a ≤raio (não só o mais próximo)",
+              isinstance(_en[0].get("nomes_rios"), list) and "Rio Sintético" in _en[0]["nomes_rios"])
         check("enriquecimento: fail-open (inválido → [])",
               m._enriquecer_travessias_rota(None) == [] and m._enriquecer_travessias_rota([], g=_g2) == [])
         check("rótulo: 1 travessia com rio → 'Travessia por balsa — Rio Sintético'",
@@ -1385,7 +1390,7 @@ def validar():
     except Exception as _e:
         check("testes da métrica fluvial justa + consenso de segundo motor executaram (%s)" % _e, False)
 
-    print("== 22) RESGATE-FERRIES + FLUVIAL-PLAUS + FERRY-CANDIDATO (421ª/422ª/423ª): suspeição, budget, força, pares decisórios, convergência e ampliação do hall ==")
+    print("== 22) RESGATE-FERRIES + HIDROGRAFIA (421ª–431ª): suspeição, budget, força, pares decisórios, rota fluvial direta, detecção por aresta, multi-amostragem, multi-rio ==")
     check("suspeição: V/R 1,25 (Muana 53/42,4) NÃO entra na zona → consenso normal",
           not m._resgate_ferry_deve_investigar(53.0, 42.4, False))
     check("suspeição: V/R 3,1 SEM balsa auto-engaja (≥ 2,6)",

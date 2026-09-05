@@ -27858,8 +27858,12 @@ def _fluvial_para_resgate(pares, resultados, coords_f=None, g=None, limite_km=25
                 if _fk <= 0 or _fk >= _cm:
                     continue   # só adota estritamente menor (conservador)
                 _rios = _frr.get("rios") or []
+                _trav_fd = [{"lat": float(_c[0]), "lon": float(_c[1]), "km": _fk, "ordem": _n,
+                             "nome_rio": _rio, "confianca": "alta",
+                             "dist_hidro_km": 0.0, "local_travessia": "%.4f, %.4f" % (float(_c[0]), float(_c[1]))}
+                            for _n, _rio in enumerate(_rios)]
                 _out[_p] = (_fk, (_fk / 22.0 if _fk > 0 else None), "Não", "Sim",
-                            "fluvial-direta", "fluvial-direta", " → ".join(_rios),
+                            "fluvial-direta", "fluvial-direta", _trav_fd,
                             _frr.get("path_lonlat"))
             except Exception:
                 continue
@@ -27913,7 +27917,16 @@ def _cruza_agua_entre_pontos(lat_o, lon_o, lat_d, lon_d, g=None):
             return True
         _raio_km = max(0.5, float(_TRAVESSIA_AGUA_SNAP_KM))
         _lim = _raio_km * 0.012
-        _pts = [(_lao + (_lad - _lao) * _t, _loo + (_lod - _loo) * _t) for _t in _np.linspace(0.0, 1.0, 11)]
+        # [MULTI-AMOSTRAGEM - 428ª geração] Amostragem ADAPTATIVA da corda: uma corda longa pode cruzar
+        # rios/barreiras entre amostras esparsas (11 pontos fixos falhavam em travessias a >400 km).
+        # A densidade escala com o comprimento da corda (1 ponto a cada ~12 km, piso 11, teto 240) —
+        # custo desprezível frente ao cKDTree O(log n); sem rede.
+        try:
+            _d_chord = _haversine_fluv((_loo, _lao), (_lod, _lad))
+            _n_samp = max(11, min(240, int(math.floor(_d_chord / 12.0)) + 1)) if (_d_chord or 0) > 0 else 11
+        except Exception:
+            _n_samp = 11
+        _pts = [(_lao + (_lad - _lao) * _t, _loo + (_lod - _loo) * _t) for _t in _np.linspace(0.0, 1.0, _n_samp)]
         _tree = (g or {}).get("tree")
         _M = (g or {}).get("M")
         if _tree is not None:
@@ -34694,14 +34707,14 @@ def _nome_rio_na_travessia(lat, lon, raio_km=4.0, g=None):
     try:
         _la = _num(lat); _lo = _num(lon)
         if _la is None or _lo is None:
-            return {"nome_rio": None, "dist_km": None, "confianca": "nao_determinado"}
+            return {"nome_rio": None, "nomes_rios": [], "dist_km": None, "confianca": "nao_determinado"}
         if g is None:
             g = _carregar_grafo_fluvial(_URL_GRAFO_FLUVIAL, _arq_grafo_fluvial())
         if not g:
-            return {"nome_rio": None, "dist_km": None, "confianca": "indisponivel"}
+            return {"nome_rio": None, "nomes_rios": [], "dist_km": None, "confianca": "indisponivel"}
         _C = g.get("C")
         if _C is None or len(_C) == 0:
-            return {"nome_rio": None, "dist_km": None, "confianca": "nao_determinado"}
+            return {"nome_rio": None, "nomes_rios": [], "dist_km": None, "confianca": "nao_determinado"}
         import numpy as _np
         _raio = max(0.1, float(raio_km))
         _tree = g.get("tree")
@@ -34740,6 +34753,7 @@ def _nome_rio_na_travessia(lat, lon, raio_km=4.0, g=None):
                     _n_dist_min = _melhor[0]; _candidatos = [_melhor[1]]
         _melhor_nome = None; _melhor_dist_nome = None
         _min_dist_seg = None  # menor distância a QUALQUER aresta (rodeada de água, mesmo sem nome)
+        _nomes_dentro = []    # [MULTI-RIO - 429ª geração] TODOS os rios NOMEADOS com aresta a ≤raio
         if _M is not None and _edic is not None and _candidatos:
             for _i in _candidatos:
                 _nb = _M.indices[_M.indptr[int(_i)]:_M.indptr[int(_i) + 1]]
@@ -34754,21 +34768,25 @@ def _nome_rio_na_travessia(lat, lon, raio_km=4.0, g=None):
                     _tnome = None
                     if _ni is not None and _NMS and 0 <= _ni < len(_NMS) and str(_NMS[_ni]).strip():
                         _tnome = str(_NMS[_ni]).strip()
+                    if _tnome and _dst <= _raio and _tnome not in _nomes_dentro:
+                        _nomes_dentro.append(_tnome)
                     if _tnome and (_melhor_dist_nome is None or _dst < _melhor_dist_nome):
                         _melhor_dist_nome = _dst
                         _melhor_nome = _tnome
         # [413ª geração] Nome só é aceito se a aresta nomeada estiver DENTRO do raio — uma travessia não
         # "herda" o nome de um rio a 55 km só porque é a aresta nomeada mais próxima.
         if _melhor_nome and float(_melhor_dist_nome) <= _raio:
-            return {"nome_rio": _melhor_nome, "dist_km": round(float(_melhor_dist_nome), 2),
+            return {"nome_rio": _melhor_nome, "nomes_rios": _nomes_dentro,
+                    "dist_km": round(float(_melhor_dist_nome), 2),
                     "confianca": "alta" if float(_melhor_dist_nome) <= 1.0 else "media"}
         _cots = [x for x in (_min_dist_seg, _n_dist_min) if x is not None]
         _cotado = min(_cots) if _cots else None
         if _cotado is not None and _cotado <= _raio:
-            return {"nome_rio": None, "dist_km": round(float(_cotado), 2), "confianca": "corpo_sem_nome"}
-        return {"nome_rio": None, "dist_km": None, "confianca": "nao_determinado"}
+            return {"nome_rio": None, "nomes_rios": [], "dist_km": round(float(_cotado), 2),
+                    "confianca": "corpo_sem_nome"}
+        return {"nome_rio": None, "nomes_rios": [], "dist_km": None, "confianca": "nao_determinado"}
     except Exception:
-        return {"nome_rio": None, "dist_km": None, "confianca": "nao_determinado"}
+        return {"nome_rio": None, "nomes_rios": [], "dist_km": None, "confianca": "nao_determinado"}
 
 
 def _enriquecer_travessias_rota(travessias, g=None, raio_km=4.0):
@@ -34785,6 +34803,7 @@ def _enriquecer_travessias_rota(travessias, g=None, raio_km=4.0):
             _e = dict(_t)
             _r = _nome_rio_na_travessia(_e.get("lat"), _e.get("lon"), raio_km=raio_km, g=_g)
             _e["nome_rio"] = _r.get("nome_rio")
+            _e["nomes_rios"] = _r.get("nomes_rios") or ([_r.get("nome_rio")] if _r.get("nome_rio") else [])
             _e["confianca"] = _r.get("confianca") or "nao_determinado"
             _e["dist_hidro_km"] = _r.get("dist_km")
             _e["local_travessia"] = "%.4f, %.4f" % (_e.get("lat"), _e.get("lon"))
