@@ -34058,6 +34058,23 @@ def _reatribuir_hubs_multicriterio(topk_map, resultados, params=None, parse_temp
                 _uf_match_c = False
             _cands.append({"hub": _hub, "dist_viaria": _dv, "dist_reta": _reta, "tempo_min": _tm,
                            "balsa": _bal, "rota_real": _rota_real, "uf_match": _uf_match_c})
+        # [UNIVERSO-HIDROGRAFICO · MISSÃO §8/§11/§12] clientes RIBEIRINHOS (balsa / rota-fantasma hídrica ou
+        # zero candidatos rodoviários medidos) têm o universo fechado também por hidrovia: polos do topk sem
+        # rota rodoviária entram pela distância fluvial REAL do grafo quando ela existe (fail-open honesto).
+        _rib = False
+        for _c in _cands:
+            _cdv, _cdr, _cba = _c.get("dist_viaria"), _c.get("dist_reta"), _c.get("balsa")
+            try:
+                if _cba or (_cdv and _cdr and _e_fantasma_hidrica(_cdv, _cdr, _cba)):
+                    _rib = True
+                    break
+            except Exception:
+                continue
+        if _rib or not _cands:
+            try:
+                _universo_hidrografico_no_universo(_cands, _cli, _topk, uf_hint=str(_uf_orig_cli))
+            except Exception:
+                pass
         if not _cands:
             if _topk:
                 novo_dest[_cli] = _topk[0][1]
@@ -34076,6 +34093,57 @@ def _reatribuir_hubs_multicriterio(topk_map, resultados, params=None, parse_temp
         elif _topk:
             novo_dest[_cli] = _topk[0][1]
     return novo_dest, mcda
+
+
+def _universo_hidrografico_no_universo(cands, cli, topk, uf_hint="", resolver_coord=None, fluvial_router=None):
+    """[UNIVERSO-HIDROGRAFICO · MISSÃO §8/§11/§12 - 398ª geração] Fecha o universo da DECISÃO para clientes
+    ribeirinhos com a via AQUAVIÁRIA real: polos do topk por linha reta que NÃO obtiveram rota rodoviária
+    (OSRM/Google NoRoute — invisíveis à medição) entram na decisão pela distância FLUVIAL REAL do grafo
+    hidrográfico, quando ela EXISTIR (_fluvial_rota_real_sob_demanda, que tem gate anti-fabricação de snap
+    <= 8 km e retorna None sem rota). Assim o motor reproduz honstamente o que a referência alcança de barco
+    quando a hidrovia é provável, sem inventar distância (fail-open: grafo sem rota → nada muda). Só RODA
+    sob gatilho ribeirinho (chamado pelo reatribuidor apenas quando há balsa/fantasma hídrica ou zero
+    candidatos medidos) — para cliente normal é no-op puro. Injetáveis para teste."""
+    if not topk or not str(cli or "").strip():
+        return cands
+    _rc = resolver_coord or _v316_resolver_coord_alt
+    _fr = fluvial_router or _fluvial_rota_real_sob_demanda
+    _ufh = str(uf_hint or "").strip().upper()
+    _presentes = set()
+    for _c in (cands or []):
+        _nm = str(_c.get("hub") or "").strip().upper()
+        if _nm:
+            _presentes.add(_nm)
+    try:
+        _oc = _rc(str(cli), uf_hint=_ufh)
+        _ola, _olo = _num(_oc.get("lat")), _num(_oc.get("lon"))
+        if _ola is None or _olo is None:
+            return cands
+    except Exception:
+        return cands
+    for _tup in (topk or []):
+        try:
+            _reta, _hub = float(_tup[0]), str(_tup[1]).strip()
+        except (TypeError, ValueError, IndexError):
+            continue
+        if not _hub or _hub.strip().upper() in _presentes:
+            continue
+        try:
+            _hc = _rc(_hub, uf_hint=_ufh)
+            _hla, _hlo = _num(_hc.get("lat")), _num(_hc.get("lon"))
+            if _hla is None or _hlo is None:
+                continue
+            _frr = _fr(_ola, _olo, _hla, _hlo)
+            _rf = _num(_frr.get("km")) if isinstance(_frr, dict) else None
+            if not _rf or _rf <= 0:
+                continue
+            _ua = bool(str(_hc.get("uf") or "").strip().upper() == _ufh)
+            cands.append({"hub": _hub, "dist_viaria": float(_rf), "dist_reta": _reta,
+                          "tempo_min": None, "balsa": False, "rota_real": True,
+                          "uf_match": _ua, "metrica_fluvial": True, "fonte_hidrografico": True})
+        except Exception:
+            continue
+    return cands
 
 
 def _explicar_derrota_concorrente(dif_km, dif_reta, dif_razao, dif_tempo=None, dif_score=None):

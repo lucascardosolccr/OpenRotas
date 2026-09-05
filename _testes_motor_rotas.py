@@ -294,12 +294,18 @@ def _candidatos_do_cache(entry):
 
 def _decidir_real(entry):
     """Roda a decisão REAL do app (m._selecionar_hub_multicriterio) sobre o universo medido do cache,
-    APLICANDO o mesmo pré-processamento do app (_metrica_fluvial_justa_no_universo) antes da escolha."""
+    APLICANDO o mesmo pré-processamento do app: fechamento do universo hidrográfico (_universo_hidrografico_
+    no_universo, quando o grafo prova rota aquaviária) e em seguida _metrica_fluvial_justa_no_universo."""
     import streamlit_app as m
     cands = _candidatos_do_cache(entry)
     if not cands:
-        return None, cands
+        cands = []
+    m._universo_hidrografico_no_universo(cands, entry["origem"],
+                                         [(m2["reta"], hub) for hub, m2 in entry["medidas"].items()],
+                                         uf_hint=entry["uf"])
     m._metrica_fluvial_justa_no_universo(cands, entry["origem"], uf_hint=entry["uf"])
+    if not cands:
+        return None, cands
     return m._selecionar_hub_multicriterio(cands), cands
 
 
@@ -1053,6 +1059,35 @@ def validar():
         m._metrica_fluvial_justa_no_universo(cands5, "X", uf_hint="PA",
                                              resolver_coord=_res_none, fluvial_router=lambda *a, **k: {"km": 60.0})
         check("universo: sem coords → lista intacta (fail-open)", cands5[0]["dist_viaria"] == 140.0)
+        # UNIVERSO-HIDROGRAFICO: fechamento do universo por hidrovia (só quando o grafo prova a rota)
+        def _res_uh(nome, uf_hint=""):
+            return {"lat": -1.0, "lon": -50.0, "uf": "PA"}
+        _c6 = [{"hub": "ALMEIDA", "dist_viaria": 400.0, "dist_reta": 90.0, "balsa": False, "rota_real": True}]
+        _r6 = m._universo_hidrografico_no_universo(
+            _c6, "Afua", [("40.0", "MACAPA"), ("38.0", "ALMEIDA")], uf_hint="PA",
+            resolver_coord=_res_uh, fluvial_router=lambda o, ol, hl, hlo: {"km": 88.0})
+        check("hidrográfico: hub sem rota rodoviária entra pela fluvial real (88, metrica_fluvial)",
+              len(_r6) == 2 and any(c["hub"] == "MACAPA" and c["dist_viaria"] == 88.0
+                                    and c.get("metrica_fluvial") is True and c.get("rota_real") for c in _r6))
+        check("hidrográfico: hub já medido por rodovia NÃO é duplicado",
+              sum(1 for c in _r6 if c["hub"] == "ALMEIDA") == 1)
+        _c7 = [{"hub": "A", "dist_viaria": 10.0, "dist_reta": 9.0, "balsa": False, "rota_real": True}]
+        _r7 = m._universo_hidrografico_no_universo(
+            _c7, "X", [("50.0", "B"), ("60.0", "C")], uf_hint="PA",
+            resolver_coord=_res_uh, fluvial_router=lambda o, ol, hl, hlo: None)
+        check("hidrográfico: grafo sem rota → nada muda (fail-open)", len(_r7) == 1)
+        def _res_none2(nome, uf_hint=""):
+            return {"lat": None, "lon": None}
+        _c8 = [{"hub": "A", "dist_viaria": 10.0, "dist_reta": 9.0, "balsa": False, "rota_real": True}]
+        m._universo_hidrografico_no_universo(_c8, "X", [("50.0", "B")], uf_hint="PA",
+                                             resolver_coord=_res_none2, fluvial_router=lambda *a, **k: {"km": 5.0})
+        check("hidrográfico: sem coords da origem → lista intacta", len(_c8) == 1)
+        _c9 = [{"hub": "A", "dist_viaria": 10.0, "dist_reta": 9.0, "balsa": True, "rota_real": True}]
+        _r9 = m._universo_hidrografico_no_universo(
+            _c9, "X", [("50.0", "B")], uf_hint="PA",
+            resolver_coord=_res_uh, fluvial_router=lambda o, ol, hl, hlo: {"km": 12.0})
+        check("hidrográfico: rota aquaviária 0/None não entra; 12>0 entra e ganha flag",
+              len(_r9) == 2 and _r9[1]["hub"] == "B" and _r9[1]["dist_viaria"] == 12.0)
     except Exception as _e:
         check("testes da métrica fluvial justa executaram (%s)" % _e, False)
 
