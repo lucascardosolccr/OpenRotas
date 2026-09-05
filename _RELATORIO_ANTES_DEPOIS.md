@@ -1,6 +1,6 @@
 # RELATÓRIO ANTES × DEPOIS — Motor de Rotas (Prompt 1.1.1, §20/§25)
 
-Gerado em 2026-09-04 23:12 por `py _testes_motor_rotas.py relatorio` — mesma fila de decisões do `decidir`.
+Gerado em 2026-09-04 23:26 por `py _testes_motor_rotas.py relatorio` — mesma fila de decisões do `decidir`.
 
 ## 1. Funções alteradas (streamlit_app.py)
 
@@ -43,6 +43,7 @@ Gerado em 2026-09-04 23:12 por `py _testes_motor_rotas.py relatorio` — mesma f
 - **Limitação provada do grafo fluvial:** `hidrografia_nacional.pkl.gz` (8.489 rios / 1.216.018 nós / 1 componente) não alcança MUNICÍPIOS — nenhum par origem↔hub roteou; o vizinho mais próximo está a 19–30 km do centróide (gate anti-fabricação ≤ 8 km) e Manaus/Itacoatiara colapsam no MESMO nó 335906 mesmo com argmin exato. Snap de cais/porto exige nova base (derivação portuária) — passo 2.
 - **Consenso de segundo motor (§8/§25):** `_consenso_segundo_motor` + `_segundo_motor_na_decisao` — o Valhalla (3ª perna) é chamado por OPT-IN (`_valhalla_ativo()`) para candidatos suspeitos (regime V/R ≥ 2,6 ou balsa ≥ 2,0) e troca a viária SÓ quando prova a menor rota real com divergência material (≥ 10 km E ≥ 15%); motor maior/sem rota → preserva OSRM (sem assimetria). Default OFF → zero regressão.
 - **Valhalla corrigido para POST (VALHALLA-POST, 400ª geração):** a instância pública FOSSGIS passou a exigir corpo JSON com `Content-Type: application/json`; o antigo GET `?json=` retornava 400 'Failed to parse json request'. POST → 200 (Aveiro→Itaituba 153,4 km, `trip.status 0`).
+- **TRAVESSIA-RIO — identificação EXPLÍCITA do rio na balsa (§5/§6/§7/§8):** nova camada de enriquecimento geoespacial. `_capturar_travessias_osrm` extrai TUDO do OSRM (steps `ferry` → ponto-médio da geometria, km acumulado, ordem); `_nome_rio_na_travessia` cruza esse ponto com o grafo hidrográfico REAL (cKDTree + `edic[(u,v)] → names[idx]`, confiança alta ≤1 km / média ≤4 km / `corpo_sem_nome` / `nao_determinado` / `indisponivel`); `_enriquecer_travessias_rota` devolve os metadados estruturados §6 (nome_rio, confianca, dist_hidro_km, local_travessia); `_rotulo_travessia_rio` produz o rótulo 'Travessia por balsa — Rio X (N travessias)'. NUNCA inventa nome — corpo indeterminado é sinalizado como incerteza explícita. Campos ADITIVOS no fim do `RotaPipeline` (`travessias_rio`, `quantidade_travessias`, `travessias_info`) → zero quebra de índice/cache; exibido na linha de comparação, nos rankings e na coluna 'Polo - Rio Travessia' da alocação.
 
 ## 2. Decisões reais (OSRM) ANTES × DEPOIS — missão + favoráveis §11 + derrotas §22 + famílias §24
 
@@ -158,11 +159,11 @@ Para cada inspetor (hub da Referência), os DOIS motores independentes (OSRM = p
 
 | Check | Resultado |
 |---|---|
-| `validar` (20 seções, sem rede) | **134 OK / 0 FALHAS** |
+| `validar` (21 seções, sem rede) | **150 OK / 0 FALHAS** |
 | `decidir` (38 casos: 13 missão + 3 favoráveis §11 + 3 derrotas §22 + 19 famílias §24) | **38/38 nas propriedades** |
 | Causa-raiz corrigida | universo-fechado + política única de balsa + métrica fluvial justa + universo hidrográfico fail-open + consenso de 2 motores |
 | Benchmark menos que a reta (N1) | 9 famílias fluviais/ilha enquadradas como Tipo 10 com evidência de DOIS motores independentes |
-| Honestidade | zero vitória artificial; grafo flúvio só entra com rota provada; segundo motor jamais decide contra a menor rota real |
+| Honestidade | zero vitória artificial; grafo flúvio só entra com rota provada; segundo motor jamais decide contra a menor rota real; rio da travessia NUNCA inventado (incerteza explícita) |
 | Cobertura | todas as 163 linhas venc=Referência atingidas pela mecânica; teto de perda evitável = 3355,6 km |
 
 Fechamento: o motor agora vence qualquer linha em que a menor rota real esteja dentro do universo medido (rodoviária, fluvial com rota provada no grafo, ou travessia razoável); benchmark abaixo da distância reta é declarada não-vencível (Tipo 10) e documentada com consenso de motores independentes. Passos 2: snap de cais/porto (nova base) para o grafo fluvial alcançar centróides ribeirinhos.

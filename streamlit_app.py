@@ -158,6 +158,17 @@ class RotaPipeline(NamedTuple):
     # ADITIVO no FIM do NamedTuple: não altera nenhum índice existente; lido sempre por NOME (getattr).
     dados_valhalla: str = ""
 
+    # [TRAVESSIA-RIO - 403ª geração] Identificação EXPLÍCITA da travessia por balsa (missão §5/§6/§7/§8):
+    #   travessias_rio    → rótulo humano 'Travessia por balsa — Rio X' (ou incerteza explícita quando o
+    #                       corpo d'água não pôde ser identificado — PROIBIDO inventar nome).
+    #   quantidade_travessias → nº de travessias por balsa na rota.
+    #   travessias_info   → metadados estruturados por travessia (nome_rio, confianca, dist_hidro_km,
+    #                       local_travessia lat/lon) gerados pela camada de enriquecimento geoespacial §8.
+    # ADITIVO no FIM do NamedTuple (preserva todos os índices); lido sempre por NOME (getattr).
+    travessias_rio: str = ""
+    quantidade_travessias: int = 0
+    travessias_info: list = None
+
 def _montar_comparativo_provedores(km_g, tempo_g, km_o, tempo_o, fonte_vencedora):
     """[COMP-PROV - 21ª geração] Codifica os dados de comparação entre Google e OSRM
     num formato compacto e à prova de parsing (sem JSON, sem caracteres problemáticos):
@@ -27835,9 +27846,10 @@ def API_OSRM_Routing(lat_o, lon_o, lat_d, lon_d):
                 snap_info = None
 
             registrar_telemetria("OSRM", True, time.time() - start_t)
-            # Retorno ampliado (idx 4 = geometria, idx 5 = snap_info). Consumidores antigos usam
-            # res[0..4] com guarda len() — os campos novos são aditivos, sem quebrar compatibilidade.
-            _res_osrm = (distancia_km, tempo_min, usa_balsa, n_alternativas, geometria_polyline, snap_info)
+            # Retorno ampliado (idx 4 = geometria, idx 5 = snap_info, idx 6 = travessias por balsa [TRAVESSIA-RIO]).
+            # Consumidores antigos usam res[0..5] com guarda len() — os campos novos são aditivos, sem quebrar.
+            _res_osrm = (distancia_km, tempo_min, usa_balsa, n_alternativas, geometria_polyline, snap_info,
+                         _capturar_travessias_osrm(rota))
             try:
                 if _ck_osrm is not None:
                     cache_rotas.set(_ck_osrm, _res_osrm, expire=2592000)
@@ -28164,7 +28176,8 @@ def API_OSRM_FOSSGIS_Routing(lat_o, lon_o, lat_d, lon_d):
             except Exception:
                 _snap = None
             registrar_telemetria("OSRM_FOSSGIS", True, time.time() - start_t)
-            return (_dist_km, _tempo_min, _balsa, _n_alt, _geo_poly, _snap)
+            return (_dist_km, _tempo_min, _balsa, _n_alt, _geo_poly, _snap,
+                    _capturar_travessias_osrm(_rota))  # idx 6 [TRAVESSIA-RIO · §5/§8]
     except Exception:
         pass
     registrar_telemetria("OSRM_FOSSGIS", False, time.time() - start_t)
@@ -31110,6 +31123,19 @@ def calcular_pipeline_logistico(origem, destino, perfil_rota="shortest"):
                 _dados_vlh_str = _montar_dados_valhalla(round(_vlh_km, 2), _vlh_tmin, _vlh_bal, _vlh_link, _vlh_geo)
         except Exception:
             _dados_vlh_str = ""
+        # [TRAVESSIA-RIO · MISSÃO §5/§7/§8] Captura ANTES da troca do "contendor vencedor" (a partir do OSRM
+        # PRIMÁRIO, que é quem carrega o idx 6): enriquece cada travessia com o corpo d'água real do grafo
+        # hidrográfico e produz o rótulo explícito exibido na rota (nunca inventa nome; incerteza explícita).
+        _trav_rio, _trav_qtd, _trav_info = [], 0, []
+        try:
+            _trav_raw = (res_osrm[6] if (res_osrm and len(res_osrm) > 6 and isinstance(res_osrm[6], list))
+                         else None)
+            if _trav_raw:
+                _trav_info = _enriquecer_travessias_rota(_trav_raw)
+                _trav_rio = _rotulo_travessia_rio(_trav_info)
+                _trav_qtd = len(_trav_info)
+        except Exception:
+            _trav_rio, _trav_qtd, _trav_info = [], 0, []
         # só registra motores que REALMENTE foram consultados (evita entradas mortas no consenso/telemetria)
         if _res_gh is not None or GRAPHHOPPER_API_KEY or _graphhopper_instancia_propria():
             _motores_resultados["GRAPHHOPPER"] = _res_gh
@@ -31507,7 +31533,10 @@ def calcular_pipeline_logistico(origem, destino, perfil_rota="shortest"):
                 link_rota_comparativo=link_rota_comparativo,
                 auditoria_motores=auditoria_motores,
                 dados_graphhopper=_dados_gh_str,
-                dados_valhalla=_dados_vlh_str
+                dados_valhalla=_dados_vlh_str,
+                travessias_rio=_trav_rio,
+                quantidade_travessias=_trav_qtd,
+                travessias_info=_trav_info
             )
             CACHE_L1_ROTAS[chave_rota_cache] = retorno
             _cache_set_seguro(cache_rotas, chave_rota_cache, _ckpt_sanitizar(retorno), expire=2592000)
@@ -33067,6 +33096,8 @@ def _preservar_ranking_polos(mcda_cliente, top=3, params=None):
             "dist_reta_km": round(float(_c.get("dist_reta") or 0), 1),
             "tempo_min": round(float(_c.get("tempo_min") or 0), 0) if _c.get("tempo_min") else None,
             "usa_balsa": "Sim" if _c.get("balsa") else "Não",
+            "travessias_rio": _c.get("travessias_rio") or "",
+            "quantidade_travessias": int(_c.get("quantidade_travessias") or 0),
             "custo_efetivo_km_eq": round(float(_c.get("custo_efetivo") or 0), 1),
             "igq": _c.get("igq"),
         }
@@ -33850,8 +33881,10 @@ def _reatribuir_hubs_puramente_viaria(topk_map, resultados, parse_tempo=None):
                 _dr = float(_reta) if _reta not in (None, "") else None
             except (TypeError, ValueError):
                 _dr = None
+            _tr, _tq = _travessias_de_res(_res)
             _cands.append({"hub": _hub, "dist_viaria": round(_dv, 3), "dist_reta": _dr, "tempo_min": _tm,
                            "balsa": _bal, "rota_real": _rota_real,
+                           "travessias_rio": _tr, "quantidade_travessias": _tq,
                            "sinuosidade": round(_dv / _dr, 4) if (_dr and _dr > 0) else None})
         if not _cands:
             if _topk:
@@ -34061,8 +34094,10 @@ def _reatribuir_hubs_multicriterio(topk_map, resultados, params=None, parse_temp
                 _uf_match_c = bool(_uf_orig_cli != "Indefinido" and _uf_hub_c == _uf_orig_cli)
             except Exception:
                 _uf_match_c = False
+            _tr, _tq = _travessias_de_res(_res)
             _cands.append({"hub": _hub, "dist_viaria": _dv, "dist_reta": _reta, "tempo_min": _tm,
-                           "balsa": _bal, "rota_real": _rota_real, "uf_match": _uf_match_c})
+                           "balsa": _bal, "rota_real": _rota_real, "uf_match": _uf_match_c,
+                           "travessias_rio": _tr, "quantidade_travessias": _tq})
         # [UNIVERSO-HIDROGRAFICO · MISSÃO §8/§11/§12] clientes RIBEIRINHOS (balsa / rota-fantasma hídrica ou
         # zero candidatos rodoviários medidos) têm o universo fechado também por hidrovia: polos do topk sem
         # rota rodoviária entram pela distância fluvial REAL do grafo quando ela existe (fail-open honesto).
@@ -34222,6 +34257,191 @@ def _segundo_motor_na_decisao(cands, cli, uf_hint="", router=None, resolver_coor
         except Exception:
             continue
     return cands
+
+
+def _midpoint_polyline(geo):
+    """[TRAVESSIA-RIO · MISSÃO §5/§8 · 403ª geração] Ponto médio da geometria polyline de um trecho (step)
+    do OSRM → [lon, lat]. Usa a MESMA precisão 5 do OSRM. Fallbacks: None se inválida/vazia. PURO."""
+    try:
+        if not geo:
+            return None
+        _pts = _decodificar_polyline(str(geo), precision=5)
+        if not _pts:
+            return None
+        _m = max(0, (len(_pts) - 1) // 2)
+        _p = _pts[_m]
+        return [float(_p[1]), float(_p[0])]   # _pts são (lat, lon) → normaliza para [lon, lat]
+    except Exception:
+        return None
+
+
+def _capturar_travessias_osrm(rota_json):
+    """[TRAVESSIA-RIO · MISSÃO §5/§8 · 403ª geração] Extrai TODAS as travessias por balsa/ferry do JSON cru
+    do OSRM (/route com steps): para cada step ferry grava o ponto aproximado da travessia (centro da
+    geometria do step; fallback na manobra) + os km percorridos até ele. Retorna lista de dicts
+    {'lon','lat','km','ordem'} OU [] (defensivo). PURO e determinístico — a identidade do corpo d'água é
+    enriquecida DEPOIS pelo grafo hidrográfico real (ninguém inventa nome aqui)."""
+    try:
+        if not isinstance(rota_json, dict):
+            return []
+        _out = []
+        _acc_km = 0.0
+        for _leg in (rota_json.get("legs") or []):
+            for _step in (_leg.get("steps") or []):
+                try:
+                    _dkm = float(_step.get("distance") or 0.0) / 1000.0
+                except (TypeError, ValueError):
+                    _dkm = 0.0
+                _is_ferry = False
+                try:
+                    _is_ferry = (_step.get("mode") == "ferry"
+                                 or _step.get("maneuver", {}).get("type") == "ferry")
+                except Exception:
+                    _is_ferry = False
+                if _is_ferry:
+                    _pt = _midpoint_polyline(_step.get("geometry"))
+                    if _pt is None:
+                        try:
+                            _mn = _step.get("maneuver", {}).get("location") or []
+                            if len(_mn) >= 2:
+                                _pt = [float(_mn[0]), float(_mn[1])]
+                        except Exception:
+                            _pt = None
+                    if _pt is not None:
+                        _out.append({"lon": round(_pt[0], 6), "lat": round(_pt[1], 6),
+                                     "km": round(_acc_km + _dkm / 2.0, 1), "ordem": len(_out) + 1})
+                _acc_km += _dkm
+        return _out
+    except Exception:
+        return []
+
+
+def _nome_rio_na_travessia(lat, lon, raio_km=4.0, g=None):
+    """[TRAVESSIA-RIO · MISSÃO §5/§8 · 403ª geração] Identificação geoespacial do CORPO D'ÁGUA atravessado:
+    cruza o ponto da travessia com o grafo hidrográfico REAL (nacional/Amazônia). Só devolve nome quando o
+    ponto está a ≤raio de um rio NOMEADO (confiança 'alta' ≤1 km, 'media' ≤raio); rio próximo porém SEM nome
+    → 'corpo_sem_nome' (incerteza EXPLÍCITA — proibido inventar); sem grafo → 'indisponivel'; fora do raio
+    → 'nao_determinado'. Determinístico, defensivo. Retorna {'nome_rio','dist_km','confianca'}."""
+    try:
+        _la = _num(lat); _lo = _num(lon)
+        if _la is None or _lo is None:
+            return {"nome_rio": None, "dist_km": None, "confianca": "nao_determinado"}
+        if g is None:
+            g = _carregar_grafo_fluvial(_URL_GRAFO_FLUVIAL, _arq_grafo_fluvial())
+        if not g:
+            return {"nome_rio": None, "dist_km": None, "confianca": "indisponivel"}
+        _C = g.get("C")
+        if _C is None or len(_C) == 0:
+            return {"nome_rio": None, "dist_km": None, "confianca": "nao_determinado"}
+        import numpy as _np
+        _tree = g.get("tree")
+        _i = None; _dist = None
+        if _tree is not None:
+            _bb = float(raio_km) * 0.009   # cKDTree opera em graus (lon/lat) — ~111 km/grau
+            _d2, _i = _tree.query([_lo, _la], distance_upper_bound=_bb)
+            _i = int(_i)
+            if _np.isfinite(_d2) and 0 <= _i < len(_C):
+                _dist = _haversine_fluv((_lo, _la), (float(_C[_i, 0]), float(_C[_i, 1])))
+            else:
+                _i = None
+        else:
+            _melhor = None
+            for _j in range(len(_C)):
+                _d = _haversine_fluv((_lo, _la), (float(_C[_j, 0]), float(_C[_j, 1])))
+                if _melhor is None or _d < _melhor[0]:
+                    _melhor = (_d, _j)
+            if _melhor and _melhor[0] <= float(raio_km):
+                _dist, _i = _melhor[0], _melhor[1]
+        if _i is None or (_dist is not None and _dist > float(raio_km)):
+            return {"nome_rio": None, "dist_km": None, "confianca": "nao_determinado"}
+        _nome = None
+        try:
+            _M = g.get("M"); _edic = g.get("edic"); _NMS = g.get("names")
+            if _M is not None and _edic is not None:
+                _nb = _M.indices[_M.indptr[int(_i)]:_M.indptr[int(_i) + 1]]
+                for _nn in _nb:
+                    _ni = _edic.get((int(_i), int(_nn)))
+                    if _ni is not None and _NMS and 0 <= _ni < len(_NMS) and str(_NMS[_ni]).strip():
+                        _nome = str(_NMS[_ni]).strip()
+                        break
+        except Exception:
+            _nome = None
+        if _nome:
+            return {"nome_rio": _nome, "dist_km": round(float(_dist), 2),
+                    "confianca": "alta" if float(_dist) <= 1.0 else "media"}
+        return {"nome_rio": None, "dist_km": round(float(_dist), 2), "confianca": "corpo_sem_nome"}
+    except Exception:
+        return {"nome_rio": None, "dist_km": None, "confianca": "nao_determinado"}
+
+
+def _enriquecer_travessias_rota(travessias, g=None, raio_km=4.0):
+    """[TRAVESSIA-RIO · MISSÃO §5/§6/§8 · 403ª geração] Camada de ENRIQUECIMENTO GEOESPACIAL: aplica o cruze
+    com o grafo hidrográfico a CADA travessia do OSRM e devolve metadados estruturados (missão §6):
+    nome_rio, confianca, dist_hidro_km, local_travessia (coords), origem/destino travessia (vazios quando
+    não identificáveis), km, ordem. Fail-open honesto: lista vazia/erro → []. Determinístico."""
+    try:
+        if not travessias:
+            return []
+        _g = g
+        _out = []
+        for _t in travessias:
+            _e = dict(_t)
+            _r = _nome_rio_na_travessia(_e.get("lat"), _e.get("lon"), raio_km=raio_km, g=_g)
+            _e["nome_rio"] = _r.get("nome_rio")
+            _e["confianca"] = _r.get("confianca") or "nao_determinado"
+            _e["dist_hidro_km"] = _r.get("dist_km")
+            _e["local_travessia"] = "%.4f, %.4f" % (_e.get("lat"), _e.get("lon"))
+            _e["origem_travessia"] = ""
+            _e["destino_travessia"] = ""
+            _out.append(_e)
+        return _out
+    except Exception:
+        return []
+
+
+def _rotulo_travessia_rio(travessias):
+    """[TRAVESSIA-RIO · MISSÃO §5/§7 · 403ª geração] Rótulo humano para exibição: 'Travessia por balsa —
+    Rio X' (confiança alta/media) ou 'Travessia por balsa — corpo d'água não determinado' (incerteza
+    EXPLÍCITA). Com contagem quando há múltiplas travessias. NUNCA inventa nome. PURO. Retorna '' sem
+    travessias."""
+    try:
+        if not travessias:
+            return ""
+        _nomes = []
+        for _t in travessias:
+            _nm = _t.get("nome_rio")
+            _cf = _t.get("confianca")
+            if _nm and str(_nm).strip() and _cf not in ("nao_determinado", "indisponivel"):
+                _nomes.append(str(_nm).strip())
+        _uniq = []
+        for _n in _nomes:
+            if _n not in _uniq:
+                _uniq.append(_n)
+        _base = "Travessia por balsa — corpo d'água não determinado"
+        if _uniq:
+            _base = "Travessia por balsa — " + " e ".join(_uniq[:3])
+        _n = len(travessias)
+        if _n > 1:
+            _base += " (%d travessias)" % _n
+        return _base
+    except Exception:
+        return ""
+
+
+def _travessias_de_res(res):
+    """[TRAVESSIA-RIO · MISSÃO §7 · 403ª geração] Lê as travessias enriquecidas de um resultado de rota
+    (RotaPipeline por nome; tupla legada com guarda no índice 6). Retorna (rotulo, quantidade). Defensivo."""
+    try:
+        if isinstance(res, RotaPipeline):
+            _qv = getattr(res, "quantidade_travessias", 0) or 0
+            _rl = getattr(res, "travessias_rio", "") or ""
+            return _rl, int(_qv)
+        if isinstance(res, tuple) and len(res) > 6 and isinstance(res[6], list):
+            _t = _enriquecer_travessias_rota(res[6])
+            return _rotulo_travessia_rio(_t), len(_t)
+    except Exception:
+        pass
+    return "", 0
 
 
 def _explicar_derrota_concorrente(dif_km, dif_reta, dif_razao, dif_tempo=None, dif_score=None):
@@ -44780,6 +45000,7 @@ if _secao == _SECOES[2]:   # tab_alocacao
                             df_final_alo[f'{_rot} Polo - Linha Reta (km)'] = _rk_campo(_pos, "dist_reta_km")
                             df_final_alo[f'{_rot} Polo - Tempo (min)'] = _rk_campo(_pos, "tempo_min")
                             df_final_alo[f'{_rot} Polo - Usa Balsa'] = _rk_campo(_pos, "usa_balsa")
+                            df_final_alo[f'{_rot} Polo - Rio Travessia'] = _rk_campo(_pos, "travessias_rio")
                             df_final_alo[f'{_rot} Polo - Sinuosidade'] = _rk_campo(_pos, "sinuosidade")
                             df_final_alo[f'{_rot} Polo - Velocidade Media (km/h)'] = _rk_campo(
                                 _pos, "velocidade_media_kmh")

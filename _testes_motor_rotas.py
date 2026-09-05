@@ -516,6 +516,16 @@ def relatorio():
     a("- **Valhalla corrigido para POST (VALHALLA-POST, 400ª geração):** a instância pública FOSSGIS passou "
       "a exigir corpo JSON com `Content-Type: application/json`; o antigo GET `?json=` retornava 400 'Failed "
       "to parse json request'. POST → 200 (Aveiro→Itaituba 153,4 km, `trip.status 0`).")
+    a("- **TRAVESSIA-RIO — identificação EXPLÍCITA do rio na balsa (§5/§6/§7/§8):** nova camada de "
+      "enriquecimento geoespacial. `_capturar_travessias_osrm` extrai TUDO do OSRM (steps `ferry` → ponto-médio "
+      "da geometria, km acumulado, ordem); `_nome_rio_na_travessia` cruza esse ponto com o grafo hidrográfico "
+      "REAL (cKDTree + `edic[(u,v)] → names[idx]`, confiança alta ≤1 km / média ≤4 km / `corpo_sem_nome` / "
+      "`nao_determinado` / `indisponivel`); `_enriquecer_travessias_rota` devolve os metadados estruturados §6 "
+      "(nome_rio, confianca, dist_hidro_km, local_travessia); `_rotulo_travessia_rio` produz o rótulo "
+      "'Travessia por balsa — Rio X (N travessias)'. NUNCA inventa nome — corpo indeterminado é sinalizado "
+      "como incerteza explícita. Campos ADITIVOS no fim do `RotaPipeline` (`travessias_rio`, "
+      "`quantidade_travessias`, `travessias_info`) → zero quebra de índice/cache; exibido na linha de "
+      "comparação, nos rankings e na coluna 'Polo - Rio Travessia' da alocação.")
 
     a("")
     a("## 2. Decisões reais (OSRM) ANTES × DEPOIS — missão + favoráveis §11 + derrotas §22 + famílias §24")
@@ -661,11 +671,11 @@ def relatorio():
     a("")
     a("| Check | Resultado |")
     a("|---|---|")
-    a("| `validar` (20 seções, sem rede) | **134 OK / 0 FALHAS** |")
+    a("| `validar` (21 seções, sem rede) | **150 OK / 0 FALHAS** |")
     a("| `decidir` (38 casos: 13 missão + 3 favoráveis §11 + 3 derrotas §22 + 19 famílias §24) | **38/38 nas propriedades** |")
     a("| Causa-raiz corrigida | universo-fechado + política única de balsa + métrica fluvial justa + universo hidrográfico fail-open + consenso de 2 motores |")
     a("| Benchmark menos que a reta (N1) | 9 famílias fluviais/ilha enquadradas como Tipo 10 com evidência de DOIS motores independentes |")
-    a("| Honestidade | zero vitória artificial; grafo flúvio só entra com rota provada; segundo motor jamais decide contra a menor rota real |")
+    a("| Honestidade | zero vitória artificial; grafo flúvio só entra com rota provada; segundo motor jamais decide contra a menor rota real; rio da travessia NUNCA inventado (incerteza explícita) |")
     a("| Cobertura | todas as 163 linhas venc=Referência atingidas pela mecânica; teto de perda evitável = 3355,6 km |")
     a("")
     a("Fechamento: o motor agora vence qualquer linha em que a menor rota real esteja dentro do universo "
@@ -1222,6 +1232,82 @@ def validar():
         m._segundo_motor_na_decisao(_csm6, "X", uf_hint="PB",
                                     router=_rota_shorter2, resolver_coord=_res_none3)
         check("decisão: sem coords da origem → intacto (fail-open)", _csm6[0]["dist_viaria"] == 104.2)
+
+        print("== 21) Travessia explícita: nome do rio na balsa (TRAVESSIA-RIO, §5/§6/§7/§8 — sem rede) ==")
+        _ply = m._codificar_polyline_de_coords
+        _rota_fixture = {"legs": [{"steps": [
+            {"mode": "driving", "distance": 12000,
+             "geometry": _ply([[-55.332, -3.604], [-55.53, -3.68]])},
+            {"mode": "ferry", "distance": 15000,
+             "geometry": _ply([[-55.53, -3.68], [-55.60, -3.72], [-55.65, -3.75]]),
+             "maneuver": {"type": "ferry", "location": [-55.60, -3.72]}},
+            {"mode": "driving", "distance": 9000,
+             "geometry": _ply([[-55.65, -3.75], [-55.9, -3.9]])},
+        ]}]}
+        _cap = m._capturar_travessias_osrm(_rota_fixture)
+        check("captura: step ferry vira 1 travessia, ponto médio + km até ela corretos",
+              len(_cap) == 1 and _cap[0]["ordem"] == 1 and _cap[0]["km"] == 19.5
+              and abs(_cap[0]["lat"] - (-3.72)) < 1e-5 and abs(_cap[0]["lon"] - (-55.60)) < 1e-5)
+        check("captura: rota sem ferry → []",
+              m._capturar_travessias_osrm({"legs": [{"steps": [{"mode": "driving", "distance": 100}]}]}) == [])
+        check("captura: defensivo (None/JSON inválido) → []",
+              m._capturar_travessias_osrm(None) == [] and m._capturar_travessias_osrm("x") == [])
+        import numpy as _np
+        from scipy.sparse import csr_matrix as _csr
+        _C2 = _np.array([[-55.0, -2.0], [-54.99, -2.0], [-55.0, -2.5], [-54.99, -2.01]], dtype=float)
+        _E2 = _np.array([[0, 1], [0, 2], [1, 2]], dtype=int)
+        _W2 = _np.array([1.0, 1.0, 1.0], dtype=float)
+        _row2 = _np.concatenate([_E2[:, 0], _E2[:, 1]]); _col2 = _np.concatenate([_E2[:, 1], _E2[:, 0]])
+        _M2 = _csr((_np.concatenate([_W2, _W2]), (_row2, _col2)), shape=(4, 4))
+        _g2 = {"C": _C2, "M": _M2, "names": ["Rio Sintético"], "edic": {
+            (0, 1): 0, (1, 0): 0, (0, 2): 0, (2, 0): 0, (1, 2): 99, (2, 1): 99}, "tree": None}
+        _r1 = m._nome_rio_na_travessia(-2.0, -54.99, g=_g2)
+        check("rio: ponto em nó de rio NOMEADO → 'Rio Sintético', confiança alta",
+              _r1["nome_rio"] == "Rio Sintético" and _r1["confianca"] == "alta")
+        _r2 = m._nome_rio_na_travessia(-2.01, -54.99, g=_g2)
+        check("rio: nó isolado (sem nome) → 'corpo_sem_nome' (incerteza EXPLÍCITA)",
+              _r2["nome_rio"] is None and _r2["confianca"] == "corpo_sem_nome")
+        _r3 = m._nome_rio_na_travessia(-5.0, -57.0, g=_g2)
+        check("rio: ponto longe de qualquer rio → 'nao_determinado'",
+              _r3["nome_rio"] is None and _r3["confianca"] == "nao_determinado")
+        _r4 = m._nome_rio_na_travessia(-2.0, -54.99, g={})
+        check("rio: sem grafo → 'indisponivel' (fail-open)", _r4["confianca"] == "indisponivel")
+        _en = m._enriquecer_travessias_rota(
+            [{"lat": -2.0, "lon": -54.99, "km": 19.5, "ordem": 1}], g=_g2)
+        check("enriquecimento: metadados §6 (nome_rio, confianca, local_travessia, dist_hidro_km)",
+              len(_en) == 1 and _en[0]["nome_rio"] == "Rio Sintético" and _en[0]["confianca"] == "alta"
+              and _en[0]["dist_hidro_km"] == 0.0 and str(_en[0]["local_travessia"]).startswith("-2"))
+        check("enriquecimento: fail-open (inválido → [])",
+              m._enriquecer_travessias_rota(None) == [] and m._enriquecer_travessias_rota([], g=_g2) == [])
+        check("rótulo: 1 travessia com rio → 'Travessia por balsa — Rio Sintético'",
+              m._rotulo_travessia_rio([{"nome_rio": "Rio Sintético", "confianca": "alta"}])
+              == "Travessia por balsa — Rio Sintético")
+        check("rótulo: sem nome → incerteza EXPLÍCITA (nunca inventa)",
+              m._rotulo_travessia_rio([{"nome_rio": None, "confianca": "nao_determinado"}])
+              == "Travessia por balsa — corpo d'água não determinado")
+        _rn = m._rotulo_travessia_rio([{"nome_rio": "Rio A", "confianca": "alta"},
+                                       {"nome_rio": None, "confianca": "corpo_sem_nome"}])
+        check("rótulo: 2 travessias → contagem explícita", "2 travessias" in _rn and "Rio A" in _rn)
+        check("rótulo: sem travessias → ''", m._rotulo_travessia_rio([]) == "")
+        _rp_t = m.RotaPipeline(distancia=7.0, tempo="9 min", link_rota="", balsas="Sim",
+                               dist_linha_reta=2.0, fonte_rota="OSRM", score_rota=80.0,
+                               confianca_origem="Alta", score_num_origem=95.0, distrito_origem="",
+                               municipio_origem="São José do Norte", fonte_geo_origem="IBGE",
+                               endereco_oficial_origem="", confianca_destino="Alta", score_num_destino=95.0,
+                               distrito_destino="", municipio_destino="Rio Grande", fonte_geo_destino="IBGE",
+                               endereco_oficial_destino="", lat_origem=-32.0, lon_origem=-52.0,
+                               lat_destino=-32.05, lon_destino=-52.1, tempo_geocoding=0.1,
+                               tempo_roteamento=0.2, tempo_total=0.3, xai_origem=[], xai_destino=[],
+                               motivo_roteamento="", link_embed="", status_linha_reta="ok",
+                               travessias_rio="Travessia por balsa — Rio Grande",
+                               quantidade_travessias=1, travessias_info=[])
+        check("leitura: RotaPipeline com travessias → rótulo + quantidade",
+              m._travessias_de_res(_rp_t) == ("Travessia por balsa — Rio Grande", 1))
+        _rp_n = _rp_t._replace(travessias_rio="", quantidade_travessias=0, travessias_info=None)
+        check("leitura: RotaPipeline sem travessias → ('', 0) (default aditivo)",
+              m._travessias_de_res(_rp_n) == ("", 0))
+        check("leitura: tupla legada sem idx 6 → ('', 0) (guarda len)",
+              m._travessias_de_res((1.0, 2, "Sim")) == ("", 0))
     except Exception as _e:
         check("testes da métrica fluvial justa + consenso de segundo motor executaram (%s)" % _e, False)
 
