@@ -34223,6 +34223,9 @@ def _fluvial_sweep_resgate(resultados, coords_f, g, topk_map=None, max_pares=200
             for _reta, _hub, _hlat, _hlon in _hubs:
                 if _tested >= max_pares:
                     break
+                # Skip self-loop (origin == hub) - fabricated win
+                if norm(_hub) == norm(_cli):
+                    continue
                 # Proof: geodesic crosses water
                 _c = (_la, _lo, _hlat, _hlon)
                 try:
