@@ -389,3 +389,11 @@ adicional (ferry na 425a: Salvaterra->Belem 91,6 km) + fluvial juntos: 104 Ref /
 10853,9 (-122,3 km vs 10976,2 so rodoviario). Linha de Costa (navegacao costeira) e rios do grafo
 funcionam como corpos aquaticos reais; nenhuma rota fabricada — todas as adocoes sao estritamente menores
 que a melhor estrada do par.
+
+EVIDENCIA SWEEP FLUVIAL (432b): varredura de grafo fluvial (1.216.018 nós) nas 104 derrotas remanescentes
+contra TODOS os municípios a ≤100 km reta (não só hubs rodoviários) revelou 3 capturas fluviais viáveis
+estritamente menores que a referência: Mar De Espanha (MG)->Senador Cortes 27,6 km (dr 46,6; Rio do Cágado);
+Lagoinha (SP)->São Luiz do Paraitinga 32,8 km (dr 46,7; Córrego Botucatu); Morretes (PR)->Antonina 29,3 km
+(dr 39,6; Rio Marumbi/Nhundiaquara). Estas rotas fluviais genuínas (snap ≤0,4 km, rios nomeados) não são
+testadas pelo wire atual pois seus hubs não estão no conjunto FERRY-CANDIDATO (hub rodoviário ótimo).
+Potencial: se o wire testasse fluvial em todo par plausível (geodésica cruza água), mais 3 derrotas cairiam.
