@@ -318,3 +318,46 @@ Evidencia: validar 182 OK / 0 FALHAS; decidir 38/38; veredicto_final.json + vere
 
 Evidencia: validar 182 OK / 0 FALHAS (22 secoes, sem rede; FERRY-BUDGET na seccao 22);
 decidir 38/38; relatorio regenerado -> _RELATORIO_ANTES_DEPOIS.md.
+
+### 426a geracao: FLUVIAL-ROTA-DIRETA (rota aquaviaria REAL do grafo como candidato sem rede)
+
+Ja existe rota fluvial REAL on-demand (`_fluvial_rota_real_sob_demanda`: Dijkstra sobre o grafo
+hidrografico nacional `hidrografia_nacional.pkl.gz`, ~1.2M nos, snap <=8 km, cache em disco "fluvreal:...").
+Nova geracao: no passe FERRY-CANDIDATO, depois da adocao do FOSSGIS, medir a rota fluvial real no grafo para
+os MESMOS pares candidatos (sem custo de rede, grafo local memoizado) e adotar SE E SOMENTE SE estritamente
+menor que o resultado vigente -> novo candidato `fluvial-direta` (fonte "fluvial-direta", balsa Sim, sem
+reinvencao). Fail-open honesto: sem pares/coords/grafo/excecao -> {} (nunca muda resultado). Rodada COM o
+grafo real carregado, os pares urbanos comuns nao conectam (Muana->Abaetetuba, Curralinho->Breves: None) --
+gate de snap intencionalmente estrito para nunca fabricar rota aquaviaria onde o grafo nao liga; as rotas
+fluviais validas sao da malha do proprio grafo.
+
+### 427a geracao: DETECCAO-POR-ARESTA (travessia validada no segmento do rio, nao so no no)
+
+`_cruza_agua_entre_pontos`: alem da proximidade ao NO mais proximo (cKDTree), valida agora os SEGMENTOS
+incidentes ao no (`_M.indices/_indptr`) via `_dist_ponto_segmento_km` <= raio -> retorna True quando o ponto
+cruza o RIO (aresta), mesmo que o no mais proximo fique alem do raio. Reconhecimento de corpos aquaticos mais
+fiel a geometria real do tracado (rio passa perto, no representa o tracado). Teste com cKDTree fake sobre
+_ta.
+
+### 428a geracao: MULTI-AMOSTRAGEM (amostragem adaptativa da corda geodesica)
+
+A deteccao de travessia amostra a corda entre origem/destino. Antes com amostragem fixa; agora adaptativa:
+`n = max(11, min(240, floor(corda_km / 12.0) + 1))` (corda via haversine) -> travessias LONGAS ganham
+densidade suficiente para alcancar rios que ficariam entre amostras esparsas; travessias curtas nao explodem
+o custo (<=11 amostras). Custo O(1) por consulta cKDTree, sem rede.
+
+### 429a geracao: MULTI-RIO (nomes_rios com TODOS os rios nomeados a <=raio)
+
+`_nome_rio_na_travessia` devolve agora `nomes_rios` com TODOS os rios nomeados dentro do raio (nao so o mais
+proximo): reconhecimento de multiplos corpos aquaticos numa unica travessia (foz/confluencia). Branches
+iniciais incluem `nomes_rios: []`; `_enriquecer_travessias_rota` propaga. Teste: MULTI-RIO (429a).
+
+### 431a geracao: SUPERFICIE DE NOMES NA ROTA DIRETA (missao §11)
+
+A rota fluvial direta (fluvial-direta) passa a carregar TRAVESSIAS no padrao do OSRM (lista de dicts com
+nome_rio, confianca alta, dist_hidro_km, local_travessia) no indice 6 do tuple -> ui/audit exibem
+"Travessia por balsa - Rio X" exatamente como rota real de ferry; o rotulo continua integrando o hall
+(quantidade_travessias) para o consenso.
+
+Evidencia: validar 187 OK / 0 FALHAS (22 secoes, sem rede; FLUVIAL-ROTA-DIRETA/DETECCAO-POR-ARESTA/
+MULTI-AMOSTRAGEM/MULTI-RIO na seccao 22); decidir 38/38; relatorio regenerado -> _RELATORIO_ANTES_DEPOIS.md.
