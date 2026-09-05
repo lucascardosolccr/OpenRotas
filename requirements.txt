@@ -24,7 +24,9 @@ python-calamine>=0.3.0     # INDIRETA: engine rápida de leitura de Excel (3 uso
 # VISUALIZAÇÃO
 # ------------------------------------------------------------------------------------------
 plotly>=6.2.0
-altair>=5.5.0              # import direto (linha 1719)
+altair==5.3.0               # import direto (linha 1719). FIXADO: altair>=5.4/5.5 usa `TypedDict(closed=True)`
+                             # (PEP 728) nos schemas — exige Python >=3.13 e quebra no Streamlit Cloud em Python
+                             # <3.13 ("unexpected keyword argument 'closed'"). 5.3.0 é a última SEM esse recurso.
 pydeck>=0.9.1              # import direto (mapa de Polos Alternativos) — estava FALTANDO
 kaleido>=1.0.0             # INDIRETA: fig.to_image() do export da Calculadora (ver nota 3)
 
