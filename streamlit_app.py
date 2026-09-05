@@ -28209,10 +28209,14 @@ def API_Valhalla_Routing(lat_o, lon_o, lat_d, lon_d):
                 "costing": "auto",
                 "directions_options": {"units": "kilometers"},
             }
-            _hdrs = {"User-Agent": "MotorLogisticoExames/1.0 (roteamento institucional; contato via app)",
+            _hdrs = {"Content-Type": "application/json",
+                     "User-Agent": "MotorLogisticoExames/1.0 (roteamento institucional; contato via app)",
                      "X-Client-Id": "motor-logistico-exames"}
-            return session.get(f"{VALHALLA_URL}/route", params={"json": json.dumps(_payload)},
-                               headers=_hdrs, timeout=(3.05, 10)).json()
+            # [VALHALLA-POST - 400ª geração] Valhalla 3.x (público FOSSGIS e instância própria) espera o JSON do
+            # corpo da requisição; o formato antigo (GET ?json=) passou a retornar 400 (error_code 100). POST
+            # direto com Content-Type application/json restaura o consenso do segundo motor em ambas as vias.
+            return session.post(f"{VALHALLA_URL}/route", data=json.dumps(_payload),
+                                headers=_hdrs, timeout=(3.05, 10)).json()
         if _valhalla_instancia_propria():
             _j = _http_valhalla()          # instância PRÓPRIA: direto, em paralelo, SEM throttle (como o OSRM)
         else:
@@ -33994,7 +33998,8 @@ def _df_estudo_puramente_viaria(df_oficial, comparacao):
         return df_oficial
 
 
-def _reatribuir_hubs_multicriterio(topk_map, resultados, params=None, parse_tempo=None, dist_matriz=None):
+def _reatribuir_hubs_multicriterio(topk_map, resultados, params=None, parse_tempo=None, dist_matriz=None,
+                                   segundo_motor_router=None):
     """[HUB-MCDA - 130ª geração / V446 · UNIVERSO-FECHADO] Dado o topk_map (top-K hubs por cliente, por linha
     reta, JÁ fundido com shortlist/dist_matriz/resultados medidos) e os resultados JÁ roteados de cada par
     (cliente, hub), reelege o hub de cada cliente por MENOR VIÁRIA REAL com a política única de balsa
@@ -34086,6 +34091,14 @@ def _reatribuir_hubs_multicriterio(topk_map, resultados, params=None, parse_temp
             _metrica_fluvial_justa_no_universo(_cands, _cli, uf_hint=str(_uf_orig_cli))
         except Exception:
             pass
+        # [CONSENSO-SEGUNDO-MOTOR · MISSÃO §8] OPT-IN (segundo_motor_router injetado pelo driver de produção):
+        # candidato suspeito (regime _valhalla_deve_investigar) com rota real MENOR do segundo motor entra com a
+        # menor rota honesta; segundo motor maior/sem rota → mantém o primário (sem assimetria). No-op puro
+        # quando router é None (todos os consumidores offline).
+        try:
+            _segundo_motor_na_decisao(_cands, _cli, uf_hint=str(_uf_orig_cli), router=segundo_motor_router)
+        except Exception:
+            pass
         _r = _selecionar_hub_multicriterio(_cands, params)
         if _r.get("vencedor"):
             novo_dest[_cli] = _r["vencedor"]
@@ -34141,6 +34154,71 @@ def _universo_hidrografico_no_universo(cands, cli, topk, uf_hint="", resolver_co
             cands.append({"hub": _hub, "dist_viaria": float(_rf), "dist_reta": _reta,
                           "tempo_min": None, "balsa": False, "rota_real": True,
                           "uf_match": _ua, "metrica_fluvial": True, "fonte_hidrografico": True})
+        except Exception:
+            continue
+    return cands
+
+
+def _consenso_segundo_motor(km_primario, km_segundo, div_pct_min=15.0, div_km_min=10.0):
+    """[CONSENSO-SEGUNDO-MOTOR · MISSÃO §8 · 401ª geração] Adjudicação honesta entre DOIS motores reais:
+    quando o segundo motor (ex.: Valhalla) encontra a MESMA rota legítima MATERIALMENTE mais curta que o
+    primário (OSRM), o vencedor da decisão deve poder usar a MENOR rota real. Só adota quando TODAS as
+    condições valem: o segundo mede uma rota real (>0), menor, e a diferença é material (>= km_min E >= pct%
+    do primário). Se o segundo for maior/igual/inválido → NUNCA adota (a menor rota real é preservada —
+    regime de consenso, SEM assimetria). PURO. Retorna {'km': float} ou None."""
+    try:
+        _a = float(km_primario); _b = float(km_segundo)
+    except (TypeError, ValueError):
+        return None
+    if _a <= 0 or _b <= 0 or _b >= _a:
+        return None   # nunca adota rota maior/igual do segundo motor; sem medida válida → primário
+    _ganho = _a - _b
+    _pct = (_ganho / _a) * 100.0
+    if _pct < float(div_pct_min) or _ganho < float(div_km_min):
+        return None   # divergência não material → consenso no primário
+    return {"km": round(_b, 2)}
+
+
+def _segundo_motor_na_decisao(cands, cli, uf_hint="", router=None, resolver_coord=None):
+    """[SEGUNDO-MOTOR · MISSÃO §8/§12 · 402ª geração] Pré-processamento OPT-IN da decisão: para candidatos
+    SUSPEITOS (regime _valhalla_deve_investigar: V/R alto ou balsa, onde um motor solitário erra mais), chama
+    um segundo motor real (router, ex.: API_Valhalla_Routing) e aplica _consenso_segundo_motor — se o segundo
+    achar a mesma rota MATERIALMENTE mais curta, o valor honesto entra na comparação (dist_viaria,
+    dist_viaria_original, segundo_motor=True). Se o segundo for MAIOR/igual/sem rota → mantém o primário
+    (sem assimetria). NÃO engaja candidatos já `metrica_fluvial`. Sem router → no-op puro (zero regressão)."""
+    if not cands or not str(cli or "").strip() or not callable(router):
+        return cands
+    _rc = resolver_coord or _v316_resolver_coord_alt
+    _ufh = str(uf_hint or "").strip().upper()
+    try:
+        _oc = _rc(str(cli), uf_hint=_ufh)
+        _ola, _olo = _num(_oc.get("lat")), _num(_oc.get("lon"))
+        if _ola is None or _olo is None:
+            return cands
+    except Exception:
+        return cands
+    for _cand in cands:
+        try:
+            if _cand.get("metrica_fluvial") or _cand.get("segundo_motor"):
+                continue
+            _dv = _num(_cand.get("dist_viaria")); _dr = _num(_cand.get("dist_reta"))
+            if not _dv or _dv <= 0 or _dr is None or _dr <= 0:
+                continue
+            if not _valhalla_deve_investigar(_dv, _dr, bool(_cand.get("balsa"))):
+                continue
+            _hc = _rc(str(_cand.get("hub") or ""), uf_hint=_ufh)
+            _hla, _hlo = _num(_hc.get("lat")), _num(_hc.get("lon"))
+            if _hla is None or _hlo is None:
+                continue
+            _vv = router(_ola, _olo, _hla, _hlo)
+            _b = _num(_vv[0]) if isinstance(_vv, (tuple, list)) and len(_vv) and _vv[0] is not None else None
+            if _b is None:
+                continue
+            _r2 = _consenso_segundo_motor(_dv, _b)
+            if _r2:
+                _cand["dist_viaria_original"] = _dv
+                _cand["dist_viaria"] = _r2["km"]
+                _cand["segundo_motor"] = True
         except Exception:
             continue
     return cands
@@ -44298,7 +44376,8 @@ if _secao == _SECOES[2]:   # tab_alocacao
                             _topk_reatrib = _topk_mc
                         _novo_dest_mc, _mcda_mc = _reatribuir_hubs_multicriterio(
                             _topk_reatrib, _resultados, params=_params_mc,
-                            dist_matriz=st.session_state.get('alo_dist_matriz'))
+                            dist_matriz=st.session_state.get('alo_dist_matriz'),
+                            segundo_motor_router=(API_Valhalla_Routing if _valhalla_ativo() else None))
                         if _novo_dest_mc:
                             _oo = _df_pares['Origem'].astype(str).str.strip()
                             _df_pares['Destino'] = _oo.map(_novo_dest_mc).fillna(_df_pares['Destino'])

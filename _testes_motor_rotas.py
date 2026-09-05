@@ -1088,8 +1088,65 @@ def validar():
             resolver_coord=_res_uh, fluvial_router=lambda o, ol, hl, hlo: {"km": 12.0})
         check("hidrográfico: rota aquaviária 0/None não entra; 12>0 entra e ganha flag",
               len(_r9) == 2 and _r9[1]["hub"] == "B" and _r9[1]["dist_viaria"] == 12.0)
+
+        print("== 20) Consenso de segundo motor (CONSENSO-SEGUNDO-MOTOR, §8/§12 — sem rede) ==")
+        _cs = m._consenso_segundo_motor
+        _h1 = _cs(150.5, 127.2)
+        check("divergência material 15,5% → adota a MENOR rota real (127.2)",
+              _h1 is not None and abs(_h1["km"] - 127.2) < 1e-9)
+        _h2 = _cs(150.5, 145.0)
+        check("divergência 3,7% não-material → consenso no primário (None)",
+              _h2 is None)
+        _h3 = _cs(100.0, 92.0)
+        check("-8 km (< km_min 10) → None mesmo com 8%", _h3 is None)
+        _h4 = _cs(100.0, 150.0)
+        check("segundo MAIOR → nunca adota (None)", _h4 is None)
+        _h5 = _cs(100.0, None)
+        check("segundo sem medida → None (fail-open)", _h5 is None)
+        _h6 = _cs("x", 50.0)
+        check("primário inválido → None (defensivo)", _h6 is None)
+        def _res_sm(nome, uf_hint=""):
+            return {"lat": -3.0, "lon": -49.0, "uf": "PA"}
+        def _rota_shorter(o, ol, hl, hlo):
+            return (127.2, 140, "Não", 1, "", None)   # Valhalla MENOR (honesto) — SÃO VICENTE style
+        _csm1 = [{"hub": "PARELHAS", "dist_viaria": 104.2, "dist_reta": 48.0, "balsa": False, "rota_real": True}]
+        m._segundo_motor_na_decisao(_csm1, "São Vicente do Seridó", uf_hint="PB",
+                                    router=_rota_shorter, resolver_coord=_res_sm)
+        check("decisão: V/R 2,17 sem balsa está FORA do regime de investigação (limiar 2,6) — mantém primário",
+              _csm1[0]["dist_viaria"] == 104.2 and not _csm1[0].get("segundo_motor"))
+        def _rota_shorter2(o, ol, hl, hlo):
+            return (80.0, 95, "Não", 1, "", None)
+        _csm2 = [{"hub": "H", "dist_viaria": 104.2, "dist_reta": 40.0, "balsa": False, "rota_real": True},
+                 {"hub": "NORMAL", "dist_viaria": 30.0, "dist_reta": 21.4, "balsa": False, "rota_real": True}]
+        m._segundo_motor_na_decisao(_csm2, "X", uf_hint="PB",
+                                    router=_rota_shorter2, resolver_coord=_res_sm)
+        check("decisão: V/R 2,6? (104,2/40=2,60) suspeito; segundo 80 (-23%) → adota 80 com flag",
+              _csm2[0]["dist_viaria"] == 80.0 and _csm2[0].get("segundo_motor") is True
+              and _csm2[0].get("dist_viaria_original") == 104.2)
+        check("decisão: candidato V/R 1,4 não-suspeito intocado", _csm2[1]["dist_viaria"] == 30.0)
+        def _rota_longer(o, ol, hl, hlo):
+            return (200.0, 220, "Não", 1, "", None)
+        _csm3 = [{"hub": "H", "dist_viaria": 104.2, "dist_reta": 40.0, "balsa": False, "rota_real": True}]
+        m._segundo_motor_na_decisao(_csm3, "X", uf_hint="PB",
+                                    router=_rota_longer, resolver_coord=_res_sm)
+        check("decisão: segundo MAIOR (200>104,2) → mantém 104,2 (sem assimetria)",
+              _csm3[0]["dist_viaria"] == 104.2 and not _csm3[0].get("segundo_motor"))
+        _csm4 = [{"hub": "H", "dist_viaria": 104.2, "dist_reta": 40.0, "balsa": False, "rota_real": True}]
+        m._segundo_motor_na_decisao(_csm4, "X", uf_hint="PB", router=None, resolver_coord=_res_sm)
+        check("decisão: router None (offline) → no-op puro (zero regressão)",
+              _csm4[0]["dist_viaria"] == 104.2)
+        _csm5 = [{"hub": "H", "dist_viaria": 104.2, "dist_reta": 40.0, "balsa": False, "rota_real": True}]
+        m._segundo_motor_na_decisao(_csm5, "X", uf_hint="PB", router=None,
+                                    resolver_coord=lambda n, uf_hint="": {"lat": None, "lon": None})
+        check("decisão: sem router → nem resolve coords", _csm5[0]["dist_viaria"] == 104.2)
+        def _res_none3(nome, uf_hint=""):
+            return {"lat": None, "lon": None}
+        _csm6 = [{"hub": "H", "dist_viaria": 104.2, "dist_reta": 40.0, "balsa": False, "rota_real": True}]
+        m._segundo_motor_na_decisao(_csm6, "X", uf_hint="PB",
+                                    router=_rota_shorter2, resolver_coord=_res_none3)
+        check("decisão: sem coords da origem → intacto (fail-open)", _csm6[0]["dist_viaria"] == 104.2)
     except Exception as _e:
-        check("testes da métrica fluvial justa executaram (%s)" % _e, False)
+        check("testes da métrica fluvial justa + consenso de segundo motor executaram (%s)" % _e, False)
 
     print()
     print("=" * 70)
