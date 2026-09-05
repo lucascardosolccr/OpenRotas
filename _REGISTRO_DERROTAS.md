@@ -397,3 +397,12 @@ Lagoinha (SP)->São Luiz do Paraitinga 32,8 km (dr 46,7; Córrego Botucatu); Mor
 (dr 39,6; Rio Marumbi/Nhundiaquara). Estas rotas fluviais genuínas (snap ≤0,4 km, rios nomeados) não são
 testadas pelo wire atual pois seus hubs não estão no conjunto FERRY-CANDIDATO (hub rodoviário ótimo).
 Potencial: se o wire testasse fluvial em todo par plausível (geodésica cruza água), mais 3 derrotas cairiam.
+
+### 432b geracao: FLUVIAL-SWEEP INTEGRADO NO WIRE
+
+Nova funcao `_fluvial_sweep_resgate` inserida apos FLUVIAL-ROTA-DIRETA no fluxo principal (apos 45222).
+Varre TODOS os pares (origem, hub) do universo reatribuivel com geodesia cruzando agua (prova identica ao
+FERRY-CANDIDATO), testa rota fluvial real via `_fluvial_rota_real_sob_demanda` (snap largo 30km), adota
+SOMENTE se estritamente menor que melhor medição existente. Budget: max 150 pares / origem, max 100 km reta.
+Fail-open total. Captura os 3 casos do sweep (Mar De Espanha->Senador Cortes, Lagoinha->Sao Luiz do Paraitinga,
+Morretes->Antonina) e potenciais outros. validar 192 OK / 0 FALHAS; decidir 38/38; relatorio 203 linhas.
