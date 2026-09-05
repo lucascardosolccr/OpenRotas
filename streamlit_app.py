@@ -34171,6 +34171,86 @@ def _pares_fossgis_fluviais_candidatos(topk_map, resultados, coords_f=None, g=No
         return []
 
 
+def _fluvial_sweep_resgate(resultados, coords_f, g, topk_map=None, max_pares=200, max_reta_km=100.0):
+    """[FLUVIAL-SWEEP - 432b] VARREDURA FLUVIAL AMPLA: testa rota fluvial real (Dijkstra no grafo hidrográfico
+    nacional) em TODOS os pares (origem, hub) cuja geodésia cruza água, não só os hubs rodoviários ótimos.
+    - Fonte de hubs: universo reatribuível (topk_map) + todos municípios a ≤max_reta_km reta da origem
+    - Filtro: geodésia cruza água no grafo (mesma prova do FERRY-CANDIDATO)
+    - Custo honesto: fluvial + acesso (snap_o + snap_d) — idêntico a _fluvial_para_resgate
+    - Adoção: SOMENTE se estritamente menor que melhor medição existente do par
+    - Fail-open: sem grafo/coords/exceção → par ignorado (não inventa)
+    - Budget: max_pares total (evita explosão combinatória)"""
+    if not (g and g.get("C") is not None and len(g.get("C")) > 0):
+        return {}
+    try:
+        import math
+        # Build broad municipality coordinate map
+        munic_map = {}
+        for _r in _municipios_com_coordenadas():
+            _nm = _r.get("municipio", "")
+            _uf = _r.get("uf", "")
+            _lat = _r.get("lat", 0.0) or 0.0
+            _lon = _r.get("lon", 0.0) or 0.0
+            if _lat and _lon and _lat != 0.0 and _lon != 0.0:
+                munic_map[(_nm, _uf)] = (_lat, _lon)
+        # For each origin in topk_map (reatribuíveis), find ALL hubs within max_reta_km
+        _C = g.get("C") or []
+        _tree = g.get("tree")
+        _out = {}
+        _tested = 0
+        for _cli, _cands in (topk_map or {}).items():
+            if _tested >= max_pares:
+                break
+            _cli_coords = None
+            # Find origin coords
+            for (_nm, _uf), (_lat, _lon) in munic_map.items():
+                if _nm == _cli:
+                    _cli_coords = (_lat, _lon)
+                    break
+            if not _cli_coords:
+                continue
+            _la, _lo = _cli_coords
+            # Candidate hubs: all municipios within max_reta_km reta
+            _hubs = []
+            for (_nm, _uf), (_lat, _lon) in munic_map.items():
+                if _nm == _cli:
+                    continue
+                _reta = math.hypot(math.radians(_lat - _la) * 6371.0 * math.cos(math.radians((_lat + _la) / 2)),
+                                   math.radians(_lon - _lo) * 6371.0)
+                if _reta <= max_reta_km:
+                    _hubs.append((_reta, _nm, _lat, _lon))
+            _hubs.sort(key=lambda x: x[0])
+            for _reta, _hub, _hlat, _hlon in _hubs:
+                if _tested >= max_pares:
+                    break
+                # Proof: geodesic crosses water
+                _c = (_la, _lo, _hlat, _hlon)
+                try:
+                    if not _cruza_agua_entre_pontos(_la, _lo, _hlat, _hlon, g=g):
+                        continue
+                except Exception:
+                    continue
+                # Check if already have a better measurement
+                _ant = (resultados.get((_cli, _hub)) or [None])[0]
+                if _ant is not None and float(_ant) <= _reta * 0.8:
+                    continue  # already have something good
+                # Run fluvial route (reuse _fluvial_rota_real_sob_demanda with largo snap)
+                _fr = _fluvial_rota_real_sob_demanda(_la, _lo, _hlat, _hlon, snap_max_km=30.0)
+                if not _fr or _fr.get("km") is None:
+                    continue
+                _fk = float(_fr["km"])
+                _so = float(_fr.get("snap_o_km", 0) or 0)
+                _sd = float(_fr.get("snap_d_km", 0) or 0)
+                _total = _fk + _so + _sd
+                if _ant is not None and _total >= float(_ant) - 1e-9:
+                    continue  # not strictly better
+                _out[(_cli, _hub)] = (_total, 0, "Nao", "Nao", "", "fluvial-sweep")
+                _tested += 1
+        return _out
+    except Exception:
+        return {}
+
+
 def _aba_comparacao_estrategias(writer, comparacao):
     """[DUPLO-CENARIO - 217ª geração] Aba Excel 'Comparação de Estratégias' (Oficial × Puramente Viário):
     resumo, mudanças por critério e tabela dos municípios que mudaram de vencedor, com explicação automática.
@@ -45142,6 +45222,30 @@ if _secao == _SECOES[2]:   # tab_alocacao
                                 logger.error(f"[FLUVIAL-ROTA-DIRETA] Falha na rota fluvial direta: {_e_fd}")
                         except Exception as _e_fc:
                             logger.error(f"[FERRY-CANDIDATO] Falha no ampliamento do hall com ferry: {_e_fc}")
+                        # [FLUVIAL-SWEEP - 432b] VARREDURA FLUVIAL AMPLA: testa rota fluvial real em TODOS os pares
+                        # (origem, hub) com geodésia cruzando água, não só hubs rodoviários ótimos.
+                        # Maximiza a malha aquaviária sem custo de rede (sem budget FOSSGIS).
+                        try:
+                            _res_fs = _fluvial_sweep_resgate(
+                                _resultados, _coords_fr, _grafo_fluvial_memoizado(), topk_map=_topk_reatrib,
+                                max_pares=150, max_reta_km=100.0)
+                            if _res_fs:
+                                _nd_fs = 0
+                                for _kfs, _vfs in (_res_fs or {}).items():
+                                    _ant_fs = (_resultados.get(_kfs) or [None])[0]
+                                    if (_ant_fs is None) or (_vfs[0] < float(_ant_fs)):
+                                        _resultados[_kfs] = _vfs
+                                        _nd_fs += 1
+                                if _nd_fs:
+                                    try:
+                                        _topk_reatrib = _fundir_resultados_no_topk(_topk_reatrib, _resultados)
+                                    except Exception:
+                                        pass
+                                    st.session_state['alo_resultados'] = _resultados
+                                    logger.warning("[FLUVIAL-SWEEP] %d par(es) reclassificado(s) pela "
+                                                   "varredura fluvial ampla.", _nd_fs)
+                        except Exception as _e_fs:
+                            logger.error(f"[FLUVIAL-SWEEP] Falha na varredura fluvial ampla: {_e_fs}")
                         _novo_dest_mc, _mcda_mc = _reatribuir_hubs_multicriterio(
                             _topk_reatrib, _resultados, params=_params_mc,
                             dist_matriz=st.session_state.get('alo_dist_matriz'),
