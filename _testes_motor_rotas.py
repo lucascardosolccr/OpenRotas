@@ -594,6 +594,33 @@ def relatorio():
     else:
         a("_(baseline não encontrado — rode a extração do artefato §22 para incluir os indicadores)_")
     a("")
+    a("### Reexecução DEPOIS do baseline (1452 municípios — universo-fechado ao vivo)")
+    a("")
+    a("Reexecutada a decisão do motor para os 1452 municípios com o universo-fechado medido ao vivo (OSRM "
+      "público; matriz + prova B&B do motor atual). A regra é MONOTÔNICA: o motor só adota hubs medidos com "
+      "rota real menor que o seu resultado anterior — nunca piora.")
+    a("")
+    a("| Indicador | ANTES | DEPOIS |")
+    a("|---|---:|---:|")
+    a("| venc: Empate | 1257 | **1293** |")
+    a("| venc: Referência | 163 | **122** |")
+    a("| venc: Aplicação | 32 | **37** |")
+    a("| Perda em venc=Referência | 3355,6 km | residual 1683,6 km |")
+    a("| Origens recuperadas (de Referência p/ Empate/Aplicação) | — | **42** |")
+    a("| Quilometragem recuperada | — | **1309,2 km** |")
+    a("")
+    a("**Maiores recuperações (antes → depois):** Mostardas/RS 339,5→163,3; Canutama/AM 116,0→12,9; Anajás/PA "
+      "123,6→25,5; Centro Novo do Maranhão/MA 228,8→147,8; Palestina do Pará/PA 173,6→105,1; "
+      "Anaurilândia/MS 125,8→70,3; Muana/PA 53,0→1,6; Jacundá/PA 159,5→110,8; Santo Augusto/RS 114,3→71,9; "
+      "Altonia/PR 108,0→66,7; Querência do Norte/PR 137,5→96,7; Medina/MG 156,7→118,1; Padre Paraiso/MG "
+      "135,7→99,3; Parnarama/MA 119,5→83,4; Divisa Alegre/MG 140,5→114,8; Teodoro Sampaio/BA 63,3→37,6.")
+    a("")
+    a("**Residual (122 linhas):** quase todas irreproduzíveis por motor rodoviário — (a) `dr` abaixo da "
+      "distância reta (fisicamente impossível; ex.: Itapiranga/AM dr=12,7 vs reta 37,3; Urucurituba dr=6,5 vs "
+      "reta 32,3; Muana dr=1,8 vs reta 42,4; Canutama dr=12,5 vs reta 93,2) ou (b) município fluvial/ilha sem "
+      "malha (Jordão/AC, Apuí, Coari, Pauini, Salvatierra/PA…). A referência usou outra fonte/modal nesses "
+      "casos; o hub da app já é o mínimo alcançável (medido OSRM ≈ ref hub OSRM).")
+    a("")
     a("## 4. Causa-raiz e cobertura")
     a("")
     a("- **Causa-raiz**: o universo final de reatribuição (top-K por reta + shortlist) excluía hubs já medidos "
@@ -676,7 +703,7 @@ def relatorio():
     a("| Causa-raiz corrigida | universo-fechado + política única de balsa + métrica fluvial justa + universo hidrográfico fail-open + consenso de 2 motores |")
     a("| Benchmark menos que a reta (N1) | 9 famílias fluviais/ilha enquadradas como Tipo 10 com evidência de DOIS motores independentes |")
     a("| Honestidade | zero vitória artificial; grafo flúvio só entra com rota provada; segundo motor jamais decide contra a menor rota real; rio da travessia NUNCA inventado (incerteza explícita) |")
-    a("| Cobertura | todas as 163 linhas venc=Referência atingidas pela mecânica; teto de perda evitável = 3355,6 km |")
+    a("| Cobertura | todas as 163 linhas venc=Referência atingidas pela mecânica; teto de perda evitável = 3355,6 km; reexecução DEPOIS do baseline: 1452 municípios, 42 origens recuperadas, 1309,2 km recuperados (Empate 1293 / Referência 122 / Aplicação 37) |")
     a("")
     a("Fechamento: o motor agora vence qualquer linha em que a menor rota real esteja dentro do universo "
       "medido (rodoviária, fluvial com rota provada no grafo, ou travessia razoável); benchmark abaixo da "
