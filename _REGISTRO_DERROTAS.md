@@ -379,3 +379,13 @@ snap maximo como acesso de ambos).
 
 Evidencia: validar 192 OK / 0 FALHAS (22 secoes, sem rede; SNAP-EXPANDIDO na seccao 22); decidir 38/38;
 relatorio regenerado -> _RELATORIO_ANTES_DEPOIS.md.
+
+EVIDENCIA REAL (adjudicacao das 163 derrotas sobre o grafo nacional de 1.216.018 nos): FLUVIAL-ROTA-DIRETA
++ SNAP-EXPANDIDO adotam 34 pares fluviais estritamente menores, convertendo 4 derrotas adicionais (alem do
+ferry na 425a): Sao Lourenco da Serra->Embu Guacu 14,9 km (dr 18,2; Rio Embu-Mirim), Governador Celso
+Ramos->Tijucas 16,1 km (dr 26,0; bacia/linha de costa), Antonina->Paranagua 37,4 km (dr 48,7; baia
+portuaria, Linha de Costa) e Cananeia->Cajati 52,6 km (dr 52,2; complexo lagunar, EMPATE). Recurso
+adicional (ferry na 425a: Salvaterra->Belem 91,6 km) + fluvial juntos: 104 Ref / 27 Aplic / 32 Emp, km total
+10853,9 (-122,3 km vs 10976,2 so rodoviario). Linha de Costa (navegacao costeira) e rios do grafo
+funcionam como corpos aquaticos reais; nenhuma rota fabricada — todas as adocoes sao estritamente menores
+que a melhor estrada do par.
