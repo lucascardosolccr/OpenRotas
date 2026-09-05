@@ -210,3 +210,12 @@ Tabela verdade das 163 derrotas do baseline com a metrica de ferry:
 
 Evidencia: validar 168 OK / 0 FALHAS (22 secoes, sem rede); decidir 38/38;
 relatorio regenerado -> _RELATORIO_ANTES_DEPOIS.md (inclui a tabela ferry acima).
+
+### Alcance do resgate sobre as 69 inalteradas (analise apos o commit 030f97f)
+
+Das 69 inalteradas, 57 tem V/R do proprio vencedor >= 1,2 (1 na zona de suspeicao >=2,6 e 56 entre
+1,2 e 2,6) -> dentro do alcance do resgate decisorio (teto 300 cruces/sessao, max 80 pares/chunk).
+10 estao abaixo de 1,2 (no piso fisico da reta; sem ganho possivel) e 2 sem vr_app. Fluviais de fato
+(Curralinho/PA, Prainha/PA, Apui/AM, Santana/BA, Cachoeira do Arari/PA, Aveiro/PA) sao os candidatos
+reais a encurtamento via FOSSGIS; as demais (V/R 1,2-1,6) sao circuidade rodoviaria normal e o resgate
+e conservador (adota apenas a MENOR distancia honesta -> nunca regride, nunca infla).
