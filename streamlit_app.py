@@ -27828,6 +27828,21 @@ def _resgate_ferry_deve_investigar(km_osrm, km_reta, tem_balsa):
     return _vr >= _VALHALLA_INVESTIGAR_VR
 
 
+def _resgate_ferry_cruza_agua(lat_o, lon_o, lat_d, lon_d, g=None):
+    """[FERRY-BUDGET - 424ª geração] True quando há EVIDÊNCIA de travessia de água (balsa/geodésia cruzando
+    corpo d'água no grafo hidrográfico) — a condição para o AUTO-ENGAJAMENTO do FOSSGIS gastar budget do
+    orçamento. Desvios rodoviários puros (V/R alto em serra, sem rio) não têm ferry a ganhar: poupa o cruce
+    (fair-use FOSSGIS ≤1 req/s). FAIL-OPEN em TUDO: sem grafo/coordenadas/exceção → True (mantém o
+    comportamento da 421ª; nunca tira cobertura). Determinística, sem rede."""
+    try:
+        _g = g if g is not None else _grafo_fluvial_memoizado()
+        if not (_g and (_g.get("C") is not None) and len(_g.get("C")) > 0):
+            return True
+        return _cruza_agua_entre_pontos(lat_o, lon_o, lat_d, lon_d, g=_g)
+    except Exception:
+        return True
+
+
 _TRAVESSIA_AGUA_SNAP_KM = 4.0   # [FLUVIAL-PLAUS - 422ª geração] raio p/ considerar que a geodésia do par CRUZA água
 _grafo_fluvial_memo = [None]    # [FLUVIAL-PLAUS] memo do grafo hidrográfico (uma carga por processo)
 
@@ -31229,8 +31244,13 @@ def calcular_pipeline_logistico(origem, destino, perfil_rota="shortest"):
             except Exception:
                 _vk0 = None
             _vb0 = bool(res_osrm and len(res_osrm) > 2 and str(res_osrm[2]).upper().startswith("S"))
+            # [FERRY-BUDGET - 424ª geração] o auto-engajamento só GASTA o orçamento quando há evidência de
+            # travessia de água no grafo hidrográfico (`_resgate_ferry_cruza_agua`); desvio rodoviário puro
+            # (serra, sem rio) fica de fora do cruce (fair-use do FOSSGIS). Fail-open: sem grafo → True →
+            # comportamento da 421ª intacto.
             if (_ler_flag_runtime('usar_osrm2')
                     or (_vk0 and _resgate_ferry_deve_investigar(_vk0, dist_linha_reta, _vb0)
+                        and _resgate_ferry_cruza_agua(lat_o, lon_o, lat_d, lon_d)
                         and _resgate_ferry_permite())
                     or _fossgis_forca_take()):
                 _res_osrm2 = _chamar_motor_cb('OSRM_FOSSGIS', API_OSRM_FOSSGIS_Routing, lat_o, lon_o, lat_d, lon_d)
@@ -34026,7 +34046,9 @@ def _pares_fossgis_fluviais_candidatos(topk_map, resultados, coords_f=None, g=No
                 else:
                     _vago.append((_reta, (_cli, _hub)))
         _vip.sort(key=lambda x: -x[0])
-        _vago.sort(key=lambda x: -x[0])
+        # [V423] entre os sem-rota, os de MENOR reta sao os candidatos arriscados-desconhecidos (se a rota
+        # existir e for curta, VENCEM o vencedor atual); ordem crescente de reta concentra o budget neles.
+        _vago.sort(key=lambda x: x[0])
         _rank = [(0.0, _p) for _, _p in _vip] + [(1.0, _p) for _, _p in _vago]
         _out = []
         _teto = max(0, int(max_pares))

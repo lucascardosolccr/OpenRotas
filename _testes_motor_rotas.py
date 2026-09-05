@@ -664,13 +664,14 @@ def relatorio():
     a("")
     a("## 5. Validação")
     a("")
-    a("- `py _testes_motor_rotas.py validar` → 178 invariantes (22 seções, sem rede: banda exata, "
+    a("- `py _testes_motor_rotas.py validar` → 181 invariantes (22 seções, sem rede: banda exata, "
       "reflexividade, universo-fechado, não regressão, fallback OSRM→FOSSGIS, Valhalla/divergência+"
       "investigação, memória geográfica, Índice de Confiança, roteador fluvial offline, eventos cronológicos "
       "de API, geometria anômala, sensores R4 de circuidade em bandas e centróides, métrica fluvial justa na "
       "decisão, universo hidrográfico, consenso de segundo motor, resgate-FERRIES de travessia fluvial, "
       "FLUVIAL-PLAUS (filtro hidrográfico que concentra o budget no par com travessia de água plausível) e "
-      "FERRY-CANDIDATO (medição ferry-aware no HALL da decisão, pré-reeleição, com priorização por folga).")
+      "FERRY-CANDIDATO (medição ferry-aware no HALL da decisão, pré-reeleição, com priorização por folga) e "
+      "FERRY-BUDGET (auto-engajamento do FOSSGIS só com evidência de travessia de água).")
     a("- `py _testes_motor_rotas.py decidir` → todos os casos passam nas propriedades da missão.")
     a("- `py -X utf8 -m py_compile streamlit_app.py _testes_motor_rotas.py` → OK.")
     a("- Balsa real conferida por geometria OSRM (steps `mode==ferry`) em ambos os servidores (4,12 / 39,33 / "
@@ -727,7 +728,7 @@ def relatorio():
     a("")
     a("| Check | Resultado |")
     a("|---|---|")
-    a("| `validar` (22 seções, sem rede) | **178 OK / 0 FALHAS** |")
+    a("| `validar` (22 seções, sem rede) | **181 OK / 0 FALHAS** |")
     a("| `decidir` (38 casos: 13 missão + 3 favoráveis §11 + 3 derrotas §22 + 19 famílias §24) | **38/38 nas propriedades** |")
     a("| Causa-raiz corrigida | universo-fechado + política única de balsa + métrica fluvial justa + universo hidrográfico fail-open + consenso de 2 motores + resgate-FERRIES (FOSSGIS com ferry) |")
     a("| Benchmark menos que a reta (N1) | 9 famílias fluviais/ilha enquadradas como Tipo 10 com evidência de DOIS motores independentes |")
@@ -1457,21 +1458,30 @@ def validar():
     check("FLUVIAL-PLAUS: filtro defensivo (None → pares intactos)",
           m._filtrar_pares_resgate_fluvial(None, _res_pl, _coords_pl, g=_g_pl) is None)
     _topk_fc = {"SobreAgua": [(10.0, "HubB")], "Vagas": [(7.0, "HubX")],
-                "Longe": [(30.0, "HubB")], "BalsaBo": [(20.0, "HubB")]}
+                "Perto": [(3.0, "HubP")], "Longe": [(30.0, "HubB")],
+                "BalsaBo": [(20.0, "HubB")]}
     _res_fc = {("SobreAgua", "HubB"): (25.0, 50, "Não", "Não", "", "osrm"),
                ("Longe", "HubB"): (40.0, 50, "Não", "Não", "", "osrm"),
                ("BalsaBo", "HubB"): (30.0, 60, "Não", "Sim", "", "osrm")}
     _coords_fc = {("SobreAgua", "HubB"): (-2.0, -55.0, -2.5, -55.0),
-                  ("Longe", "HubB"): (-5.0, -57.0, -5.5, -57.5)}
+                  ("Longe", "HubB"): (-5.0, -57.0, -5.5, -57.5),
+                  ("Perto", "HubP"): (-2.0, -55.0, -2.2, -55.0)}
     _fc_out = m._pares_fossgis_fluviais_candidatos(_topk_fc, _res_fc, _coords_fc, g=_g_pl)
-    check("FERRY-CANDIDATO: hall prioriza par medido com folga viária (SobreAgua 15, BalsaBo 10) e inclui sem-rota; corta só longe",
-          _fc_out == [("SobreAgua", "HubB"), ("BalsaBo", "HubB"), ("Vagas", "HubX")])
+    check("FERRY-CANDIDATO: hall prioriza par medido com folga viária (SobreAgua 15, BalsaBo 10) e sem-rota por MENOR reta (Perto 3,0 antes de Vagas 7,0); corta só longe",
+          _fc_out == [("SobreAgua", "HubB"), ("BalsaBo", "HubB"), ("Perto", "HubP"), ("Vagas", "HubX")])
     _fc_out2 = m._pares_fossgis_fluviais_candidatos(_topk_fc, _res_fc, _coords_fc, g=None)
     check("FERRY-CANDIDATO: sem grafo → SÓ balsa manifesta entra (sem evidência de água não gasta budget)",
           _fc_out2 == [("BalsaBo", "HubB")])
     check("FERRY-CANDIDATO: max_pares respeitado e defensivo (None → [])",
           len(m._pares_fossgis_fluviais_candidatos(_topk_fc, _res_fc, _coords_fc, g=_g_pl, max_pares=1)) == 1
           and m._pares_fossgis_fluviais_candidatos(None, _res_fc, _coords_fc, g=_g_pl) == [])
+    check("FERRY-BUDGET: auto-engajamento cruza água com grafo (rio sintético → True)",
+          m._resgate_ferry_cruza_agua(-2.0, -55.0, -2.5, -55.0, g=_g_pl) is True)
+    check("FERRY-BUDGET: desvio rodoviário puro (longe de água) NÃO gasta budget (False)",
+          m._resgate_ferry_cruza_agua(-5.0, -57.0, -5.5, -57.5, g=_g_pl) is False)
+    check("FERRY-BUDGET: sem grafo/coordenadas → fail-open True (cobertura da 421ª intacta)",
+          m._resgate_ferry_cruza_agua(-2.0, -55.0, -2.5, -55.0, g={}) is True
+          and m._resgate_ferry_cruza_agua(None, None, -2.5, -55.0, g=_g_pl) is True)
     with m._resgate_ferry_lock:
         m._resgate_ferry_contador[0] = m._RESGATE_FERRY_BUDGET
         m._resgate_fossgis_forca[0] = 1

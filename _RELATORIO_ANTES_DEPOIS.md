@@ -1,6 +1,6 @@
 # RELATÓRIO ANTES × DEPOIS — Motor de Rotas (Prompt 1.1.1, §20/§25)
 
-Gerado em 2026-09-05 08:20 por `py _testes_motor_rotas.py relatorio` — mesma fila de decisões do `decidir`.
+Gerado em 2026-09-05 08:27 por `py _testes_motor_rotas.py relatorio` — mesma fila de decisões do `decidir`.
 
 ## 1. Funções alteradas (streamlit_app.py)
 
@@ -156,7 +156,7 @@ Reexecutada a decisão do motor para os 1452 municípios com o universo-fechado 
 
 ## 5. Validação
 
-- `py _testes_motor_rotas.py validar` → 178 invariantes (22 seções, sem rede: banda exata, reflexividade, universo-fechado, não regressão, fallback OSRM→FOSSGIS, Valhalla/divergência+investigação, memória geográfica, Índice de Confiança, roteador fluvial offline, eventos cronológicos de API, geometria anômala, sensores R4 de circuidade em bandas e centróides, métrica fluvial justa na decisão, universo hidrográfico, consenso de segundo motor, resgate-FERRIES de travessia fluvial, FLUVIAL-PLAUS (filtro hidrográfico que concentra o budget no par com travessia de água plausível) e FERRY-CANDIDATO (medição ferry-aware no HALL da decisão, pré-reeleição, com priorização por folga).
+- `py _testes_motor_rotas.py validar` → 181 invariantes (22 seções, sem rede: banda exata, reflexividade, universo-fechado, não regressão, fallback OSRM→FOSSGIS, Valhalla/divergência+investigação, memória geográfica, Índice de Confiança, roteador fluvial offline, eventos cronológicos de API, geometria anômala, sensores R4 de circuidade em bandas e centróides, métrica fluvial justa na decisão, universo hidrográfico, consenso de segundo motor, resgate-FERRIES de travessia fluvial, FLUVIAL-PLAUS (filtro hidrográfico que concentra o budget no par com travessia de água plausível) e FERRY-CANDIDATO (medição ferry-aware no HALL da decisão, pré-reeleição, com priorização por folga) e FERRY-BUDGET (auto-engajamento do FOSSGIS só com evidência de travessia de água).
 - `py _testes_motor_rotas.py decidir` → todos os casos passam nas propriedades da missão.
 - `py -X utf8 -m py_compile streamlit_app.py _testes_motor_rotas.py` → OK.
 - Balsa real conferida por geometria OSRM (steps `mode==ferry`) em ambos os servidores (4,12 / 39,33 / 6,82 km ferry=True) — a correção vale fim-a-fim no pipeline do app.
@@ -192,7 +192,7 @@ Para cada inspetor (hub da Referência), os DOIS motores independentes (OSRM = p
 
 | Check | Resultado |
 |---|---|
-| `validar` (22 seções, sem rede) | **178 OK / 0 FALHAS** |
+| `validar` (22 seções, sem rede) | **181 OK / 0 FALHAS** |
 | `decidir` (38 casos: 13 missão + 3 favoráveis §11 + 3 derrotas §22 + 19 famílias §24) | **38/38 nas propriedades** |
 | Causa-raiz corrigida | universo-fechado + política única de balsa + métrica fluvial justa + universo hidrográfico fail-open + consenso de 2 motores + resgate-FERRIES (FOSSGIS com ferry) |
 | Benchmark menos que a reta (N1) | 9 famílias fluviais/ilha enquadradas como Tipo 10 com evidência de DOIS motores independentes |

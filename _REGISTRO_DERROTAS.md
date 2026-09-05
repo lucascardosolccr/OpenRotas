@@ -273,3 +273,18 @@ reeleger um polo que so e curto por agua — recuperacao no padrao UNIVERSO-FECH
 
 Evidencia: validar 178 OK / 0 FALHAS (22 secoes, sem rede; secao 22 com FERRY-CANDIDATO);
 decidir 38/38; relatorio regenerado -> _RELATORIO_ANTES_DEPOIS.md.
+
+### 424a geracao: o auto-engajamento do FOSSGIS so gasta budget com evidencia de agua (FERRY-BUDGET)
+
+O auto-engajamento da zona de suspeita (V/R alto ou balsa) consumia 1 cruce do orcamento para TODO par
+suspeito, inclusive desvios rodoviarios puros (serra, sem rio) onde o FOSSGIS nao tem ferry a ganhar.
+Correcao implementada [FERRY-BUDGET]:
+  `_resgate_ferry_cruza_agua(lat_o, lon_o, lat_d, lon_d, g)`: True quando ha EVIDENCIA de travessia de
+  agua no grafo hidrografico (mesma `_cruza_agua_entre_pontos`, raio 4 km, cKDTree). No gate do consenso,
+  a condicao entra ANTES de `_resgate_ferry_permite()` consumir budget (evita gastar cruce e depois
+  barrar). FAIL-OPEN em tudo: sem grafo/coordenadas/excecao -> True (comportamento da 421a intacto;
+  nunca tira cobertura). Entre os sem-rota do hall (FERRY-CANDIDATO), a ordem agora e por MENOR reta
+  (candidato arriscado-desconhecido proximo pode vencer o vencedor atual).
+
+Evidencia: validar 181 OK / 0 FALHAS (22 secoes, sem rede; FERRY-BUDGET na seccao 22);
+decidir 38/38; relatorio regenerado -> _RELATORIO_ANTES_DEPOIS.md.
