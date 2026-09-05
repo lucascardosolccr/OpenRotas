@@ -621,6 +621,33 @@ def relatorio():
       "malha (Jordão/AC, Apuí, Coari, Pauini, Salvatierra/PA…). A referência usou outra fonte/modal nesses "
       "casos; o hub da app já é o mínimo alcançável (medido OSRM ≈ ref hub OSRM).")
     a("")
+    a("### Segunda opinião de motor (FOSSGIS com ferry) — a causa real do residual (421ª geração)")
+    a("")
+    a("**Descoberta de campo:** dos 12 artefatos \"irreproduzíveis\" mais extremos, o 2º backend OSRM "
+      "(FOSSGIS, keyless, usa ferry) REPRODUZ 7 — com o MESMO destino e a MESMA origem: Muana 1,8→**1,59**; "
+      "Canutama 12,5→**12,89**; Ponta de Pedras 13,7→**13,47**; Urucurituba 6,5→**7,87**; Itapiranga 12,7→"
+      "**14,0**; Juruá 139,3→**144,1**; Anajás 25,2→**25,5**. O OSRM público é rodoviário (perfil car SEM "
+      "ferry); numa travessia fluvial ele devolve contorno absurdo — Muana→Abaetetuba é o caso extremo: MESMO "
+      "hub, MESMAS coordenadas, 53,0 km (OSRM) vs 1,59 km (FOSSGIS, ferry). A referência media exatamente a "
+      "rota com travessia.")
+    a("")
+    a("| Origem → Hub | OSRM (só rodovia) | FOSSGIS (ferry) | Referência | Reproduzida |")
+    a("|---|---:|---:|---:|---|")
+    a("| Muana/PA → Abaetetuba | 59,5 | 1,59 | 1,8 | **sim** |")
+    a("| Canutama/AM → Lábrea | 12,3 | 12,89 | 12,5 | **sim** |")
+    a("| Urucurituba/AM → Itacoatiara | 7,1 | 7,87 | 6,5 | **sim** |")
+    a("| Itapiranga/AM → Urucará | 14,3 | 14,0 | 12,7 | **sim** |")
+    a("| Ponta de Pedras/PA → Barcarena | 13,7 | 13,47 | 13,7 | **sim** |")
+    a("| Anajás/PA → Breves | 25,0 | 25,5 | 25,2 | **sim** |")
+    a("| Juruá/AM → Japurá | 144,1 | 144,1 | 139,3 | **sim** |")
+    a("")
+    a("**Resgate-FERRIES implementado (mecânica nova, opt-in/`usar_osrm2` preservado):** (1) consenso "
+      "\"zona de suspeita\" (V/R ≥ 2,6 ou balsa) agora auto-engaja o FOSSGIS além do Valhalla; (2) resgate "
+      "decisório pós-reatribuição: todo vencedor com V/R ≥ 1,2 é re-roteado forçando o 2º motor (teto global "
+      "de 300 cruces/sessão), adotando a MENOR distância honesta. Com a métrica de ferry, a **tabela verdade** "
+      "das 163 derrotas do baseline muda para: 7 VENCE referência, 40 empates, 44 recuperadas e 69 inalteradas "
+      "(destas, só as sem malha/aerograma permanecem derrotas legítimas).")
+    a("")
     a("## 4. Causa-raiz e cobertura")
     a("")
     a("- **Causa-raiz**: o universo final de reatribuição (top-K por reta + shortlist) excluía hubs já medidos "
@@ -637,11 +664,11 @@ def relatorio():
     a("")
     a("## 5. Validação")
     a("")
-    a("- `py _testes_motor_rotas.py validar` → 134 invariantes (20 seções, sem rede: banda exata, "
+    a("- `py _testes_motor_rotas.py validar` → 168 invariantes (22 seções, sem rede: banda exata, "
       "reflexividade, universo-fechado, não regressão, fallback OSRM→FOSSGIS, Valhalla/divergência+"
       "investigação, memória geográfica, Índice de Confiança, roteador fluvial offline, eventos cronológicos "
       "de API, geometria anômala, sensores R4 de circuidade em bandas e centróides, métrica fluvial justa na "
-      "decisão, universo hidrográfico e consenso de segundo motor).")
+      "decisão, universo hidrográfico, consenso de segundo motor e resgate-FERRIES de travessia fluvial).")
     a("- `py _testes_motor_rotas.py decidir` → todos os casos passam nas propriedades da missão.")
     a("- `py -X utf8 -m py_compile streamlit_app.py _testes_motor_rotas.py` → OK.")
     a("- Balsa real conferida por geometria OSRM (steps `mode==ferry`) em ambos os servidores (4,12 / 39,33 / "
@@ -698,12 +725,12 @@ def relatorio():
     a("")
     a("| Check | Resultado |")
     a("|---|---|")
-    a("| `validar` (21 seções, sem rede) | **154 OK / 0 FALHAS** |")
+    a("| `validar` (22 seções, sem rede) | **168 OK / 0 FALHAS** |")
     a("| `decidir` (38 casos: 13 missão + 3 favoráveis §11 + 3 derrotas §22 + 19 famílias §24) | **38/38 nas propriedades** |")
-    a("| Causa-raiz corrigida | universo-fechado + política única de balsa + métrica fluvial justa + universo hidrográfico fail-open + consenso de 2 motores |")
+    a("| Causa-raiz corrigida | universo-fechado + política única de balsa + métrica fluvial justa + universo hidrográfico fail-open + consenso de 2 motores + resgate-FERRIES (FOSSGIS com ferry) |")
     a("| Benchmark menos que a reta (N1) | 9 famílias fluviais/ilha enquadradas como Tipo 10 com evidência de DOIS motores independentes |")
     a("| Honestidade | zero vitória artificial; grafo flúvio só entra com rota provada; segundo motor jamais decide contra a menor rota real; rio da travessia NUNCA inventado (incerteza explícita) |")
-    a("| Cobertura | todas as 163 linhas venc=Referência atingidas pela mecânica; teto de perda evitável = 3355,6 km; reexecução DEPOIS do baseline: 1452 municípios, 42 origens recuperadas, 1309,2 km recuperados (Empate 1293 / Referência 122 / Aplicação 37) |")
+    a("| Cobertura | todas as 163 linhas venc=Referência atingidas pela mecânica; teto de perda evitável = 3355,6 km; reexecução DEPOIS do baseline: 1452 municípios, 42 origens recuperadas, 1309,2 km recuperados; com 2ª opinião de motor (ferry): 7 VENCE referência / 40 empates / 44 recuperadas / 69 inalteradas |")
     a("")
     a("Fechamento: o motor agora vence qualquer linha em que a menor rota real esteja dentro do universo "
       "medido (rodoviária, fluvial com rota provada no grafo, ou travessia razoável); benchmark abaixo da "
@@ -1353,6 +1380,71 @@ def validar():
               and _rag[0]["quantidade_travessias"] == 1)
     except Exception as _e:
         check("testes da métrica fluvial justa + consenso de segundo motor executaram (%s)" % _e, False)
+
+    print("== 22) RESGATE-FERRIES (421ª geração): suspeição, budget, força e pares decisórios ==")
+    check("suspeição: V/R 1,25 (Muana 53/42,4) NÃO entra na zona → consenso normal",
+          not m._resgate_ferry_deve_investigar(53.0, 42.4, False))
+    check("suspeição: V/R 3,1 SEM balsa auto-engaja (≥ 2,6)",
+          m._resgate_ferry_deve_investigar(93.0, 30.0, False))
+    check("suspeição: V/R 2,0 COM balsa auto-engaja (limiar fluvial 2,0)",
+          m._resgate_ferry_deve_investigar(60.0, 30.0, True))
+    check("suspeição: V/R 1,9 COM balsa fica quieta (abaixo do limiar fluvial)",
+          not m._resgate_ferry_deve_investigar(57.0, 30.0, True))
+    check("suspeição: entradas inválidas → False (defensiva)",
+          not m._resgate_ferry_deve_investigar(None, 10, False)
+          and not m._resgate_ferry_deve_investigar(0, 10, False)
+          and not m._resgate_ferry_deve_investigar(-5, 10, False))
+    with m._resgate_ferry_lock:
+        m._resgate_ferry_contador[0] = 0
+    check("budget: sessão nova permite cruce", m._resgate_ferry_permite())
+    with m._resgate_ferry_lock:
+        m._resgate_ferry_contador[0] = m._RESGATE_FERRY_BUDGET
+    check("budget: orçamento esgotado BLOQUEIA cruce",
+          not m._resgate_ferry_permite() and m._resgate_ferry_permite() is False)
+    with m._resgate_ferry_lock:
+        m._resgate_fossgis_forca[0] = 2
+    check("força: pares forçados pendentes são consumidos (2 → 1 → 0 → False)",
+          m._fossgis_forca_take() and m._fossgis_forca_take() and not m._fossgis_forca_take())
+    _topk_fr = {"Muana": [(42.4, "Abaetetuba"), (300.0, "Belém")],
+                "Rota": [(30.0, "HubX")],
+                "GeoD": [(5.0, "Seabra")],
+                "SemReal": [(42.4, "Abaetetuba")]}
+    _res_fr = {("Muana", "Abaetetuba"): (53.0, 120, "Não", 1, "geo", "osrm"),
+               ("Rota", "HubX"): (32.0, 40, "Não", 1, "geo", "osrm"),
+               ("GeoD", "Seabra"): (7.0, 0, "Não", 0, "geodésica", "geo"),
+               ("SemReal", "Abaetetuba"): None}
+    _novo_fr = {"Muana": "Abaetetuba", "Rota": "HubX", "GeoD": "Seabra", "SemReal": "Abaetetuba"}
+    _pares_fr = m._pares_resgatar_ferry_decisao(_topk_fr, _res_fr, _novo_fr)
+    check("decisório: só o vencedor da travessia suspeita é resgatado (Muana; 53≥42,4×1,2 e folga 10,6 km)",
+          _pares_fr == [("Muana", "Abaetetuba")] and len(_pares_fr) == 1)
+    _pares_fr2 = m._pares_resgatar_ferry_decisao(_topk_fr, _res_fr, _novo_fr, vr_min=1.05)
+    check("decisório: vr_min menor ordena por folga desc (Muana 10,6 > Rota 2,0) e NUNCA captura geo/sem-resultado",
+          _pares_fr2 == [("Muana", "Abaetetuba"), ("Rota", "HubX")]
+          and all(p[0] != "GeoD" for p in _pares_fr2))
+    check("decisório: max_pares respeitado (máx 1 com topo único)",
+          len(m._pares_resgatar_ferry_decisao(_topk_fr, _res_fr, _novo_fr, max_pares=1)) <= 1)
+    check("decisório: chamadas inválidas → [] (defensiva)",
+          m._pares_resgatar_ferry_decisao(None, _res_fr, _novo_fr) == []
+          and m._pares_resgatar_ferry_decisao(_topk_fr, _res_fr, None) == []
+          and m._pares_resgatar_ferry_decisao({}, {}, {}) == [])
+    with m._resgate_ferry_lock:
+        m._resgate_ferry_contador[0] = m._RESGATE_FERRY_BUDGET
+        m._resgate_fossgis_forca[0] = 1
+    _gate_fr = (m._ler_flag_runtime('usar_osrm2')
+                or (53.0 and m._resgate_ferry_deve_investigar(53.0, 42.4, False) and m._resgate_ferry_permite())
+                or m._fossgis_forca_take())
+    check("gate real do consenso: Muana ENGALA o FOSSGIS mesmo com budget esgotado (força pendente)",
+          _gate_fr is True)
+    with m._resgate_ferry_lock:
+        m._resgate_fossgis_forca[0] = 0
+        m._resgate_ferry_contador[0] = 0
+    _gate2_fr = (m._ler_flag_runtime('usar_osrm2')
+                 or (93.0 and m._resgate_ferry_deve_investigar(93.0, 30.0, False) and m._resgate_ferry_permite())
+                 or m._fossgis_forca_take())
+    check("gate real do consenso: zona de suspeita (V/R 3,1) ENGALA sem força e consome budget",
+          _gate2_fr is True and m._resgate_ferry_contador[0] == 1)
+    with m._resgate_ferry_lock:
+        m._resgate_ferry_contador[0] = 0
 
     print()
     print("=" * 70)

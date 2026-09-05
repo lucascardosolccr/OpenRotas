@@ -27779,6 +27779,55 @@ def API_OSRM_Table(lat_o, lon_o, destinos_coords, _timeout=8, _bloco=90):
         return {}
 
 
+# [RESGATE-FERRIES - 421ª geração] Causa-raiz das derrotas fluviais: o OSRM público é rodoviário (perfil car
+# SEM ferry) e numa travessia fluvial (rio/baía) devolve desvio absurdo, enquanto o FOSSGIS (2º backend OSRM
+# keyless, routing.openstreetmap.de/routed-car) USA ferry e reproduz a rota real mais curta. Medição em campo:
+# 7 de 12 artefatos "irreproduzíveis" foram REPRODUZIDOS pelo FOSSGIS (Muana 1,8→1,59; Canutama 12,5→12,89; P.
+# de Pedras 13,7→13,47; Urucurituba 6,5→7,87; Itapiranga 12,7→14,0; Jurua 139,3→144,1; Anajás 25,2→25,5).
+# Esta mecanica auto-engaja o FOSSGIS no CONSENSO exatamente na ZONA DE SUSPEITA (V/R alto ou balsa — a MESMA
+# regra que já auto-engaja o Valhalla), com TETO próprio por processo (fair-use do FOSSGIS ≤1 req/s).
+_RESGATE_FERRY_VR_LIMITE = 3.0          # viária OSRM > 3× reta → suspeito de rota rodoviária sem ferry
+_RESGATE_FERRY_BUDGET = 300             # ≤300 cruces FOSSGIS por sessão (1 req/s cada, serializado)
+_resgate_ferry_lock = threading.Lock()
+_resgate_ferry_contador = [0]
+_resgate_fossgis_forca = [0]   # pares do RESGATE-DECISÓRIO ainda pendentes de cruce FOSSGIS forçado
+
+
+def _resgate_ferry_permite():
+    """PURA: consome 1 unidade do orçamento global de cruce de motores (thread-safe)."""
+    with _resgate_ferry_lock:
+        if _resgate_ferry_contador[0] >= _RESGATE_FERRY_BUDGET:
+            return False
+        _resgate_ferry_contador[0] += 1
+        return True
+
+
+def _fossgis_forca_take():
+    """PURA: consome 1 par do resgate decisório forçado (thread-safe). Licensee: enquanto houver pares
+    forçados pendentes, o consenso consulta o FOSSGIS SEM depender da zona de suspeita — exatamente os
+    casos de travessia fluvial que o OSRM rodoviário ignora (Muana)."""
+    with _resgate_ferry_lock:
+        if _resgate_fossgis_forca[0] > 0:
+            _resgate_fossgis_forca[0] -= 1
+            return True
+        return False
+
+
+def _resgate_ferry_deve_investigar(km_osrm, km_reta, tem_balsa):
+    """PURA: True quando a rota do motor primário está na zona de suspeita (V/R alto ou balsa) — a MESMA
+    regra de auto-engajamento profundo do Valhalla. Sem estado, sem rede; entradas inválidas → False."""
+    try:
+        _k = float(km_osrm); _r = float(km_reta)
+    except (TypeError, ValueError):
+        return False
+    if not (_k > 0 and _r > 0):
+        return False
+    _vr = _k / _r
+    if tem_balsa:
+        return _vr >= _VALHALLA_INVESTIGAR_VR_BALSA
+    return _vr >= _VALHALLA_INVESTIGAR_VR
+
+
 def API_OSRM_Routing(lat_o, lon_o, lat_d, lon_d):
     start_t = time.time()
     # [PERF-OSRM-CACHE - 390ª geração] Cache em disco (cache_rotas) da rota real: coordenadas idênticas
@@ -31081,7 +31130,22 @@ def calcular_pipeline_logistico(origem, destino, perfil_rota="shortest"):
         # contendor é exatamente o OSRM primário (não-regressão). Rate-limit ≤1 req/s é interno à função.
         _res_osrm2 = None
         try:
-            if _ler_flag_runtime('usar_osrm2'):
+            # [RESGATE-FERRIES - 421ª geração] Auto-engaja o FOSSGIS (2º OSRM, keyless, usa ferry) na ZONA DE
+            # SUSPEITA — V/R alto ou balsa — a MESMA regra que já auto-engaja o Valhalla logo abaixo. É a correção
+            # empírica das derrotas fluviais: o OSRM público (rodoviário, sem ferry) entrega contorno absurdo
+            # numa travessia de rio enquanto o FOSSGIS reproduz a rota real (Muana 59,5→1,59 km). Teto próprio
+            # por sessão (fair-use ≤1 req/s). Opt-in 'usar_osrm2' continua engajando SEMPRE.
+            _vk0 = None
+            try:
+                if res_osrm and res_osrm[0]:
+                    _vk0 = float(res_osrm[0])
+            except Exception:
+                _vk0 = None
+            _vb0 = bool(res_osrm and len(res_osrm) > 2 and str(res_osrm[2]).upper().startswith("S"))
+            if (_ler_flag_runtime('usar_osrm2')
+                    or (_vk0 and _resgate_ferry_deve_investigar(_vk0, dist_linha_reta, _vb0)
+                        and _resgate_ferry_permite())
+                    or _fossgis_forca_take()):
                 _res_osrm2 = _chamar_motor_cb('OSRM_FOSSGIS', API_OSRM_FOSSGIS_Routing, lat_o, lon_o, lat_d, lon_d)
         except Exception:
             _res_osrm2 = None
@@ -33781,6 +33845,46 @@ def _pares_retry_viaria(topk_map, resultados, fator=1.5, max_pares=40):
         _out.sort(key=lambda x: -x[0])
         return [_p for _, _p in _out[:int(max_pares)]]
     except Exception:
+        return []
+
+
+def _pares_resgatar_ferry_decisao(topk_map, resultados, novo_dest, vr_min=1.2, max_pares=80):
+    """[RESGATE-FERRIES - 421ª geração] Resgate decisório de travessia fluvial. O OSRM público (perfil rodoviário)
+    ignora ferry: para uma origem/ilha cujo vencedor tem V/R alto, a MENOR rota honesta pode estar numa
+    travessia que o primário nem enxerga (Muana→Abaetetuba: OSRM 53,0 km vs FOSSGIS 1,59 km — MESMO destino,
+    MESMAS coordenadas; a referência media 1,8 km exatamente via ferry). Devolve os pares (cliente, hub)
+    vencedores cuja viária já medida dispare do próprio piso geométrico (viária ≥ vr_min×reta), para serem
+    re-roteados no consenso COM o 2º motor (FOSSGIS) engajado à força. PURA e defensiva; o chamador aplica
+    _resgate_fossgis_forca antes de rotear."""
+    _out = []
+    try:
+        for _cli, _cands in (topk_map or {}).items():
+            _hd = (novo_dest or {}).get(_cli)
+            if not _hd:
+                continue
+            _r = (resultados or {}).get((_cli, _hd))
+            _km = float(_r[0]) if (_r and _r[0]) else None
+            if not _km or _km <= 0:
+                continue
+            _f = str(_r).lower()
+            if "geodés" in _f or "geodes" in _f or "falha" in _f or "máx." in _f:
+                continue
+            _reta = None
+            for _it in (_cands or []):
+                try:
+                    if _it[1] == _hd:
+                        _reta = float(_it[0] or 0)
+                        break
+                except Exception:
+                    continue
+            if not _reta or _reta <= 0:
+                continue
+            if _km >= _reta * vr_min and (_km - _reta) >= 1.0:
+                _out.append((_km - _reta, (_cli, _hd)))
+        _out.sort(key=lambda x: -x[0])
+        return [_p for _, _p in _out[:int(max_pares)]]
+    except Exception:
+        logger.error("[RESGATE-FERRIES] Falha ao computar pares decisórios de ferry", exc_info=True)
         return []
 
 
@@ -44662,6 +44766,35 @@ if _secao == _SECOES[2]:   # tab_alocacao
                             dist_matriz=st.session_state.get('alo_dist_matriz'),
                             segundo_motor_router=(API_Valhalla_Routing if _valhalla_ativo() else None))
                         if _novo_dest_mc:
+                            # [RESGATE-FERRIES - 421ª geração] Depois da reatribuição, vencedores com V/R alto
+                            # (viária dispare do próprio piso geométrico) podem esconder travessia fluvial que o
+                            # OSRM rodoviário ignora (Muana→Abaetetuba: OSRM 53,0 vs FOSSGIS 1,59 km — MESMO par,
+                            # MESMAS coordenadas; a referência media 1,8 km via ferry). Re-roteia esses pares
+                            # forçando o 2º motor (FOSSGIS) no consenso e adota a MENOR distância honesta. Teto
+                            # próprio por sessão; falha → segue idêntico (nunca regride).
+                            try:
+                                _pares_fr = _pares_resgatar_ferry_decisao(_topk_reatrib, _resultados, _novo_dest_mc)
+                                if _pares_fr:
+                                    _resgate_fossgis_forca[0] += len(_pares_fr)
+                                    with st.spinner(f"⛴️ Resgate de travessia fluvial: re-roteando no 2º motor "
+                                                    f"{len(_pares_fr)} vencedor(es) suspeito(s)..."):
+                                        _res_fr = processar_chunk_rotas(
+                                            _pares_fr, runner_up_map=st.session_state.get('alo_runner_map'))
+                                    _acc_fr = 0
+                                    for _kf, _vf in (_res_fr or {}).items():
+                                        _ff = str(_vf[5]).lower() if (_vf and len(_vf) > 5) else "geodés"
+                                        if _vf and _vf[0] and "geodés" not in _ff and "falha" not in _ff:
+                                            _novo_fr = float(_vf[0])
+                                            _antvr = (_resultados.get(_kf) or [None])[0]
+                                            if (_antvr is None) or (_novo_fr < float(_antvr)):
+                                                _resultados[_kf] = _vf
+                                                _acc_fr += 1
+                                    if _acc_fr:
+                                        st.session_state['alo_resultados'] = _resultados
+                                        logger.warning("[RESGATE-FERRIES] %d vencedor(es) melhorado(s) pelo 2º "
+                                                       "motor (travessia fluvial).", _acc_fr)
+                            except Exception as _e_fr:
+                                logger.error(f"[RESGATE-FERRIES] Falha no resgate decisório: {_e_fr}")
                             _oo = _df_pares['Origem'].astype(str).str.strip()
                             _df_pares['Destino'] = _oo.map(_novo_dest_mc).fillna(_df_pares['Destino'])
                             st.session_state['alo_mcda'] = _mcda_mc
