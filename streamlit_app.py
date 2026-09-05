@@ -33975,6 +33975,71 @@ def _pares_resgatar_ferry_decisao(topk_map, resultados, novo_dest, vr_min=1.2, m
         return []
 
 
+def _pares_fossgis_fluviais_candidatos(topk_map, resultados, coords_f=None, g=None, vr_min=1.2,
+                                       max_pares=200):
+    """[FERRY-CANDIDATO - 423ª geração] AMPLIA o hall de candidatos com a MEDIÇÃO FERRY-aware: devolve
+    pares (cliente, hub) do universo reatribuível cuja travessia de água é plausível — balsa já manifesta
+    no resultado OU geodésia cruzando corpo d'água no grafo hidrográfico — para serem re-roteados com o
+    2º motor (FOSSGIS, que usa ferry). Prioridade de CUSTO/BENEFÍCIO por par: (1) já medido com folga viária
+    alta (V/R ≥ vr_min → potencial real de ferry), (2) SEM rota medida (vago no hall; medir fecha o universo
+    da decisão), (3) medido sem folga → fora. FAIL-OPEN coexistente: sem grafo, só pares com balsa manifesta
+    entram (sem evidência de água, não se gasta budget novo); sem coords de um par → presume plausível.
+    PURA e defensiva; o chamador aplica o contador de força antes de rotear."""
+    _g_ok = bool(g and (g.get("C") is not None) and len(g.get("C")) > 0)
+    _vip = []
+    _vago = []
+    try:
+        for _cli, _cands in (topk_map or {}).items():
+            for _tup in (_cands or []):
+                try:
+                    _reta, _hub = float(_tup[0] or 0), _tup[1]
+                except (TypeError, ValueError, IndexError):
+                    continue
+                if not _reta or _reta <= 0:
+                    continue
+                _r = (resultados or {}).get((_cli, _hub))
+                _km = float(_r[0]) if (_r and _r[0]) else None
+                _bal = bool(_r and len(_r) > 3 and _r[3] is not None and str(_r[3]).strip().lower() == "sim")
+                _plau = False
+                if _bal:
+                    _plau = True
+                elif _g_ok:
+                    try:
+                        _c = (coords_f or {}).get((_cli, _hub))
+                        if not _c or len(_c) < 4 or None in _c:
+                            _plau = True     # sem coordenadas → presume cruzamento (fail-open)
+                        else:
+                            _plau = _cruza_agua_entre_pontos(float(_c[0]), float(_c[1]),
+                                                             float(_c[2]), float(_c[3]), g=g)
+                    except Exception:
+                        _plau = True
+                if not _plau:
+                    continue
+                if _km and _km > 0:
+                    _fonte = str(_r[5]).lower() if (_r and len(_r) > 5) else ""
+                    if "geodés" in _fonte or "geodes" in _fonte or "falha" in _fonte:
+                        continue
+                    if _km < _reta * vr_min or (_km - _reta) < 1.0:
+                        continue      # sem folga de ferry possível → fora (economia do budget)
+                    _folga = _km - _reta
+                    _vip.append((_folga, (_cli, _hub)))
+                else:
+                    _vago.append((_reta, (_cli, _hub)))
+        _vip.sort(key=lambda x: -x[0])
+        _vago.sort(key=lambda x: -x[0])
+        _rank = [(0.0, _p) for _, _p in _vip] + [(1.0, _p) for _, _p in _vago]
+        _out = []
+        _teto = max(0, int(max_pares))
+        for _p in _rank:
+            if len(_out) >= _teto:
+                break
+            _out.append(_p[1])
+        return _out
+    except Exception:
+        logger.error("[FERRY-CANDIDATO] Falha ao computar pares fluviais candidatos", exc_info=True)
+        return []
+
+
 def _aba_comparacao_estrategias(writer, comparacao):
     """[DUPLO-CENARIO - 217ª geração] Aba Excel 'Comparação de Estratégias' (Oficial × Puramente Viário):
     resumo, mudanças por critério e tabela dos municípios que mudaram de vencedor, com explicação automática.
@@ -44848,6 +44913,73 @@ if _secao == _SECOES[2]:   # tab_alocacao
                         except Exception as _e_fus:
                             logger.error(f"[MATRIZ-VIARIA] Falha ao fundir shortlist: {_e_fus}")
                             _topk_reatrib = _topk_mc
+                        # [FERRY-CANDIDATO - 423ª geração] AMPLIA hall de candidatos + roteamento: antes da
+                        # reeleição, mede no 2º motor (FOSSGIS, usa ferry) os pares do universo reatribuível
+                        # com travessia de água PLÁUSIL (balsa manifesta OU geodésia cruzando rio no grafo
+                        # hidrográfico). Isso deixa a CLASSIFICAÇÃO ver a distância ferry-honesta do candidato
+                        # (ex.: Curralinho→Breves ~89 km por rio vs CAMETA 109,6 km por rodovia), não só a rota
+                        # do vencedor (padrão RIO-BRANCO/UNIVERSO-FECHADO, agora com ferry). O passe é
+                        # CONSERVADOR (adota só rota real ESTRITAMENTE menor) e GASTA de verdade o orçamento
+                        # de cruce (fair-use do FOSSGIS ≤1 req/s) — o decisório posterior segue por design.
+                        try:
+                            _coords_fr = {}
+                            if _df_pares is not None and {"Lat Origem", "Lon Origem",
+                                                          "Lat Destino", "Lon Destino"}.issubset(
+                                    _df_pares.columns):
+                                _por_origem_fr = {}
+                                for _ixr, _rowr in _df_pares.iterrows():
+                                    _por_origem_fr[str(_rowr.get("Origem", "")).strip()] = _rowr
+                                for _prc in _topk_reatrib:
+                                    for _prt in (_topk_reatrib[_prc] or []):
+                                        try:
+                                            _hub_pr = _prt[1]
+                                            _rowp = _por_origem_fr.get(str(_prc).strip())
+                                            if _rowp is not None:
+                                                _lafr = pd.to_numeric(_rowp.get("Lat Origem"), errors="coerce")
+                                                _lofr = pd.to_numeric(_rowp.get("Lon Origem"), errors="coerce")
+                                                _ldfr = pd.to_numeric(_rowp.get("Lat Destino"), errors="coerce")
+                                                _lndfr = pd.to_numeric(_rowp.get("Lon Destino"), errors="coerce")
+                                                if all(pd.notna(_x) and _x for _x in (_lafr, _lofr, _ldfr, _lndfr)):
+                                                    _coords_fr.setdefault((_prc, _hub_pr),
+                                                                          (float(_lafr), float(_lofr),
+                                                                           float(_ldfr), float(_lndfr)))
+                                        except Exception:
+                                            continue
+                            _g_fr = _grafo_fluvial_memoizado()
+                            _pares_fc = _pares_fossgis_fluviais_candidatos(_topk_reatrib, _resultados,
+                                                                           _coords_fr, g=_g_fr)
+                            _reserva_fc = []
+                            with _resgate_ferry_lock:
+                                for _pfc in _pares_fc:
+                                    if _resgate_ferry_contador[0] >= _RESGATE_FERRY_BUDGET:
+                                        break
+                                    _resgate_ferry_contador[0] += 1
+                                    _reserva_fc.append(_pfc)
+                            if _reserva_fc:
+                                _resgate_fossgis_forca[0] += len(_reserva_fc)
+                                with st.spinner(f"⛴️ Ferry no hall: medindo {len(_reserva_fc)} candidato(s) "
+                                                f"de travessia de água plausível no 2º motor..."):
+                                    _res_fc = processar_chunk_rotas(
+                                        _reserva_fc, runner_up_map=st.session_state.get('alo_runner_map'))
+                                _acc_fc = 0
+                                for _kfc, _vfc in (_res_fc or {}).items():
+                                    _ffc = str(_vfc[5]).lower() if (_vfc and len(_vfc) > 5) else "geodés"
+                                    if _vfc and _vfc[0] and "geodés" not in _ffc and "falha" not in _ffc:
+                                        _nov_fc = float(_vfc[0])
+                                        _ant_fc = (_resultados.get(_kfc) or [None])[0]
+                                        if (_ant_fc is None) or (_nov_fc < float(_ant_fc)):
+                                            _resultados[_kfc] = _vfc
+                                            _acc_fc += 1
+                                if _acc_fc:
+                                    try:
+                                        _topk_reatrib = _fundir_resultados_no_topk(_topk_reatrib, _resultados)
+                                    except Exception:
+                                        pass
+                                    st.session_state['alo_resultados'] = _resultados
+                                    logger.warning("[FERRY-CANDIDATO] %d par(es) fluvial(ais) reclassificado(s) "
+                                                   "pela medição ferry do 2º motor no hall.", _acc_fc)
+                        except Exception as _e_fc:
+                            logger.error(f"[FERRY-CANDIDATO] Falha no ampliamento do hall com ferry: {_e_fc}")
                         _novo_dest_mc, _mcda_mc = _reatribuir_hubs_multicriterio(
                             _topk_reatrib, _resultados, params=_params_mc,
                             dist_matriz=st.session_state.get('alo_dist_matriz'),
@@ -44867,29 +44999,17 @@ if _secao == _SECOES[2]:   # tab_alocacao
                                         # sessão): o resgate só força o FOSSGIS em pares com travessia de água
                                         # PLÁUSIL — balsa já manifesta no resultado OU geodésia cruzando rio no
                                         # grafo hidrográfico. Fail-open em TUDO (sem grafo/coords/exceção → o par
-                                        # segue) → a cobertura da 421ª nunca é cortada, só o desperdício.
-                                        _coords_fr = {}
-                                        if _df_pares is not None and {"Lat Origem", "Lon Origem",
-                                                                      "Lat Destino", "Lon Destino"}.issubset(
-                                                    _df_pares.columns):
-                                            _por_origem_fr = {}
-                                            for _ixr, _rowr in _df_pares.iterrows():
-                                                _por_origem_fr[str(_rowr.get("Origem", "")).strip()] = _rowr
-                                            for _pch in _pares_fr:
-                                                try:
-                                                    _rowp = _por_origem_fr.get(str(_pch[0]).strip())
-                                                    if _rowp is not None:
-                                                        _lafr = pd.to_numeric(_rowp.get("Lat Origem"), errors="coerce")
-                                                        _lofr = pd.to_numeric(_rowp.get("Lon Origem"), errors="coerce")
-                                                        _ldfr = pd.to_numeric(_rowp.get("Lat Destino"), errors="coerce")
-                                                        _lndfr = pd.to_numeric(_rowp.get("Lon Destino"), errors="coerce")
-                                                        if all(pd.notna(_x) and _x for _x in (_lafr, _lofr, _ldfr, _lndfr)):
-                                                            _coords_fr[_pch] = (float(_lafr), float(_lofr),
-                                                                                 float(_ldfr), float(_lndfr))
-                                                except Exception:
-                                                    continue
+                                        # segue) → a cobertura da 421ª nunca é cortada, só o desperdício. O mapa
+                                        # _coords_fr já veio do passe FERRY-CANDIDATO (definido antes da 1ª
+                                        # reatribuição, mesmo escopo); se não existir → {} → filtro abre (sem
+                                        # coordenadas presume plausível e mantém o par).
+                                        _cfr = {}
+                                        try:
+                                            _cfr = _coords_fr or {}
+                                        except Exception:
+                                            _cfr = {}
                                         _pares_fr = _filtrar_pares_resgate_fluvial(
-                                            _pares_fr, _resultados, _coords_fr, g=_grafo_fluvial_memoizado())
+                                            _pares_fr, _resultados, _cfr, g=_grafo_fluvial_memoizado())
                                     except Exception as _e_pl:
                                         logger.error("[FLUVIAL-PLAUS] Filtro fluvial do resgate falhou "
                                                      "(segue sem filtro): %s", _e_pl)

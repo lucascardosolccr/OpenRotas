@@ -246,3 +246,30 @@ FOSSGIS reproduz a referencia como na tabela acima) sem reduzir a cobertura de n
 
 Evidencia: validar 175 OK / 0 FALHAS (22 secoes, sem rede; secoes 19-21 fluvial + secao 22 resgate);
 decidir 38/38; relatorio regenerado -> _RELATORIO_ANTES_DEPOIS.md.
+
+### 423a geracao: ferry no HALL da decisao (FERRY-CANDIDATO), antes da reeleicao
+
+O resgate (421/422) so mede ferry rota DO VENCEDOR. Mas ha derrotas em que o polo da referencia NAO e o
+vencedor: o app ganha por rodovia para um polo X (ex.: Curralinho/PA -> CAMETA 109,6 km rodovia), enquanto
+o polo da referencia (BREVES) so perderia por rodovia (OSRM sem ferry -> desvio absurdo), mas por rio mede
+~89 km — MENOR que o vencedor atual. A classificacao nao via essa rota porque so conhecia a mediacao
+rodoviaria. Correcao implementada [FERRY-CANDIDATO]:
+  1. `_pares_fossgis_fluviais_candidatos(topk_map, resultados, coords_f, g, vr_min=1.2, max_pares=200)`:
+     PURA; varre TODO o universo reatribuivel (topk + shortlist + resultados) e devolve os pares com
+     travessia de agua PLAUSIVEL para serem re-roteados com o 2o motor ANTES da reeleicao. Prioriza por
+     custo/beneficio: (a) ja medidos com folga via ria V/R >= 1,2 (potencial real de ferry), (b) sem rota
+     medida (vago no hall; fechar o universo), (c) medidos sem folga -> fora. Sem grafo, SO entram pares
+     com balsa manifesta (sem evidencia de agua nao se gasta budget novo) — fail-open identico.
+  2. No wire, o passe roda apos o UNIVERSO-FECHADO e ANTES da 1a reatribuicao: monta as coordenadas do
+     df_pares UMA vez (mesmo mapa reusado pelo FLUVIAL-PLAUS do resgate), force the FOSSGIS (counter),
+     mede com `processar_chunk_rotas`, adota so rota real ESTRITAMENTE menor e REFUNDE `_topk_reatrib`
+     com os novos resultados. A reatribuicao, entao, elege com distancia FERRY-honesta.
+  3. O passe GASTA de verdade o orcamento de cruce (reserva via `_resgate_ferry_contador`, fair-use
+     FOSSGIS <=1 req/s) — ao contrario do decisorio, que e budget-independente por design (a decisao
+     correta do vencedor nao pode travar por orcamento).
+
+Resultado: o hall cresce com rotas de balsa reais (ampliacao de roteamento) e a decisao de hub pode
+reeleger um polo que so e curto por agua — recuperacao no padrao UNIVERSO-FECHADO, agora ferry-aware.
+
+Evidencia: validar 178 OK / 0 FALHAS (22 secoes, sem rede; secao 22 com FERRY-CANDIDATO);
+decidir 38/38; relatorio regenerado -> _RELATORIO_ANTES_DEPOIS.md.
