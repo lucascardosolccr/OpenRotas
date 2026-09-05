@@ -27828,6 +27828,93 @@ def _resgate_ferry_deve_investigar(km_osrm, km_reta, tem_balsa):
     return _vr >= _VALHALLA_INVESTIGAR_VR
 
 
+_TRAVESSIA_AGUA_SNAP_KM = 4.0   # [FLUVIAL-PLAUS - 422ª geração] raio p/ considerar que a geodésia do par CRUZA água
+_grafo_fluvial_memo = [None]    # [FLUVIAL-PLAUS] memo do grafo hidrográfico (uma carga por processo)
+
+
+def _grafo_fluvial_memoizado():
+    """[FLUVIAL-PLAUS - 422ª geração] grafo hidrográfico UMA vez por processo (o load monta 226k nós +
+    cKDTree; várias chamadas repetiam o custo). None também fica memoizado (ambiente sem o arquivo)."""
+    try:
+        if _grafo_fluvial_memo[0] is None:
+            _grafo_fluvial_memo[0] = _carregar_grafo_fluvial(_URL_GRAFO_FLUVIAL, _arq_grafo_fluvial())
+    except Exception:
+        _grafo_fluvial_memo[0] = None
+    return _grafo_fluvial_memo[0]
+
+
+def _cruza_agua_entre_pontos(lat_o, lon_o, lat_d, lon_d, g=None):
+    """[FLUVIAL-PLAUS - 422ª geração] PURA: True quando amostras da corda entre os DOIS pontos passam a
+    ≤_TRAVESSIA_AGUA_SNAP_KM de um corpo d'água do grafo hidrográfico — forte sinal de travessia fluvial/
+    ferry que o OSRM rodoviário ignora (Muana → Abaetetuba cruza rio). FAIL-OPEN HONESTO: sem
+    coordenadas/grafo/exceção → True (a cobertura da 421ª fica intacta). Determinística, sem rede."""
+    try:
+        _lao = _num(lat_o); _loo = _num(lon_o); _lad = _num(lat_d); _lod = _num(lon_d)
+        if None in (_lao, _loo, _lad, _lod):
+            return True
+        import numpy as _np
+        _C = (g or {}).get("C")
+        if _C is None or len(_C) == 0:
+            return True
+        _raio_km = max(0.5, float(_TRAVESSIA_AGUA_SNAP_KM))
+        _lim = _raio_km * 0.012
+        _pts = [(_lao + (_lad - _lao) * _t, _loo + (_lod - _loo) * _t) for _t in _np.linspace(0.0, 1.0, 11)]
+        _tree = (g or {}).get("tree")
+        if _tree is not None:
+            for _la, _lo in _pts:
+                try:
+                    _d2, _i = _tree.query([_lo, _la], k=1, distance_upper_bound=_lim)
+                    _ii = int(_i)
+                    if _np.isfinite(_d2) and _d2 <= _lim and 0 <= _ii < len(_C):
+                        return True
+                except Exception:
+                    continue
+            return False
+        if len(_C) <= 200000:
+            for _la, _lo in _pts:
+                for _j in range(len(_C)):
+                    if _haversine_fluv((_lo, _la), (float(_C[_j, 0]), float(_C[_j, 1]))) <= _raio_km:
+                        return True
+            return False
+        return True    # grafo grande sem índice espacial: não arrisca varredura O(N·amostras) — fail-open
+    except Exception:
+        return True
+
+
+def _filtrar_pares_resgate_fluvial(pares, resultados, coords_f=None, g=None):
+    """[FLUVIAL-PLAUS - 422ª geração] PURA: concentra o budget finito do 2º motor no resgate-FERRIES —
+    mantém apenas pares com travessia de água PLÁUSIL (já marcados com balsa no resultado OU geodésia
+    cruzando água). FAIL-OPEN em três níveis (mesma cobertura da 421ª, nunca corta): sem grafo → mantém
+    todos; par sem coordenadas → mantém o par; exceção → devolve 'pares' intactos."""
+    try:
+        if not pares:
+            return pares
+        _g_ok = bool(g and (g.get("C") is not None) and len(g.get("C")) > 0)
+        _out = []
+        for _p in pares:
+            try:
+                if not _g_ok:
+                    _out.append(_p)
+                    continue
+                _r = (resultados or {}).get(_p)
+                if _r and len(_r) > 3:
+                    _b = str(_r[3]).strip().lower()
+                    if _b in ("sim", "yes", "true", "1"):
+                        _out.append(_p)
+                        continue
+                _c = (coords_f or {}).get(_p)
+                if not _c or len(_c) < 4 or None in _c:
+                    _out.append(_p)      # sem coordenadas → presume plausível (fail-open)
+                    continue
+                if _cruza_agua_entre_pontos(float(_c[0]), float(_c[1]), float(_c[2]), float(_c[3]), g=g):
+                    _out.append(_p)
+            except Exception:
+                _out.append(_p)          # defensivo: um par nunca bloqueia o resgate
+        return _out
+    except Exception:
+        return pares
+
+
 def API_OSRM_Routing(lat_o, lon_o, lat_d, lon_d):
     start_t = time.time()
     # [PERF-OSRM-CACHE - 390ª geração] Cache em disco (cache_rotas) da rota real: coordenadas idênticas
@@ -33866,8 +33953,8 @@ def _pares_resgatar_ferry_decisao(topk_map, resultados, novo_dest, vr_min=1.2, m
             _km = float(_r[0]) if (_r and _r[0]) else None
             if not _km or _km <= 0:
                 continue
-            _f = str(_r).lower()
-            if "geodés" in _f or "geodes" in _f or "falha" in _f or "máx." in _f:
+            _f = str(_r[5]).lower() if (_r and len(_r) > 5) else ""
+            if "geodés" in _f or "geodes" in _f or "falha" in _f:
                 continue
             _reta = None
             for _it in (_cands or []):
@@ -44774,6 +44861,38 @@ if _secao == _SECOES[2]:   # tab_alocacao
                             # próprio por sessão; falha → segue idêntico (nunca regride).
                             try:
                                 _pares_fr = _pares_resgatar_ferry_decisao(_topk_reatrib, _resultados, _novo_dest_mc)
+                                if _pares_fr:
+                                    try:
+                                        # [FLUVIAL-PLAUS - 422ª geração] o budget do 2º motor é FINITO (300/
+                                        # sessão): o resgate só força o FOSSGIS em pares com travessia de água
+                                        # PLÁUSIL — balsa já manifesta no resultado OU geodésia cruzando rio no
+                                        # grafo hidrográfico. Fail-open em TUDO (sem grafo/coords/exceção → o par
+                                        # segue) → a cobertura da 421ª nunca é cortada, só o desperdício.
+                                        _coords_fr = {}
+                                        if _df_pares is not None and {"Lat Origem", "Lon Origem",
+                                                                      "Lat Destino", "Lon Destino"}.issubset(
+                                                    _df_pares.columns):
+                                            _por_origem_fr = {}
+                                            for _ixr, _rowr in _df_pares.iterrows():
+                                                _por_origem_fr[str(_rowr.get("Origem", "")).strip()] = _rowr
+                                            for _pch in _pares_fr:
+                                                try:
+                                                    _rowp = _por_origem_fr.get(str(_pch[0]).strip())
+                                                    if _rowp is not None:
+                                                        _lafr = pd.to_numeric(_rowp.get("Lat Origem"), errors="coerce")
+                                                        _lofr = pd.to_numeric(_rowp.get("Lon Origem"), errors="coerce")
+                                                        _ldfr = pd.to_numeric(_rowp.get("Lat Destino"), errors="coerce")
+                                                        _lndfr = pd.to_numeric(_rowp.get("Lon Destino"), errors="coerce")
+                                                        if all(pd.notna(_x) and _x for _x in (_lafr, _lofr, _ldfr, _lndfr)):
+                                                            _coords_fr[_pch] = (float(_lafr), float(_lofr),
+                                                                                 float(_ldfr), float(_lndfr))
+                                                except Exception:
+                                                    continue
+                                        _pares_fr = _filtrar_pares_resgate_fluvial(
+                                            _pares_fr, _resultados, _coords_fr, g=_grafo_fluvial_memoizado())
+                                    except Exception as _e_pl:
+                                        logger.error("[FLUVIAL-PLAUS] Filtro fluvial do resgate falhou "
+                                                     "(segue sem filtro): %s", _e_pl)
                                 if _pares_fr:
                                     _resgate_fossgis_forca[0] += len(_pares_fr)
                                     with st.spinner(f"⛴️ Resgate de travessia fluvial: re-roteando no 2º motor "

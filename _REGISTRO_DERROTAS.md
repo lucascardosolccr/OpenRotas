@@ -219,3 +219,30 @@ Das 69 inalteradas, 57 tem V/R do proprio vencedor >= 1,2 (1 na zona de suspeica
 (Curralinho/PA, Prainha/PA, Apui/AM, Santana/BA, Cachoeira do Arari/PA, Aveiro/PA) sao os candidatos
 reais a encurtamento via FOSSGIS; as demais (V/R 1,2-1,6) sao circuidade rodoviaria normal e o resgate
 e conservador (adota apenas a MENOR distancia honesta -> nunca regride, nunca infla).
+
+### 422a geracao: o budget e finito, o resgate agora e CONVERGENTE (FLUVIAL-PLAUS)
+
+O resgate da 421a forca o FOSSGIS em todo vencedor com V/R >= 1,2 -> 57 das 69 inalteradas estao no
+raio, mas um cruce de ferry nao vale para circuidade rodoviaria normal (V/R 1,2-1,6): o 2o motor
+responderia a mesma malha e o budget de 300 cruces/sessao se gastaria em pares sem potencial de ganho.
+Correcao implementada [FLUVIAL-PLAUS]:
+  1. `_cruza_agua_entre_pontos(lat_o, lon_o, lat_d, lon_d, g)`: PURA e deterministica; amostra 11 pontos
+     da corda geodesica entre a origem e o hub e verifica se algum cai a <= 4 km de um corpo d'agua do
+     grafo hidrografico (cKDTree > fallback forca bruta) -> forte sinal de travessia fluvial/ferry que o
+     OSRM rodoviario ignora. FAIL-OPEN honesto em 4 niveis: sem grafo, sem coordenadas, grafo grande sem
+     arvore ou excecao -> True (a cobertura da 421a nunca e cortada).
+  2. `_filtrar_pares_resgate_fluvial(pares, resultados, coords_f, g)`: PURA; mantem so os pares
+     PLAUSIVELmente fluviais (balsa ja manifesta no resultado OU geodesia cruzando agua). Sem grafo ->
+     mantem todos; par sem coordenadas -> mantem o par; excecao -> pares intactos.
+  3. No wire de producao, as coordenadas vem da propria linha do `df_pares` ('Lat Origem'/'Lon Origem'/
+     'Lat Destino'/'Lon Destino' da origem do par) e o grafo hidrografico e memoizado UMA vez por
+     processo. Erro no filtro -> registra no log e segue SEM filtro (fail-open).
+  4. Guarda do decisorio refinada para o contrato real: a fonte da rota e o campo idx5 da tupla
+     ("geodesica"/"falha"/"osrm"/"osrm_matriz"...), como na `_rota_real` da reatribuicao oficial.
+     A varredura de tupla inteira anterior podia dar falso-positivo se um rotulo carregasse "geodesica".
+
+Resultado: budget concentrado nos casos com travessia de agua plausivel (os fluviais de fato, onde o
+FOSSGIS reproduz a referencia como na tabela acima) sem reduzir a cobertura de nenhum caso resgatado.
+
+Evidencia: validar 175 OK / 0 FALHAS (22 secoes, sem rede; secoes 19-21 fluvial + secao 22 resgate);
+decidir 38/38; relatorio regenerado -> _RELATORIO_ANTES_DEPOIS.md.
