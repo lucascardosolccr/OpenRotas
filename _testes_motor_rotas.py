@@ -664,7 +664,7 @@ def relatorio():
     a("")
     a("## 5. Validação")
     a("")
-    a("- `py _testes_motor_rotas.py validar` → 187 invariantes (22 seções, sem rede: banda exata, "
+    a("- `py _testes_motor_rotas.py validar` → 192 invariantes (22 seções, sem rede: banda exata, "
       "reflexividade, universo-fechado, não regressão, fallback OSRM→FOSSGIS, Valhalla/divergência+"
       "investigação, memória geográfica, Índice de Confiança, roteador fluvial offline, eventos cronológicos "
       "de API, geometria anômala, sensores R4 de circuidade em bandas e centróides, métrica fluvial justa na "
@@ -675,7 +675,9 @@ def relatorio():
       "manifesta cruza SEMPRE), FLUVIAL-ROTA-DIRETA (rota fluvial REAL do grafo como candidato sem rede), "
       "DETECÇÃO-POR-ARESTA (travessia validada no segmento do rio, não só no nó), MULTI-AMOSTRAGEM "
       "(amostragem adaptativa da corda que alcança rios entre amostras esparsas), MULTI-RIO (nomes_rios com "
-      "TODOS os rios nomeados a ≤raio, não só o mais próximo) e convergência do hall.")
+      "TODOS os rios nomeados a ≤raio, não só o mais próximo), SNAP-EXPANDIDO-COM-PROVA (snap largo a "
+      "30 km só com prova de água ligando o par — geodésica cruzando rio; custo honesto = fluvial + acesso "
+      "às sedes; fonte 'fluvial-direta-largo' auditável) e convergência do hall.")
     a("- `py _testes_motor_rotas.py decidir` → todos os casos passam nas propriedades da missão.")
     a("- `py -X utf8 -m py_compile streamlit_app.py _testes_motor_rotas.py` → OK.")
     a("- Balsa real conferida por geometria OSRM (steps `mode==ferry`) em ambos os servidores (4,12 / 39,33 / "
@@ -732,7 +734,7 @@ def relatorio():
     a("")
     a("| Check | Resultado |")
     a("|---|---|")
-    a("| `validar` (22 seções, sem rede) | **187 OK / 0 FALHAS** |")
+    a("| `validar` (22 seções, sem rede) | **192 OK / 0 FALHAS** |")
     a("| `decidir` (38 casos: 13 missão + 3 favoráveis §11 + 3 derrotas §22 + 19 famílias §24) | **38/38 nas propriedades** |")
     a("| Causa-raiz corrigida | universo-fechado + política única de balsa + métrica fluvial justa + universo hidrográfico fail-open + consenso de 2 motores + resgate-FERRIES (FOSSGIS com ferry) |")
     a("| Benchmark menos que a reta (N1) | 9 famílias fluviais/ilha enquadradas como Tipo 10 com evidência de DOIS motores independentes |")
@@ -1390,7 +1392,7 @@ def validar():
     except Exception as _e:
         check("testes da métrica fluvial justa + consenso de segundo motor executaram (%s)" % _e, False)
 
-    print("== 22) RESGATE-FERRIES + HIDROGRAFIA (421ª–431ª): suspeição, budget, força, pares decisórios, rota fluvial direta, detecção por aresta, multi-amostragem, multi-rio ==")
+    print("== 22) RESGATE-FERRIES + HIDROGRAFIA (421ª–432ª): suspeição, budget, força, pares decisórios, rota fluvial direta, detecção por aresta, multi-amostragem, multi-rio, snap expandido com prova ==")
     check("suspeição: V/R 1,25 (Muana 53/42,4) NÃO entra na zona → consenso normal",
           not m._resgate_ferry_deve_investigar(53.0, 42.4, False))
     check("suspeição: V/R 3,1 SEM balsa auto-engaja (≥ 2,6)",
@@ -1546,6 +1548,47 @@ def validar():
     else:
         print("== FLUVIAL-ROTA-DIRETA: grafo local ausente — caminhos positivos pulados ==")
 
+    # ---- SNAP-EXPANDIDO-COM-PROVA (432ª): snap largo 30 km só com prova de água ligando o par (geodésica
+    # ---- cruza rio) e custo honesto = fluvial + acesso às sedes; estrito 8 km preservado ----
+    # Hermético: stub do roteador fluvial para controlar o snap (estrito→None, largo→rota), e o gate de
+    # "resgate_ferry_cruza_agua" é avaliado com o g injetado (testa a prova de verdade).
+    _stub_flag = {"largo": True}
+    def _rota_stub_432(lat_o, lon_o, lat_d, lon_d, limite_km=2500, snap_max_km=8.0):
+        if _stub_flag["largo"] and float(snap_max_km) >= 30.0:
+            return {"km": 20.0, "rios": ["Rio Sintético"], "snap_km": 25.0,
+                    "snap_o_km": 10.0, "snap_d_km": 15.0, "path_lonlat": [[lon_o, lat_o], [lon_d, lat_d]]}
+        return None
+    _rota_orig_432 = m._fluvial_rota_real_sob_demanda
+    _g_432 = _g2
+    m._fluvial_rota_real_sob_demanda = _rota_stub_432
+    _res_432 = {("Ribeirinho", "Ribeirinha"): (53.0, 120, "Não", "Não", "", "osrm"),
+                ("Seco", "SecoD"): (40.0, 90, "Não", "Não", "", "osrm")}
+    _coords_432 = {("Ribeirinho", "Ribeirinha"): (-2.0, -55.0, -2.5, -55.0),   # corda cruza o rio do _g2
+                   ("Seco", "SecoD"): (-5.0, -57.0, -5.5, -57.5)}              # longe de qualquer rio
+    _sd432 = m._fluvial_para_resgate([("Seco", "SecoD")], _res_432, _coords_432, g=_g_432, snap_max_km=8.0,
+                                     snap_max_km_largo=30.0)
+    check("SNAP-EXPANDIDO: SEM prova (corda não cruza rio) o largo NÃO engaja -> {} (não inventa ribeirinho)",
+          _sd432 == {})
+    _sr432 = m._fluvial_para_resgate([("Ribeirinho", "Ribeirinha")], _res_432, _coords_432, g=_g_432,
+                                     snap_max_km=8.0, snap_max_km_largo=30.0)
+    check("SNAP-EXPANDIDO: COM prova, snap largo adota (km = fluvial 20 + acesso 10+15 = 45 < 53) e marca "
+          "fonte 'fluvial-direta-largo'",
+          ("Ribeirinho", "Ribeirinha") in _sr432
+          and abs(float(_sr432[("Ribeirinho", "Ribeirinha")][0]) - 45.0) < 1e-6
+          and _sr432[("Ribeirinho", "Ribeirinha")][4] == "fluvial-direta-largo")
+    _stub_flag["largo"] = False
+    _std432 = m._fluvial_para_resgate([("Ribeirinho", "Ribeirinha")], _res_432, _coords_432, g=_g_432,
+                                      snap_max_km=8.0, snap_max_km_largo=30.0)
+    check("SNAP-EXPANDIDO: snap estrito COM rota (stub largo desligado, rota estrita seria True) FALHA no "
+          "stub (None) -> {} (rota real estrita não depende do largo)",
+          _std432 == {})
+    _stub_flag["largo"] = True
+    check("SNAP-EXPANDIDO: reduzir largo para == estrito desativa o largo (comportamento 426ª preservado)",
+          m._fluvial_para_resgate([("Ribeirinho", "Ribeirinha")], _res_432, _coords_432, g=_g_432,
+                                  snap_max_km=8.0, snap_max_km_largo=8.0) == {})
+    check("SNAP-EXPANDIDO: fail-open de argumentos (None) mantém comportamento da 426ª",
+          m._fluvial_para_resgate(None, None, None, g=_g_432) == {})
+    m._fluvial_rota_real_sob_demanda = _rota_orig_432
     print()
     print("=" * 70)
     print("RESULTADO: %d OK, %d FALHAS" % (ok, fail))

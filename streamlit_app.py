@@ -22729,7 +22729,8 @@ def _fluvial_rota_real_sob_demanda(lat_o, lon_o, lat_d, lon_d, limite_km=2500, s
                     _rios.append(_nm)
         _pll = [[float(_C[_i, 0]), float(_C[_i, 1])] for _i in _path]
         _res_flr = {"km": round(float(_dist[_id]), 1), "rios": _rios[:8],
-                    "snap_km": round(max(_so, _sd), 1), "path_lonlat": _pll}
+                    "snap_km": round(max(_so, _sd), 1), "snap_o_km": round(float(_so), 1),
+                    "snap_d_km": round(float(_sd), 1), "path_lonlat": _pll}
         try:
             if _ck_flr is not None:
                 cache_rotas.set(_ck_flr, _res_flr, expire=2592000)
@@ -27828,14 +27829,20 @@ def _resgate_ferry_deve_investigar(km_osrm, km_reta, tem_balsa):
     return _vr >= _VALHALLA_INVESTIGAR_VR
 
 
-def _fluvial_para_resgate(pares, resultados, coords_f=None, g=None, limite_km=2500, snap_max_km=8.0):
+def _fluvial_para_resgate(pares, resultados, coords_f=None, g=None, limite_km=2500, snap_max_km=8.0,
+                          snap_max_km_largo=30.0):
     """[FLUVIAL-ROTA-DIRETA - 426ª geração] Quando o par tem travessia de água pláusil MAS o 2º motor (FOSSGIS)
     não retornou rota real (sem ferry no seu grafo — ex.: Governador Celso Ramos, barreira lagunar), mede a
     rota FLUVIAL REAL do grafo hidrográfico nacional via Dijkstra e devolve uma tupla no MESMO CONTRATO do
     processamento de resultados: (km, tempo, 'Não', balsa, fonte, 'fluvial-direta', rios, path_lonlat). Returns
     dict {par: tupla} só com pares em que a rota fluvial EXISTE (km>0 e snap ≤ snap_max_km) e é ESTRITAMENTE
     menor que a distância medida anterior (mesma regra conservadora do wire). Sem grafo/coords/exceção →
-    não devolve (fail-open: nunca substitui à força). Determinístico, sem rede."""
+    não devolve (fail-open: nunca substitui à força). Determinístico, sem rede.
+    [432ª SNAP-EXPANDIDO-COM-PROVA] Quando o snap estrito (8 km) não encontra rio, tenta um snap LARGO
+    (30 km) SOMENTE se houver PROVA de que o corpo d'água liga o par: `_resgate_ferry_cruza_agua` (geodésica
+    cruzando água no grafo) — a MESMA evidência que auto-engaja o FOSSGIS. O custo honesto no snap largo é
+    FLUVIAL + acesso às sedes (snap_o + snap_d): nunca fabrica trajeto mais curto do que acessar o rio de
+    verdade; e a adoção segue ESTRITAMENTE menor. Fail-open em tudo (sem prova → não tenta largo)."""
     try:
         if not pares or not coords_f:
             return {}
@@ -27850,20 +27857,53 @@ def _fluvial_para_resgate(pares, resultados, coords_f=None, g=None, limite_km=25
                 _c = coords_f.get(_p)
                 if not _c or len(_c) < 4 or None in _c:
                     continue
-                _frr = _fluvial_rota_real_sob_demanda(float(_c[0]), float(_c[1]), float(_c[2]), float(_c[3]),
-                                                       limite_km=limite_km, snap_max_km=snap_max_km)
+                _laf, _lof, _ldf, _lndf = float(_c[0]), float(_c[1]), float(_c[2]), float(_c[3])
+                _frr = _fluvial_rota_real_sob_demanda(_laf, _lof, _ldf, _lndf,
+                                                      limite_km=limite_km, snap_max_km=snap_max_km)
+                _snap_usado = float(snap_max_km)
+                if (not (_frr and _frr.get("km"))) and snap_max_km_largo and snap_max_km_largo > snap_max_km:
+                    # [432ª] PROVA: geodésica entre as sedes cruza corpo d'água no grafo (mesma evidência do
+                    # FERRY-BUDGET). Sem prova → NÃO alarga o snap (não inventa município ribeirinho).
+                    try:
+                        _prova_agua = _resgate_ferry_cruza_agua(_laf, _lof, _ldf, _lndf, g=_g)
+                    except Exception:
+                        _prova_agua = False
+                    if _prova_agua:
+                        _frr2 = _fluvial_rota_real_sob_demanda(_laf, _lof, _ldf, _lndf,
+                                                               limite_km=limite_km,
+                                                               snap_max_km=float(snap_max_km_largo))
+                        if _frr2 and _frr2.get("km"):
+                            _fk2 = float(_frr2["km"])
+                            _so2 = _frr2.get("snap_o_km")
+                            _sd2 = _frr2.get("snap_d_km")
+                            # custo honesto: fluvial + acesso às sedes (nunca diz que passageiro teletransporta
+                            # do centro ao rio). Sem os snaps por extremidade (cache antigo), fallback: usar o
+                            # snap máximo como acesso de ambos.
+                            if _so2 is None or _sd2 is None or _so2 < 0 or _sd2 < 0:
+                                _so2 = float(_frr2.get("snap_km") or 0.0)
+                                _sd2 = _so2
+                            _fk2 = _fk2 + float(_so2) + float(_sd2)
+                            if _fk2 < _cm:
+                                _frr = _frr2
+                                _frr["km"] = round(_fk2, 1)
+                                _snap_usado = float(snap_max_km_largo)
                 if not _frr or not _frr.get("km"):
                     continue
                 _fk = float(_frr["km"])
                 if _fk <= 0 or _fk >= _cm:
                     continue   # só adota estritamente menor (conservador)
                 _rios = _frr.get("rios") or []
+                if (_frr.get("snap_km") or 0.0) > (float(snap_max_km) + 1e-9):
+                    _fonte_fd = "fluvial-direta-largo"
+                else:
+                    _fonte_fd = "fluvial-direta"
                 _trav_fd = [{"lat": float(_c[0]), "lon": float(_c[1]), "km": _fk, "ordem": _n,
                              "nome_rio": _rio, "confianca": "alta",
-                             "dist_hidro_km": 0.0, "local_travessia": "%.4f, %.4f" % (float(_c[0]), float(_c[1]))}
+                             "dist_hidro_km": float(_frr.get("snap_km") or 0.0),
+                             "local_travessia": "%.4f, %.4f" % (float(_c[0]), float(_c[1]))}
                             for _n, _rio in enumerate(_rios)]
                 _out[_p] = (_fk, (_fk / 22.0 if _fk > 0 else None), "Não", "Sim",
-                            "fluvial-direta", "fluvial-direta", _trav_fd,
+                            _fonte_fd, "fluvial-direta", _trav_fd,
                             _frr.get("path_lonlat"))
             except Exception:
                 continue

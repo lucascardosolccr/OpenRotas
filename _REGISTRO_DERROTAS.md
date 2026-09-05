@@ -361,3 +361,21 @@ nome_rio, confianca alta, dist_hidro_km, local_travessia) no indice 6 do tuple -
 
 Evidencia: validar 187 OK / 0 FALHAS (22 secoes, sem rede; FLUVIAL-ROTA-DIRETA/DETECCAO-POR-ARESTA/
 MULTI-AMOSTRAGEM/MULTI-RIO na seccao 22); decidir 38/38; relatorio regenerado -> _RELATORIO_ANTES_DEPOIS.md.
+
+### 432a geracao: SNAP-EXPANDIDO-COM-PROVA (snap largo 30 km SO com prova de agua ligando o par)
+
+A rota fluvial direta (426a) usava snap estrito de 8 km (anti-fabricacao: sede >8 km de qualquer rio = nao
+ribeirinho). Isso perdia municipios cuja SEDE esta a 10-30 km do curso d'agua, mesmo quando ha rota fluvial
+real no grafo. Nova geracao: quando o snap estrito nao encontra rio, tenta snap LARGO de 30 km SOMENTE se
+houver PROVA de que o corpo d'agua liga o par: `_resgate_ferry_cruza_agua` (geodesica entre as sedes cruzando
+agua no grafo) — a MESMA evidencia que auto-engaja o FOSSGIS. O CUSTO HONESTO no snap largo e
+FLUVIAL + ACESSO as sedes (snap_o + snap_d): nunca fabrica trajeto mais curto do que acessar o rio de
+verdade. Adocao segue ESTRITAMENTE menor e fonte auditavel 'fluvial-direta-largo'.
+Prova com o grafo real: Governador Celso Ramos->Brusque tem rota fluvial real a snap 30 (84,3 km + acesso)
+mas 84,3 > 81,7 rodoviario -> NAO adotada; Curralinho->Breves e Muana->Abaetetuba NAO conectam no grafo nem
+a 30 km -> nao inventa. Fail-open: sem prova/grafo/coords/excecao -> {}. Complemento: roteador fluvial agora
+devolve snap_o_km/snap_d_km (distancia sede->rio por extremidade, cache antigo sem eles -> fallback para o
+snap maximo como acesso de ambos).
+
+Evidencia: validar 192 OK / 0 FALHAS (22 secoes, sem rede; SNAP-EXPANDIDO na seccao 22); decidir 38/38;
+relatorio regenerado -> _RELATORIO_ANTES_DEPOIS.md.
