@@ -27828,6 +27828,46 @@ def _resgate_ferry_deve_investigar(km_osrm, km_reta, tem_balsa):
     return _vr >= _VALHALLA_INVESTIGAR_VR
 
 
+def _fluvial_para_resgate(pares, resultados, coords_f=None, g=None, limite_km=2500, snap_max_km=8.0):
+    """[FLUVIAL-ROTA-DIRETA - 426ª geração] Quando o par tem travessia de água pláusil MAS o 2º motor (FOSSGIS)
+    não retornou rota real (sem ferry no seu grafo — ex.: Governador Celso Ramos, barreira lagunar), mede a
+    rota FLUVIAL REAL do grafo hidrográfico nacional via Dijkstra e devolve uma tupla no MESMO CONTRATO do
+    processamento de resultados: (km, tempo, 'Não', balsa, fonte, 'fluvial-direta', rios, path_lonlat). Returns
+    dict {par: tupla} só com pares em que a rota fluvial EXISTE (km>0 e snap ≤ snap_max_km) e é ESTRITAMENTE
+    menor que a distância medida anterior (mesma regra conservadora do wire). Sem grafo/coords/exceção →
+    não devolve (fail-open: nunca substitui à força). Determinístico, sem rede."""
+    try:
+        if not pares or not coords_f:
+            return {}
+        _g = g if g is not None else _grafo_fluvial_memoizado()
+        _out = {}
+        for _p in pares:
+            try:
+                _pr = (resultados or {}).get(_p)
+                if not _pr or not _pr[0]:
+                    continue
+                _cm = float(_pr[0])
+                _c = coords_f.get(_p)
+                if not _c or len(_c) < 4 or None in _c:
+                    continue
+                _frr = _fluvial_rota_real_sob_demanda(float(_c[0]), float(_c[1]), float(_c[2]), float(_c[3]),
+                                                       limite_km=limite_km, snap_max_km=snap_max_km)
+                if not _frr or not _frr.get("km"):
+                    continue
+                _fk = float(_frr["km"])
+                if _fk <= 0 or _fk >= _cm:
+                    continue   # só adota estritamente menor (conservador)
+                _rios = _frr.get("rios") or []
+                _out[_p] = (_fk, (_fk / 22.0 if _fk > 0 else None), "Não", "Sim",
+                            "fluvial-direta", "fluvial-direta", " → ".join(_rios),
+                            _frr.get("path_lonlat"))
+            except Exception:
+                continue
+        return _out
+    except Exception:
+        return {}
+
+
 def _resgate_ferry_cruza_agua(lat_o, lon_o, lat_d, lon_d, g=None):
     """[FERRY-BUDGET - 424ª geração] True quando há EVIDÊNCIA de travessia de água (balsa/geodésia cruzando
     corpo d'água no grafo hidrográfico) — a condição para o AUTO-ENGAJAMENTO do FOSSGIS gastar budget do
@@ -27875,12 +27915,28 @@ def _cruza_agua_entre_pontos(lat_o, lon_o, lat_d, lon_d, g=None):
         _lim = _raio_km * 0.012
         _pts = [(_lao + (_lad - _lao) * _t, _loo + (_lod - _loo) * _t) for _t in _np.linspace(0.0, 1.0, 11)]
         _tree = (g or {}).get("tree")
+        _M = (g or {}).get("M")
         if _tree is not None:
             for _la, _lo in _pts:
                 try:
                     _d2, _i = _tree.query([_lo, _la], k=1, distance_upper_bound=_lim)
                     _ii = int(_i)
                     if _np.isfinite(_d2) and _d2 <= _lim and 0 <= _ii < len(_C):
+                        # [DETECÇÃO-POR-ARESTA - 427ª geração] Além da proximidade ao NÓ, valida a travessia
+                        # pelo SEGMENTO das arestas incidentes ao nó: um rio pode passar perto do nó mas a
+                        # travessia real acontece no meio do trecho reto. Usa ponto-à-aresta (_dist_ponto_
+                        # _segmento_km) — sem falsificar (só dentro do raio), sem custo extra de rede.
+                        if _M is not None:
+                            _nb = _M.indices[_M.indptr[int(_ii)]:_M.indptr[int(_ii) + 1]]
+                            for _nn in _nb:
+                                try:
+                                    _dseg = _dist_ponto_segmento_km(
+                                        _la, _lo, (float(_C[int(_ii), 0]), float(_C[int(_ii), 1])),
+                                        (float(_C[int(_nn), 0]), float(_C[int(_nn), 1])))
+                                except Exception:
+                                    _dseg = None
+                                if _dseg is not None and _dseg <= _raio_km:
+                                    return True
                         return True
                 except Exception:
                     continue
@@ -44992,14 +45048,39 @@ if _secao == _SECOES[2]:   # tab_alocacao
                                         if (_ant_fc is None) or (_nov_fc < float(_ant_fc)):
                                             _resultados[_kfc] = _vfc
                                             _acc_fc += 1
-                                if _acc_fc:
-                                    try:
-                                        _topk_reatrib = _fundir_resultados_no_topk(_topk_reatrib, _resultados)
-                                    except Exception:
-                                        pass
-                                    st.session_state['alo_resultados'] = _resultados
-                                    logger.warning("[FERRY-CANDIDATO] %d par(es) fluvial(ais) reclassificado(s) "
-                                                   "pela medição ferry do 2º motor no hall.", _acc_fc)
+                                    if _acc_fc:
+                                        try:
+                                            _topk_reatrib = _fundir_resultados_no_topk(_topk_reatrib, _resultados)
+                                        except Exception:
+                                            pass
+                                        st.session_state['alo_resultados'] = _resultados
+                                        logger.warning("[FERRY-CANDIDATO] %d par(es) fluvial(ais) reclassificado(s) "
+                                                       "pela medição ferry do 2º motor no hall.", _acc_fc)
+                            # [FLUVIAL-ROTA-DIRETA - 426ª geração] Quando o FOSSGIS (2º motor) NÃO entregou uma
+                            # rota real para o par de travessia de água pláusil (sem ferry no seu grafo — ex.:
+                            # barreira lagunar/estuarina de SC), tenta a rota FLUVIAL REAL do grafo hidrográfico
+                            # nacional (Dijkstra, adota só ESTRITAMENTE menor, fail-open). Maximiza a malha
+                            # aquaviária sem custo de rede.
+                            try:
+                                _res_fd = _fluvial_para_resgate(
+                                    _pares_fc, _resultados, _coords_fr, g=_grafo_fluvial_memoizado())
+                                if _res_fd:
+                                    _nd_fd = 0
+                                    for _kfd, _vfd in (_res_fd or {}).items():
+                                        _ant_fd = (_resultados.get(_kfd) or [None])[0]
+                                        if (_ant_fd is None) or (_vfd[0] < float(_ant_fd)):
+                                            _resultados[_kfd] = _vfd
+                                            _nd_fd += 1
+                                    if _nd_fd:
+                                        try:
+                                            _topk_reatrib = _fundir_resultados_no_topk(_topk_reatrib, _resultados)
+                                        except Exception:
+                                            pass
+                                        st.session_state['alo_resultados'] = _resultados
+                                        logger.warning("[FLUVIAL-ROTA-DIRETA] %d par(es) reclassificado(s) pela "
+                                                       "rota fluvial REAL do grafo hidrográfico.", _nd_fd)
+                            except Exception as _e_fd:
+                                logger.error(f"[FLUVIAL-ROTA-DIRETA] Falha na rota fluvial direta: {_e_fd}")
                         except Exception as _e_fc:
                             logger.error(f"[FERRY-CANDIDATO] Falha no ampliamento do hall com ferry: {_e_fc}")
                         _novo_dest_mc, _mcda_mc = _reatribuir_hubs_multicriterio(

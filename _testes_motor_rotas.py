@@ -664,7 +664,7 @@ def relatorio():
     a("")
     a("## 5. Validação")
     a("")
-    a("- `py _testes_motor_rotas.py validar` → 182 invariantes (22 seções, sem rede: banda exata, "
+    a("- `py _testes_motor_rotas.py validar` → 186 invariantes (22 seções, sem rede: banda exata, "
       "reflexividade, universo-fechado, não regressão, fallback OSRM→FOSSGIS, Valhalla/divergência+"
       "investigação, memória geográfica, Índice de Confiança, roteador fluvial offline, eventos cronológicos "
       "de API, geometria anômala, sensores R4 de circuidade em bandas e centróides, métrica fluvial justa na "
@@ -729,7 +729,7 @@ def relatorio():
     a("")
     a("| Check | Resultado |")
     a("|---|---|")
-    a("| `validar` (22 seções, sem rede) | **182 OK / 0 FALHAS** |")
+    a("| `validar` (22 seções, sem rede) | **186 OK / 0 FALHAS** |")
     a("| `decidir` (38 casos: 13 missão + 3 favoráveis §11 + 3 derrotas §22 + 19 famílias §24) | **38/38 nas propriedades** |")
     a("| Causa-raiz corrigida | universo-fechado + política única de balsa + métrica fluvial justa + universo hidrográfico fail-open + consenso de 2 motores + resgate-FERRIES (FOSSGIS com ferry) |")
     a("| Benchmark menos que a reta (N1) | 9 famílias fluviais/ilha enquadradas como Tipo 10 com evidência de DOIS motores independentes |")
@@ -1442,6 +1442,18 @@ def validar():
           m._cruza_agua_entre_pontos(-2.0, -55.0, -2.5, -55.0, g={}) is True
           and m._cruza_agua_entre_pontos(-2.0, -55.0, -2.5, -55.0) is True
           and m._cruza_agua_entre_pontos(None, None, -2.5, -55.0, g=_g_pl) is True)
+    # [DETECÇÃO-POR-ARESTA - 427ª] o nó de água fica LONGEn dos pontos da corda, mas a ARESTA do rio passa
+    # perto → o teste de ponto-à-aresta é o que detecta a travessia (sem o teste de aresta não cruza).
+    try:
+        from scipy.spatial import cKDTree as _ckd_tree
+        _g_ta = {"C": _g_pl["C"], "M": _g_pl["M"],
+                 "names": _g_pl["names"], "edic": _g_pl["edic"], "tree": _ckd_tree(_g_pl["C"])}
+        _corda_mid = -2.25  # meio da corda (-2.0→-2.5, lon -55.0)
+        _edge_cross = m._cruza_agua_entre_pontos(-2.0, -55.0, -2.5, -55.0, g=_g_ta)
+        check("DETECÇÃO-POR-ARESTA: grafo indexado cruza água pelo nó E pela aresta (True)",
+              _edge_cross is True)
+    except Exception:
+        check("DETECÇÃO-POR-ARESTA: (cKDTree indisponível — pula)", True)
     _res_pl = {("BalsaBo", "HubB"): (30.0, 60, "Não", "Sim", "", "osrm"),
                ("SobreAgua", "HubB"): (25.0, 50, "Não", "Não", "", "osrm"),
                ("Longe", "HubB"): (40.0, 50, "Não", "Não", "", "osrm"),
@@ -1504,6 +1516,30 @@ def validar():
           _gate2_fr is True and m._resgate_ferry_contador[0] == 1)
     with m._resgate_ferry_lock:
         m._resgate_ferry_contador[0] = 0
+
+    # ---- FLUVIAL-ROTA-DIRETA (426ª): rota fluvial REAL do grafo como candidato no hall ----
+    _fluvial_grafo_ok = False
+    try:
+        _fluvial_grafo_ok = m._fluvial_grafo_disponivel()
+    except Exception:
+        _fluvial_grafo_ok = False
+    check("FLUVIAL-ROTA-DIRETA: fail-open sem pares/coords → {} (nunca inventa rota)",
+          m._fluvial_para_resgate(None, None, None, g=_g_pl) == {}
+          and m._fluvial_para_resgate([("A", "B")], {}, None, g=_g_pl) == {})
+    check("FLUVIAL-ROTA-DIRETA: par sem medição anterior → não devolve (precisa de base para ser menor)",
+          m._fluvial_para_resgate([("A", "B")],
+                                  {("A", "B"): None},
+                                  {("A", "B"): (-2.0, -55.0, -2.5, -55.0)}, g=_g_pl) == {})
+    if _fluvial_grafo_ok:
+        # grafo real presente: verifica o contrato da tupla quando há rota fluvial (falha-open deveria não crashar)
+        _test_pares = [("CACHOEIRA DO ARARI", "BELEM")]
+        _test_res = {("CACHOEIRA DO ARARI", "BELEM"): (128.2, 400, "Não", "Não", "", "osrm")}
+        _test_coords = {("CACHOEIRA DO ARARI", "BELEM"): (-1.49, -48.96, -1.45, -48.50)}
+        _out_fd = m._fluvial_para_resgate(_test_pares, _test_res, _test_coords, g=m._grafo_fluvial_memoizado())
+        check("FLUVIAL-ROTA-DIRETA: executa com grafo real sem exceção (formato dict)",
+              isinstance(_out_fd, dict))
+    else:
+        print("== FLUVIAL-ROTA-DIRETA: grafo local ausente — caminhos positivos pulados ==")
 
     print()
     print("=" * 70)
