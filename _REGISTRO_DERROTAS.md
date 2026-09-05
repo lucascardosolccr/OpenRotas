@@ -285,6 +285,8 @@ Correcao implementada [FERRY-BUDGET]:
   barrar). FAIL-OPEN em tudo: sem grafo/coordenadas/excecao -> True (comportamento da 421a intacto;
   nunca tira cobertura). Entre os sem-rota do hall (FERRY-CANDIDATO), a ordem agora e por MENOR reta
   (candidato arriscado-desconhecido proximo pode vencer o vencedor atual).
+  [424b] Balsa manifesta cruza SEMPRE (`_vb0 or agua`): se o rio da balsa nao estiver no grafo hidrografico,
+  o par NAO perde a medicao (cobertura da 421a 100% preservada); o gate de agua vale so para desvio puro.
 
-Evidencia: validar 181 OK / 0 FALHAS (22 secoes, sem rede; FERRY-BUDGET na seccao 22);
+Evidencia: validar 182 OK / 0 FALHAS (22 secoes, sem rede; FERRY-BUDGET na seccao 22);
 decidir 38/38; relatorio regenerado -> _RELATORIO_ANTES_DEPOIS.md.

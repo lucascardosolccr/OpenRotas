@@ -31244,13 +31244,13 @@ def calcular_pipeline_logistico(origem, destino, perfil_rota="shortest"):
             except Exception:
                 _vk0 = None
             _vb0 = bool(res_osrm and len(res_osrm) > 2 and str(res_osrm[2]).upper().startswith("S"))
-            # [FERRY-BUDGET - 424ª geração] o auto-engajamento só GASTA o orçamento quando há evidência de
-            # travessia de água no grafo hidrográfico (`_resgate_ferry_cruza_agua`); desvio rodoviário puro
-            # (serra, sem rio) fica de fora do cruce (fair-use do FOSSGIS). Fail-open: sem grafo → True →
-            # comportamento da 421ª intacto.
+            # [FERRY-BUDGET - 424ª/424b geração] o auto-engajamento só GASTA o orçamento com EVIDÊNCIA de água.
+            # Balsa manifesta cruza SEMPRE (cobertura da 421ª intacta mesmo se o grafo hidrográfico não tem o
+            # rio); o gate de água vale só para o desvio rodoviário puro (V/R alto em serra, sem rio) →
+            # poupa o cruce (fair-use do FOSSGIS). Fail-open: sem grafo/coordenadas → True.
             if (_ler_flag_runtime('usar_osrm2')
                     or (_vk0 and _resgate_ferry_deve_investigar(_vk0, dist_linha_reta, _vb0)
-                        and _resgate_ferry_cruza_agua(lat_o, lon_o, lat_d, lon_d)
+                        and (_vb0 or _resgate_ferry_cruza_agua(lat_o, lon_o, lat_d, lon_d))
                         and _resgate_ferry_permite())
                     or _fossgis_forca_take()):
                 _res_osrm2 = _chamar_motor_cb('OSRM_FOSSGIS', API_OSRM_FOSSGIS_Routing, lat_o, lon_o, lat_d, lon_d)

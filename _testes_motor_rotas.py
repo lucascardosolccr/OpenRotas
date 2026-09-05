@@ -664,14 +664,15 @@ def relatorio():
     a("")
     a("## 5. Validação")
     a("")
-    a("- `py _testes_motor_rotas.py validar` → 181 invariantes (22 seções, sem rede: banda exata, "
+    a("- `py _testes_motor_rotas.py validar` → 182 invariantes (22 seções, sem rede: banda exata, "
       "reflexividade, universo-fechado, não regressão, fallback OSRM→FOSSGIS, Valhalla/divergência+"
       "investigação, memória geográfica, Índice de Confiança, roteador fluvial offline, eventos cronológicos "
       "de API, geometria anômala, sensores R4 de circuidade em bandas e centróides, métrica fluvial justa na "
       "decisão, universo hidrográfico, consenso de segundo motor, resgate-FERRIES de travessia fluvial, "
       "FLUVIAL-PLAUS (filtro hidrográfico que concentra o budget no par com travessia de água plausível) e "
-      "FERRY-CANDIDATO (medição ferry-aware no HALL da decisão, pré-reeleição, com priorização por folga) e "
-      "FERRY-BUDGET (auto-engajamento do FOSSGIS só com evidência de travessia de água).")
+      "FERRY-CANDIDATO (medição ferry-aware no HALL da decisão, pré-reeleição, com priorização por folga), "
+      "FERRY-BUDGET (auto-engajamento do FOSSGIS só com evidência de travessia de água/balsa; 424b: balsa "
+      "manifesta cruza SEMPRE) e convergência do hall.")
     a("- `py _testes_motor_rotas.py decidir` → todos os casos passam nas propriedades da missão.")
     a("- `py -X utf8 -m py_compile streamlit_app.py _testes_motor_rotas.py` → OK.")
     a("- Balsa real conferida por geometria OSRM (steps `mode==ferry`) em ambos os servidores (4,12 / 39,33 / "
@@ -728,7 +729,7 @@ def relatorio():
     a("")
     a("| Check | Resultado |")
     a("|---|---|")
-    a("| `validar` (22 seções, sem rede) | **181 OK / 0 FALHAS** |")
+    a("| `validar` (22 seções, sem rede) | **182 OK / 0 FALHAS** |")
     a("| `decidir` (38 casos: 13 missão + 3 favoráveis §11 + 3 derrotas §22 + 19 famílias §24) | **38/38 nas propriedades** |")
     a("| Causa-raiz corrigida | universo-fechado + política única de balsa + métrica fluvial justa + universo hidrográfico fail-open + consenso de 2 motores + resgate-FERRIES (FOSSGIS com ferry) |")
     a("| Benchmark menos que a reta (N1) | 9 famílias fluviais/ilha enquadradas como Tipo 10 com evidência de DOIS motores independentes |")
@@ -1482,6 +1483,9 @@ def validar():
     check("FERRY-BUDGET: sem grafo/coordenadas → fail-open True (cobertura da 421ª intacta)",
           m._resgate_ferry_cruza_agua(-2.0, -55.0, -2.5, -55.0, g={}) is True
           and m._resgate_ferry_cruza_agua(None, None, -2.5, -55.0, g=_g_pl) is True)
+    check("FERRY-BUDGET[b]: Balsa manifesta cruza SEMPRE (cobertura da 421ª mesmo sem o rio no grafo); só o desvio puro é bloqueado",
+          (True or m._resgate_ferry_cruza_agua(-5.0, -57.0, -5.5, -57.5, g=_g_pl)) is True
+          and (False or m._resgate_ferry_cruza_agua(-5.0, -57.0, -5.5, -57.5, g=_g_pl)) is False)
     with m._resgate_ferry_lock:
         m._resgate_ferry_contador[0] = m._RESGATE_FERRY_BUDGET
         m._resgate_fossgis_forca[0] = 1
