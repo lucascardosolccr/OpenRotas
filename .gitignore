@@ -1,0 +1,32 @@
+# =====================================================================================
+# OpenRotas — .gitignore
+# Segredos, caches operacionais e lixo não entram no repositório.
+# As chaves de API são carregadas via st.secrets (.streamlit/secrets.toml) — jamais
+# versionadas.
+# =====================================================================================
+
+# ---- Segredos (Streamlit Cloud / local) ----
+.streamlit/
+secrets.toml
+*.env
+.env.*
+
+# ---- Caches operacionais (resultados reais de API / caderneta / telemetria) ----
+cache_*/
+logs_*/
+!cache_osm/                 # (registro: nada aqui por ora)
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# ---- Sessão / automação ----
+.env
+
+# ---- SO / editor ----
+Thumbs.db
+.DS_Store
+.idea/
+.vscode/
+*.suo

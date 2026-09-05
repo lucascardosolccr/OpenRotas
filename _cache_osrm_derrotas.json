@@ -1,0 +1,5079 @@
+{
+ "PAUINI|SENA MADUREIRA": {
+  "km": 412.51,
+  "reta": 236.06,
+  "uf_destino": "AC",
+  "nome_oficial": "SENA MADUREIRA"
+ },
+ "PAUINI|RIO BRANCO": {
+  "km": 269.87,
+  "reta": 266.37,
+  "uf_destino": "AC",
+  "nome_oficial": "RIO BRANCO"
+ },
+ "PAUINI|BOCA DO ACRE": {
+  "km": 65.95,
+  "reta": 123.3,
+  "uf_destino": "AM",
+  "nome_oficial": "BOCA DO ACRE"
+ },
+ "PAUINI|ITAMARATI": {
+  "km": null,
+  "reta": 197.55,
+  "uf_destino": "AM",
+  "nome_oficial": "ITAMARATI"
+ },
+ "PAUINI|PORTO ACRE": {
+  "km": 219.25,
+  "reta": 216.58,
+  "uf_destino": "AC",
+  "nome_oficial": "PORTO ACRE"
+ },
+ "PAUINI|LABREA": {
+  "km": 1120.22,
+  "reta": 247.96,
+  "uf_destino": "AM",
+  "nome_oficial": "LABREA"
+ },
+ "PAUINI|BUJARI": {
+  "km": 293.43,
+  "reta": 257.58,
+  "uf_destino": "AC",
+  "nome_oficial": "BUJARI"
+ },
+ "PAUINI|ACRELANDIA": {
+  "km": 315.8,
+  "reta": 262.76,
+  "uf_destino": "AC",
+  "nome_oficial": "ACRELANDIA"
+ },
+ "PAUINI|MANOEL URBANO": {
+  "km": 496.95,
+  "reta": 278.05,
+  "uf_destino": "AC",
+  "nome_oficial": "MANOEL URBANO"
+ },
+ "PAUINI|SENADOR GUIOMARD": {
+  "km": 261.09,
+  "reta": 283.22,
+  "uf_destino": "AC",
+  "nome_oficial": "SENADOR GUIOMARD"
+ },
+ "PAUINI|PLACIDO DE CASTRO": {
+  "km": 296.64,
+  "reta": 292.25,
+  "uf_destino": "AC",
+  "nome_oficial": "PLACIDO DE CASTRO"
+ },
+ "PAUINI|CARAUARI": {
+  "km": null,
+  "reta": 315.64,
+  "uf_destino": "AM",
+  "nome_oficial": "CARAUARI"
+ },
+ "PAUINI|CANUTAMA": {
+  "km": 1132.23,
+  "reta": 316.75,
+  "uf_destino": "AM",
+  "nome_oficial": "CANUTAMA"
+ },
+ "PAUINI|CAPIXABA": {
+  "km": 312.95,
+  "reta": 326.28,
+  "uf_destino": "AC",
+  "nome_oficial": "CAPIXABA"
+ },
+ "PAUINI|ENVIRA": {
+  "km": 663.45,
+  "reta": 334.77,
+  "uf_destino": "AM",
+  "nome_oficial": "ENVIRA"
+ },
+ "PAUINI|EIRUNEPE": {
+  "km": null,
+  "reta": 336.91,
+  "uf_destino": "AM",
+  "nome_oficial": "EIRUNEPE"
+ },
+ "PAUINI|NOVA MAMORE": {
+  "km": 587.8,
+  "reta": 351.86,
+  "uf_destino": "RO",
+  "nome_oficial": "NOVA MAMORE"
+ },
+ "PAUINI|PORTO VELHO": {
+  "km": 715.68,
+  "reta": 359.94,
+  "uf_destino": "RO",
+  "nome_oficial": "PORTO VELHO"
+ },
+ "PAUINI|XAPURI": {
+  "km": 419.22,
+  "reta": 366.13,
+  "uf_destino": "AC",
+  "nome_oficial": "XAPURI"
+ },
+ "PAUINI|FEIJO": {
+  "km": 631.96,
+  "reta": 372.9,
+  "uf_destino": "AC",
+  "nome_oficial": "FEIJO"
+ },
+ "casos": {
+  "Pauini/AM": {
+   "origem": "Pauini",
+   "uf": "AM",
+   "app_hub": "Sena Madureira",
+   "app_km": 413,
+   "ref_hub": "Rio Branco",
+   "ref_km": 270,
+   "balsa": {},
+   "medidas": {
+    "Sena Madureira": {
+     "km": 412.51,
+     "reta": 236.06,
+     "uf_destino": "AC",
+     "nome_oficial": "SENA MADUREIRA"
+    },
+    "Rio Branco": {
+     "km": 269.87,
+     "reta": 266.37,
+     "uf_destino": "AC",
+     "nome_oficial": "RIO BRANCO"
+    },
+    "BOCA DO ACRE": {
+     "km": 65.95,
+     "reta": 123.3,
+     "uf_destino": "AM",
+     "nome_oficial": "BOCA DO ACRE"
+    },
+    "ITAMARATI": {
+     "km": null,
+     "reta": 197.55,
+     "uf_destino": "AM",
+     "nome_oficial": "ITAMARATI"
+    },
+    "PORTO ACRE": {
+     "km": 219.25,
+     "reta": 216.58,
+     "uf_destino": "AC",
+     "nome_oficial": "PORTO ACRE"
+    },
+    "SENA MADUREIRA": {
+     "km": 412.51,
+     "reta": 236.06,
+     "uf_destino": "AC",
+     "nome_oficial": "SENA MADUREIRA"
+    },
+    "LABREA": {
+     "km": 1120.22,
+     "reta": 247.96,
+     "uf_destino": "AM",
+     "nome_oficial": "LABREA"
+    },
+    "BUJARI": {
+     "km": 293.43,
+     "reta": 257.58,
+     "uf_destino": "AC",
+     "nome_oficial": "BUJARI"
+    },
+    "ACRELANDIA": {
+     "km": 315.8,
+     "reta": 262.76,
+     "uf_destino": "AC",
+     "nome_oficial": "ACRELANDIA"
+    },
+    "RIO BRANCO": {
+     "km": 269.87,
+     "reta": 266.37,
+     "uf_destino": "AC",
+     "nome_oficial": "RIO BRANCO"
+    },
+    "MANOEL URBANO": {
+     "km": 496.95,
+     "reta": 278.05,
+     "uf_destino": "AC",
+     "nome_oficial": "MANOEL URBANO"
+    },
+    "SENADOR GUIOMARD": {
+     "km": 261.09,
+     "reta": 283.22,
+     "uf_destino": "AC",
+     "nome_oficial": "SENADOR GUIOMARD"
+    },
+    "PLACIDO DE CASTRO": {
+     "km": 296.64,
+     "reta": 292.25,
+     "uf_destino": "AC",
+     "nome_oficial": "PLACIDO DE CASTRO"
+    },
+    "CARAUARI": {
+     "km": null,
+     "reta": 315.64,
+     "uf_destino": "AM",
+     "nome_oficial": "CARAUARI"
+    },
+    "CANUTAMA": {
+     "km": 1132.23,
+     "reta": 316.75,
+     "uf_destino": "AM",
+     "nome_oficial": "CANUTAMA"
+    },
+    "CAPIXABA": {
+     "km": 312.95,
+     "reta": 326.28,
+     "uf_destino": "AC",
+     "nome_oficial": "CAPIXABA"
+    },
+    "ENVIRA": {
+     "km": 663.45,
+     "reta": 334.77,
+     "uf_destino": "AM",
+     "nome_oficial": "ENVIRA"
+    },
+    "EIRUNEPE": {
+     "km": null,
+     "reta": 336.91,
+     "uf_destino": "AM",
+     "nome_oficial": "EIRUNEPE"
+    },
+    "NOVA MAMORE": {
+     "km": 587.8,
+     "reta": 351.86,
+     "uf_destino": "RO",
+     "nome_oficial": "NOVA MAMORE"
+    },
+    "PORTO VELHO": {
+     "km": 715.68,
+     "reta": 359.94,
+     "uf_destino": "RO",
+     "nome_oficial": "PORTO VELHO"
+    },
+    "XAPURI": {
+     "km": 419.22,
+     "reta": 366.13,
+     "uf_destino": "AC",
+     "nome_oficial": "XAPURI"
+    },
+    "FEIJO": {
+     "km": 631.96,
+     "reta": 372.9,
+     "uf_destino": "AC",
+     "nome_oficial": "FEIJO"
+    }
+   }
+  },
+  "Jacundá/PA": {
+   "origem": "Jacundá",
+   "uf": "PA",
+   "app_hub": "Tucuruí",
+   "app_km": 159,
+   "ref_hub": "Marabá",
+   "ref_km": 111,
+   "balsa": {},
+   "medidas": {
+    "Tucuruí": {
+     "km": 159.48,
+     "reta": 97.83,
+     "uf_destino": "PA",
+     "nome_oficial": "TUCURUI"
+    },
+    "Marabá": {
+     "km": 110.75,
+     "reta": 100.11,
+     "uf_destino": "PA",
+     "nome_oficial": "MARABA"
+    },
+    "NOVA IPIXUNA": {
+     "km": 55.21,
+     "reta": 51.74,
+     "uf_destino": "PA",
+     "nome_oficial": "NOVA IPIXUNA"
+    },
+    "GOIANESIA DO PARA": {
+     "km": 73.04,
+     "reta": 67.74,
+     "uf_destino": "PA",
+     "nome_oficial": "GOIANESIA DO PARA"
+    },
+    "ITUPIRANGA": {
+     "km": 164.55,
+     "reta": 80.04,
+     "uf_destino": "PA",
+     "nome_oficial": "ITUPIRANGA"
+    },
+    "BOM JESUS DO TOCANTINS": {
+     "km": 142.46,
+     "reta": 87.17,
+     "uf_destino": "PA",
+     "nome_oficial": "BOM JESUS DO TOCANTINS"
+    },
+    "BREU BRANCO": {
+     "km": 132.56,
+     "reta": 90.07,
+     "uf_destino": "PA",
+     "nome_oficial": "BREU BRANCO"
+    },
+    "NOVO REPARTIMENTO": {
+     "km": 295.7,
+     "reta": 95.64,
+     "uf_destino": "PA",
+     "nome_oficial": "NOVO REPARTIMENTO"
+    },
+    "ABEL FIGUEIREDO": {
+     "km": 168.69,
+     "reta": 97.41,
+     "uf_destino": "PA",
+     "nome_oficial": "ABEL FIGUEIREDO"
+    },
+    "TUCURUI": {
+     "km": 159.48,
+     "reta": 97.83,
+     "uf_destino": "PA",
+     "nome_oficial": "TUCURUI"
+    },
+    "MARABA": {
+     "km": 110.75,
+     "reta": 100.11,
+     "uf_destino": "PA",
+     "nome_oficial": "MARABA"
+    },
+    "SAO PEDRO DA AGUA BRANCA": {
+     "km": 168.87,
+     "reta": 103.5,
+     "uf_destino": "MA",
+     "nome_oficial": "SAO PEDRO DA AGUA BRANCA"
+    },
+    "SAO JOAO DO ARAGUAIA": {
+     "km": 157.69,
+     "reta": 107.13,
+     "uf_destino": "PA",
+     "nome_oficial": "SAO JOAO DO ARAGUAIA"
+    },
+    "ESPERANTINA": {
+     "km": 192.83,
+     "reta": 120.19,
+     "uf_destino": "TO",
+     "nome_oficial": "ESPERANTINA"
+    },
+    "RONDON DO PARA": {
+     "km": 211.73,
+     "reta": 121.59,
+     "uf_destino": "PA",
+     "nome_oficial": "RONDON DO PARA"
+    },
+    "SAO DOMINGOS DO ARAGUAIA": {
+     "km": 157.23,
+     "reta": 128.71,
+     "uf_destino": "PA",
+     "nome_oficial": "SAO DOMINGOS DO ARAGUAIA"
+    },
+    "SAO SEBASTIAO DO TOCANTINS": {
+     "km": 214.47,
+     "reta": 135.35,
+     "uf_destino": "TO",
+     "nome_oficial": "SAO SEBASTIAO DO TOCANTINS"
+    },
+    "VILA NOVA DOS MARTIRIOS": {
+     "km": 208.2,
+     "reta": 135.77,
+     "uf_destino": "MA",
+     "nome_oficial": "VILA NOVA DOS MARTIRIOS"
+    },
+    "BURITI DO TOCANTINS": {
+     "km": 222.8,
+     "reta": 137.73,
+     "uf_destino": "TO",
+     "nome_oficial": "BURITI DO TOCANTINS"
+    },
+    "CARRASCO BONITO": {
+     "km": 296.02,
+     "reta": 153.77,
+     "uf_destino": "TO",
+     "nome_oficial": "CARRASCO BONITO"
+    },
+    "BREJO GRANDE DO ARAGUAIA": {
+     "km": 203.41,
+     "reta": 160.11,
+     "uf_destino": "PA",
+     "nome_oficial": "BREJO GRANDE DO ARAGUAIA"
+    },
+    "TAILANDIA": {
+     "km": 179.96,
+     "reta": 167.86,
+     "uf_destino": "PA",
+     "nome_oficial": "TAILANDIA"
+    }
+   }
+  },
+  "Medina/MG": {
+   "origem": "Medina",
+   "uf": "MG",
+   "app_hub": "Almenara",
+   "app_km": 157,
+   "ref_hub": "Araçuaí",
+   "ref_km": 118,
+   "balsa": {},
+   "medidas": {
+    "Almenara": {
+     "km": 156.72,
+     "reta": 83.04,
+     "uf_destino": "MG",
+     "nome_oficial": "ALMENARA"
+    },
+    "Araçuaí": {
+     "km": 118.11,
+     "reta": 93.69,
+     "uf_destino": "MG",
+     "nome_oficial": "ARACUAI"
+    },
+    "CACHOEIRA DE PAJEU": {
+     "km": 48.63,
+     "reta": 29.09,
+     "uf_destino": "MG",
+     "nome_oficial": "CACHOEIRA DE PAJEU"
+    },
+    "SANTA CRUZ DE SALINAS": {
+     "km": 50.01,
+     "reta": 31.95,
+     "uf_destino": "MG",
+     "nome_oficial": "SANTA CRUZ DE SALINAS"
+    },
+    "PEDRA AZUL": {
+     "km": 48.44,
+     "reta": 32.31,
+     "uf_destino": "MG",
+     "nome_oficial": "PEDRA AZUL"
+    },
+    "COMERCINHO": {
+     "km": 43.21,
+     "reta": 34.69,
+     "uf_destino": "MG",
+     "nome_oficial": "COMERCINHO"
+    },
+    "ITAOBIM": {
+     "km": 43.36,
+     "reta": 37.54,
+     "uf_destino": "MG",
+     "nome_oficial": "ITAOBIM"
+    },
+    "CURRAL DE DENTRO": {
+     "km": 106.95,
+     "reta": 51.47,
+     "uf_destino": "MG",
+     "nome_oficial": "CURRAL DE DENTRO"
+    },
+    "ITINGA": {
+     "km": 76.0,
+     "reta": 53.02,
+     "uf_destino": "MG",
+     "nome_oficial": "ITINGA"
+    },
+    "AGUAS VERMELHAS": {
+     "km": 71.85,
+     "reta": 53.45,
+     "uf_destino": "MG",
+     "nome_oficial": "AGUAS VERMELHAS"
+    },
+    "JEQUITINHONHA": {
+     "km": 110.55,
+     "reta": 55.69,
+     "uf_destino": "MG",
+     "nome_oficial": "JEQUITINHONHA"
+    },
+    "DIVISA ALEGRE": {
+     "km": 70.89,
+     "reta": 57.3,
+     "uf_destino": "MG",
+     "nome_oficial": "DIVISA ALEGRE"
+    },
+    "PONTO DOS VOLANTES": {
+     "km": 65.03,
+     "reta": 58.73,
+     "uf_destino": "MG",
+     "nome_oficial": "PONTO DOS VOLANTES"
+    },
+    "JOAIMA": {
+     "km": 135.42,
+     "reta": 67.95,
+     "uf_destino": "MG",
+     "nome_oficial": "JOAIMA"
+    },
+    "BERIZAL": {
+     "km": 112.62,
+     "reta": 73.67,
+     "uf_destino": "MG",
+     "nome_oficial": "BERIZAL"
+    },
+    "MONTE FORMOSO": {
+     "km": 106.31,
+     "reta": 75.14,
+     "uf_destino": "MG",
+     "nome_oficial": "MONTE FORMOSO"
+    },
+    "DIVISOPOLIS": {
+     "km": 108.68,
+     "reta": 75.37,
+     "uf_destino": "MG",
+     "nome_oficial": "DIVISOPOLIS"
+    },
+    "ALMENARA": {
+     "km": 156.72,
+     "reta": 83.04,
+     "uf_destino": "MG",
+     "nome_oficial": "ALMENARA"
+    },
+    "CANDIDO SALES": {
+     "km": 98.01,
+     "reta": 84.04,
+     "uf_destino": "BA",
+     "nome_oficial": "CANDIDO SALES"
+    },
+    "RUBELITA": {
+     "km": 194.71,
+     "reta": 86.1,
+     "uf_destino": "MG",
+     "nome_oficial": "RUBELITA"
+    },
+    "CORONEL MURTA": {
+     "km": 161.63,
+     "reta": 86.84,
+     "uf_destino": "MG",
+     "nome_oficial": "CORONEL MURTA"
+    },
+    "SALINAS": {
+     "km": 165.52,
+     "reta": 86.95,
+     "uf_destino": "MG",
+     "nome_oficial": "SALINAS"
+    }
+   }
+  },
+  "Mostardas/RS": {
+   "origem": "Mostardas",
+   "uf": "RS",
+   "app_hub": "Camaquã",
+   "app_km": 340,
+   "ref_hub": "Osório",
+   "ref_km": 163,
+   "balsa": {},
+   "medidas": {
+    "Camaquã": {
+     "km": 339.54,
+     "reta": 90.09,
+     "uf_destino": "RS",
+     "nome_oficial": "CAMAQUA"
+    },
+    "Osório": {
+     "km": 163.35,
+     "reta": 148.84,
+     "uf_destino": "RS",
+     "nome_oficial": "OSORIO"
+    },
+    "TAVARES": {
+     "km": 28.87,
+     "reta": 26.17,
+     "uf_destino": "RS",
+     "nome_oficial": "TAVARES"
+    },
+    "ARAMBARE": {
+     "km": 352.65,
+     "reta": 59.48,
+     "uf_destino": "RS",
+     "nome_oficial": "ARAMBARE"
+    },
+    "TAPES": {
+     "km": 318.53,
+     "reta": 66.56,
+     "uf_destino": "RS",
+     "nome_oficial": "TAPES"
+    },
+    "SENTINELA DO SUL": {
+     "km": 306.21,
+     "reta": 84.0,
+     "uf_destino": "RS",
+     "nome_oficial": "SENTINELA DO SUL"
+    },
+    "CAMAQUA": {
+     "km": 339.54,
+     "reta": 90.09,
+     "uf_destino": "RS",
+     "nome_oficial": "CAMAQUA"
+    },
+    "BARRA DO RIBEIRO": {
+     "km": 270.04,
+     "reta": 97.05,
+     "uf_destino": "RS",
+     "nome_oficial": "BARRA DO RIBEIRO"
+    },
+    "SERTAO SANTANA": {
+     "km": 291.45,
+     "reta": 97.32,
+     "uf_destino": "RS",
+     "nome_oficial": "SERTAO SANTANA"
+    },
+    "CERRO GRANDE DO SUL": {
+     "km": 330.85,
+     "reta": 97.92,
+     "uf_destino": "RS",
+     "nome_oficial": "CERRO GRANDE DO SUL"
+    },
+    "PALMARES DO SUL": {
+     "km": 116.79,
+     "reta": 101.88,
+     "uf_destino": "RS",
+     "nome_oficial": "PALMARES DO SUL"
+    },
+    "SAO LOURENCO DO SUL": {
+     "km": 285.67,
+     "reta": 105.13,
+     "uf_destino": "RS",
+     "nome_oficial": "SAO LOURENCO DO SUL"
+    },
+    "MARIANA PIMENTEL": {
+     "km": 285.67,
+     "reta": 105.35,
+     "uf_destino": "RS",
+     "nome_oficial": "MARIANA PIMENTEL"
+    },
+    "CRISTAL": {
+     "km": 366.68,
+     "reta": 108.31,
+     "uf_destino": "RS",
+     "nome_oficial": "CRISTAL"
+    },
+    "CHUVISCA": {
+     "km": 366.14,
+     "reta": 108.51,
+     "uf_destino": "RS",
+     "nome_oficial": "CHUVISCA"
+    },
+    "BARAO DO TRIUNFO": {
+     "km": 305.6,
+     "reta": 111.79,
+     "uf_destino": "RS",
+     "nome_oficial": "BARAO DO TRIUNFO"
+    },
+    "CAPIVARI DO SUL": {
+     "km": 125.11,
+     "reta": 113.67,
+     "uf_destino": "RS",
+     "nome_oficial": "CAPIVARI DO SUL"
+    },
+    "VIAMAO": {
+     "km": 178.78,
+     "reta": 114.48,
+     "uf_destino": "RS",
+     "nome_oficial": "VIAMAO"
+    },
+    "BALNEARIO PINHAL": {
+     "km": 146.25,
+     "reta": 114.6,
+     "uf_destino": "RS",
+     "nome_oficial": "BALNEARIO PINHAL"
+    },
+    "GUAIBA": {
+     "km": 241.6,
+     "reta": 117.32,
+     "uf_destino": "RS",
+     "nome_oficial": "GUAIBA"
+    },
+    "DOM FELICIANO": {
+     "km": 365.46,
+     "reta": 122.4,
+     "uf_destino": "RS",
+     "nome_oficial": "DOM FELICIANO"
+    },
+    "CIDREIRA": {
+     "km": 152.01,
+     "reta": 123.07,
+     "uf_destino": "RS",
+     "nome_oficial": "CIDREIRA"
+    }
+   }
+  },
+  "Santo Augusto/RS": {
+   "origem": "Santo Augusto",
+   "uf": "RS",
+   "app_hub": "Panambi",
+   "app_km": 114,
+   "ref_hub": "Ijuí",
+   "ref_km": 72,
+   "balsa": {},
+   "medidas": {
+    "Panambi": {
+     "km": 114.28,
+     "reta": 57.18,
+     "uf_destino": "RS",
+     "nome_oficial": "PANAMBI"
+    },
+    "Ijuí": {
+     "km": 71.91,
+     "reta": 61.34,
+     "uf_destino": "RS",
+     "nome_oficial": "IJUI"
+    },
+    "CORONEL BICACO": {
+     "km": 33.6,
+     "reta": 16.25,
+     "uf_destino": "RS",
+     "nome_oficial": "CORONEL BICACO"
+    },
+    "SAO VALERIO DO SUL": {
+     "km": 22.72,
+     "reta": 16.99,
+     "uf_destino": "RS",
+     "nome_oficial": "SAO VALERIO DO SUL"
+    },
+    "CHIAPETTA": {
+     "km": 24.89,
+     "reta": 17.97,
+     "uf_destino": "RS",
+     "nome_oficial": "CHIAPETTA"
+    },
+    "CAMPO NOVO": {
+     "km": 30.82,
+     "reta": 19.64,
+     "uf_destino": "RS",
+     "nome_oficial": "CAMPO NOVO"
+    },
+    "SAO MARTINHO": {
+     "km": 33.94,
+     "reta": 24.14,
+     "uf_destino": "RS",
+     "nome_oficial": "SAO MARTINHO"
+    },
+    "INHACORA": {
+     "km": 36.55,
+     "reta": 24.4,
+     "uf_destino": "RS",
+     "nome_oficial": "INHACORA"
+    },
+    "REDENTORA": {
+     "km": 47.18,
+     "reta": 24.84,
+     "uf_destino": "RS",
+     "nome_oficial": "REDENTORA"
+    },
+    "BRAGA": {
+     "km": 41.25,
+     "reta": 26.5,
+     "uf_destino": "RS",
+     "nome_oficial": "BRAGA"
+    },
+    "NOVA RAMADA": {
+     "km": 33.99,
+     "reta": 26.71,
+     "uf_destino": "RS",
+     "nome_oficial": "NOVA RAMADA"
+    },
+    "ALEGRIA": {
+     "km": 44.51,
+     "reta": 27.57,
+     "uf_destino": "RS",
+     "nome_oficial": "ALEGRIA"
+    },
+    "SEDE NOVA": {
+     "km": 40.11,
+     "reta": 29.44,
+     "uf_destino": "RS",
+     "nome_oficial": "SEDE NOVA"
+    },
+    "DOIS IRMAOS DAS MISSOES": {
+     "km": 62.7,
+     "reta": 32.13,
+     "uf_destino": "RS",
+     "nome_oficial": "DOIS IRMAOS DAS MISSOES"
+    },
+    "BOM PROGRESSO": {
+     "km": 41.7,
+     "reta": 34.19,
+     "uf_destino": "RS",
+     "nome_oficial": "BOM PROGRESSO"
+    },
+    "HUMAITA": {
+     "km": 48.53,
+     "reta": 36.92,
+     "uf_destino": "RS",
+     "nome_oficial": "HUMAITA"
+    },
+    "SAO JOSE DO INHACORA": {
+     "km": 58.56,
+     "reta": 37.3,
+     "uf_destino": "RS",
+     "nome_oficial": "SAO JOSE DO INHACORA"
+    },
+    "BOA VISTA DO BURICA": {
+     "km": 51.5,
+     "reta": 38.63,
+     "uf_destino": "RS",
+     "nome_oficial": "BOA VISTA DO BURICA"
+    },
+    "MIRAGUAI": {
+     "km": 59.52,
+     "reta": 40.38,
+     "uf_destino": "RS",
+     "nome_oficial": "MIRAGUAI"
+    },
+    "INDEPENDENCIA": {
+     "km": 64.63,
+     "reta": 40.4,
+     "uf_destino": "RS",
+     "nome_oficial": "INDEPENDENCIA"
+    },
+    "NOVA CANDELARIA": {
+     "km": 60.69,
+     "reta": 42.11,
+     "uf_destino": "RS",
+     "nome_oficial": "NOVA CANDELARIA"
+    },
+    "ERVAL SECO": {
+     "km": 69.63,
+     "reta": 42.74,
+     "uf_destino": "RS",
+     "nome_oficial": "ERVAL SECO"
+    }
+   }
+  },
+  "Anaurilândia/MS": {
+   "origem": "Anaurilândia",
+   "uf": "MS",
+   "app_hub": "Terra Rica",
+   "app_km": 126,
+   "ref_hub": "Nova Andradina",
+   "ref_km": 70,
+   "balsa": {},
+   "medidas": {
+    "Terra Rica": {
+     "km": 125.8,
+     "reta": 61.24,
+     "uf_destino": "PR",
+     "nome_oficial": "TERRA RICA"
+    },
+    "Nova Andradina": {
+     "km": 70.32,
+     "reta": 64.48,
+     "uf_destino": "MS",
+     "nome_oficial": "NOVA ANDRADINA"
+    },
+    "EUCLIDES DA CUNHA PAULISTA": {
+     "km": 118.52,
+     "reta": 44.07,
+     "uf_destino": "SP",
+     "nome_oficial": "EUCLIDES DA CUNHA PAULISTA"
+    },
+    "DIAMANTE DO NORTE": {
+     "km": 95.95,
+     "reta": 55.12,
+     "uf_destino": "PR",
+     "nome_oficial": "DIAMANTE DO NORTE"
+    },
+    "ROSANA": {
+     "km": 83.25,
+     "reta": 56.2,
+     "uf_destino": "SP",
+     "nome_oficial": "ROSANA"
+    },
+    "BATAYPORA": {
+     "km": 60.89,
+     "reta": 57.66,
+     "uf_destino": "MS",
+     "nome_oficial": "BATAYPORA"
+    },
+    "BATAGUASSU": {
+     "km": 66.77,
+     "reta": 60.12,
+     "uf_destino": "MS",
+     "nome_oficial": "BATAGUASSU"
+    },
+    "TERRA RICA": {
+     "km": 125.8,
+     "reta": 61.24,
+     "uf_destino": "PR",
+     "nome_oficial": "TERRA RICA"
+    },
+    "ITAUNA DO SUL": {
+     "km": 104.35,
+     "reta": 63.12,
+     "uf_destino": "PR",
+     "nome_oficial": "ITAUNA DO SUL"
+    },
+    "NOVA ANDRADINA": {
+     "km": 70.32,
+     "reta": 64.48,
+     "uf_destino": "MS",
+     "nome_oficial": "NOVA ANDRADINA"
+    },
+    "TEODORO SAMPAIO": {
+     "km": 2234.05,
+     "reta": 1853.03,
+     "uf_destino": "BA",
+     "nome_oficial": "TEODORO SAMPAIO"
+    },
+    "MARILENA": {
+     "km": 125.1,
+     "reta": 69.8,
+     "uf_destino": "PR",
+     "nome_oficial": "MARILENA"
+    },
+    "NOVA LONDRINA": {
+     "km": 118.77,
+     "reta": 70.13,
+     "uf_destino": "PR",
+     "nome_oficial": "NOVA LONDRINA"
+    },
+    "SANTO ANTONIO DO CAIUA": {
+     "km": 156.88,
+     "reta": 72.54,
+     "uf_destino": "PR",
+     "nome_oficial": "SANTO ANTONIO DO CAIUA"
+    },
+    "TAQUARUSSU": {
+     "km": 89.89,
+     "reta": 73.08,
+     "uf_destino": "MS",
+     "nome_oficial": "TAQUARUSSU"
+    },
+    "MARABA PAULISTA": {
+     "km": 162.5,
+     "reta": 78.18,
+     "uf_destino": "SP",
+     "nome_oficial": "MARABA PAULISTA"
+    },
+    "PRESIDENTE EPITACIO": {
+     "km": 103.68,
+     "reta": 78.71,
+     "uf_destino": "SP",
+     "nome_oficial": "PRESIDENTE EPITACIO"
+    },
+    "JARDIM OLINDA": {
+     "km": 174.16,
+     "reta": 81.3,
+     "uf_destino": "PR",
+     "nome_oficial": "JARDIM OLINDA"
+    },
+    "INAJA": {
+     "km": 2634.24,
+     "reta": 2170.84,
+     "uf_destino": "PE",
+     "nome_oficial": "INAJA"
+    },
+    "GUAIRACA": {
+     "km": 166.81,
+     "reta": 83.47,
+     "uf_destino": "PR",
+     "nome_oficial": "GUAIRACA"
+    },
+    "PARANAPOEMA": {
+     "km": 186.4,
+     "reta": 83.79,
+     "uf_destino": "PR",
+     "nome_oficial": "PARANAPOEMA"
+    },
+    "SAO JOAO DO CAIUA": {
+     "km": 170.13,
+     "reta": 84.23,
+     "uf_destino": "PR",
+     "nome_oficial": "SAO JOAO DO CAIUA"
+    }
+   }
+  },
+  "Quedas do Iguaçu/PR": {
+   "origem": "Quedas do Iguaçu",
+   "uf": "PR",
+   "app_hub": "Dois Vizinhos",
+   "app_km": 57,
+   "ref_hub": "Laranjeiras do Sul",
+   "ref_km": 69,
+   "balsa": {},
+   "medidas": {
+    "Dois Vizinhos": {
+     "km": 70.15,
+     "reta": 35.87,
+     "uf_destino": "PR",
+     "nome_oficial": "DOIS VIZINHOS"
+    },
+    "Laranjeiras do Sul": {
+     "km": 69.25,
+     "reta": 50.01,
+     "uf_destino": "PR",
+     "nome_oficial": "LARANJEIRAS DO SUL"
+    },
+    "ESPIGAO ALTO DO IGUACU": {
+     "km": 9.39,
+     "reta": 8.09,
+     "uf_destino": "PR",
+     "nome_oficial": "ESPIGAO ALTO DO IGUACU"
+    },
+    "CRUZEIRO DO IGUACU": {
+     "km": 37.9,
+     "reta": 28.34,
+     "uf_destino": "PR",
+     "nome_oficial": "CRUZEIRO DO IGUACU"
+    },
+    "SAO JORGE D'OESTE": {
+     "km": 46.84,
+     "reta": 28.35,
+     "uf_destino": "PR",
+     "nome_oficial": "SAO JORGE D'OESTE"
+    },
+    "TRES BARRAS DO PARANA": {
+     "km": 36.46,
+     "reta": 28.58,
+     "uf_destino": "PR",
+     "nome_oficial": "TRES BARRAS DO PARANA"
+    },
+    "SULINA": {
+     "km": 78.87,
+     "reta": 33.18,
+     "uf_destino": "PR",
+     "nome_oficial": "SULINA"
+    },
+    "DOIS VIZINHOS": {
+     "km": 70.15,
+     "reta": 35.87,
+     "uf_destino": "PR",
+     "nome_oficial": "DOIS VIZINHOS"
+    },
+    "BOA ESPERANCA DO IGUACU": {
+     "km": 51.16,
+     "reta": 37.09,
+     "uf_destino": "PR",
+     "nome_oficial": "BOA ESPERANCA DO IGUACU"
+    },
+    "CATANDUVAS": {
+     "km": 65.24,
+     "reta": 37.67,
+     "uf_destino": "PR",
+     "nome_oficial": "CATANDUVAS"
+    },
+    "RIO BONITO DO IGUACU": {
+     "km": 85.2,
+     "reta": 38.54,
+     "uf_destino": "PR",
+     "nome_oficial": "RIO BONITO DO IGUACU"
+    },
+    "IBEMA": {
+     "km": 104.86,
+     "reta": 39.17,
+     "uf_destino": "PR",
+     "nome_oficial": "IBEMA"
+    },
+    "SAUDADE DO IGUACU": {
+     "km": 100.19,
+     "reta": 39.23,
+     "uf_destino": "PR",
+     "nome_oficial": "SAUDADE DO IGUACU"
+    },
+    "GUARANIACU": {
+     "km": 87.64,
+     "reta": 39.72,
+     "uf_destino": "PR",
+     "nome_oficial": "GUARANIACU"
+    },
+    "NOVA LARANJEIRAS": {
+     "km": 50.11,
+     "reta": 40.69,
+     "uf_destino": "PR",
+     "nome_oficial": "NOVA LARANJEIRAS"
+    },
+    "SAO JOAO": {
+     "km": 77.24,
+     "reta": 44.66,
+     "uf_destino": "PR",
+     "nome_oficial": "SAO JOAO"
+    },
+    "VERE": {
+     "km": 68.68,
+     "reta": 47.02,
+     "uf_destino": "PR",
+     "nome_oficial": "VERE"
+    },
+    "CAMPO BONITO": {
+     "km": 107.03,
+     "reta": 47.71,
+     "uf_destino": "PR",
+     "nome_oficial": "CAMPO BONITO"
+    },
+    "NOVA PRATA DO IGUACU": {
+     "km": 67.39,
+     "reta": 48.61,
+     "uf_destino": "PR",
+     "nome_oficial": "NOVA PRATA DO IGUACU"
+    },
+    "LARANJEIRAS DO SUL": {
+     "km": 69.25,
+     "reta": 50.01,
+     "uf_destino": "PR",
+     "nome_oficial": "LARANJEIRAS DO SUL"
+    },
+    "BOA VISTA DA APARECIDA": {
+     "km": 62.11,
+     "reta": 50.4,
+     "uf_destino": "PR",
+     "nome_oficial": "BOA VISTA DA APARECIDA"
+    },
+    "PORTO BARREIRO": {
+     "km": 88.9,
+     "reta": 51.21,
+     "uf_destino": "PR",
+     "nome_oficial": "PORTO BARREIRO"
+    }
+   }
+  },
+  "Taquari/RS": {
+   "origem": "Taquari",
+   "uf": "RS",
+   "app_hub": "São Jerônimo",
+   "app_km": 39,
+   "ref_hub": "Venâncio Aires",
+   "ref_km": 50,
+   "balsa": {
+    "São Jerônimo": true
+   },
+   "medidas": {
+    "São Jerônimo": {
+     "km": 39.33,
+     "reta": 22.31,
+     "uf_destino": "RS",
+     "nome_oficial": "SAO JERONIMO"
+    },
+    "Venâncio Aires": {
+     "km": 49.95,
+     "reta": 38.3,
+     "uf_destino": "RS",
+     "nome_oficial": "VENANCIO AIRES"
+    },
+    "GENERAL CAMARA": {
+     "km": 28.76,
+     "reta": 15.31,
+     "uf_destino": "RS",
+     "nome_oficial": "GENERAL CAMARA"
+    },
+    "TABAI": {
+     "km": 23.91,
+     "reta": 19.2,
+     "uf_destino": "RS",
+     "nome_oficial": "TABAI"
+    },
+    "TRIUNFO": {
+     "km": 40.59,
+     "reta": 21.39,
+     "uf_destino": "RS",
+     "nome_oficial": "TRIUNFO"
+    },
+    "SAO JERONIMO": {
+     "km": 39.33,
+     "reta": 22.31,
+     "uf_destino": "RS",
+     "nome_oficial": "SAO JERONIMO"
+    },
+    "BOM RETIRO DO SUL": {
+     "km": 47.17,
+     "reta": 22.6,
+     "uf_destino": "RS",
+     "nome_oficial": "BOM RETIRO DO SUL"
+    },
+    "FAZENDA VILANOVA": {
+     "km": 31.42,
+     "reta": 23.6,
+     "uf_destino": "RS",
+     "nome_oficial": "FAZENDA VILANOVA"
+    },
+    "CHARQUEADAS": {
+     "km": 48.77,
+     "reta": 28.85,
+     "uf_destino": "RS",
+     "nome_oficial": "CHARQUEADAS"
+    },
+    "PAVERAMA": {
+     "km": 33.62,
+     "reta": 30.41,
+     "uf_destino": "RS",
+     "nome_oficial": "PAVERAMA"
+    },
+    "VALE VERDE": {
+     "km": 44.98,
+     "reta": 30.84,
+     "uf_destino": "RS",
+     "nome_oficial": "VALE VERDE"
+    },
+    "CRUZEIRO DO SUL": {
+     "km": 59.69,
+     "reta": 33.94,
+     "uf_destino": "RS",
+     "nome_oficial": "CRUZEIRO DO SUL"
+    },
+    "ESTRELA": {
+     "km": 50.23,
+     "reta": 34.61,
+     "uf_destino": "RS",
+     "nome_oficial": "ESTRELA"
+    },
+    "ARROIO DOS RATOS": {
+     "km": 51.97,
+     "reta": 34.77,
+     "uf_destino": "RS",
+     "nome_oficial": "ARROIO DOS RATOS"
+    },
+    "TEUTONIA": {
+     "km": 44.83,
+     "reta": 35.67,
+     "uf_destino": "RS",
+     "nome_oficial": "TEUTONIA"
+    },
+    "BUTIA": {
+     "km": 71.6,
+     "reta": 36.74,
+     "uf_destino": "RS",
+     "nome_oficial": "BUTIA"
+    },
+    "BROCHIER": {
+     "km": 62.62,
+     "reta": 37.74,
+     "uf_destino": "RS",
+     "nome_oficial": "BROCHIER"
+    },
+    "VENANCIO AIRES": {
+     "km": 49.95,
+     "reta": 38.3,
+     "uf_destino": "RS",
+     "nome_oficial": "VENANCIO AIRES"
+    },
+    "LAJEADO": {
+     "km": 52.81,
+     "reta": 38.32,
+     "uf_destino": "RS",
+     "nome_oficial": "LAJEADO"
+    },
+    "MATO LEITAO": {
+     "km": 61.26,
+     "reta": 39.8,
+     "uf_destino": "RS",
+     "nome_oficial": "MATO LEITAO"
+    },
+    "PASSO DO SOBRADO": {
+     "km": 64.22,
+     "reta": 40.11,
+     "uf_destino": "RS",
+     "nome_oficial": "PASSO DO SOBRADO"
+    },
+    "MINAS DO LEAO": {
+     "km": 79.22,
+     "reta": 40.3,
+     "uf_destino": "RS",
+     "nome_oficial": "MINAS DO LEAO"
+    }
+   }
+  },
+  "Viana/MA": {
+   "origem": "Viana",
+   "uf": "MA",
+   "app_hub": "Itapecuru Mirim",
+   "app_km": 93,
+   "ref_hub": "Santa Inês",
+   "ref_km": 110,
+   "balsa": {},
+   "medidas": {
+    "Itapecuru Mirim": {
+     "km": 123.76,
+     "reta": 74.16,
+     "uf_destino": "MA",
+     "nome_oficial": "ITAPECURU MIRIM"
+    },
+    "Santa Inês": {
+     "km": 110.36,
+     "reta": 64.15,
+     "uf_destino": "MA",
+     "nome_oficial": "SANTA INES"
+    },
+    "CAJARI": {
+     "km": 31.22,
+     "reta": 11.44,
+     "uf_destino": "MA",
+     "nome_oficial": "CAJARI"
+    },
+    "MATINHA": {
+     "km": 24.14,
+     "reta": 13.63,
+     "uf_destino": "MA",
+     "nome_oficial": "MATINHA"
+    },
+    "PENALVA": {
+     "km": 40.3,
+     "reta": 20.73,
+     "uf_destino": "MA",
+     "nome_oficial": "PENALVA"
+    },
+    "OLINDA NOVA DO MARANHAO": {
+     "km": 38.0,
+     "reta": 24.4,
+     "uf_destino": "MA",
+     "nome_oficial": "OLINDA NOVA DO MARANHAO"
+    },
+    "VITORIA DO MEARIM": {
+     "km": 40.2,
+     "reta": 31.09,
+     "uf_destino": "MA",
+     "nome_oficial": "VITORIA DO MEARIM"
+    },
+    "ARARI": {
+     "km": 51.79,
+     "reta": 35.99,
+     "uf_destino": "MA",
+     "nome_oficial": "ARARI"
+    },
+    "SAO JOAO BATISTA": {
+     "km": 67.19,
+     "reta": 36.81,
+     "uf_destino": "MA",
+     "nome_oficial": "SAO JOAO BATISTA"
+    },
+    "SAO VICENTE FERRER": {
+     "km": 59.11,
+     "reta": 39.11,
+     "uf_destino": "MA",
+     "nome_oficial": "SAO VICENTE FERRER"
+    },
+    "MONCAO": {
+     "km": 104.14,
+     "reta": 41.08,
+     "uf_destino": "MA",
+     "nome_oficial": "MONCAO"
+    },
+    "ANAJATUBA": {
+     "km": 127.13,
+     "reta": 43.06,
+     "uf_destino": "MA",
+     "nome_oficial": "ANAJATUBA"
+    },
+    "PEDRO DO ROSARIO": {
+     "km": 54.29,
+     "reta": 47.25,
+     "uf_destino": "MA",
+     "nome_oficial": "PEDRO DO ROSARIO"
+    },
+    "IGARAPE DO MEIO": {
+     "km": 84.95,
+     "reta": 51.13,
+     "uf_destino": "MA",
+     "nome_oficial": "IGARAPE DO MEIO"
+    },
+    "CAJAPIO": {
+     "km": 84.71,
+     "reta": 52.2,
+     "uf_destino": "MA",
+     "nome_oficial": "CAJAPIO"
+    },
+    "PINDARE-MIRIM": {
+     "km": 118.17,
+     "reta": 57.21,
+     "uf_destino": "MA",
+     "nome_oficial": "PINDARE-MIRIM"
+    },
+    "MIRANDA DO NORTE": {
+     "km": 80.84,
+     "reta": 60.05,
+     "uf_destino": "MA",
+     "nome_oficial": "MIRANDA DO NORTE"
+    },
+    "SAO BENTO": {
+     "km": 92.76,
+     "reta": 60.7,
+     "uf_destino": "MA",
+     "nome_oficial": "SAO BENTO"
+    },
+    "BACURITUBA": {
+     "km": 102.44,
+     "reta": 63.99,
+     "uf_destino": "MA",
+     "nome_oficial": "BACURITUBA"
+    },
+    "SANTA INES": {
+     "km": 110.36,
+     "reta": 64.15,
+     "uf_destino": "MA",
+     "nome_oficial": "SANTA INES"
+    },
+    "BELA VISTA DO MARANHAO": {
+     "km": 108.01,
+     "reta": 64.37,
+     "uf_destino": "MA",
+     "nome_oficial": "BELA VISTA DO MARANHAO"
+    },
+    "PALMEIRANDIA": {
+     "km": 101.99,
+     "reta": 64.81,
+     "uf_destino": "MA",
+     "nome_oficial": "PALMEIRANDIA"
+    }
+   }
+  },
+  "Oeiras do Pará/PA": {
+   "origem": "Oeiras do Pará",
+   "uf": "PA",
+   "app_hub": "Cametá",
+   "app_km": 55,
+   "ref_hub": "Breves",
+   "ref_km": 516,
+   "balsa": {},
+   "medidas": {
+    "Cametá": {
+     "km": 108.5,
+     "reta": 47.75,
+     "uf_destino": "PA",
+     "nome_oficial": "CAMETA"
+    },
+    "Breves": {
+     "km": 515.77,
+     "reta": 78.0,
+     "uf_destino": "PA",
+     "nome_oficial": "BREVES"
+    },
+    "CURRALINHO": {
+     "km": 1.85,
+     "reta": 22.0,
+     "uf_destino": "PA",
+     "nome_oficial": "CURRALINHO"
+    },
+    "BAGRE": {
+     "km": 527.65,
+     "reta": 41.3,
+     "uf_destino": "PA",
+     "nome_oficial": "BAGRE"
+    },
+    "CAMETA": {
+     "km": 108.5,
+     "reta": 47.75,
+     "uf_destino": "PA",
+     "nome_oficial": "CAMETA"
+    },
+    "SAO SEBASTIAO DA BOA VISTA": {
+     "km": 161.77,
+     "reta": 47.82,
+     "uf_destino": "PA",
+     "nome_oficial": "SAO SEBASTIAO DA BOA VISTA"
+    },
+    "LIMOEIRO DO AJURU": {
+     "km": 161.17,
+     "reta": 53.99,
+     "uf_destino": "PA",
+     "nome_oficial": "LIMOEIRO DO AJURU"
+    },
+    "MOCAJUBA": {
+     "km": 181.74,
+     "reta": 74.83,
+     "uf_destino": "PA",
+     "nome_oficial": "MOCAJUBA"
+    },
+    "BREVES": {
+     "km": 515.77,
+     "reta": 78.0,
+     "uf_destino": "PA",
+     "nome_oficial": "BREVES"
+    },
+    "MUANA": {
+     "km": 254.58,
+     "reta": 88.31,
+     "uf_destino": "PA",
+     "nome_oficial": "MUANA"
+    },
+    "BAIAO": {
+     "km": 213.88,
+     "reta": 89.89,
+     "uf_destino": "PA",
+     "nome_oficial": "BAIAO"
+    },
+    "MELGACO": {
+     "km": 689.97,
+     "reta": 97.85,
+     "uf_destino": "PA",
+     "nome_oficial": "MELGACO"
+    },
+    "IGARAPE-MIRI": {
+     "km": 209.04,
+     "reta": 99.23,
+     "uf_destino": "PA",
+     "nome_oficial": "IGARAPE-MIRI"
+    },
+    "PORTEL": {
+     "km": 678.25,
+     "reta": 107.95,
+     "uf_destino": "PA",
+     "nome_oficial": "PORTEL"
+    },
+    "ABAETETUBA": {
+     "km": 253.63,
+     "reta": 111.57,
+     "uf_destino": "PA",
+     "nome_oficial": "ABAETETUBA"
+    },
+    "ANAJAS": {
+     "km": 541.08,
+     "reta": 113.72,
+     "uf_destino": "PA",
+     "nome_oficial": "ANAJAS"
+    },
+    "MOJU": {
+     "km": 250.97,
+     "reta": 121.5,
+     "uf_destino": "PA",
+     "nome_oficial": "MOJU"
+    },
+    "PONTA DE PEDRAS": {
+     "km": 300.24,
+     "reta": 128.63,
+     "uf_destino": "PA",
+     "nome_oficial": "PONTA DE PEDRAS"
+    },
+    "TAILANDIA": {
+     "km": 241.86,
+     "reta": 144.97,
+     "uf_destino": "PA",
+     "nome_oficial": "TAILANDIA"
+    },
+    "BARCARENA": {
+     "km": 286.77,
+     "reta": 147.42,
+     "uf_destino": "PA",
+     "nome_oficial": "BARCARENA"
+    },
+    "CACHOEIRA DO ARARI": {
+     "km": 461.3,
+     "reta": 148.57,
+     "uf_destino": "PA",
+     "nome_oficial": "CACHOEIRA DO ARARI"
+    },
+    "BELEM": {
+     "km": 349.72,
+     "reta": 161.9,
+     "uf_destino": "PA",
+     "nome_oficial": "BELEM"
+    }
+   }
+  },
+  "Gurupá/PA": {
+   "origem": "Gurupá",
+   "uf": "PA",
+   "app_hub": "Portel",
+   "app_km": 129,
+   "ref_hub": "Almeirim",
+   "ref_km": 292,
+   "balsa": {},
+   "medidas": {
+    "Portel": {
+     "km": 1285.88,
+     "reta": 109.06,
+     "uf_destino": "PA",
+     "nome_oficial": "PORTEL"
+    },
+    "Almeirim": {
+     "km": 669.75,
+     "reta": 104.16,
+     "uf_destino": "PA",
+     "nome_oficial": "ALMEIRIM"
+    },
+    "PORTO DE MOZ": {
+     "km": 17.71,
+     "reta": 76.27,
+     "uf_destino": "PA",
+     "nome_oficial": "PORTO DE MOZ"
+    },
+    "VITORIA DO JARI": {
+     "km": 581.48,
+     "reta": 101.74,
+     "uf_destino": "AP",
+     "nome_oficial": "VITORIA DO JARI"
+    },
+    "ALMEIRIM": {
+     "km": 669.75,
+     "reta": 104.16,
+     "uf_destino": "PA",
+     "nome_oficial": "ALMEIRIM"
+    },
+    "PORTEL": {
+     "km": 1285.88,
+     "reta": 109.06,
+     "uf_destino": "PA",
+     "nome_oficial": "PORTEL"
+    },
+    "MELGACO": {
+     "km": 1297.6,
+     "reta": 113.07,
+     "uf_destino": "PA",
+     "nome_oficial": "MELGACO"
+    },
+    "LARANJAL DO JARI": {
+     "km": 547.63,
+     "reta": 115.58,
+     "uf_destino": "AP",
+     "nome_oficial": "LARANJAL DO JARI"
+    },
+    "BREVES": {
+     "km": 1123.4,
+     "reta": 133.3,
+     "uf_destino": "PA",
+     "nome_oficial": "BREVES"
+    },
+    "SENADOR JOSE PORFIRIO": {
+     "km": 303.21,
+     "reta": 136.07,
+     "uf_destino": "PA",
+     "nome_oficial": "SENADOR JOSE PORFIRIO"
+    },
+    "MAZAGAO": {
+     "km": 292.68,
+     "reta": 149.14,
+     "uf_destino": "AP",
+     "nome_oficial": "MAZAGAO"
+    },
+    "SANTANA": {
+     "km": 270.17,
+     "reta": 161.69,
+     "uf_destino": "AP",
+     "nome_oficial": "SANTANA"
+    },
+    "BAGRE": {
+     "km": 1135.28,
+     "reta": 168.83,
+     "uf_destino": "PA",
+     "nome_oficial": "BAGRE"
+    },
+    "VITORIA DO XINGU": {
+     "km": 151.3,
+     "reta": 169.04,
+     "uf_destino": "PA",
+     "nome_oficial": "VITORIA DO XINGU"
+    },
+    "MACAPA": {
+     "km": 290.34,
+     "reta": 173.84,
+     "uf_destino": "AP",
+     "nome_oficial": "MACAPA"
+    },
+    "ANAJAS": {
+     "km": 1148.71,
+     "reta": 195.77,
+     "uf_destino": "PA",
+     "nome_oficial": "ANAJAS"
+    },
+    "AFUA": {
+     "km": 1442.51,
+     "reta": 197.18,
+     "uf_destino": "PA",
+     "nome_oficial": "AFUA"
+    },
+    "PRAINHA": {
+     "km": 869.49,
+     "reta": 208.51,
+     "uf_destino": "PA",
+     "nome_oficial": "PRAINHA"
+    },
+    "ALTAMIRA": {
+     "km": 202.32,
+     "reta": 209.97,
+     "uf_destino": "PA",
+     "nome_oficial": "ALTAMIRA"
+    },
+    "OEIRAS DO PARA": {
+     "km": 790.55,
+     "reta": 210.08,
+     "uf_destino": "PA",
+     "nome_oficial": "OEIRAS DO PARA"
+    },
+    "CURRALINHO": {
+     "km": 791.64,
+     "reta": 210.57,
+     "uf_destino": "PA",
+     "nome_oficial": "CURRALINHO"
+    },
+    "CHAVES": {
+     "km": 1442.5,
+     "reta": 231.11,
+     "uf_destino": "PA",
+     "nome_oficial": "CHAVES"
+    }
+   }
+  },
+  "São José do Norte/RS": {
+   "origem": "São José do Norte",
+   "uf": "RS",
+   "app_hub": "Rio Grande",
+   "app_km": 7,
+   "ref_hub": "Osório",
+   "ref_km": 315,
+   "balsa": {
+    "Rio Grande": true
+   },
+   "medidas": {
+    "Rio Grande": {
+     "km": 6.82,
+     "reta": 6.16,
+     "uf_destino": "RS",
+     "nome_oficial": "RIO GRANDE"
+    },
+    "Osório": {
+     "km": 315.28,
+     "reta": 289.5,
+     "uf_destino": "RS",
+     "nome_oficial": "OSORIO"
+    },
+    "RIO GRANDE": {
+     "km": 6.82,
+     "reta": 6.16,
+     "uf_destino": "RS",
+     "nome_oficial": "RIO GRANDE"
+    },
+    "PELOTAS": {
+     "km": 68.75,
+     "reta": 42.92,
+     "uf_destino": "RS",
+     "nome_oficial": "PELOTAS"
+    },
+    "CAPAO DO LEAO": {
+     "km": 77.95,
+     "reta": 51.21,
+     "uf_destino": "RS",
+     "nome_oficial": "CAPAO DO LEAO"
+    },
+    "TURUCU": {
+     "km": 110.72,
+     "reta": 66.42,
+     "uf_destino": "RS",
+     "nome_oficial": "TURUCU"
+    },
+    "SAO LOURENCO DO SUL": {
+     "km": 132.35,
+     "reta": 71.35,
+     "uf_destino": "RS",
+     "nome_oficial": "SAO LOURENCO DO SUL"
+    },
+    "MORRO REDONDO": {
+     "km": 101.6,
+     "reta": 71.94,
+     "uf_destino": "RS",
+     "nome_oficial": "MORRO REDONDO"
+    },
+    "ARROIO DO PADRE": {
+     "km": 109.29,
+     "reta": 72.44,
+     "uf_destino": "RS",
+     "nome_oficial": "ARROIO DO PADRE"
+    },
+    "CERRITO": {
+     "km": 118.25,
+     "reta": 75.34,
+     "uf_destino": "RS",
+     "nome_oficial": "CERRITO"
+    },
+    "PEDRO OSORIO": {
+     "km": 117.25,
+     "reta": 75.63,
+     "uf_destino": "RS",
+     "nome_oficial": "PEDRO OSORIO"
+    },
+    "CANGUCU": {
+     "km": 118.92,
+     "reta": 90.76,
+     "uf_destino": "RS",
+     "nome_oficial": "CANGUCU"
+    },
+    "ARROIO GRANDE": {
+     "km": 126.44,
+     "reta": 101.93,
+     "uf_destino": "RS",
+     "nome_oficial": "ARROIO GRANDE"
+    },
+    "CRISTAL": {
+     "km": 167.05,
+     "reta": 111.86,
+     "uf_destino": "RS",
+     "nome_oficial": "CRISTAL"
+    },
+    "PIRATINI": {
+     "km": 156.84,
+     "reta": 118.34,
+     "uf_destino": "RS",
+     "nome_oficial": "PIRATINI"
+    },
+    "TAVARES": {
+     "km": 125.55,
+     "reta": 120.09,
+     "uf_destino": "RS",
+     "nome_oficial": "TAVARES"
+    },
+    "AMARAL FERRADOR": {
+     "km": 195.91,
+     "reta": 127.32,
+     "uf_destino": "RS",
+     "nome_oficial": "AMARAL FERRADOR"
+    },
+    "HERVAL": {
+     "km": 175.26,
+     "reta": 127.87,
+     "uf_destino": "RS",
+     "nome_oficial": "HERVAL"
+    },
+    "CAMAQUA": {
+     "km": 197.33,
+     "reta": 130.27,
+     "uf_destino": "RS",
+     "nome_oficial": "CAMAQUA"
+    },
+    "ARAMBARE": {
+     "km": 228.81,
+     "reta": 132.89,
+     "uf_destino": "RS",
+     "nome_oficial": "ARAMBARE"
+    },
+    "PINHEIRO MACHADO": {
+     "km": 166.88,
+     "reta": 135.53,
+     "uf_destino": "RS",
+     "nome_oficial": "PINHEIRO MACHADO"
+    },
+    "CHUVISCA": {
+     "km": 202.82,
+     "reta": 139.05,
+     "uf_destino": "RS",
+     "nome_oficial": "CHUVISCA"
+    }
+   }
+  },
+  "Triunfo/RS": {
+   "origem": "Triunfo",
+   "uf": "RS",
+   "app_hub": "São Jerônimo",
+   "app_km": 2,
+   "ref_hub": "Montenegro",
+   "ref_km": 50,
+   "balsa": {
+    "São Jerônimo": true
+   },
+   "medidas": {
+    "São Jerônimo": {
+     "km": 4.12,
+     "reta": 1.56,
+     "uf_destino": "RS",
+     "nome_oficial": "SAO JERONIMO"
+    },
+    "Montenegro": {
+     "km": 50.05,
+     "reta": 37.9,
+     "uf_destino": "RS",
+     "nome_oficial": "MONTENEGRO"
+    },
+    "SAO JERONIMO": {
+     "km": 4.12,
+     "reta": 1.56,
+     "uf_destino": "RS",
+     "nome_oficial": "SAO JERONIMO"
+    },
+    "GENERAL CAMARA": {
+     "km": 16.77,
+     "reta": 6.08,
+     "uf_destino": "RS",
+     "nome_oficial": "GENERAL CAMARA"
+    },
+    "CHARQUEADAS": {
+     "km": 11.5,
+     "reta": 8.93,
+     "uf_destino": "RS",
+     "nome_oficial": "CHARQUEADAS"
+    },
+    "ARROIO DOS RATOS": {
+     "km": 19.64,
+     "reta": 16.0,
+     "uf_destino": "RS",
+     "nome_oficial": "ARROIO DOS RATOS"
+    },
+    "TAQUARI": {
+     "km": 41.27,
+     "reta": 21.39,
+     "uf_destino": "RS",
+     "nome_oficial": "TAQUARI"
+    },
+    "TABAI": {
+     "km": 34.55,
+     "reta": 28.94,
+     "uf_destino": "RS",
+     "nome_oficial": "TABAI"
+    },
+    "BUTIA": {
+     "km": 39.27,
+     "reta": 30.82,
+     "uf_destino": "RS",
+     "nome_oficial": "BUTIA"
+    },
+    "MINAS DO LEAO": {
+     "km": 46.89,
+     "reta": 37.44,
+     "uf_destino": "RS",
+     "nome_oficial": "MINAS DO LEAO"
+    },
+    "MONTENEGRO": {
+     "km": 50.05,
+     "reta": 37.9,
+     "uf_destino": "RS",
+     "nome_oficial": "MONTENEGRO"
+    },
+    "ELDORADO DO SUL": {
+     "km": 56.28,
+     "reta": 39.71,
+     "uf_destino": "RS",
+     "nome_oficial": "ELDORADO DO SUL"
+    },
+    "FAZENDA VILANOVA": {
+     "km": 50.7,
+     "reta": 40.83,
+     "uf_destino": "RS",
+     "nome_oficial": "FAZENDA VILANOVA"
+    },
+    "GUAIBA": {
+     "km": 61.03,
+     "reta": 41.97,
+     "uf_destino": "RS",
+     "nome_oficial": "GUAIBA"
+    },
+    "BOM RETIRO DO SUL": {
+     "km": 66.46,
+     "reta": 43.25,
+     "uf_destino": "RS",
+     "nome_oficial": "BOM RETIRO DO SUL"
+    },
+    "PAVERAMA": {
+     "km": 52.91,
+     "reta": 43.87,
+     "uf_destino": "RS",
+     "nome_oficial": "PAVERAMA"
+    },
+    "NOVA SANTA RITA": {
+     "km": 53.72,
+     "reta": 43.98,
+     "uf_destino": "RS",
+     "nome_oficial": "NOVA SANTA RITA"
+    },
+    "BROCHIER": {
+     "km": 63.09,
+     "reta": 44.86,
+     "uf_destino": "RS",
+     "nome_oficial": "BROCHIER"
+    },
+    "PARECI NOVO": {
+     "km": 58.73,
+     "reta": 46.15,
+     "uf_destino": "RS",
+     "nome_oficial": "PARECI NOVO"
+    },
+    "MARATA": {
+     "km": 68.31,
+     "reta": 46.79,
+     "uf_destino": "RS",
+     "nome_oficial": "MARATA"
+    },
+    "MARIANA PIMENTEL": {
+     "km": 64.52,
+     "reta": 47.23,
+     "uf_destino": "RS",
+     "nome_oficial": "MARIANA PIMENTEL"
+    },
+    "CAPELA DE SANTANA": {
+     "km": 68.18,
+     "reta": 48.09,
+     "uf_destino": "RS",
+     "nome_oficial": "CAPELA DE SANTANA"
+    }
+   }
+  },
+  "Carutapera/MA": {
+   "origem": "Carutapera",
+   "uf": "MA",
+   "app_hub": "Bragança",
+   "app_km": 96.4,
+   "ref_hub": "Capanema",
+   "ref_km": 229.2,
+   "balsa": {},
+   "medidas": {
+    "Bragança": {
+     "km": 279.21,
+     "reta": 83.71,
+     "uf_destino": "PA",
+     "nome_oficial": "BRAGANCA"
+    },
+    "Capanema": {
+     "km": 228.99,
+     "reta": 128.68,
+     "uf_destino": "PA",
+     "nome_oficial": "CAPANEMA"
+    },
+    "VISEU": {
+     "km": 204.44,
+     "reta": 12.92,
+     "uf_destino": "PA",
+     "nome_oficial": "VISEU"
+    },
+    "LUIS DOMINGUES": {
+     "km": 27.59,
+     "reta": 19.54,
+     "uf_destino": "MA",
+     "nome_oficial": "LUIS DOMINGUES"
+    },
+    "GODOFREDO VIANA": {
+     "km": 47.08,
+     "reta": 36.29,
+     "uf_destino": "MA",
+     "nome_oficial": "GODOFREDO VIANA"
+    },
+    "CANDIDO MENDES": {
+     "km": 55.48,
+     "reta": 43.05,
+     "uf_destino": "MA",
+     "nome_oficial": "CANDIDO MENDES"
+    },
+    "AMAPA DO MARANHAO": {
+     "km": 57.86,
+     "reta": 52.55,
+     "uf_destino": "MA",
+     "nome_oficial": "AMAPA DO MARANHAO"
+    },
+    "AUGUSTO CORREA": {
+     "km": 295.56,
+     "reta": 71.22,
+     "uf_destino": "PA",
+     "nome_oficial": "AUGUSTO CORREA"
+    },
+    "BOA VISTA DO GURUPI": {
+     "km": 102.0,
+     "reta": 73.25,
+     "uf_destino": "MA",
+     "nome_oficial": "BOA VISTA DO GURUPI"
+    },
+    "JUNCO DO MARANHAO": {
+     "km": 85.85,
+     "reta": 75.4,
+     "uf_destino": "MA",
+     "nome_oficial": "JUNCO DO MARANHAO"
+    },
+    "BRAGANCA": {
+     "km": 279.21,
+     "reta": 83.71,
+     "uf_destino": "PA",
+     "nome_oficial": "BRAGANCA"
+    },
+    "CACHOEIRA DO PIRIA": {
+     "km": 131.22,
+     "reta": 84.82,
+     "uf_destino": "PA",
+     "nome_oficial": "CACHOEIRA DO PIRIA"
+    },
+    "TURIACU": {
+     "km": 234.23,
+     "reta": 89.17,
+     "uf_destino": "MA",
+     "nome_oficial": "TURIACU"
+    },
+    "MARACACUME": {
+     "km": 107.67,
+     "reta": 93.61,
+     "uf_destino": "MA",
+     "nome_oficial": "MARACACUME"
+    },
+    "TRACUATEUA": {
+     "km": 264.22,
+     "reta": 99.07,
+     "uf_destino": "PA",
+     "nome_oficial": "TRACUATEUA"
+    },
+    "SANTA LUZIA DO PARA": {
+     "km": 179.18,
+     "reta": 103.83,
+     "uf_destino": "PA",
+     "nome_oficial": "SANTA LUZIA DO PARA"
+    },
+    "GOVERNADOR NUNES FREIRE": {
+     "km": 120.64,
+     "reta": 104.18,
+     "uf_destino": "MA",
+     "nome_oficial": "GOVERNADOR NUNES FREIRE"
+    },
+    "CENTRO NOVO DO MARANHAO": {
+     "km": 130.33,
+     "reta": 104.86,
+     "uf_destino": "MA",
+     "nome_oficial": "CENTRO NOVO DO MARANHAO"
+    },
+    "APICUM-ACU": {
+     "km": 395.24,
+     "reta": 110.8,
+     "uf_destino": "MA",
+     "nome_oficial": "APICUM-ACU"
+    },
+    "BACURI": {
+     "km": 365.84,
+     "reta": 113.89,
+     "uf_destino": "MA",
+     "nome_oficial": "BACURI"
+    },
+    "QUATIPURU": {
+     "km": 278.95,
+     "reta": 114.46,
+     "uf_destino": "PA",
+     "nome_oficial": "QUATIPURU"
+    },
+    "MARANHAOZINHO": {
+     "km": 133.45,
+     "reta": 116.88,
+     "uf_destino": "MA",
+     "nome_oficial": "MARANHAOZINHO"
+    }
+   }
+  },
+  "Arroio do Tigre/RS": {
+   "origem": "Arroio do Tigre",
+   "uf": "RS",
+   "app_hub": "Santa Cruz do Sul",
+   "app_km": 98.0,
+   "ref_hub": "Restinga Sêca",
+   "ref_km": 94.8,
+   "balsa": {},
+   "medidas": {
+    "Santa Cruz do Sul": {
+     "km": 98.05,
+     "reta": 76.24,
+     "uf_destino": "RS",
+     "nome_oficial": "SANTA CRUZ DO SUL"
+    },
+    "Restinga Sêca": {
+     "km": 127.9,
+     "reta": 60.08,
+     "uf_destino": "RS",
+     "nome_oficial": "RESTINGA SECA"
+    },
+    "SEGREDO": {
+     "km": 21.25,
+     "reta": 10.3,
+     "uf_destino": "RS",
+     "nome_oficial": "SEGREDO"
+    },
+    "IBARAMA": {
+     "km": 23.14,
+     "reta": 10.7,
+     "uf_destino": "RS",
+     "nome_oficial": "IBARAMA"
+    },
+    "SOBRADINHO": {
+     "km": 12.03,
+     "reta": 10.74,
+     "uf_destino": "RS",
+     "nome_oficial": "SOBRADINHO"
+    },
+    "PASSA SETE": {
+     "km": 20.73,
+     "reta": 17.5,
+     "uf_destino": "RS",
+     "nome_oficial": "PASSA SETE"
+    },
+    "LAGOA BONITA DO SUL": {
+     "km": 28.3,
+     "reta": 18.41,
+     "uf_destino": "RS",
+     "nome_oficial": "LAGOA BONITA DO SUL"
+    },
+    "ESTRELA VELHA": {
+     "km": 25.51,
+     "reta": 18.82,
+     "uf_destino": "RS",
+     "nome_oficial": "ESTRELA VELHA"
+    },
+    "PINHAL GRANDE": {
+     "km": 50.52,
+     "reta": 23.9,
+     "uf_destino": "RS",
+     "nome_oficial": "PINHAL GRANDE"
+    },
+    "TUNAS": {
+     "km": 35.75,
+     "reta": 28.69,
+     "uf_destino": "RS",
+     "nome_oficial": "TUNAS"
+    },
+    "SALTO DO JACUI": {
+     "km": 39.49,
+     "reta": 29.5,
+     "uf_destino": "RS",
+     "nome_oficial": "SALTO DO JACUI"
+    },
+    "LAGOAO": {
+     "km": 49.46,
+     "reta": 32.66,
+     "uf_destino": "RS",
+     "nome_oficial": "LAGOAO"
+    },
+    "JACUIZINHO": {
+     "km": 53.21,
+     "reta": 33.48,
+     "uf_destino": "RS",
+     "nome_oficial": "JACUIZINHO"
+    },
+    "AGUDO": {
+     "km": 64.78,
+     "reta": 37.71,
+     "uf_destino": "RS",
+     "nome_oficial": "AGUDO"
+    },
+    "CERRO BRANCO": {
+     "km": 53.76,
+     "reta": 39.58,
+     "uf_destino": "RS",
+     "nome_oficial": "CERRO BRANCO"
+    },
+    "NOVA PALMA": {
+     "km": 78.48,
+     "reta": 39.85,
+     "uf_destino": "RS",
+     "nome_oficial": "NOVA PALMA"
+    },
+    "DONA FRANCISCA": {
+     "km": 76.11,
+     "reta": 41.28,
+     "uf_destino": "RS",
+     "nome_oficial": "DONA FRANCISCA"
+    },
+    "HERVEIRAS": {
+     "km": 118.21,
+     "reta": 43.97,
+     "uf_destino": "RS",
+     "nome_oficial": "HERVEIRAS"
+    },
+    "FAXINAL DO SOTURNO": {
+     "km": 85.21,
+     "reta": 44.38,
+     "uf_destino": "RS",
+     "nome_oficial": "FAXINAL DO SOTURNO"
+    },
+    "PARAISO DO SUL": {
+     "km": 97.77,
+     "reta": 45.1,
+     "uf_destino": "RS",
+     "nome_oficial": "PARAISO DO SUL"
+    },
+    "NOVO CABRAIS": {
+     "km": 75.61,
+     "reta": 46.7,
+     "uf_destino": "RS",
+     "nome_oficial": "NOVO CABRAIS"
+    },
+    "SAO JOAO DO POLESINE": {
+     "km": 85.98,
+     "reta": 46.73,
+     "uf_destino": "RS",
+     "nome_oficial": "SAO JOAO DO POLESINE"
+    }
+   }
+  },
+  "Dormentes/PE": {
+   "origem": "Dormentes",
+   "uf": "PE",
+   "app_hub": "Ouricuri",
+   "app_km": 130.3,
+   "ref_hub": "Petrolina",
+   "ref_km": 127.2,
+   "balsa": {},
+   "medidas": {
+    "Ouricuri": {
+     "km": 130.29,
+     "reta": 98.21,
+     "uf_destino": "PE",
+     "nome_oficial": "OURICURI"
+    },
+    "Petrolina": {
+     "km": 150.51,
+     "reta": 109.74,
+     "uf_destino": "PE",
+     "nome_oficial": "PETROLINA"
+    },
+    "AFRANIO": {
+     "km": 31.8,
+     "reta": 27.4,
+     "uf_destino": "PE",
+     "nome_oficial": "AFRANIO"
+    },
+    "BETANIA DO PIAUI": {
+     "km": 40.77,
+     "reta": 33.8,
+     "uf_destino": "PI",
+     "nome_oficial": "BETANIA DO PIAUI"
+    },
+    "SANTA FILOMENA": {
+     "km": 38.59,
+     "reta": 36.11,
+     "uf_destino": "PE",
+     "nome_oficial": "SANTA FILOMENA"
+    },
+    "ACAUA": {
+     "km": 75.22,
+     "reta": 43.51,
+     "uf_destino": "PI",
+     "nome_oficial": "ACAUA"
+    },
+    "SANTA CRUZ": {
+     "km": 77.22,
+     "reta": 52.83,
+     "uf_destino": "PE",
+     "nome_oficial": "SANTA CRUZ"
+    },
+    "PAULISTANA": {
+     "km": 87.57,
+     "reta": 54.18,
+     "uf_destino": "PI",
+     "nome_oficial": "PAULISTANA"
+    },
+    "CURRAL NOVO DO PIAUI": {
+     "km": 87.67,
+     "reta": 70.03,
+     "uf_destino": "PI",
+     "nome_oficial": "CURRAL NOVO DO PIAUI"
+    },
+    "QUEIMADA NOVA": {
+     "km": 86.34,
+     "reta": 73.19,
+     "uf_destino": "PI",
+     "nome_oficial": "QUEIMADA NOVA"
+    },
+    "JACOBINA DO PIAUI": {
+     "km": 112.44,
+     "reta": 75.15,
+     "uf_destino": "PI",
+     "nome_oficial": "JACOBINA DO PIAUI"
+    },
+    "LAGOA GRANDE": {
+     "km": 121.1,
+     "reta": 81.67,
+     "uf_destino": "PE",
+     "nome_oficial": "LAGOA GRANDE"
+    },
+    "CARIDADE DO PIAUI": {
+     "km": 108.51,
+     "reta": 83.29,
+     "uf_destino": "PI",
+     "nome_oficial": "CARIDADE DO PIAUI"
+    },
+    "CASA NOVA": {
+     "km": 124.43,
+     "reta": 83.99,
+     "uf_destino": "BA",
+     "nome_oficial": "CASA NOVA"
+    },
+    "LAGOA DO BARRO DO PIAUI": {
+     "km": 105.67,
+     "reta": 84.15,
+     "uf_destino": "PI",
+     "nome_oficial": "LAGOA DO BARRO DO PIAUI"
+    },
+    "TRINDADE": {
+     "km": 155.65,
+     "reta": 94.32,
+     "uf_destino": "PE",
+     "nome_oficial": "TRINDADE"
+    },
+    "SIMOES": {
+     "km": 119.53,
+     "reta": 95.05,
+     "uf_destino": "PI",
+     "nome_oficial": "SIMOES"
+    },
+    "OURICURI": {
+     "km": 130.29,
+     "reta": 98.21,
+     "uf_destino": "PE",
+     "nome_oficial": "OURICURI"
+    },
+    "PATOS DO PIAUI": {
+     "km": 145.93,
+     "reta": 100.33,
+     "uf_destino": "PI",
+     "nome_oficial": "PATOS DO PIAUI"
+    },
+    "ARARIPINA": {
+     "km": 190.6,
+     "reta": 101.05,
+     "uf_destino": "PE",
+     "nome_oficial": "ARARIPINA"
+    },
+    "SAO FRANCISCO DE ASSIS DO PIAUI": {
+     "km": 148.81,
+     "reta": 104.03,
+     "uf_destino": "PI",
+     "nome_oficial": "SAO FRANCISCO DE ASSIS DO PIAUI"
+    },
+    "PETROLINA": {
+     "km": 150.51,
+     "reta": 109.74,
+     "uf_destino": "PE",
+     "nome_oficial": "PETROLINA"
+    }
+   }
+  },
+  "Centro Novo do Maranhão/MA": {
+   "origem": "Centro Novo do Maranhão",
+   "uf": "MA",
+   "app_hub": "Capitao Poco",
+   "app_km": 228.8,
+   "ref_hub": "Pinheiro",
+   "ref_km": 148.5,
+   "balsa": {},
+   "medidas": {
+    "Capitao Poco": {
+     "km": 228.77,
+     "reta": 113.2,
+     "uf_destino": "PA",
+     "nome_oficial": "CAPITAO POCO"
+    },
+    "Pinheiro": {
+     "km": 147.79,
+     "reta": 123.49,
+     "uf_destino": "MA",
+     "nome_oficial": "PINHEIRO"
+    },
+    "MARACACUME": {
+     "km": 23.92,
+     "reta": 20.98,
+     "uf_destino": "MA",
+     "nome_oficial": "MARACACUME"
+    },
+    "GOVERNADOR NUNES FREIRE": {
+     "km": 36.89,
+     "reta": 26.4,
+     "uf_destino": "MA",
+     "nome_oficial": "GOVERNADOR NUNES FREIRE"
+    },
+    "JUNCO DO MARANHAO": {
+     "km": 44.65,
+     "reta": 29.61,
+     "uf_destino": "MA",
+     "nome_oficial": "JUNCO DO MARANHAO"
+    },
+    "MARANHAOZINHO": {
+     "km": 49.7,
+     "reta": 31.7,
+     "uf_destino": "MA",
+     "nome_oficial": "MARANHAOZINHO"
+    },
+    "CENTRO DO GUILHERME": {
+     "km": 49.41,
+     "reta": 35.72,
+     "uf_destino": "MA",
+     "nome_oficial": "CENTRO DO GUILHERME"
+    },
+    "PRESIDENTE MEDICI": {
+     "km": 65.31,
+     "reta": 43.01,
+     "uf_destino": "MA",
+     "nome_oficial": "PRESIDENTE MEDICI"
+    },
+    "BOA VISTA DO GURUPI": {
+     "km": 75.62,
+     "reta": 43.37,
+     "uf_destino": "MA",
+     "nome_oficial": "BOA VISTA DO GURUPI"
+    },
+    "AMAPA DO MARANHAO": {
+     "km": 72.54,
+     "reta": 53.25,
+     "uf_destino": "MA",
+     "nome_oficial": "AMAPA DO MARANHAO"
+    },
+    "SANTA LUZIA DO PARUA": {
+     "km": 84.45,
+     "reta": 59.43,
+     "uf_destino": "MA",
+     "nome_oficial": "SANTA LUZIA DO PARUA"
+    },
+    "CACHOEIRA DO PIRIA": {
+     "km": 104.84,
+     "reta": 62.92,
+     "uf_destino": "PA",
+     "nome_oficial": "CACHOEIRA DO PIRIA"
+    },
+    "NOVA OLINDA DO MARANHAO": {
+     "km": 114.83,
+     "reta": 87.82,
+     "uf_destino": "MA",
+     "nome_oficial": "NOVA OLINDA DO MARANHAO"
+    },
+    "CANDIDO MENDES": {
+     "km": 128.96,
+     "reta": 87.96,
+     "uf_destino": "MA",
+     "nome_oficial": "CANDIDO MENDES"
+    },
+    "GODOFREDO VIANA": {
+     "km": 123.45,
+     "reta": 89.61,
+     "uf_destino": "MA",
+     "nome_oficial": "GODOFREDO VIANA"
+    },
+    "TURILANDIA": {
+     "km": 103.57,
+     "reta": 91.21,
+     "uf_destino": "MA",
+     "nome_oficial": "TURILANDIA"
+    },
+    "SANTA HELENA": {
+     "km": 104.64,
+     "reta": 92.12,
+     "uf_destino": "MA",
+     "nome_oficial": "SANTA HELENA"
+    },
+    "LUIS DOMINGUES": {
+     "km": 139.91,
+     "reta": 93.9,
+     "uf_destino": "MA",
+     "nome_oficial": "LUIS DOMINGUES"
+    },
+    "NOVA ESPERANCA DO PIRIA": {
+     "km": 231.2,
+     "reta": 94.64,
+     "uf_destino": "PA",
+     "nome_oficial": "NOVA ESPERANCA DO PIRIA"
+    },
+    "PRESIDENTE SARNEY": {
+     "km": 183.96,
+     "reta": 98.48,
+     "uf_destino": "MA",
+     "nome_oficial": "PRESIDENTE SARNEY"
+    },
+    "TURIACU": {
+     "km": 150.48,
+     "reta": 98.69,
+     "uf_destino": "MA",
+     "nome_oficial": "TURIACU"
+    },
+    "VISEU": {
+     "km": 178.05,
+     "reta": 103.54,
+     "uf_destino": "PA",
+     "nome_oficial": "VISEU"
+    }
+   }
+  },
+  "Palestina do Pará/PA": {
+   "origem": "Palestina do Pará",
+   "uf": "PA",
+   "app_hub": "Xambioa",
+   "app_km": 173.6,
+   "ref_hub": "Marabá",
+   "ref_km": 108.3,
+   "balsa": {},
+   "medidas": {
+    "Xambioa": {
+     "km": 173.64,
+     "reta": 77.5,
+     "uf_destino": "TO",
+     "nome_oficial": "XAMBIOA"
+    },
+    "Marabá": {
+     "km": 105.14,
+     "reta": 97.29,
+     "uf_destino": "PA",
+     "nome_oficial": "MARABA"
+    },
+    "BREJO GRANDE DO ARAGUAIA": {
+     "km": 15.29,
+     "reta": 11.06,
+     "uf_destino": "PA",
+     "nome_oficial": "BREJO GRANDE DO ARAGUAIA"
+    },
+    "ARAGUATINS": {
+     "km": 35.34,
+     "reta": 24.02,
+     "uf_destino": "TO",
+     "nome_oficial": "ARAGUATINS"
+    },
+    "BURITI DO TOCANTINS": {
+     "km": 80.87,
+     "reta": 48.96,
+     "uf_destino": "TO",
+     "nome_oficial": "BURITI DO TOCANTINS"
+    },
+    "ESPERANTINA": {
+     "km": 65.98,
+     "reta": 49.12,
+     "uf_destino": "TO",
+     "nome_oficial": "ESPERANTINA"
+    },
+    "SAO DOMINGOS DO ARAGUAIA": {
+     "km": 65.95,
+     "reta": 51.25,
+     "uf_destino": "PA",
+     "nome_oficial": "SAO DOMINGOS DO ARAGUAIA"
+    },
+    "SAO BENTO DO TOCANTINS": {
+     "km": 78.17,
+     "reta": 53.33,
+     "uf_destino": "TO",
+     "nome_oficial": "SAO BENTO DO TOCANTINS"
+    },
+    "SAO SEBASTIAO DO TOCANTINS": {
+     "km": 89.35,
+     "reta": 55.88,
+     "uf_destino": "TO",
+     "nome_oficial": "SAO SEBASTIAO DO TOCANTINS"
+    },
+    "CARRASCO BONITO": {
+     "km": 94.75,
+     "reta": 56.65,
+     "uf_destino": "TO",
+     "nome_oficial": "CARRASCO BONITO"
+    },
+    "AUGUSTINOPOLIS": {
+     "km": 70.21,
+     "reta": 57.06,
+     "uf_destino": "TO",
+     "nome_oficial": "AUGUSTINOPOLIS"
+    },
+    "CACHOEIRINHA": {
+     "km": 89.39,
+     "reta": 60.13,
+     "uf_destino": "TO",
+     "nome_oficial": "CACHOEIRINHA"
+    },
+    "AXIXA DO TOCANTINS": {
+     "km": 91.19,
+     "reta": 62.03,
+     "uf_destino": "TO",
+     "nome_oficial": "AXIXA DO TOCANTINS"
+    },
+    "SAMPAIO": {
+     "km": 83.35,
+     "reta": 65.45,
+     "uf_destino": "TO",
+     "nome_oficial": "SAMPAIO"
+    },
+    "VILA NOVA DOS MARTIRIOS": {
+     "km": 110.08,
+     "reta": 65.6,
+     "uf_destino": "MA",
+     "nome_oficial": "VILA NOVA DOS MARTIRIOS"
+    },
+    "SAO JOAO DO ARAGUAIA": {
+     "km": 80.12,
+     "reta": 68.07,
+     "uf_destino": "PA",
+     "nome_oficial": "SAO JOAO DO ARAGUAIA"
+    },
+    "PRAIA NORTE": {
+     "km": 81.34,
+     "reta": 68.31,
+     "uf_destino": "TO",
+     "nome_oficial": "PRAIA NORTE"
+    },
+    "LUZINOPOLIS": {
+     "km": 100.3,
+     "reta": 70.66,
+     "uf_destino": "TO",
+     "nome_oficial": "LUZINOPOLIS"
+    },
+    "ANANAS": {
+     "km": 151.18,
+     "reta": 74.8,
+     "uf_destino": "TO",
+     "nome_oficial": "ANANAS"
+    },
+    "SAO PEDRO DA AGUA BRANCA": {
+     "km": 134.63,
+     "reta": 74.92,
+     "uf_destino": "MA",
+     "nome_oficial": "SAO PEDRO DA AGUA BRANCA"
+    },
+    "SAO GERALDO DO ARAGUAIA": {
+     "km": 169.14,
+     "reta": 76.11,
+     "uf_destino": "PA",
+     "nome_oficial": "SAO GERALDO DO ARAGUAIA"
+    },
+    "SITIO NOVO DO TOCANTINS": {
+     "km": 106.33,
+     "reta": 76.53,
+     "uf_destino": "TO",
+     "nome_oficial": "SITIO NOVO DO TOCANTINS"
+    }
+   }
+  },
+  "São Vicente do Seridó/PB": {
+   "origem": "São Vicente do Seridó",
+   "uf": "PB",
+   "app_hub": "Parelhas",
+   "app_km": 104.2,
+   "ref_hub": "Parelhas",
+   "ref_km": 52.0,
+   "balsa": {},
+   "medidas": {
+    "Parelhas": {
+     "km": 104.25,
+     "reta": 39.21,
+     "uf_destino": "RN",
+     "nome_oficial": "PARELHAS"
+    },
+    "CUBATI": {
+     "km": 12.67,
+     "reta": 9.54,
+     "uf_destino": "PB",
+     "nome_oficial": "CUBATI"
+    },
+    "SOLEDADE": {
+     "km": 16.83,
+     "reta": 14.6,
+     "uf_destino": "PB",
+     "nome_oficial": "SOLEDADE"
+    },
+    "OLIVEDOS": {
+     "km": 28.2,
+     "reta": 18.64,
+     "uf_destino": "PB",
+     "nome_oficial": "OLIVEDOS"
+    },
+    "PEDRA LAVRADA": {
+     "km": 27.52,
+     "reta": 21.03,
+     "uf_destino": "PB",
+     "nome_oficial": "PEDRA LAVRADA"
+    },
+    "JUAZEIRINHO": {
+     "km": 40.66,
+     "reta": 24.25,
+     "uf_destino": "PB",
+     "nome_oficial": "JUAZEIRINHO"
+    },
+    "TENORIO": {
+     "km": 65.59,
+     "reta": 24.85,
+     "uf_destino": "PB",
+     "nome_oficial": "TENORIO"
+    },
+    "SOSSEGO": {
+     "km": 33.41,
+     "reta": 25.26,
+     "uf_destino": "PB",
+     "nome_oficial": "SOSSEGO"
+    },
+    "NOVA PALMEIRA": {
+     "km": 39.72,
+     "reta": 28.71,
+     "uf_destino": "PB",
+     "nome_oficial": "NOVA PALMEIRA"
+    },
+    "EQUADOR": {
+     "km": 67.99,
+     "reta": 34.37,
+     "uf_destino": "RN",
+     "nome_oficial": "EQUADOR"
+    },
+    "JUNCO DO SERIDO": {
+     "km": 60.63,
+     "reta": 35.07,
+     "uf_destino": "PB",
+     "nome_oficial": "JUNCO DO SERIDO"
+    },
+    "GURJAO": {
+     "km": 48.2,
+     "reta": 36.1,
+     "uf_destino": "PB",
+     "nome_oficial": "GURJAO"
+    },
+    "BARAUNA": {
+     "km": 45.36,
+     "reta": 36.4,
+     "uf_destino": "PB",
+     "nome_oficial": "BARAUNA"
+    },
+    "ASSUNCAO": {
+     "km": 58.4,
+     "reta": 39.07,
+     "uf_destino": "PB",
+     "nome_oficial": "ASSUNCAO"
+    },
+    "PARELHAS": {
+     "km": 104.25,
+     "reta": 39.21,
+     "uf_destino": "RN",
+     "nome_oficial": "PARELHAS"
+    },
+    "SANTO ANDRE": {
+     "km": 62.54,
+     "reta": 40.48,
+     "uf_destino": "PB",
+     "nome_oficial": "SANTO ANDRE"
+    },
+    "BOA VISTA": {
+     "km": 66.95,
+     "reta": 40.59,
+     "uf_destino": "PB",
+     "nome_oficial": "BOA VISTA"
+    },
+    "SANTANA DO SERIDO": {
+     "km": 93.11,
+     "reta": 40.8,
+     "uf_destino": "RN",
+     "nome_oficial": "SANTANA DO SERIDO"
+    },
+    "POCINHOS": {
+     "km": 57.62,
+     "reta": 41.14,
+     "uf_destino": "PB",
+     "nome_oficial": "POCINHOS"
+    },
+    "ALGODAO DE JANDAIRA": {
+     "km": 88.77,
+     "reta": 43.34,
+     "uf_destino": "PB",
+     "nome_oficial": "ALGODAO DE JANDAIRA"
+    },
+    "BARRA DE SANTA ROSA": {
+     "km": 68.79,
+     "reta": 44.63,
+     "uf_destino": "PB",
+     "nome_oficial": "BARRA DE SANTA ROSA"
+    }
+   }
+  }
+ },
+ "JACUNDA|TUCURUI": {
+  "km": 159.48,
+  "reta": 97.83,
+  "uf_destino": "PA",
+  "nome_oficial": "TUCURUI"
+ },
+ "JACUNDA|MARABA": {
+  "km": 110.75,
+  "reta": 100.11,
+  "uf_destino": "PA",
+  "nome_oficial": "MARABA"
+ },
+ "JACUNDA|NOVA IPIXUNA": {
+  "km": 55.21,
+  "reta": 51.74,
+  "uf_destino": "PA",
+  "nome_oficial": "NOVA IPIXUNA"
+ },
+ "JACUNDA|GOIANESIA DO PARA": {
+  "km": 73.04,
+  "reta": 67.74,
+  "uf_destino": "PA",
+  "nome_oficial": "GOIANESIA DO PARA"
+ },
+ "JACUNDA|ITUPIRANGA": {
+  "km": 164.55,
+  "reta": 80.04,
+  "uf_destino": "PA",
+  "nome_oficial": "ITUPIRANGA"
+ },
+ "JACUNDA|BOM JESUS DO TOCANTINS": {
+  "km": 142.46,
+  "reta": 87.17,
+  "uf_destino": "PA",
+  "nome_oficial": "BOM JESUS DO TOCANTINS"
+ },
+ "JACUNDA|BREU BRANCO": {
+  "km": 132.56,
+  "reta": 90.07,
+  "uf_destino": "PA",
+  "nome_oficial": "BREU BRANCO"
+ },
+ "JACUNDA|NOVO REPARTIMENTO": {
+  "km": 295.7,
+  "reta": 95.64,
+  "uf_destino": "PA",
+  "nome_oficial": "NOVO REPARTIMENTO"
+ },
+ "JACUNDA|ABEL FIGUEIREDO": {
+  "km": 168.69,
+  "reta": 97.41,
+  "uf_destino": "PA",
+  "nome_oficial": "ABEL FIGUEIREDO"
+ },
+ "JACUNDA|SAO PEDRO DA AGUA BRANCA": {
+  "km": 168.87,
+  "reta": 103.5,
+  "uf_destino": "MA",
+  "nome_oficial": "SAO PEDRO DA AGUA BRANCA"
+ },
+ "JACUNDA|SAO JOAO DO ARAGUAIA": {
+  "km": 157.69,
+  "reta": 107.13,
+  "uf_destino": "PA",
+  "nome_oficial": "SAO JOAO DO ARAGUAIA"
+ },
+ "JACUNDA|ESPERANTINA": {
+  "km": 192.83,
+  "reta": 120.19,
+  "uf_destino": "TO",
+  "nome_oficial": "ESPERANTINA"
+ },
+ "JACUNDA|RONDON DO PARA": {
+  "km": 211.73,
+  "reta": 121.59,
+  "uf_destino": "PA",
+  "nome_oficial": "RONDON DO PARA"
+ },
+ "JACUNDA|SAO DOMINGOS DO ARAGUAIA": {
+  "km": 157.23,
+  "reta": 128.71,
+  "uf_destino": "PA",
+  "nome_oficial": "SAO DOMINGOS DO ARAGUAIA"
+ },
+ "JACUNDA|SAO SEBASTIAO DO TOCANTINS": {
+  "km": 214.47,
+  "reta": 135.35,
+  "uf_destino": "TO",
+  "nome_oficial": "SAO SEBASTIAO DO TOCANTINS"
+ },
+ "JACUNDA|VILA NOVA DOS MARTIRIOS": {
+  "km": 208.2,
+  "reta": 135.77,
+  "uf_destino": "MA",
+  "nome_oficial": "VILA NOVA DOS MARTIRIOS"
+ },
+ "JACUNDA|BURITI DO TOCANTINS": {
+  "km": 222.8,
+  "reta": 137.73,
+  "uf_destino": "TO",
+  "nome_oficial": "BURITI DO TOCANTINS"
+ },
+ "JACUNDA|CARRASCO BONITO": {
+  "km": 296.02,
+  "reta": 153.77,
+  "uf_destino": "TO",
+  "nome_oficial": "CARRASCO BONITO"
+ },
+ "JACUNDA|BREJO GRANDE DO ARAGUAIA": {
+  "km": 203.41,
+  "reta": 160.11,
+  "uf_destino": "PA",
+  "nome_oficial": "BREJO GRANDE DO ARAGUAIA"
+ },
+ "JACUNDA|TAILANDIA": {
+  "km": 179.96,
+  "reta": 167.86,
+  "uf_destino": "PA",
+  "nome_oficial": "TAILANDIA"
+ },
+ "MEDINA|ALMENARA": {
+  "km": 156.72,
+  "reta": 83.04,
+  "uf_destino": "MG",
+  "nome_oficial": "ALMENARA"
+ },
+ "MEDINA|ARACUAI": {
+  "km": 118.11,
+  "reta": 93.69,
+  "uf_destino": "MG",
+  "nome_oficial": "ARACUAI"
+ },
+ "MEDINA|CACHOEIRA DE PAJEU": {
+  "km": 48.63,
+  "reta": 29.09,
+  "uf_destino": "MG",
+  "nome_oficial": "CACHOEIRA DE PAJEU"
+ },
+ "MEDINA|SANTA CRUZ DE SALINAS": {
+  "km": 50.01,
+  "reta": 31.95,
+  "uf_destino": "MG",
+  "nome_oficial": "SANTA CRUZ DE SALINAS"
+ },
+ "MEDINA|PEDRA AZUL": {
+  "km": 48.44,
+  "reta": 32.31,
+  "uf_destino": "MG",
+  "nome_oficial": "PEDRA AZUL"
+ },
+ "MEDINA|COMERCINHO": {
+  "km": 43.21,
+  "reta": 34.69,
+  "uf_destino": "MG",
+  "nome_oficial": "COMERCINHO"
+ },
+ "MEDINA|ITAOBIM": {
+  "km": 43.36,
+  "reta": 37.54,
+  "uf_destino": "MG",
+  "nome_oficial": "ITAOBIM"
+ },
+ "MEDINA|CURRAL DE DENTRO": {
+  "km": 106.95,
+  "reta": 51.47,
+  "uf_destino": "MG",
+  "nome_oficial": "CURRAL DE DENTRO"
+ },
+ "MEDINA|ITINGA": {
+  "km": 76.0,
+  "reta": 53.02,
+  "uf_destino": "MG",
+  "nome_oficial": "ITINGA"
+ },
+ "MEDINA|AGUAS VERMELHAS": {
+  "km": 71.85,
+  "reta": 53.45,
+  "uf_destino": "MG",
+  "nome_oficial": "AGUAS VERMELHAS"
+ },
+ "MEDINA|JEQUITINHONHA": {
+  "km": 110.55,
+  "reta": 55.69,
+  "uf_destino": "MG",
+  "nome_oficial": "JEQUITINHONHA"
+ },
+ "MEDINA|DIVISA ALEGRE": {
+  "km": 70.89,
+  "reta": 57.3,
+  "uf_destino": "MG",
+  "nome_oficial": "DIVISA ALEGRE"
+ },
+ "MEDINA|PONTO DOS VOLANTES": {
+  "km": 65.03,
+  "reta": 58.73,
+  "uf_destino": "MG",
+  "nome_oficial": "PONTO DOS VOLANTES"
+ },
+ "MEDINA|JOAIMA": {
+  "km": 135.42,
+  "reta": 67.95,
+  "uf_destino": "MG",
+  "nome_oficial": "JOAIMA"
+ },
+ "MEDINA|BERIZAL": {
+  "km": 112.62,
+  "reta": 73.67,
+  "uf_destino": "MG",
+  "nome_oficial": "BERIZAL"
+ },
+ "MEDINA|MONTE FORMOSO": {
+  "km": 106.31,
+  "reta": 75.14,
+  "uf_destino": "MG",
+  "nome_oficial": "MONTE FORMOSO"
+ },
+ "MEDINA|DIVISOPOLIS": {
+  "km": 108.68,
+  "reta": 75.37,
+  "uf_destino": "MG",
+  "nome_oficial": "DIVISOPOLIS"
+ },
+ "MEDINA|CANDIDO SALES": {
+  "km": 98.01,
+  "reta": 84.04,
+  "uf_destino": "BA",
+  "nome_oficial": "CANDIDO SALES"
+ },
+ "MEDINA|RUBELITA": {
+  "km": 194.71,
+  "reta": 86.1,
+  "uf_destino": "MG",
+  "nome_oficial": "RUBELITA"
+ },
+ "MEDINA|CORONEL MURTA": {
+  "km": 161.63,
+  "reta": 86.84,
+  "uf_destino": "MG",
+  "nome_oficial": "CORONEL MURTA"
+ },
+ "MEDINA|SALINAS": {
+  "km": 165.52,
+  "reta": 86.95,
+  "uf_destino": "MG",
+  "nome_oficial": "SALINAS"
+ },
+ "MOSTARDAS|CAMAQUA": {
+  "km": 339.54,
+  "reta": 90.09,
+  "uf_destino": "RS",
+  "nome_oficial": "CAMAQUA"
+ },
+ "MOSTARDAS|OSORIO": {
+  "km": 163.35,
+  "reta": 148.84,
+  "uf_destino": "RS",
+  "nome_oficial": "OSORIO"
+ },
+ "MOSTARDAS|TAVARES": {
+  "km": 28.87,
+  "reta": 26.17,
+  "uf_destino": "RS",
+  "nome_oficial": "TAVARES"
+ },
+ "MOSTARDAS|ARAMBARE": {
+  "km": 352.65,
+  "reta": 59.48,
+  "uf_destino": "RS",
+  "nome_oficial": "ARAMBARE"
+ },
+ "MOSTARDAS|TAPES": {
+  "km": 318.53,
+  "reta": 66.56,
+  "uf_destino": "RS",
+  "nome_oficial": "TAPES"
+ },
+ "MOSTARDAS|SENTINELA DO SUL": {
+  "km": 306.21,
+  "reta": 84.0,
+  "uf_destino": "RS",
+  "nome_oficial": "SENTINELA DO SUL"
+ },
+ "MOSTARDAS|BARRA DO RIBEIRO": {
+  "km": 270.04,
+  "reta": 97.05,
+  "uf_destino": "RS",
+  "nome_oficial": "BARRA DO RIBEIRO"
+ },
+ "MOSTARDAS|SERTAO SANTANA": {
+  "km": 291.45,
+  "reta": 97.32,
+  "uf_destino": "RS",
+  "nome_oficial": "SERTAO SANTANA"
+ },
+ "MOSTARDAS|CERRO GRANDE DO SUL": {
+  "km": 330.85,
+  "reta": 97.92,
+  "uf_destino": "RS",
+  "nome_oficial": "CERRO GRANDE DO SUL"
+ },
+ "MOSTARDAS|PALMARES DO SUL": {
+  "km": 116.79,
+  "reta": 101.88,
+  "uf_destino": "RS",
+  "nome_oficial": "PALMARES DO SUL"
+ },
+ "MOSTARDAS|SAO LOURENCO DO SUL": {
+  "km": 285.67,
+  "reta": 105.13,
+  "uf_destino": "RS",
+  "nome_oficial": "SAO LOURENCO DO SUL"
+ },
+ "MOSTARDAS|MARIANA PIMENTEL": {
+  "km": 285.67,
+  "reta": 105.35,
+  "uf_destino": "RS",
+  "nome_oficial": "MARIANA PIMENTEL"
+ },
+ "MOSTARDAS|CRISTAL": {
+  "km": 366.68,
+  "reta": 108.31,
+  "uf_destino": "RS",
+  "nome_oficial": "CRISTAL"
+ },
+ "MOSTARDAS|CHUVISCA": {
+  "km": 366.14,
+  "reta": 108.51,
+  "uf_destino": "RS",
+  "nome_oficial": "CHUVISCA"
+ },
+ "MOSTARDAS|BARAO DO TRIUNFO": {
+  "km": 305.6,
+  "reta": 111.79,
+  "uf_destino": "RS",
+  "nome_oficial": "BARAO DO TRIUNFO"
+ },
+ "MOSTARDAS|CAPIVARI DO SUL": {
+  "km": 125.11,
+  "reta": 113.67,
+  "uf_destino": "RS",
+  "nome_oficial": "CAPIVARI DO SUL"
+ },
+ "MOSTARDAS|VIAMAO": {
+  "km": 178.78,
+  "reta": 114.48,
+  "uf_destino": "RS",
+  "nome_oficial": "VIAMAO"
+ },
+ "MOSTARDAS|BALNEARIO PINHAL": {
+  "km": 146.25,
+  "reta": 114.6,
+  "uf_destino": "RS",
+  "nome_oficial": "BALNEARIO PINHAL"
+ },
+ "MOSTARDAS|GUAIBA": {
+  "km": 241.6,
+  "reta": 117.32,
+  "uf_destino": "RS",
+  "nome_oficial": "GUAIBA"
+ },
+ "MOSTARDAS|DOM FELICIANO": {
+  "km": 365.46,
+  "reta": 122.4,
+  "uf_destino": "RS",
+  "nome_oficial": "DOM FELICIANO"
+ },
+ "MOSTARDAS|CIDREIRA": {
+  "km": 152.01,
+  "reta": 123.07,
+  "uf_destino": "RS",
+  "nome_oficial": "CIDREIRA"
+ },
+ "SANTO AUGUSTO|PANAMBI": {
+  "km": 114.28,
+  "reta": 57.18,
+  "uf_destino": "RS",
+  "nome_oficial": "PANAMBI"
+ },
+ "SANTO AUGUSTO|IJUI": {
+  "km": 71.91,
+  "reta": 61.34,
+  "uf_destino": "RS",
+  "nome_oficial": "IJUI"
+ },
+ "SANTO AUGUSTO|CORONEL BICACO": {
+  "km": 33.6,
+  "reta": 16.25,
+  "uf_destino": "RS",
+  "nome_oficial": "CORONEL BICACO"
+ },
+ "SANTO AUGUSTO|SAO VALERIO DO SUL": {
+  "km": 22.72,
+  "reta": 16.99,
+  "uf_destino": "RS",
+  "nome_oficial": "SAO VALERIO DO SUL"
+ },
+ "SANTO AUGUSTO|CHIAPETTA": {
+  "km": 24.89,
+  "reta": 17.97,
+  "uf_destino": "RS",
+  "nome_oficial": "CHIAPETTA"
+ },
+ "SANTO AUGUSTO|CAMPO NOVO": {
+  "km": 30.82,
+  "reta": 19.64,
+  "uf_destino": "RS",
+  "nome_oficial": "CAMPO NOVO"
+ },
+ "SANTO AUGUSTO|SAO MARTINHO": {
+  "km": 33.94,
+  "reta": 24.14,
+  "uf_destino": "RS",
+  "nome_oficial": "SAO MARTINHO"
+ },
+ "SANTO AUGUSTO|INHACORA": {
+  "km": 36.55,
+  "reta": 24.4,
+  "uf_destino": "RS",
+  "nome_oficial": "INHACORA"
+ },
+ "SANTO AUGUSTO|REDENTORA": {
+  "km": 47.18,
+  "reta": 24.84,
+  "uf_destino": "RS",
+  "nome_oficial": "REDENTORA"
+ },
+ "SANTO AUGUSTO|BRAGA": {
+  "km": 41.25,
+  "reta": 26.5,
+  "uf_destino": "RS",
+  "nome_oficial": "BRAGA"
+ },
+ "SANTO AUGUSTO|NOVA RAMADA": {
+  "km": 33.99,
+  "reta": 26.71,
+  "uf_destino": "RS",
+  "nome_oficial": "NOVA RAMADA"
+ },
+ "SANTO AUGUSTO|ALEGRIA": {
+  "km": 44.51,
+  "reta": 27.57,
+  "uf_destino": "RS",
+  "nome_oficial": "ALEGRIA"
+ },
+ "SANTO AUGUSTO|SEDE NOVA": {
+  "km": 40.11,
+  "reta": 29.44,
+  "uf_destino": "RS",
+  "nome_oficial": "SEDE NOVA"
+ },
+ "SANTO AUGUSTO|DOIS IRMAOS DAS MISSOES": {
+  "km": 62.7,
+  "reta": 32.13,
+  "uf_destino": "RS",
+  "nome_oficial": "DOIS IRMAOS DAS MISSOES"
+ },
+ "SANTO AUGUSTO|BOM PROGRESSO": {
+  "km": 41.7,
+  "reta": 34.19,
+  "uf_destino": "RS",
+  "nome_oficial": "BOM PROGRESSO"
+ },
+ "SANTO AUGUSTO|HUMAITA": {
+  "km": 48.53,
+  "reta": 36.92,
+  "uf_destino": "RS",
+  "nome_oficial": "HUMAITA"
+ },
+ "SANTO AUGUSTO|SAO JOSE DO INHACORA": {
+  "km": 58.56,
+  "reta": 37.3,
+  "uf_destino": "RS",
+  "nome_oficial": "SAO JOSE DO INHACORA"
+ },
+ "SANTO AUGUSTO|BOA VISTA DO BURICA": {
+  "km": 51.5,
+  "reta": 38.63,
+  "uf_destino": "RS",
+  "nome_oficial": "BOA VISTA DO BURICA"
+ },
+ "SANTO AUGUSTO|MIRAGUAI": {
+  "km": 59.52,
+  "reta": 40.38,
+  "uf_destino": "RS",
+  "nome_oficial": "MIRAGUAI"
+ },
+ "SANTO AUGUSTO|INDEPENDENCIA": {
+  "km": 64.63,
+  "reta": 40.4,
+  "uf_destino": "RS",
+  "nome_oficial": "INDEPENDENCIA"
+ },
+ "SANTO AUGUSTO|NOVA CANDELARIA": {
+  "km": 60.69,
+  "reta": 42.11,
+  "uf_destino": "RS",
+  "nome_oficial": "NOVA CANDELARIA"
+ },
+ "SANTO AUGUSTO|ERVAL SECO": {
+  "km": 69.63,
+  "reta": 42.74,
+  "uf_destino": "RS",
+  "nome_oficial": "ERVAL SECO"
+ },
+ "ANAURILANDIA|TERRA RICA": {
+  "km": 125.8,
+  "reta": 61.24,
+  "uf_destino": "PR",
+  "nome_oficial": "TERRA RICA"
+ },
+ "ANAURILANDIA|NOVA ANDRADINA": {
+  "km": 70.32,
+  "reta": 64.48,
+  "uf_destino": "MS",
+  "nome_oficial": "NOVA ANDRADINA"
+ },
+ "ANAURILANDIA|EUCLIDES DA CUNHA PAULISTA": {
+  "km": 118.52,
+  "reta": 44.07,
+  "uf_destino": "SP",
+  "nome_oficial": "EUCLIDES DA CUNHA PAULISTA"
+ },
+ "ANAURILANDIA|DIAMANTE DO NORTE": {
+  "km": 95.95,
+  "reta": 55.12,
+  "uf_destino": "PR",
+  "nome_oficial": "DIAMANTE DO NORTE"
+ },
+ "ANAURILANDIA|ROSANA": {
+  "km": 83.25,
+  "reta": 56.2,
+  "uf_destino": "SP",
+  "nome_oficial": "ROSANA"
+ },
+ "ANAURILANDIA|BATAYPORA": {
+  "km": 60.89,
+  "reta": 57.66,
+  "uf_destino": "MS",
+  "nome_oficial": "BATAYPORA"
+ },
+ "ANAURILANDIA|BATAGUASSU": {
+  "km": 66.77,
+  "reta": 60.12,
+  "uf_destino": "MS",
+  "nome_oficial": "BATAGUASSU"
+ },
+ "ANAURILANDIA|ITAUNA DO SUL": {
+  "km": 104.35,
+  "reta": 63.12,
+  "uf_destino": "PR",
+  "nome_oficial": "ITAUNA DO SUL"
+ },
+ "ANAURILANDIA|TEODORO SAMPAIO": {
+  "km": 2234.05,
+  "reta": 1853.03,
+  "uf_destino": "BA",
+  "nome_oficial": "TEODORO SAMPAIO"
+ },
+ "ANAURILANDIA|MARILENA": {
+  "km": 125.1,
+  "reta": 69.8,
+  "uf_destino": "PR",
+  "nome_oficial": "MARILENA"
+ },
+ "ANAURILANDIA|NOVA LONDRINA": {
+  "km": 118.77,
+  "reta": 70.13,
+  "uf_destino": "PR",
+  "nome_oficial": "NOVA LONDRINA"
+ },
+ "ANAURILANDIA|SANTO ANTONIO DO CAIUA": {
+  "km": 156.88,
+  "reta": 72.54,
+  "uf_destino": "PR",
+  "nome_oficial": "SANTO ANTONIO DO CAIUA"
+ },
+ "ANAURILANDIA|TAQUARUSSU": {
+  "km": 89.89,
+  "reta": 73.08,
+  "uf_destino": "MS",
+  "nome_oficial": "TAQUARUSSU"
+ },
+ "ANAURILANDIA|MARABA PAULISTA": {
+  "km": 162.5,
+  "reta": 78.18,
+  "uf_destino": "SP",
+  "nome_oficial": "MARABA PAULISTA"
+ },
+ "ANAURILANDIA|PRESIDENTE EPITACIO": {
+  "km": 103.68,
+  "reta": 78.71,
+  "uf_destino": "SP",
+  "nome_oficial": "PRESIDENTE EPITACIO"
+ },
+ "ANAURILANDIA|JARDIM OLINDA": {
+  "km": 174.16,
+  "reta": 81.3,
+  "uf_destino": "PR",
+  "nome_oficial": "JARDIM OLINDA"
+ },
+ "ANAURILANDIA|INAJA": {
+  "km": 2634.24,
+  "reta": 2170.84,
+  "uf_destino": "PE",
+  "nome_oficial": "INAJA"
+ },
+ "ANAURILANDIA|GUAIRACA": {
+  "km": 166.81,
+  "reta": 83.47,
+  "uf_destino": "PR",
+  "nome_oficial": "GUAIRACA"
+ },
+ "ANAURILANDIA|PARANAPOEMA": {
+  "km": 186.4,
+  "reta": 83.79,
+  "uf_destino": "PR",
+  "nome_oficial": "PARANAPOEMA"
+ },
+ "ANAURILANDIA|SAO JOAO DO CAIUA": {
+  "km": 170.13,
+  "reta": 84.23,
+  "uf_destino": "PR",
+  "nome_oficial": "SAO JOAO DO CAIUA"
+ },
+ "QUEDAS DO IGUACU|DOIS VIZINHOS": {
+  "km": 70.15,
+  "reta": 35.87,
+  "uf_destino": "PR",
+  "nome_oficial": "DOIS VIZINHOS"
+ },
+ "QUEDAS DO IGUACU|LARANJEIRAS DO SUL": {
+  "km": 69.25,
+  "reta": 50.01,
+  "uf_destino": "PR",
+  "nome_oficial": "LARANJEIRAS DO SUL"
+ },
+ "QUEDAS DO IGUACU|ESPIGAO ALTO DO IGUACU": {
+  "km": 9.39,
+  "reta": 8.09,
+  "uf_destino": "PR",
+  "nome_oficial": "ESPIGAO ALTO DO IGUACU"
+ },
+ "QUEDAS DO IGUACU|CRUZEIRO DO IGUACU": {
+  "km": 37.9,
+  "reta": 28.34,
+  "uf_destino": "PR",
+  "nome_oficial": "CRUZEIRO DO IGUACU"
+ },
+ "QUEDAS DO IGUACU|SAO JORGE D'OESTE": {
+  "km": 46.84,
+  "reta": 28.35,
+  "uf_destino": "PR",
+  "nome_oficial": "SAO JORGE D'OESTE"
+ },
+ "QUEDAS DO IGUACU|TRES BARRAS DO PARANA": {
+  "km": 36.46,
+  "reta": 28.58,
+  "uf_destino": "PR",
+  "nome_oficial": "TRES BARRAS DO PARANA"
+ },
+ "QUEDAS DO IGUACU|SULINA": {
+  "km": 78.87,
+  "reta": 33.18,
+  "uf_destino": "PR",
+  "nome_oficial": "SULINA"
+ },
+ "QUEDAS DO IGUACU|BOA ESPERANCA DO IGUACU": {
+  "km": 51.16,
+  "reta": 37.09,
+  "uf_destino": "PR",
+  "nome_oficial": "BOA ESPERANCA DO IGUACU"
+ },
+ "QUEDAS DO IGUACU|CATANDUVAS": {
+  "km": 65.24,
+  "reta": 37.67,
+  "uf_destino": "PR",
+  "nome_oficial": "CATANDUVAS"
+ },
+ "QUEDAS DO IGUACU|RIO BONITO DO IGUACU": {
+  "km": 85.2,
+  "reta": 38.54,
+  "uf_destino": "PR",
+  "nome_oficial": "RIO BONITO DO IGUACU"
+ },
+ "QUEDAS DO IGUACU|IBEMA": {
+  "km": 104.86,
+  "reta": 39.17,
+  "uf_destino": "PR",
+  "nome_oficial": "IBEMA"
+ },
+ "QUEDAS DO IGUACU|SAUDADE DO IGUACU": {
+  "km": 100.19,
+  "reta": 39.23,
+  "uf_destino": "PR",
+  "nome_oficial": "SAUDADE DO IGUACU"
+ },
+ "QUEDAS DO IGUACU|GUARANIACU": {
+  "km": 87.64,
+  "reta": 39.72,
+  "uf_destino": "PR",
+  "nome_oficial": "GUARANIACU"
+ },
+ "QUEDAS DO IGUACU|NOVA LARANJEIRAS": {
+  "km": 50.11,
+  "reta": 40.69,
+  "uf_destino": "PR",
+  "nome_oficial": "NOVA LARANJEIRAS"
+ },
+ "QUEDAS DO IGUACU|SAO JOAO": {
+  "km": 77.24,
+  "reta": 44.66,
+  "uf_destino": "PR",
+  "nome_oficial": "SAO JOAO"
+ },
+ "QUEDAS DO IGUACU|VERE": {
+  "km": 68.68,
+  "reta": 47.02,
+  "uf_destino": "PR",
+  "nome_oficial": "VERE"
+ },
+ "QUEDAS DO IGUACU|CAMPO BONITO": {
+  "km": 107.03,
+  "reta": 47.71,
+  "uf_destino": "PR",
+  "nome_oficial": "CAMPO BONITO"
+ },
+ "QUEDAS DO IGUACU|NOVA PRATA DO IGUACU": {
+  "km": 67.39,
+  "reta": 48.61,
+  "uf_destino": "PR",
+  "nome_oficial": "NOVA PRATA DO IGUACU"
+ },
+ "QUEDAS DO IGUACU|BOA VISTA DA APARECIDA": {
+  "km": 62.11,
+  "reta": 50.4,
+  "uf_destino": "PR",
+  "nome_oficial": "BOA VISTA DA APARECIDA"
+ },
+ "QUEDAS DO IGUACU|PORTO BARREIRO": {
+  "km": 88.9,
+  "reta": 51.21,
+  "uf_destino": "PR",
+  "nome_oficial": "PORTO BARREIRO"
+ },
+ "TAQUARI|SAO JERONIMO": {
+  "km": 39.33,
+  "reta": 22.31,
+  "uf_destino": "RS",
+  "nome_oficial": "SAO JERONIMO"
+ },
+ "TAQUARI|VENANCIO AIRES": {
+  "km": 49.95,
+  "reta": 38.3,
+  "uf_destino": "RS",
+  "nome_oficial": "VENANCIO AIRES"
+ },
+ "TAQUARI|GENERAL CAMARA": {
+  "km": 28.76,
+  "reta": 15.31,
+  "uf_destino": "RS",
+  "nome_oficial": "GENERAL CAMARA"
+ },
+ "TAQUARI|TABAI": {
+  "km": 23.91,
+  "reta": 19.2,
+  "uf_destino": "RS",
+  "nome_oficial": "TABAI"
+ },
+ "TAQUARI|TRIUNFO": {
+  "km": 40.59,
+  "reta": 21.39,
+  "uf_destino": "RS",
+  "nome_oficial": "TRIUNFO"
+ },
+ "TAQUARI|BOM RETIRO DO SUL": {
+  "km": 47.17,
+  "reta": 22.6,
+  "uf_destino": "RS",
+  "nome_oficial": "BOM RETIRO DO SUL"
+ },
+ "TAQUARI|FAZENDA VILANOVA": {
+  "km": 31.42,
+  "reta": 23.6,
+  "uf_destino": "RS",
+  "nome_oficial": "FAZENDA VILANOVA"
+ },
+ "TAQUARI|CHARQUEADAS": {
+  "km": 48.77,
+  "reta": 28.85,
+  "uf_destino": "RS",
+  "nome_oficial": "CHARQUEADAS"
+ },
+ "TAQUARI|PAVERAMA": {
+  "km": 33.62,
+  "reta": 30.41,
+  "uf_destino": "RS",
+  "nome_oficial": "PAVERAMA"
+ },
+ "TAQUARI|VALE VERDE": {
+  "km": 44.98,
+  "reta": 30.84,
+  "uf_destino": "RS",
+  "nome_oficial": "VALE VERDE"
+ },
+ "TAQUARI|CRUZEIRO DO SUL": {
+  "km": 59.69,
+  "reta": 33.94,
+  "uf_destino": "RS",
+  "nome_oficial": "CRUZEIRO DO SUL"
+ },
+ "TAQUARI|ESTRELA": {
+  "km": 50.23,
+  "reta": 34.61,
+  "uf_destino": "RS",
+  "nome_oficial": "ESTRELA"
+ },
+ "TAQUARI|ARROIO DOS RATOS": {
+  "km": 51.97,
+  "reta": 34.77,
+  "uf_destino": "RS",
+  "nome_oficial": "ARROIO DOS RATOS"
+ },
+ "TAQUARI|TEUTONIA": {
+  "km": 44.83,
+  "reta": 35.67,
+  "uf_destino": "RS",
+  "nome_oficial": "TEUTONIA"
+ },
+ "TAQUARI|BUTIA": {
+  "km": 71.6,
+  "reta": 36.74,
+  "uf_destino": "RS",
+  "nome_oficial": "BUTIA"
+ },
+ "TAQUARI|BROCHIER": {
+  "km": 62.62,
+  "reta": 37.74,
+  "uf_destino": "RS",
+  "nome_oficial": "BROCHIER"
+ },
+ "TAQUARI|LAJEADO": {
+  "km": 52.81,
+  "reta": 38.32,
+  "uf_destino": "RS",
+  "nome_oficial": "LAJEADO"
+ },
+ "TAQUARI|MATO LEITAO": {
+  "km": 61.26,
+  "reta": 39.8,
+  "uf_destino": "RS",
+  "nome_oficial": "MATO LEITAO"
+ },
+ "TAQUARI|PASSO DO SOBRADO": {
+  "km": 64.22,
+  "reta": 40.11,
+  "uf_destino": "RS",
+  "nome_oficial": "PASSO DO SOBRADO"
+ },
+ "TAQUARI|MINAS DO LEAO": {
+  "km": 79.22,
+  "reta": 40.3,
+  "uf_destino": "RS",
+  "nome_oficial": "MINAS DO LEAO"
+ },
+ "VIANA|ITAPECURU MIRIM": {
+  "km": 123.76,
+  "reta": 74.16,
+  "uf_destino": "MA",
+  "nome_oficial": "ITAPECURU MIRIM"
+ },
+ "VIANA|SANTA INES": {
+  "km": 110.36,
+  "reta": 64.15,
+  "uf_destino": "MA",
+  "nome_oficial": "SANTA INES"
+ },
+ "VIANA|CAJARI": {
+  "km": 31.22,
+  "reta": 11.44,
+  "uf_destino": "MA",
+  "nome_oficial": "CAJARI"
+ },
+ "VIANA|MATINHA": {
+  "km": 24.14,
+  "reta": 13.63,
+  "uf_destino": "MA",
+  "nome_oficial": "MATINHA"
+ },
+ "VIANA|PENALVA": {
+  "km": 40.3,
+  "reta": 20.73,
+  "uf_destino": "MA",
+  "nome_oficial": "PENALVA"
+ },
+ "VIANA|OLINDA NOVA DO MARANHAO": {
+  "km": 38.0,
+  "reta": 24.4,
+  "uf_destino": "MA",
+  "nome_oficial": "OLINDA NOVA DO MARANHAO"
+ },
+ "VIANA|VITORIA DO MEARIM": {
+  "km": 40.2,
+  "reta": 31.09,
+  "uf_destino": "MA",
+  "nome_oficial": "VITORIA DO MEARIM"
+ },
+ "VIANA|ARARI": {
+  "km": 51.79,
+  "reta": 35.99,
+  "uf_destino": "MA",
+  "nome_oficial": "ARARI"
+ },
+ "VIANA|SAO JOAO BATISTA": {
+  "km": 67.19,
+  "reta": 36.81,
+  "uf_destino": "MA",
+  "nome_oficial": "SAO JOAO BATISTA"
+ },
+ "VIANA|SAO VICENTE FERRER": {
+  "km": 59.11,
+  "reta": 39.11,
+  "uf_destino": "MA",
+  "nome_oficial": "SAO VICENTE FERRER"
+ },
+ "VIANA|MONCAO": {
+  "km": 104.14,
+  "reta": 41.08,
+  "uf_destino": "MA",
+  "nome_oficial": "MONCAO"
+ },
+ "VIANA|ANAJATUBA": {
+  "km": 127.13,
+  "reta": 43.06,
+  "uf_destino": "MA",
+  "nome_oficial": "ANAJATUBA"
+ },
+ "VIANA|PEDRO DO ROSARIO": {
+  "km": 54.29,
+  "reta": 47.25,
+  "uf_destino": "MA",
+  "nome_oficial": "PEDRO DO ROSARIO"
+ },
+ "VIANA|IGARAPE DO MEIO": {
+  "km": 84.95,
+  "reta": 51.13,
+  "uf_destino": "MA",
+  "nome_oficial": "IGARAPE DO MEIO"
+ },
+ "VIANA|CAJAPIO": {
+  "km": 84.71,
+  "reta": 52.2,
+  "uf_destino": "MA",
+  "nome_oficial": "CAJAPIO"
+ },
+ "VIANA|PINDARE-MIRIM": {
+  "km": 118.17,
+  "reta": 57.21,
+  "uf_destino": "MA",
+  "nome_oficial": "PINDARE-MIRIM"
+ },
+ "VIANA|MIRANDA DO NORTE": {
+  "km": 80.84,
+  "reta": 60.05,
+  "uf_destino": "MA",
+  "nome_oficial": "MIRANDA DO NORTE"
+ },
+ "VIANA|SAO BENTO": {
+  "km": 92.76,
+  "reta": 60.7,
+  "uf_destino": "MA",
+  "nome_oficial": "SAO BENTO"
+ },
+ "VIANA|BACURITUBA": {
+  "km": 102.44,
+  "reta": 63.99,
+  "uf_destino": "MA",
+  "nome_oficial": "BACURITUBA"
+ },
+ "VIANA|BELA VISTA DO MARANHAO": {
+  "km": 108.01,
+  "reta": 64.37,
+  "uf_destino": "MA",
+  "nome_oficial": "BELA VISTA DO MARANHAO"
+ },
+ "VIANA|PALMEIRANDIA": {
+  "km": 101.99,
+  "reta": 64.81,
+  "uf_destino": "MA",
+  "nome_oficial": "PALMEIRANDIA"
+ },
+ "OEIRAS DO PARA|CAMETA": {
+  "km": 108.5,
+  "reta": 47.75,
+  "uf_destino": "PA",
+  "nome_oficial": "CAMETA"
+ },
+ "OEIRAS DO PARA|BREVES": {
+  "km": 515.77,
+  "reta": 78.0,
+  "uf_destino": "PA",
+  "nome_oficial": "BREVES"
+ },
+ "OEIRAS DO PARA|CURRALINHO": {
+  "km": 1.85,
+  "reta": 22.0,
+  "uf_destino": "PA",
+  "nome_oficial": "CURRALINHO"
+ },
+ "OEIRAS DO PARA|BAGRE": {
+  "km": 527.65,
+  "reta": 41.3,
+  "uf_destino": "PA",
+  "nome_oficial": "BAGRE"
+ },
+ "OEIRAS DO PARA|SAO SEBASTIAO DA BOA VISTA": {
+  "km": 161.77,
+  "reta": 47.82,
+  "uf_destino": "PA",
+  "nome_oficial": "SAO SEBASTIAO DA BOA VISTA"
+ },
+ "OEIRAS DO PARA|LIMOEIRO DO AJURU": {
+  "km": 161.17,
+  "reta": 53.99,
+  "uf_destino": "PA",
+  "nome_oficial": "LIMOEIRO DO AJURU"
+ },
+ "OEIRAS DO PARA|MOCAJUBA": {
+  "km": 181.74,
+  "reta": 74.83,
+  "uf_destino": "PA",
+  "nome_oficial": "MOCAJUBA"
+ },
+ "OEIRAS DO PARA|MUANA": {
+  "km": 254.58,
+  "reta": 88.31,
+  "uf_destino": "PA",
+  "nome_oficial": "MUANA"
+ },
+ "OEIRAS DO PARA|BAIAO": {
+  "km": 213.88,
+  "reta": 89.89,
+  "uf_destino": "PA",
+  "nome_oficial": "BAIAO"
+ },
+ "OEIRAS DO PARA|MELGACO": {
+  "km": 689.97,
+  "reta": 97.85,
+  "uf_destino": "PA",
+  "nome_oficial": "MELGACO"
+ },
+ "OEIRAS DO PARA|IGARAPE-MIRI": {
+  "km": 209.04,
+  "reta": 99.23,
+  "uf_destino": "PA",
+  "nome_oficial": "IGARAPE-MIRI"
+ },
+ "OEIRAS DO PARA|PORTEL": {
+  "km": 678.25,
+  "reta": 107.95,
+  "uf_destino": "PA",
+  "nome_oficial": "PORTEL"
+ },
+ "OEIRAS DO PARA|ABAETETUBA": {
+  "km": 253.63,
+  "reta": 111.57,
+  "uf_destino": "PA",
+  "nome_oficial": "ABAETETUBA"
+ },
+ "OEIRAS DO PARA|ANAJAS": {
+  "km": 541.08,
+  "reta": 113.72,
+  "uf_destino": "PA",
+  "nome_oficial": "ANAJAS"
+ },
+ "OEIRAS DO PARA|MOJU": {
+  "km": 250.97,
+  "reta": 121.5,
+  "uf_destino": "PA",
+  "nome_oficial": "MOJU"
+ },
+ "OEIRAS DO PARA|PONTA DE PEDRAS": {
+  "km": 300.24,
+  "reta": 128.63,
+  "uf_destino": "PA",
+  "nome_oficial": "PONTA DE PEDRAS"
+ },
+ "OEIRAS DO PARA|TAILANDIA": {
+  "km": 241.86,
+  "reta": 144.97,
+  "uf_destino": "PA",
+  "nome_oficial": "TAILANDIA"
+ },
+ "OEIRAS DO PARA|BARCARENA": {
+  "km": 286.77,
+  "reta": 147.42,
+  "uf_destino": "PA",
+  "nome_oficial": "BARCARENA"
+ },
+ "OEIRAS DO PARA|CACHOEIRA DO ARARI": {
+  "km": 461.3,
+  "reta": 148.57,
+  "uf_destino": "PA",
+  "nome_oficial": "CACHOEIRA DO ARARI"
+ },
+ "OEIRAS DO PARA|BELEM": {
+  "km": 349.72,
+  "reta": 161.9,
+  "uf_destino": "PA",
+  "nome_oficial": "BELEM"
+ },
+ "GURUPA|PORTEL": {
+  "km": 1285.88,
+  "reta": 109.06,
+  "uf_destino": "PA",
+  "nome_oficial": "PORTEL"
+ },
+ "GURUPA|ALMEIRIM": {
+  "km": 669.75,
+  "reta": 104.16,
+  "uf_destino": "PA",
+  "nome_oficial": "ALMEIRIM"
+ },
+ "GURUPA|PORTO DE MOZ": {
+  "km": 17.71,
+  "reta": 76.27,
+  "uf_destino": "PA",
+  "nome_oficial": "PORTO DE MOZ"
+ },
+ "GURUPA|VITORIA DO JARI": {
+  "km": 581.48,
+  "reta": 101.74,
+  "uf_destino": "AP",
+  "nome_oficial": "VITORIA DO JARI"
+ },
+ "GURUPA|MELGACO": {
+  "km": 1297.6,
+  "reta": 113.07,
+  "uf_destino": "PA",
+  "nome_oficial": "MELGACO"
+ },
+ "GURUPA|LARANJAL DO JARI": {
+  "km": 547.63,
+  "reta": 115.58,
+  "uf_destino": "AP",
+  "nome_oficial": "LARANJAL DO JARI"
+ },
+ "GURUPA|BREVES": {
+  "km": 1123.4,
+  "reta": 133.3,
+  "uf_destino": "PA",
+  "nome_oficial": "BREVES"
+ },
+ "GURUPA|SENADOR JOSE PORFIRIO": {
+  "km": 303.21,
+  "reta": 136.07,
+  "uf_destino": "PA",
+  "nome_oficial": "SENADOR JOSE PORFIRIO"
+ },
+ "GURUPA|MAZAGAO": {
+  "km": 292.68,
+  "reta": 149.14,
+  "uf_destino": "AP",
+  "nome_oficial": "MAZAGAO"
+ },
+ "GURUPA|SANTANA": {
+  "km": 270.17,
+  "reta": 161.69,
+  "uf_destino": "AP",
+  "nome_oficial": "SANTANA"
+ },
+ "GURUPA|BAGRE": {
+  "km": 1135.28,
+  "reta": 168.83,
+  "uf_destino": "PA",
+  "nome_oficial": "BAGRE"
+ },
+ "GURUPA|VITORIA DO XINGU": {
+  "km": 151.3,
+  "reta": 169.04,
+  "uf_destino": "PA",
+  "nome_oficial": "VITORIA DO XINGU"
+ },
+ "GURUPA|MACAPA": {
+  "km": 290.34,
+  "reta": 173.84,
+  "uf_destino": "AP",
+  "nome_oficial": "MACAPA"
+ },
+ "GURUPA|ANAJAS": {
+  "km": 1148.71,
+  "reta": 195.77,
+  "uf_destino": "PA",
+  "nome_oficial": "ANAJAS"
+ },
+ "GURUPA|AFUA": {
+  "km": 1442.51,
+  "reta": 197.18,
+  "uf_destino": "PA",
+  "nome_oficial": "AFUA"
+ },
+ "GURUPA|PRAINHA": {
+  "km": 869.49,
+  "reta": 208.51,
+  "uf_destino": "PA",
+  "nome_oficial": "PRAINHA"
+ },
+ "GURUPA|ALTAMIRA": {
+  "km": 202.32,
+  "reta": 209.97,
+  "uf_destino": "PA",
+  "nome_oficial": "ALTAMIRA"
+ },
+ "GURUPA|OEIRAS DO PARA": {
+  "km": 790.55,
+  "reta": 210.08,
+  "uf_destino": "PA",
+  "nome_oficial": "OEIRAS DO PARA"
+ },
+ "GURUPA|CURRALINHO": {
+  "km": 791.64,
+  "reta": 210.57,
+  "uf_destino": "PA",
+  "nome_oficial": "CURRALINHO"
+ },
+ "GURUPA|CHAVES": {
+  "km": 1442.5,
+  "reta": 231.11,
+  "uf_destino": "PA",
+  "nome_oficial": "CHAVES"
+ },
+ "SAO JOSE DO NORTE|RIO GRANDE": {
+  "km": 6.82,
+  "reta": 6.16,
+  "uf_destino": "RS",
+  "nome_oficial": "RIO GRANDE"
+ },
+ "SAO JOSE DO NORTE|OSORIO": {
+  "km": 315.28,
+  "reta": 289.5,
+  "uf_destino": "RS",
+  "nome_oficial": "OSORIO"
+ },
+ "SAO JOSE DO NORTE|PELOTAS": {
+  "km": 68.75,
+  "reta": 42.92,
+  "uf_destino": "RS",
+  "nome_oficial": "PELOTAS"
+ },
+ "SAO JOSE DO NORTE|CAPAO DO LEAO": {
+  "km": 77.95,
+  "reta": 51.21,
+  "uf_destino": "RS",
+  "nome_oficial": "CAPAO DO LEAO"
+ },
+ "SAO JOSE DO NORTE|TURUCU": {
+  "km": 110.72,
+  "reta": 66.42,
+  "uf_destino": "RS",
+  "nome_oficial": "TURUCU"
+ },
+ "SAO JOSE DO NORTE|SAO LOURENCO DO SUL": {
+  "km": 132.35,
+  "reta": 71.35,
+  "uf_destino": "RS",
+  "nome_oficial": "SAO LOURENCO DO SUL"
+ },
+ "SAO JOSE DO NORTE|MORRO REDONDO": {
+  "km": 101.6,
+  "reta": 71.94,
+  "uf_destino": "RS",
+  "nome_oficial": "MORRO REDONDO"
+ },
+ "SAO JOSE DO NORTE|ARROIO DO PADRE": {
+  "km": 109.29,
+  "reta": 72.44,
+  "uf_destino": "RS",
+  "nome_oficial": "ARROIO DO PADRE"
+ },
+ "SAO JOSE DO NORTE|CERRITO": {
+  "km": 118.25,
+  "reta": 75.34,
+  "uf_destino": "RS",
+  "nome_oficial": "CERRITO"
+ },
+ "SAO JOSE DO NORTE|PEDRO OSORIO": {
+  "km": 117.25,
+  "reta": 75.63,
+  "uf_destino": "RS",
+  "nome_oficial": "PEDRO OSORIO"
+ },
+ "SAO JOSE DO NORTE|CANGUCU": {
+  "km": 118.92,
+  "reta": 90.76,
+  "uf_destino": "RS",
+  "nome_oficial": "CANGUCU"
+ },
+ "SAO JOSE DO NORTE|ARROIO GRANDE": {
+  "km": 126.44,
+  "reta": 101.93,
+  "uf_destino": "RS",
+  "nome_oficial": "ARROIO GRANDE"
+ },
+ "SAO JOSE DO NORTE|CRISTAL": {
+  "km": 167.05,
+  "reta": 111.86,
+  "uf_destino": "RS",
+  "nome_oficial": "CRISTAL"
+ },
+ "SAO JOSE DO NORTE|PIRATINI": {
+  "km": 156.84,
+  "reta": 118.34,
+  "uf_destino": "RS",
+  "nome_oficial": "PIRATINI"
+ },
+ "SAO JOSE DO NORTE|TAVARES": {
+  "km": 125.55,
+  "reta": 120.09,
+  "uf_destino": "RS",
+  "nome_oficial": "TAVARES"
+ },
+ "SAO JOSE DO NORTE|AMARAL FERRADOR": {
+  "km": 195.91,
+  "reta": 127.32,
+  "uf_destino": "RS",
+  "nome_oficial": "AMARAL FERRADOR"
+ },
+ "SAO JOSE DO NORTE|HERVAL": {
+  "km": 175.26,
+  "reta": 127.87,
+  "uf_destino": "RS",
+  "nome_oficial": "HERVAL"
+ },
+ "SAO JOSE DO NORTE|CAMAQUA": {
+  "km": 197.33,
+  "reta": 130.27,
+  "uf_destino": "RS",
+  "nome_oficial": "CAMAQUA"
+ },
+ "SAO JOSE DO NORTE|ARAMBARE": {
+  "km": 228.81,
+  "reta": 132.89,
+  "uf_destino": "RS",
+  "nome_oficial": "ARAMBARE"
+ },
+ "SAO JOSE DO NORTE|PINHEIRO MACHADO": {
+  "km": 166.88,
+  "reta": 135.53,
+  "uf_destino": "RS",
+  "nome_oficial": "PINHEIRO MACHADO"
+ },
+ "SAO JOSE DO NORTE|CHUVISCA": {
+  "km": 202.82,
+  "reta": 139.05,
+  "uf_destino": "RS",
+  "nome_oficial": "CHUVISCA"
+ },
+ "TRIUNFO|SAO JERONIMO": {
+  "km": 4.12,
+  "reta": 1.56,
+  "uf_destino": "RS",
+  "nome_oficial": "SAO JERONIMO"
+ },
+ "TRIUNFO|MONTENEGRO": {
+  "km": 50.05,
+  "reta": 37.9,
+  "uf_destino": "RS",
+  "nome_oficial": "MONTENEGRO"
+ },
+ "TRIUNFO|GENERAL CAMARA": {
+  "km": 16.77,
+  "reta": 6.08,
+  "uf_destino": "RS",
+  "nome_oficial": "GENERAL CAMARA"
+ },
+ "TRIUNFO|CHARQUEADAS": {
+  "km": 11.5,
+  "reta": 8.93,
+  "uf_destino": "RS",
+  "nome_oficial": "CHARQUEADAS"
+ },
+ "TRIUNFO|ARROIO DOS RATOS": {
+  "km": 19.64,
+  "reta": 16.0,
+  "uf_destino": "RS",
+  "nome_oficial": "ARROIO DOS RATOS"
+ },
+ "TRIUNFO|TAQUARI": {
+  "km": 41.27,
+  "reta": 21.39,
+  "uf_destino": "RS",
+  "nome_oficial": "TAQUARI"
+ },
+ "TRIUNFO|TABAI": {
+  "km": 34.55,
+  "reta": 28.94,
+  "uf_destino": "RS",
+  "nome_oficial": "TABAI"
+ },
+ "TRIUNFO|BUTIA": {
+  "km": 39.27,
+  "reta": 30.82,
+  "uf_destino": "RS",
+  "nome_oficial": "BUTIA"
+ },
+ "TRIUNFO|MINAS DO LEAO": {
+  "km": 46.89,
+  "reta": 37.44,
+  "uf_destino": "RS",
+  "nome_oficial": "MINAS DO LEAO"
+ },
+ "TRIUNFO|ELDORADO DO SUL": {
+  "km": 56.28,
+  "reta": 39.71,
+  "uf_destino": "RS",
+  "nome_oficial": "ELDORADO DO SUL"
+ },
+ "TRIUNFO|FAZENDA VILANOVA": {
+  "km": 50.7,
+  "reta": 40.83,
+  "uf_destino": "RS",
+  "nome_oficial": "FAZENDA VILANOVA"
+ },
+ "TRIUNFO|GUAIBA": {
+  "km": 61.03,
+  "reta": 41.97,
+  "uf_destino": "RS",
+  "nome_oficial": "GUAIBA"
+ },
+ "TRIUNFO|BOM RETIRO DO SUL": {
+  "km": 66.46,
+  "reta": 43.25,
+  "uf_destino": "RS",
+  "nome_oficial": "BOM RETIRO DO SUL"
+ },
+ "TRIUNFO|PAVERAMA": {
+  "km": 52.91,
+  "reta": 43.87,
+  "uf_destino": "RS",
+  "nome_oficial": "PAVERAMA"
+ },
+ "TRIUNFO|NOVA SANTA RITA": {
+  "km": 53.72,
+  "reta": 43.98,
+  "uf_destino": "RS",
+  "nome_oficial": "NOVA SANTA RITA"
+ },
+ "TRIUNFO|BROCHIER": {
+  "km": 63.09,
+  "reta": 44.86,
+  "uf_destino": "RS",
+  "nome_oficial": "BROCHIER"
+ },
+ "TRIUNFO|PARECI NOVO": {
+  "km": 58.73,
+  "reta": 46.15,
+  "uf_destino": "RS",
+  "nome_oficial": "PARECI NOVO"
+ },
+ "TRIUNFO|MARATA": {
+  "km": 68.31,
+  "reta": 46.79,
+  "uf_destino": "RS",
+  "nome_oficial": "MARATA"
+ },
+ "TRIUNFO|MARIANA PIMENTEL": {
+  "km": 64.52,
+  "reta": 47.23,
+  "uf_destino": "RS",
+  "nome_oficial": "MARIANA PIMENTEL"
+ },
+ "TRIUNFO|CAPELA DE SANTANA": {
+  "km": 68.18,
+  "reta": 48.09,
+  "uf_destino": "RS",
+  "nome_oficial": "CAPELA DE SANTANA"
+ },
+ "CARUTAPERA|BRAGANCA": {
+  "km": 279.21,
+  "reta": 83.71,
+  "uf_destino": "PA",
+  "nome_oficial": "BRAGANCA"
+ },
+ "CARUTAPERA|CAPANEMA": {
+  "km": 228.99,
+  "reta": 128.68,
+  "uf_destino": "PA",
+  "nome_oficial": "CAPANEMA"
+ },
+ "CARUTAPERA|VISEU": {
+  "km": 204.44,
+  "reta": 12.92,
+  "uf_destino": "PA",
+  "nome_oficial": "VISEU"
+ },
+ "CARUTAPERA|LUIS DOMINGUES": {
+  "km": 27.59,
+  "reta": 19.54,
+  "uf_destino": "MA",
+  "nome_oficial": "LUIS DOMINGUES"
+ },
+ "CARUTAPERA|GODOFREDO VIANA": {
+  "km": 47.08,
+  "reta": 36.29,
+  "uf_destino": "MA",
+  "nome_oficial": "GODOFREDO VIANA"
+ },
+ "CARUTAPERA|CANDIDO MENDES": {
+  "km": 55.48,
+  "reta": 43.05,
+  "uf_destino": "MA",
+  "nome_oficial": "CANDIDO MENDES"
+ },
+ "CARUTAPERA|AMAPA DO MARANHAO": {
+  "km": 57.86,
+  "reta": 52.55,
+  "uf_destino": "MA",
+  "nome_oficial": "AMAPA DO MARANHAO"
+ },
+ "CARUTAPERA|AUGUSTO CORREA": {
+  "km": 295.56,
+  "reta": 71.22,
+  "uf_destino": "PA",
+  "nome_oficial": "AUGUSTO CORREA"
+ },
+ "CARUTAPERA|BOA VISTA DO GURUPI": {
+  "km": 102.0,
+  "reta": 73.25,
+  "uf_destino": "MA",
+  "nome_oficial": "BOA VISTA DO GURUPI"
+ },
+ "CARUTAPERA|JUNCO DO MARANHAO": {
+  "km": 85.85,
+  "reta": 75.4,
+  "uf_destino": "MA",
+  "nome_oficial": "JUNCO DO MARANHAO"
+ },
+ "CARUTAPERA|CACHOEIRA DO PIRIA": {
+  "km": 131.22,
+  "reta": 84.82,
+  "uf_destino": "PA",
+  "nome_oficial": "CACHOEIRA DO PIRIA"
+ },
+ "CARUTAPERA|TURIACU": {
+  "km": 234.23,
+  "reta": 89.17,
+  "uf_destino": "MA",
+  "nome_oficial": "TURIACU"
+ },
+ "CARUTAPERA|MARACACUME": {
+  "km": 107.67,
+  "reta": 93.61,
+  "uf_destino": "MA",
+  "nome_oficial": "MARACACUME"
+ },
+ "CARUTAPERA|TRACUATEUA": {
+  "km": 264.22,
+  "reta": 99.07,
+  "uf_destino": "PA",
+  "nome_oficial": "TRACUATEUA"
+ },
+ "CARUTAPERA|SANTA LUZIA DO PARA": {
+  "km": 179.18,
+  "reta": 103.83,
+  "uf_destino": "PA",
+  "nome_oficial": "SANTA LUZIA DO PARA"
+ },
+ "CARUTAPERA|GOVERNADOR NUNES FREIRE": {
+  "km": 120.64,
+  "reta": 104.18,
+  "uf_destino": "MA",
+  "nome_oficial": "GOVERNADOR NUNES FREIRE"
+ },
+ "CARUTAPERA|CENTRO NOVO DO MARANHAO": {
+  "km": 130.33,
+  "reta": 104.86,
+  "uf_destino": "MA",
+  "nome_oficial": "CENTRO NOVO DO MARANHAO"
+ },
+ "CARUTAPERA|APICUM-ACU": {
+  "km": 395.24,
+  "reta": 110.8,
+  "uf_destino": "MA",
+  "nome_oficial": "APICUM-ACU"
+ },
+ "CARUTAPERA|BACURI": {
+  "km": 365.84,
+  "reta": 113.89,
+  "uf_destino": "MA",
+  "nome_oficial": "BACURI"
+ },
+ "CARUTAPERA|QUATIPURU": {
+  "km": 278.95,
+  "reta": 114.46,
+  "uf_destino": "PA",
+  "nome_oficial": "QUATIPURU"
+ },
+ "CARUTAPERA|MARANHAOZINHO": {
+  "km": 133.45,
+  "reta": 116.88,
+  "uf_destino": "MA",
+  "nome_oficial": "MARANHAOZINHO"
+ },
+ "ARROIO DO TIGRE|SANTA CRUZ DO SUL": {
+  "km": 98.05,
+  "reta": 76.24,
+  "uf_destino": "RS",
+  "nome_oficial": "SANTA CRUZ DO SUL"
+ },
+ "ARROIO DO TIGRE|RESTINGA SECA": {
+  "km": 127.9,
+  "reta": 60.08,
+  "uf_destino": "RS",
+  "nome_oficial": "RESTINGA SECA"
+ },
+ "ARROIO DO TIGRE|SEGREDO": {
+  "km": 21.25,
+  "reta": 10.3,
+  "uf_destino": "RS",
+  "nome_oficial": "SEGREDO"
+ },
+ "ARROIO DO TIGRE|IBARAMA": {
+  "km": 23.14,
+  "reta": 10.7,
+  "uf_destino": "RS",
+  "nome_oficial": "IBARAMA"
+ },
+ "ARROIO DO TIGRE|SOBRADINHO": {
+  "km": 12.03,
+  "reta": 10.74,
+  "uf_destino": "RS",
+  "nome_oficial": "SOBRADINHO"
+ },
+ "ARROIO DO TIGRE|PASSA SETE": {
+  "km": 20.73,
+  "reta": 17.5,
+  "uf_destino": "RS",
+  "nome_oficial": "PASSA SETE"
+ },
+ "ARROIO DO TIGRE|LAGOA BONITA DO SUL": {
+  "km": 28.3,
+  "reta": 18.41,
+  "uf_destino": "RS",
+  "nome_oficial": "LAGOA BONITA DO SUL"
+ },
+ "ARROIO DO TIGRE|ESTRELA VELHA": {
+  "km": 25.51,
+  "reta": 18.82,
+  "uf_destino": "RS",
+  "nome_oficial": "ESTRELA VELHA"
+ },
+ "ARROIO DO TIGRE|PINHAL GRANDE": {
+  "km": 50.52,
+  "reta": 23.9,
+  "uf_destino": "RS",
+  "nome_oficial": "PINHAL GRANDE"
+ },
+ "ARROIO DO TIGRE|TUNAS": {
+  "km": 35.75,
+  "reta": 28.69,
+  "uf_destino": "RS",
+  "nome_oficial": "TUNAS"
+ },
+ "ARROIO DO TIGRE|SALTO DO JACUI": {
+  "km": 39.49,
+  "reta": 29.5,
+  "uf_destino": "RS",
+  "nome_oficial": "SALTO DO JACUI"
+ },
+ "ARROIO DO TIGRE|LAGOAO": {
+  "km": 49.46,
+  "reta": 32.66,
+  "uf_destino": "RS",
+  "nome_oficial": "LAGOAO"
+ },
+ "ARROIO DO TIGRE|JACUIZINHO": {
+  "km": 53.21,
+  "reta": 33.48,
+  "uf_destino": "RS",
+  "nome_oficial": "JACUIZINHO"
+ },
+ "ARROIO DO TIGRE|AGUDO": {
+  "km": 64.78,
+  "reta": 37.71,
+  "uf_destino": "RS",
+  "nome_oficial": "AGUDO"
+ },
+ "ARROIO DO TIGRE|CERRO BRANCO": {
+  "km": 53.76,
+  "reta": 39.58,
+  "uf_destino": "RS",
+  "nome_oficial": "CERRO BRANCO"
+ },
+ "ARROIO DO TIGRE|NOVA PALMA": {
+  "km": 78.48,
+  "reta": 39.85,
+  "uf_destino": "RS",
+  "nome_oficial": "NOVA PALMA"
+ },
+ "ARROIO DO TIGRE|DONA FRANCISCA": {
+  "km": 76.11,
+  "reta": 41.28,
+  "uf_destino": "RS",
+  "nome_oficial": "DONA FRANCISCA"
+ },
+ "ARROIO DO TIGRE|HERVEIRAS": {
+  "km": 118.21,
+  "reta": 43.97,
+  "uf_destino": "RS",
+  "nome_oficial": "HERVEIRAS"
+ },
+ "ARROIO DO TIGRE|FAXINAL DO SOTURNO": {
+  "km": 85.21,
+  "reta": 44.38,
+  "uf_destino": "RS",
+  "nome_oficial": "FAXINAL DO SOTURNO"
+ },
+ "ARROIO DO TIGRE|PARAISO DO SUL": {
+  "km": 97.77,
+  "reta": 45.1,
+  "uf_destino": "RS",
+  "nome_oficial": "PARAISO DO SUL"
+ },
+ "ARROIO DO TIGRE|NOVO CABRAIS": {
+  "km": 75.61,
+  "reta": 46.7,
+  "uf_destino": "RS",
+  "nome_oficial": "NOVO CABRAIS"
+ },
+ "ARROIO DO TIGRE|SAO JOAO DO POLESINE": {
+  "km": 85.98,
+  "reta": 46.73,
+  "uf_destino": "RS",
+  "nome_oficial": "SAO JOAO DO POLESINE"
+ },
+ "DORMENTES|OURICURI": {
+  "km": 130.29,
+  "reta": 98.21,
+  "uf_destino": "PE",
+  "nome_oficial": "OURICURI"
+ },
+ "DORMENTES|PETROLINA": {
+  "km": 150.51,
+  "reta": 109.74,
+  "uf_destino": "PE",
+  "nome_oficial": "PETROLINA"
+ },
+ "DORMENTES|AFRANIO": {
+  "km": 31.8,
+  "reta": 27.4,
+  "uf_destino": "PE",
+  "nome_oficial": "AFRANIO"
+ },
+ "DORMENTES|BETANIA DO PIAUI": {
+  "km": 40.77,
+  "reta": 33.8,
+  "uf_destino": "PI",
+  "nome_oficial": "BETANIA DO PIAUI"
+ },
+ "DORMENTES|SANTA FILOMENA": {
+  "km": 38.59,
+  "reta": 36.11,
+  "uf_destino": "PE",
+  "nome_oficial": "SANTA FILOMENA"
+ },
+ "DORMENTES|ACAUA": {
+  "km": 75.22,
+  "reta": 43.51,
+  "uf_destino": "PI",
+  "nome_oficial": "ACAUA"
+ },
+ "DORMENTES|SANTA CRUZ": {
+  "km": 77.22,
+  "reta": 52.83,
+  "uf_destino": "PE",
+  "nome_oficial": "SANTA CRUZ"
+ },
+ "DORMENTES|PAULISTANA": {
+  "km": 87.57,
+  "reta": 54.18,
+  "uf_destino": "PI",
+  "nome_oficial": "PAULISTANA"
+ },
+ "DORMENTES|CURRAL NOVO DO PIAUI": {
+  "km": 87.67,
+  "reta": 70.03,
+  "uf_destino": "PI",
+  "nome_oficial": "CURRAL NOVO DO PIAUI"
+ },
+ "DORMENTES|QUEIMADA NOVA": {
+  "km": 86.34,
+  "reta": 73.19,
+  "uf_destino": "PI",
+  "nome_oficial": "QUEIMADA NOVA"
+ },
+ "DORMENTES|JACOBINA DO PIAUI": {
+  "km": 112.44,
+  "reta": 75.15,
+  "uf_destino": "PI",
+  "nome_oficial": "JACOBINA DO PIAUI"
+ },
+ "DORMENTES|LAGOA GRANDE": {
+  "km": 121.1,
+  "reta": 81.67,
+  "uf_destino": "PE",
+  "nome_oficial": "LAGOA GRANDE"
+ },
+ "DORMENTES|CARIDADE DO PIAUI": {
+  "km": 108.51,
+  "reta": 83.29,
+  "uf_destino": "PI",
+  "nome_oficial": "CARIDADE DO PIAUI"
+ },
+ "DORMENTES|CASA NOVA": {
+  "km": 124.43,
+  "reta": 83.99,
+  "uf_destino": "BA",
+  "nome_oficial": "CASA NOVA"
+ },
+ "DORMENTES|LAGOA DO BARRO DO PIAUI": {
+  "km": 105.67,
+  "reta": 84.15,
+  "uf_destino": "PI",
+  "nome_oficial": "LAGOA DO BARRO DO PIAUI"
+ },
+ "DORMENTES|TRINDADE": {
+  "km": 155.65,
+  "reta": 94.32,
+  "uf_destino": "PE",
+  "nome_oficial": "TRINDADE"
+ },
+ "DORMENTES|SIMOES": {
+  "km": 119.53,
+  "reta": 95.05,
+  "uf_destino": "PI",
+  "nome_oficial": "SIMOES"
+ },
+ "DORMENTES|PATOS DO PIAUI": {
+  "km": 145.93,
+  "reta": 100.33,
+  "uf_destino": "PI",
+  "nome_oficial": "PATOS DO PIAUI"
+ },
+ "DORMENTES|ARARIPINA": {
+  "km": 190.6,
+  "reta": 101.05,
+  "uf_destino": "PE",
+  "nome_oficial": "ARARIPINA"
+ },
+ "DORMENTES|SAO FRANCISCO DE ASSIS DO PIAUI": {
+  "km": 148.81,
+  "reta": 104.03,
+  "uf_destino": "PI",
+  "nome_oficial": "SAO FRANCISCO DE ASSIS DO PIAUI"
+ },
+ "CENTRO NOVO DO MARANHAO|CAPITAO POCO": {
+  "km": 228.77,
+  "reta": 113.2,
+  "uf_destino": "PA",
+  "nome_oficial": "CAPITAO POCO"
+ },
+ "CENTRO NOVO DO MARANHAO|PINHEIRO": {
+  "km": 147.79,
+  "reta": 123.49,
+  "uf_destino": "MA",
+  "nome_oficial": "PINHEIRO"
+ },
+ "CENTRO NOVO DO MARANHAO|MARACACUME": {
+  "km": 23.92,
+  "reta": 20.98,
+  "uf_destino": "MA",
+  "nome_oficial": "MARACACUME"
+ },
+ "CENTRO NOVO DO MARANHAO|GOVERNADOR NUNES FREIRE": {
+  "km": 36.89,
+  "reta": 26.4,
+  "uf_destino": "MA",
+  "nome_oficial": "GOVERNADOR NUNES FREIRE"
+ },
+ "CENTRO NOVO DO MARANHAO|JUNCO DO MARANHAO": {
+  "km": 44.65,
+  "reta": 29.61,
+  "uf_destino": "MA",
+  "nome_oficial": "JUNCO DO MARANHAO"
+ },
+ "CENTRO NOVO DO MARANHAO|MARANHAOZINHO": {
+  "km": 49.7,
+  "reta": 31.7,
+  "uf_destino": "MA",
+  "nome_oficial": "MARANHAOZINHO"
+ },
+ "CENTRO NOVO DO MARANHAO|CENTRO DO GUILHERME": {
+  "km": 49.41,
+  "reta": 35.72,
+  "uf_destino": "MA",
+  "nome_oficial": "CENTRO DO GUILHERME"
+ },
+ "CENTRO NOVO DO MARANHAO|PRESIDENTE MEDICI": {
+  "km": 65.31,
+  "reta": 43.01,
+  "uf_destino": "MA",
+  "nome_oficial": "PRESIDENTE MEDICI"
+ },
+ "CENTRO NOVO DO MARANHAO|BOA VISTA DO GURUPI": {
+  "km": 75.62,
+  "reta": 43.37,
+  "uf_destino": "MA",
+  "nome_oficial": "BOA VISTA DO GURUPI"
+ },
+ "CENTRO NOVO DO MARANHAO|AMAPA DO MARANHAO": {
+  "km": 72.54,
+  "reta": 53.25,
+  "uf_destino": "MA",
+  "nome_oficial": "AMAPA DO MARANHAO"
+ },
+ "CENTRO NOVO DO MARANHAO|SANTA LUZIA DO PARUA": {
+  "km": 84.45,
+  "reta": 59.43,
+  "uf_destino": "MA",
+  "nome_oficial": "SANTA LUZIA DO PARUA"
+ },
+ "CENTRO NOVO DO MARANHAO|CACHOEIRA DO PIRIA": {
+  "km": 104.84,
+  "reta": 62.92,
+  "uf_destino": "PA",
+  "nome_oficial": "CACHOEIRA DO PIRIA"
+ },
+ "CENTRO NOVO DO MARANHAO|NOVA OLINDA DO MARANHAO": {
+  "km": 114.83,
+  "reta": 87.82,
+  "uf_destino": "MA",
+  "nome_oficial": "NOVA OLINDA DO MARANHAO"
+ },
+ "CENTRO NOVO DO MARANHAO|CANDIDO MENDES": {
+  "km": 128.96,
+  "reta": 87.96,
+  "uf_destino": "MA",
+  "nome_oficial": "CANDIDO MENDES"
+ },
+ "CENTRO NOVO DO MARANHAO|GODOFREDO VIANA": {
+  "km": 123.45,
+  "reta": 89.61,
+  "uf_destino": "MA",
+  "nome_oficial": "GODOFREDO VIANA"
+ },
+ "CENTRO NOVO DO MARANHAO|TURILANDIA": {
+  "km": 103.57,
+  "reta": 91.21,
+  "uf_destino": "MA",
+  "nome_oficial": "TURILANDIA"
+ },
+ "CENTRO NOVO DO MARANHAO|SANTA HELENA": {
+  "km": 104.64,
+  "reta": 92.12,
+  "uf_destino": "MA",
+  "nome_oficial": "SANTA HELENA"
+ },
+ "CENTRO NOVO DO MARANHAO|LUIS DOMINGUES": {
+  "km": 139.91,
+  "reta": 93.9,
+  "uf_destino": "MA",
+  "nome_oficial": "LUIS DOMINGUES"
+ },
+ "CENTRO NOVO DO MARANHAO|NOVA ESPERANCA DO PIRIA": {
+  "km": 231.2,
+  "reta": 94.64,
+  "uf_destino": "PA",
+  "nome_oficial": "NOVA ESPERANCA DO PIRIA"
+ },
+ "CENTRO NOVO DO MARANHAO|PRESIDENTE SARNEY": {
+  "km": 183.96,
+  "reta": 98.48,
+  "uf_destino": "MA",
+  "nome_oficial": "PRESIDENTE SARNEY"
+ },
+ "CENTRO NOVO DO MARANHAO|TURIACU": {
+  "km": 150.48,
+  "reta": 98.69,
+  "uf_destino": "MA",
+  "nome_oficial": "TURIACU"
+ },
+ "CENTRO NOVO DO MARANHAO|VISEU": {
+  "km": 178.05,
+  "reta": 103.54,
+  "uf_destino": "PA",
+  "nome_oficial": "VISEU"
+ },
+ "PALESTINA DO PARA|XAMBIOA": {
+  "km": 173.64,
+  "reta": 77.5,
+  "uf_destino": "TO",
+  "nome_oficial": "XAMBIOA"
+ },
+ "PALESTINA DO PARA|MARABA": {
+  "km": 105.14,
+  "reta": 97.29,
+  "uf_destino": "PA",
+  "nome_oficial": "MARABA"
+ },
+ "PALESTINA DO PARA|BREJO GRANDE DO ARAGUAIA": {
+  "km": 15.29,
+  "reta": 11.06,
+  "uf_destino": "PA",
+  "nome_oficial": "BREJO GRANDE DO ARAGUAIA"
+ },
+ "PALESTINA DO PARA|ARAGUATINS": {
+  "km": 35.34,
+  "reta": 24.02,
+  "uf_destino": "TO",
+  "nome_oficial": "ARAGUATINS"
+ },
+ "PALESTINA DO PARA|BURITI DO TOCANTINS": {
+  "km": 80.87,
+  "reta": 48.96,
+  "uf_destino": "TO",
+  "nome_oficial": "BURITI DO TOCANTINS"
+ },
+ "PALESTINA DO PARA|ESPERANTINA": {
+  "km": 65.98,
+  "reta": 49.12,
+  "uf_destino": "TO",
+  "nome_oficial": "ESPERANTINA"
+ },
+ "PALESTINA DO PARA|SAO DOMINGOS DO ARAGUAIA": {
+  "km": 65.95,
+  "reta": 51.25,
+  "uf_destino": "PA",
+  "nome_oficial": "SAO DOMINGOS DO ARAGUAIA"
+ },
+ "PALESTINA DO PARA|SAO BENTO DO TOCANTINS": {
+  "km": 78.17,
+  "reta": 53.33,
+  "uf_destino": "TO",
+  "nome_oficial": "SAO BENTO DO TOCANTINS"
+ },
+ "PALESTINA DO PARA|SAO SEBASTIAO DO TOCANTINS": {
+  "km": 89.35,
+  "reta": 55.88,
+  "uf_destino": "TO",
+  "nome_oficial": "SAO SEBASTIAO DO TOCANTINS"
+ },
+ "PALESTINA DO PARA|CARRASCO BONITO": {
+  "km": 94.75,
+  "reta": 56.65,
+  "uf_destino": "TO",
+  "nome_oficial": "CARRASCO BONITO"
+ },
+ "PALESTINA DO PARA|AUGUSTINOPOLIS": {
+  "km": 70.21,
+  "reta": 57.06,
+  "uf_destino": "TO",
+  "nome_oficial": "AUGUSTINOPOLIS"
+ },
+ "PALESTINA DO PARA|CACHOEIRINHA": {
+  "km": 89.39,
+  "reta": 60.13,
+  "uf_destino": "TO",
+  "nome_oficial": "CACHOEIRINHA"
+ },
+ "PALESTINA DO PARA|AXIXA DO TOCANTINS": {
+  "km": 91.19,
+  "reta": 62.03,
+  "uf_destino": "TO",
+  "nome_oficial": "AXIXA DO TOCANTINS"
+ },
+ "PALESTINA DO PARA|SAMPAIO": {
+  "km": 83.35,
+  "reta": 65.45,
+  "uf_destino": "TO",
+  "nome_oficial": "SAMPAIO"
+ },
+ "PALESTINA DO PARA|VILA NOVA DOS MARTIRIOS": {
+  "km": 110.08,
+  "reta": 65.6,
+  "uf_destino": "MA",
+  "nome_oficial": "VILA NOVA DOS MARTIRIOS"
+ },
+ "PALESTINA DO PARA|SAO JOAO DO ARAGUAIA": {
+  "km": 80.12,
+  "reta": 68.07,
+  "uf_destino": "PA",
+  "nome_oficial": "SAO JOAO DO ARAGUAIA"
+ },
+ "PALESTINA DO PARA|PRAIA NORTE": {
+  "km": 81.34,
+  "reta": 68.31,
+  "uf_destino": "TO",
+  "nome_oficial": "PRAIA NORTE"
+ },
+ "PALESTINA DO PARA|LUZINOPOLIS": {
+  "km": 100.3,
+  "reta": 70.66,
+  "uf_destino": "TO",
+  "nome_oficial": "LUZINOPOLIS"
+ },
+ "PALESTINA DO PARA|ANANAS": {
+  "km": 151.18,
+  "reta": 74.8,
+  "uf_destino": "TO",
+  "nome_oficial": "ANANAS"
+ },
+ "PALESTINA DO PARA|SAO PEDRO DA AGUA BRANCA": {
+  "km": 134.63,
+  "reta": 74.92,
+  "uf_destino": "MA",
+  "nome_oficial": "SAO PEDRO DA AGUA BRANCA"
+ },
+ "PALESTINA DO PARA|SAO GERALDO DO ARAGUAIA": {
+  "km": 169.14,
+  "reta": 76.11,
+  "uf_destino": "PA",
+  "nome_oficial": "SAO GERALDO DO ARAGUAIA"
+ },
+ "PALESTINA DO PARA|SITIO NOVO DO TOCANTINS": {
+  "km": 106.33,
+  "reta": 76.53,
+  "uf_destino": "TO",
+  "nome_oficial": "SITIO NOVO DO TOCANTINS"
+ },
+ "SAO VICENTE DO SERIDO|PARELHAS": {
+  "km": 104.25,
+  "reta": 39.21,
+  "uf_destino": "RN",
+  "nome_oficial": "PARELHAS"
+ },
+ "SAO VICENTE DO SERIDO|CUBATI": {
+  "km": 12.67,
+  "reta": 9.54,
+  "uf_destino": "PB",
+  "nome_oficial": "CUBATI"
+ },
+ "SAO VICENTE DO SERIDO|SOLEDADE": {
+  "km": 16.83,
+  "reta": 14.6,
+  "uf_destino": "PB",
+  "nome_oficial": "SOLEDADE"
+ },
+ "SAO VICENTE DO SERIDO|OLIVEDOS": {
+  "km": 28.2,
+  "reta": 18.64,
+  "uf_destino": "PB",
+  "nome_oficial": "OLIVEDOS"
+ },
+ "SAO VICENTE DO SERIDO|PEDRA LAVRADA": {
+  "km": 27.52,
+  "reta": 21.03,
+  "uf_destino": "PB",
+  "nome_oficial": "PEDRA LAVRADA"
+ },
+ "SAO VICENTE DO SERIDO|JUAZEIRINHO": {
+  "km": 40.66,
+  "reta": 24.25,
+  "uf_destino": "PB",
+  "nome_oficial": "JUAZEIRINHO"
+ },
+ "SAO VICENTE DO SERIDO|TENORIO": {
+  "km": 65.59,
+  "reta": 24.85,
+  "uf_destino": "PB",
+  "nome_oficial": "TENORIO"
+ },
+ "SAO VICENTE DO SERIDO|SOSSEGO": {
+  "km": 33.41,
+  "reta": 25.26,
+  "uf_destino": "PB",
+  "nome_oficial": "SOSSEGO"
+ },
+ "SAO VICENTE DO SERIDO|NOVA PALMEIRA": {
+  "km": 39.72,
+  "reta": 28.71,
+  "uf_destino": "PB",
+  "nome_oficial": "NOVA PALMEIRA"
+ },
+ "SAO VICENTE DO SERIDO|EQUADOR": {
+  "km": 67.99,
+  "reta": 34.37,
+  "uf_destino": "RN",
+  "nome_oficial": "EQUADOR"
+ },
+ "SAO VICENTE DO SERIDO|JUNCO DO SERIDO": {
+  "km": 60.63,
+  "reta": 35.07,
+  "uf_destino": "PB",
+  "nome_oficial": "JUNCO DO SERIDO"
+ },
+ "SAO VICENTE DO SERIDO|GURJAO": {
+  "km": 48.2,
+  "reta": 36.1,
+  "uf_destino": "PB",
+  "nome_oficial": "GURJAO"
+ },
+ "SAO VICENTE DO SERIDO|BARAUNA": {
+  "km": 45.36,
+  "reta": 36.4,
+  "uf_destino": "PB",
+  "nome_oficial": "BARAUNA"
+ },
+ "SAO VICENTE DO SERIDO|ASSUNCAO": {
+  "km": 58.4,
+  "reta": 39.07,
+  "uf_destino": "PB",
+  "nome_oficial": "ASSUNCAO"
+ },
+ "SAO VICENTE DO SERIDO|SANTO ANDRE": {
+  "km": 62.54,
+  "reta": 40.48,
+  "uf_destino": "PB",
+  "nome_oficial": "SANTO ANDRE"
+ },
+ "SAO VICENTE DO SERIDO|BOA VISTA": {
+  "km": 66.95,
+  "reta": 40.59,
+  "uf_destino": "PB",
+  "nome_oficial": "BOA VISTA"
+ },
+ "SAO VICENTE DO SERIDO|SANTANA DO SERIDO": {
+  "km": 93.11,
+  "reta": 40.8,
+  "uf_destino": "RN",
+  "nome_oficial": "SANTANA DO SERIDO"
+ },
+ "SAO VICENTE DO SERIDO|POCINHOS": {
+  "km": 57.62,
+  "reta": 41.14,
+  "uf_destino": "PB",
+  "nome_oficial": "POCINHOS"
+ },
+ "SAO VICENTE DO SERIDO|ALGODAO DE JANDAIRA": {
+  "km": 88.77,
+  "reta": 43.34,
+  "uf_destino": "PB",
+  "nome_oficial": "ALGODAO DE JANDAIRA"
+ },
+ "SAO VICENTE DO SERIDO|BARRA DE SANTA ROSA": {
+  "km": 68.79,
+  "reta": 44.63,
+  "uf_destino": "PB",
+  "nome_oficial": "BARRA DE SANTA ROSA"
+ }
+}
