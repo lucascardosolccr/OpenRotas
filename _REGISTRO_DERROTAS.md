@@ -305,9 +305,16 @@ As demais origens permanecem em "Referencia" strict por barreiras nao reproduziv
 e FOSSGIS retornam a mesma rota rodoviaria sem travessia) ou por diferenciacao legitima do estudo de
 referencia. Nao resta evidencia ferry mensuravel no universo atual alem da ja integrada nas geracoes
 421a-424b.
+  [425b - universo COMPLETO + rota FOSSGIS-sem-balsa como evidencia viaria (fallback do motor a obtem)]
+  163 derrotas ->
+    so viario (rodar_depois, universo cache-OSRM+ao vivo): Referencia 109 / Aplicacao 23 / Empate 31, km 10976,2;
+    + evidencia ferry estritamente menor: Referencia 108 / Aplicacao 24 / Empate 31, km 10914,2 (-62,0; Salvaterra recupera);
+    + rota FOSSGIS (balsa Nao) como evidencia viaria: Referencia 106 / Aplicacao 25 / Empate 32, km 10833,9.
+  => 55-57 das 163 nao-derrota; 106-108 permanecem por barreira sem ferry/rodo reproduzivel ou diferenca legitima.
 
-Evidencia: validar 182 OK / 0 FALHAS; decidir 38/38; veredicto_final.json (TEMP) = {viario: Ref 110 /
-Aplic 22 / Emp 31; ferry: Ref 109 / Aplic 23 / Emp 31}.
+Evidencia: validar 182 OK / 0 FALHAS; decidir 38/38; veredicto_final.json + vered_final.json (TEMP):
+  {viario: Ref 109/Aplic 23/Emp 31} e {viario+ferry: Ref 108/Aplic 24/Emp 31} e {viario+ferry+rota-FOSSGIS:
+  Ref 106/Aplic 25/Emp 32}.
 
 Evidencia: validar 182 OK / 0 FALHAS (22 secoes, sem rede; FERRY-BUDGET na seccao 22);
 decidir 38/38; relatorio regenerado -> _RELATORIO_ANTES_DEPOIS.md.
