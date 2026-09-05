@@ -34062,6 +34062,13 @@ def _reatribuir_hubs_multicriterio(topk_map, resultados, params=None, parse_temp
             if _topk:
                 novo_dest[_cli] = _topk[0][1]
             continue
+        # [HUB-FLUVIAL-JUSTA · MISSÃO §8/§11/§12] métrica fluvial justa ANTES da decisão: para polos
+        # ribeirinhos (balsa / rota-fantasma hídrica) a viária medida pode ser o desvio rodoviário impossível;
+        # a rota fluvial REAL do grafo entra na comparação quando for a métrica justa (_metrica_fluvial_justa_par).
+        try:
+            _metrica_fluvial_justa_no_universo(_cands, _cli, uf_hint=str(_uf_orig_cli))
+        except Exception:
+            pass
         _r = _selecionar_hub_multicriterio(_cands, params)
         if _r.get("vencedor"):
             novo_dest[_cli] = _r["vencedor"]
@@ -36312,6 +36319,79 @@ def _corrigir_rota_fantasma_fluvial(df, fator_fluvial=1.15):
     except Exception as _e:
         logger.error("[V423-FANTASMA-FLUVIAL] falha (no-op seguro): %s", _e)
     return df
+
+
+def _metrica_fluvial_justa_par(dist_viaria, dist_reta, balsa, fluvial_km):
+    """[HUB-FLUVIAL-JUSTA · 395ª geração / MISSÃO §8/§11] Métrica JUSTA para DECIDIR um hub ribeirinho:
+    compara a viária rodoviária medida (em geral OSRM) com a rota fluvial REAL do grafo hidrográfico e devolve
+    o km a usar na escolha do vencedor. Espelha EXATAMENTE o limiar de _corrigir_rota_fantasma_fluvial:
+      • rota-fantasma (V/R > 3,0 sem balsa; > 2,2 com balsa) → aceita QUALQUER ganho (a viária medida é irreal);
+      • balsa com V/R plausível → só troca se a fluvial for >= 15% mais curta (conservador; NUNCA aumenta);
+      • sem rota fluvial real (None/<=0/>= viária) → mantém a viária medida (fail-open).
+    Pura e determinística. Retorna (km_justo, trocou, ganho_pct, fantasma)."""
+    try:
+        _dv = float(dist_viaria); _dr = float(dist_reta); _rf = float(fluvial_km)
+    except (TypeError, ValueError):
+        return (dist_viaria, False, 0.0, False)
+    if _dv <= 0 or _dr <= 0:
+        return (dist_viaria, False, 0.0, False)
+    _fantasma = _e_fantasma_hidrica(_dv, _dr, bool(balsa))
+    if not _rf or _rf <= 0 or _rf >= _dv:
+        return (dist_viaria, False, 0.0, _fantasma)
+    _limiar = _dv if _fantasma else (_dv * 0.85)
+    if _rf >= _limiar:   # nunca aumenta; balsa-só exige ganho >= 15%
+        return (dist_viaria, False, 0.0, _fantasma)
+    return (round(_rf, 2), True, round((_dv - _rf) / _dv * 100.0, 1), _fantasma)
+
+
+def _metrica_fluvial_justa_no_universo(cands, cli, uf_hint="", resolver_coord=None, fluvial_router=None):
+    """[HUB-FLUVIAL-JUSTA · MISSÃO §8/§11/§12 - 396ª geração] Pré-processamento do UNIVERSO de decisão: para
+    cada candidato ribeirinho (com balsa OU rota-fantasma hídrica V/R>3,0/2,2), substitui a dist_viaria medida
+    pela rota FLUVIAL REAL do grafo hidrográfico quando ela for a métrica justa (_metrica_fluvial_justa_par).
+    Assim a DECISÃO do hub (menor viária) passa a comparar valores honestos — e não o desvio rodoviário
+    impossível — para o MESMO polo (ex.: Afuá→Macapá 2.429 km rodoviária-fantasma vs ~45 km fluvial real).
+    Marca 'metrica_fluvial' (auditoria), preserva a medida original em 'dist_viaria_original'. ADIÇÃO PURA:
+    sem candidato/coords/grafo → lista intacta (fail-open). Injeta resolver_coord e fluvial_router para teste."""
+    if not cands or not str(cli or "").strip():
+        return cands
+    _rc = resolver_coord or _v316_resolver_coord_alt
+    _fr = fluvial_router or _fluvial_rota_real_sob_demanda
+    _ufh = str(uf_hint or "").strip().upper()
+    try:
+        _oc = _rc(str(cli), uf_hint=_ufh)
+        _ola, _olo = _num(_oc.get("lat")), _num(_oc.get("lon"))
+        if _ola is None or _olo is None:
+            return cands
+    except Exception:
+        return cands
+    for _cand in cands:
+        try:
+            if not _cand or _cand.get("metrica_fluvial"):
+                continue
+            _dv = _num(_cand.get("dist_viaria")); _dr = _num(_cand.get("dist_reta"))
+            _bal = bool(_cand.get("balsa"))
+            if _dv is None or _dv <= 0 or _dr is None or _dr <= 0:
+                continue
+            if not (_bal or _e_fantasma_hidrica(_dv, _dr, _bal)):
+                continue
+            _hc = _rc(str(_cand.get("hub") or ""), uf_hint=_ufh)
+            _hla, _hlo = _num(_hc.get("lat")), _num(_hc.get("lon"))
+            if _hla is None or _hlo is None:
+                continue
+            _frr = _fr(_ola, _olo, _hla, _hlo)
+            _rf = _num(_frr.get("km")) if isinstance(_frr, dict) else None
+            if _rf is None:
+                continue
+            _justo, _trocou, _ganho, _fant = _metrica_fluvial_justa_par(_dv, _dr, _bal, _rf)
+            if _trocou:
+                _cand["dist_viaria_original"] = _dv
+                _cand["dist_viaria"] = _justo
+                _cand["metrica_fluvial"] = True
+                _cand["ganho_fluvial_pct"] = _ganho
+                _cand["rota_real"] = True
+        except Exception:
+            continue
+    return cands
 
 
 def _registrar_decisao_trace_alo(df):

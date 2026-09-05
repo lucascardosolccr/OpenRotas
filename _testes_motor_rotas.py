@@ -15,6 +15,7 @@ import math
 import os
 import sys
 import tempfile
+import time
 import pandas as pd
 
 logging.disable(logging.WARNING)   # silencia os WARNING de streamlit/bare-mode no harness
@@ -66,6 +67,45 @@ DERROTAS_REAIS = [
     ("Palestina do Pará", "PA", ("Xambioa", 173.6), ("Marabá", 108.3), {}),
     ("São Vicente do Seridó", "PB", ("Parelhas", 104.2), ("Parelhas", 52.0), {}),
 ]
+
+# §24/§16 — NOVAS DERROTAS do baseline (piores por categoria) convertidas em casos forenses reais:
+# medição OSRM AO VIVO do universo (app_hub + ref_hub + top-20 por reta) e decisão real do app.
+# Famílias:
+#   * fluvial/nome-igual (dr da referência < reta → fisicamente impossível de vencer [N1]; o valor justo
+#     é a travessia flúvio/ferry, que o motor corrige via grafo hidrográfico) — Canutama, Muana, Anajas,
+#     Afuá, Urucurituba, Itapiranga, Jordão, Prainha, Cachoeira do Arari.
+#   * nome-igual RODOVIÁRIO com referência plausível (dr ≥ reta) — ganhável por métrica/correção —
+#     Nova Guarita, Aveiro, Sobradinho/RS.
+#   * escolha x escolha (hubs DIFERENTES, rota da app era maior) — Chuí, Parnarama, Padre Paraíso,
+#     Querência do Norte, Fontoura Xavier.
+#   * phantom-hídrica (app com V/R ≥ 2,6) — Alto Piquiri... (Altonia/PR), Governador Celso Ramos/SC.
+FAMILIAS = [
+    ("Canutama", "AM", ("Labrea", 116.0), ("Lábrea", 12.5), {}),
+    ("Muana", "PA", ("Abaetetuba", 53.0), ("Abaetetuba", 1.8), {}),
+    ("Anajas", "PA", ("Breves", 123.6), ("Breves", 25.2), {}),
+    ("Afua", "PA", ("Macapa", 88.8), ("Macapá", 45.3), {}),
+    ("Urucurituba", "AM", ("Itacoatiara", 40.4), ("Itacoatiara", 6.5), {}),
+    ("Itapiranga", "AM", ("Urucara", 46.6), ("Urucará", 12.7), {}),
+    ("Jordao", "AC", ("Cruzeiro Do Sul", 223.9), ("Cruzeiro do Sul", 78.5), {}),
+    ("Prainha", "PA", ("Monte Alegre", 127.2), ("Monte Alegre", 91.5), {}),
+    ("Cachoeira Do Arari", "PA", ("Belem", 128.2), ("Belém", 95.8), {}),
+    ("Nova Guarita", "MT", ("Colider", 113.1), ("Colíder", 69.8), {}),
+    ("Aveiro", "PA", ("Itaituba", 140.6), ("Itaituba", 109.1), {}),
+    ("Sobradinho", "RS", ("Restinga Seca", 116.4), ("Restinga Sêca", 83.6), {}),
+    ("Chui", "RS", ("Jaguarao", 283.6), ("Rio Grande", 242.2), {}),
+    ("Parnarama", "MA", ("Angical Do Piaui", 119.5), ("Teresina", 83.8), {}),
+    ("Padre Paraiso", "MG", ("Aracuai", 135.7), ("Teófilo Otoni", 99.3), {}),
+    ("Querencia Do Norte", "PR", ("Navirai", 137.5), ("Umuarama", 97.9), {}),
+    ("Fontoura Xavier", "RS", ("Marau", 108.3), ("Lajeado", 77.6), {}),
+    ("Altonia", "PR", ("Mundo Novo", 108.0), ("Palotina", 65.9), {}),
+    ("Governador Celso Ramos", "SC", ("Tijucas", 31.9), ("Biguaçu", 26.0), {}),
+]
+
+# Referência com distância FISICAMENTE IMPOSSÍVEL (dr < reta da própria referência) — o motor honesto
+# nunca pode alcançá-la; registrada como benchmark-anômalo (Tipo 10) e conferida como travessia fluvial.
+_FLUVIAIS_N1 = {("Canutama", "AM"), ("Muana", "PA"), ("Anajas", "PA"), ("Afua", "PA"),
+                ("Urucurituba", "AM"), ("Itapiranga", "AM"), ("Jordao", "AC"),
+                ("Prainha", "PA"), ("Cachoeira do Arari", "PA")}
 
 # https://stackoverflow.com/a/59675305 — remoção de acentos leve (sem unidecode)
 _ACENTOS = {
@@ -133,6 +173,8 @@ def _osrm(lat1, lon1, lat2, lon2):
             return round(j["routes"][0]["distance"] / 1000.0, 2)
     except Exception:
         pass
+    finally:
+        time.sleep(0.3)  # politesse/rate-limit no servidor público durante medições em lote
     return None
 
 
@@ -159,7 +201,7 @@ def collect():
         return cache[key]
 
     # 1) medir pares específicos (app hub e ref hub) + top-N geográficos
-    casos = CASOS + FAVORAVEIS + DERROTAS_REAIS
+    casos = CASOS + FAVORAVEIS + DERROTAS_REAIS + FAMILIAS
     for origem, uf, (app_hub, app_km), (ref_hub, ref_km), bal in casos:
         entry = {"origem": origem, "uf": uf, "app_hub": app_hub, "app_km": app_km,
                  "ref_hub": ref_hub, "ref_km": ref_km, "balsa": bal, "medidas": {}}
@@ -251,12 +293,13 @@ def _candidatos_do_cache(entry):
 
 
 def _decidir_real(entry):
-    """Roda a decisão REAL do app (m._selecionar_hub_multicriterio) sobre o universo medido do cache.
-    Retorna (resultado, candidatos)."""
+    """Roda a decisão REAL do app (m._selecionar_hub_multicriterio) sobre o universo medido do cache,
+    APLICANDO o mesmo pré-processamento do app (_metrica_fluvial_justa_no_universo) antes da escolha."""
     import streamlit_app as m
     cands = _candidatos_do_cache(entry)
     if not cands:
         return None, cands
+    m._metrica_fluvial_justa_no_universo(cands, entry["origem"], uf_hint=entry["uf"])
     return m._selecionar_hub_multicriterio(cands), cands
 
 
@@ -297,6 +340,12 @@ def decidir():
         print("\n%s/%s  [referência = %s]  ->  VENCEDOR %s (%.1f km)" % (origem, uf, entry["ref_hub"], v, vkm))
         print("   critério: %s" % (res.get("criterio_decisivo") or "—"))
         print("   ranking: %s" % top3)
+
+        # FAMILIAS §24 — anota a família forense (agregação de padrões da missão §17/§19)
+        if (origem, uf) in _FLUVIAIS_N1:
+            print("   >> família FLUVIAL/nome-igual: referência dr<reta (benchmark-anômalo), valor justo = travessia flúvio/ferry")
+        elif (origem, uf) in {c[:2] for c in FAMILIAS}:
+            print("   >> família §24 (derrota real medida ao vivo)")
 
         # ── propriedades da missão (asserts) ──
         def _rodeando():
@@ -351,9 +400,9 @@ def _carregar_baseline():
 
 
 def _antes_da_missao():
-    """(app_hub, app_km, ref_hub, ref_km) PRECISOS do estudo (CASOS/FAVORAVEIS/DERROTAS_REAIS), por (origem, UF)."""
+    """(app_hub, app_km, ref_hub, ref_km) PRECISOS do estudo (CASOS/FAVORAVEIS/DERROTAS_REAIS/FAMILIAS), por (origem, UF)."""
     d = {}
-    for origem, uf, (app_hub, app_km), (ref_hub, ref_km), _bal in CASOS + FAVORAVEIS + DERROTAS_REAIS:
+    for origem, uf, (app_hub, app_km), (ref_hub, ref_km), _bal in CASOS + FAVORAVEIS + DERROTAS_REAIS + FAMILIAS:
         d[(origem, uf)] = (app_hub, float(app_km), ref_hub, float(ref_km))
     return d
 
@@ -955,6 +1004,57 @@ def validar():
               _c(None, "-46.6")["ok"] is False and _c("x", 1.0)["ok"] is False)
     except Exception as _e:
         check("testes dos sensores de risco executaram (%s)" % _e, False)
+
+    print("== 19) Métrica fluvial justa NA DECISÃO do hub (HUB-FLUVIAL-JUSTA, §8/§11/§12) ==")
+    try:
+        _mp = m._metrica_fluvial_justa_par
+        # fantasma hídrica (V/R>3 sem balsa): aceita QUALQUER ganho
+        _f1 = _mp(2429.0, 77.0, False, 45.0)
+        check("fantasma (2429/77) → substitui pela fluvial 45", _f1[1] is True and abs(_f1[0] - 45.0) < 1e-9)
+        _f2 = _mp(400.0, 150.0, True, 100.0)
+        check("balsa fantasma (V/R 2,67) → substitui", _f2[1] is True and abs(_f2[0] - 100.0) < 1e-9)
+        # balsa com V/R plausível: exige ganho >= 15%
+        _g1 = _mp(140.0, 80.0, True, 100.0)
+        check("balsa plausível ganho 28,6% ≥ 15% → substitui (100)", _g1[1] is True and abs(_g1[0] - 100.0) < 1e-9)
+        _g2 = _mp(140.0, 80.0, True, 130.0)
+        check("balsa plausível ganho 7,1% < 15% → mantém 140", _g2[1] is False and abs(_g2[0] - 140.0) < 1e-9)
+        _g3 = _mp(140.0, 80.0, False, 120.0)
+        check("sem balsa e sem fantasma (V/R 1,75) → mantém (não acumula ganho sem balsa)",
+              _g3[1] is False and abs(_g3[0] - 140.0) < 1e-9)
+        _g4 = _mp(140.0, 80.0, True, 200.0)
+        check("fluvial >= viária → nunca aumenta (mantém 140)", _g4[1] is False and abs(_g4[0] - 140.0) < 1e-9)
+        _g5 = _mp(140.0, 80.0, True, None)
+        check("sem rota fluvial → mantém (fail-open)", _g5[1] is False and abs(_g5[0] - 140.0) < 1e-9)
+        _g6 = _mp("x", 80.0, True, 100.0)
+        check("entrada inválida → mantém (defensivo)", _g6[1] is False)
+        # pré-processamento do UNIVERSO com resolver/roteador injetados
+        def _res(nome, uf_hint=""):
+            return {"lat": -3.0, "lon": -60.0}
+        cands2 = [{"hub": "Macapa", "dist_viaria": 2429.0, "dist_reta": 77.0, "balsa": False, "rota_real": True}]
+        m._metrica_fluvial_justa_no_universo(cands2, "Afua", uf_hint="PA",
+                                             resolver_coord=_res, fluvial_router=lambda o, ol, hl, hlo: {"km": 45.0})
+        check("universo: fantasma → fluvial 45 na DECISÃO (metrica_fluvial)",
+              cands2[0]["dist_viaria"] == 45.0 and cands2[0].get("metrica_fluvial") is True
+              and cands2[0].get("dist_viaria_original") == 2429.0)
+        cands3 = [{"hub": "NORMAL", "dist_viaria": 120.0, "dist_reta": 100.0, "balsa": False, "rota_real": True},
+                  {"hub": "BALSA", "dist_viaria": 140.0, "dist_reta": 80.0, "balsa": True, "rota_real": True}]
+        m._metrica_fluvial_justa_no_universo(cands3, "X", uf_hint="PA",
+                                             resolver_coord=_res, fluvial_router=lambda o, ol, hl, hlo: {"km": 100.0})
+        check("universo: normal intocado; balsa ganho≥15% substituída (metrica_fluvial)",
+              cands3[0]["dist_viaria"] == 120.0 and cands3[0].get("metrica_fluvial") is None
+              and cands3[1]["dist_viaria"] == 100.0 and cands3[1].get("metrica_fluvial") is True)
+        cands4 = [{"hub": "BALSA2", "dist_viaria": 140.0, "dist_reta": 80.0, "balsa": True, "rota_real": True}]
+        m._metrica_fluvial_justa_no_universo(cands4, "X", uf_hint="PA",
+                                             resolver_coord=_res, fluvial_router=lambda o, ol, hl, hlo: None)
+        check("universo: roteador sem rota → mantém 140", cands4[0]["dist_viaria"] == 140.0)
+        def _res_none(nome, uf_hint=""):
+            return {"lat": None, "lon": None}
+        cands5 = [{"hub": "BALSA3", "dist_viaria": 140.0, "dist_reta": 80.0, "balsa": True, "rota_real": True}]
+        m._metrica_fluvial_justa_no_universo(cands5, "X", uf_hint="PA",
+                                             resolver_coord=_res_none, fluvial_router=lambda *a, **k: {"km": 60.0})
+        check("universo: sem coords → lista intacta (fail-open)", cands5[0]["dist_viaria"] == 140.0)
+    except Exception as _e:
+        check("testes da métrica fluvial justa executaram (%s)" % _e, False)
 
     print()
     print("=" * 70)

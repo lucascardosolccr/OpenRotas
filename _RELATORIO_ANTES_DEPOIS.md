@@ -1,6 +1,6 @@
 # RELATÓRIO ANTES × DEPOIS — Motor de Rotas (Prompt 1.1.1, §20/§25)
 
-Gerado em 2026-09-04 21:47 por `py _testes_motor_rotas.py relatorio` — mesma fila de decisões do `decidir`.
+Gerado em 2026-09-04 22:44 por `py _testes_motor_rotas.py relatorio` — mesma fila de decisões do `decidir`.
 
 ## 1. Funções alteradas (streamlit_app.py)
 
@@ -59,6 +59,24 @@ Gerado em 2026-09-04 21:47 por `py _testes_motor_rotas.py relatorio` — mesma f
 | Centro Novo do Maranhão/MA | Capitao Poco 228.8 | Pinheiro 148.5 | **MARACACUME** (23.9 km) | Capitao Poco → MARACACUME (204.9) | menor distância viária |
 | Palestina do Pará/PA | Xambioa 173.6 | Marabá 108.3 | **BREJO GRANDE DO ARAGUAIA** (15.3 km) | Xambioa → BREJO GRANDE DO ARAGUAIA (158.3) | menor distância viária |
 | São Vicente do Seridó/PB | Parelhas 104.2 | Parelhas 52.0 | **CUBATI** (12.7 km) | Parelhas → CUBATI (91.5) | menor distância viária |
+| Canutama/AM | Labrea 116.0 | Lábrea 12.5 | **TAPAUA** (775.0 km) | Labrea → TAPAUA (-659.0) | — |
+| Muana/PA | Abaetetuba 53.0 | Abaetetuba 1.8 | **PONTA DE PEDRAS** (62.9 km) | Abaetetuba → PONTA DE PEDRAS (-9.9) | menor distância viária |
+| Anajas/PA | Breves 123.6 | Breves 25.2 | **CAMETA** (55.0 km) | Breves → CAMETA (68.6) | menor distância viária |
+| Afua/PA | Macapa 88.8 | Macapá 45.3 | **ANAJAS** (854.8 km) | Macapa → ANAJAS (-766.0) | menor distância viária |
+| Urucurituba/AM | Itacoatiara 40.4 | Itacoatiara 6.5 | **ITAPIRANGA** (159.7 km) | Itacoatiara → ITAPIRANGA (-119.3) | menor custo logístico global (desempate) |
+| Itapiranga/AM | Urucara 46.6 | Urucará 12.7 | **SILVES** (37.3 km) | Urucara → SILVES (9.3) | menor distância viária |
+| Prainha/PA | Monte Alegre 127.2 | Monte Alegre 91.5 | **Monte Alegre** (127.2 km) | Monte Alegre → Monte Alegre (-0.0) | menor custo logístico global (desempate) |
+| Cachoeira Do Arari/PA | Belem 128.2 | Belém 95.8 | **SALVATERRA** (70.2 km) | Belem → SALVATERRA (58.0) | menor distância viária |
+| Nova Guarita/MT | Colider 113.1 | Colíder 69.8 | **TERRA NOVA DO NORTE** (56.2 km) | Colider → TERRA NOVA DO NORTE (56.9) | menor distância viária |
+| Aveiro/PA | Itaituba 140.6 | Itaituba 109.1 | **RUROPOLIS** (129.5 km) | Itaituba → RUROPOLIS (11.1) | menor distância viária |
+| Sobradinho/RS | Restinga Seca 116.4 | Restinga Sêca 83.6 | **PASSA SETE** (9.2 km) | Restinga Seca → PASSA SETE (107.2) | menor distância viária |
+| Chui/RS | Jaguarao 283.6 | Rio Grande 242.2 | **SANTA VITORIA DO PALMAR** (21.5 km) | Jaguarao → SANTA VITORIA DO PALMAR (262.1) | menor distância viária |
+| Parnarama/MA | Angical Do Piaui 119.5 | Teresina 83.8 | **MATOES** (24.6 km) | Angical Do Piaui → MATOES (94.8) | menor distância viária |
+| Padre Paraiso/MG | Aracuai 135.7 | Teófilo Otoni 99.3 | **PONTO DOS VOLANTES** (42.0 km) | Aracuai → PONTO DOS VOLANTES (93.6) | menor distância viária |
+| Querencia Do Norte/PR | Navirai 137.5 | Umuarama 97.9 | **SANTA CRUZ DE MONTE CASTELO** (27.6 km) | Navirai → SANTA CRUZ DE MONTE CASTELO (109.9) | menor distância viária |
+| Fontoura Xavier/RS | Marau 108.3 | Lajeado 77.6 | **SAO JOSE DO HERVAL** (11.4 km) | Marau → SAO JOSE DO HERVAL (96.9) | menor distância viária |
+| Altonia/PR | Mundo Novo 108.0 | Palotina 65.9 | **SAO JORGE DO PATROCINIO** (13.4 km) | Mundo Novo → SAO JORGE DO PATROCINIO (94.6) | menor distância viária |
+| Governador Celso Ramos/SC | Tijucas 31.9 | Biguaçu 26.0 | **Biguaçu** (30.9 km) | Tijucas → Biguaçu (1.0) | menor custo logístico global (desempate) |
 
 ## 3. Baseline (artefato §22 — 1452 municípios, comportamento ANTES)
 | Indicador | Valor |
