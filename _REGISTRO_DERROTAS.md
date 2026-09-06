@@ -424,3 +424,11 @@ Raio de busca geodesica aumentado de 100km para 200km reta. Mesma logica (geodes
 _cruza_agua_entre_pontos + rota fluvial real + custo honesto + adoção estritamente menor). Mantem 9 capturas
 confirmadas; expande cobertura para pares mais distantes sem custo adicional significativo (budget 150 pares/
 origem). validar 192 OK / 0 FALHAS; decidir 38/38; relatorio 203 linhas.
+
+### 433 geracao: NE10M RIVERS MERGE (Natural Earth 10m rios no grafo fluvial)
+
+Merge de 2129 rios do dataset Natural Earth 10m (1473 rios globais, 39 brasileiros: Amazonas, Paraná, Tocantins, São Francisco, Araguaia, Xingu, Tapajós, Madeira, Juruá, Japurá, Parnaíba, Doce, Jequitinhonha, Pardo, Uruguai, Paraguai, etc.) no grafo fluvial nacional via merge de coordenadas (tolerância 0.000001°). Grafo expandido: 1.216.018 → 1.467.729 nós (+251.711), 1.223.475 → 1.724.845 arestas (+501.370), 8.490 → 9.569 nomes (+1.079).
+
+Resultado sweep fluvial: 21 origens com captura viável (era 9): Antonio Almeida(PI)->Porto Alegre do Piauí 57,0 km (dr 154,4; Parnaíba); Palestina do Pará(PA)->Brejo Grande do Araguaia 15,2 km (dr 108,3); Vila Nova dos Martírios(MA)->São Sebastião do Tocantins 13,5 km (dr 97,6); Sobradinho(RS)->Passa Sete 8,9 km (dr 83,6; Arroio Carijinho); Anori(AM)->Anamã 74,0 km (dr 137,3; Amazonas); Abaré(BA)->Belém do São Francisco 34,1 km (dr 79,5; São Francisco); São João Nepomuceno(MG)->Descoberto 12,9 km (dr 57,6; Rio Novo); Fênix(PR)->São Pedro do Ivaí 26,1 km (dr 59,9; Ivaí); Jangada(MT)->Acorizal 39,8 km (dr 67,9; Paraná); Angatuba(SP)->Campina do Monte Alegre 17,9 km (dr 44,7; Paranapanema); Borborema(SP)->Reginópolis 44,6 km (dr 67,4; Tietê); Nova Olinda do Norte(AM)->Autazes 64,5 km (dr 85,9; Madeira); Antonina(PR)->Morretes 29,3 km (dr 48,7; Linha de Costa/Nhundiaquara); Mar de Espanha(MG)->Senador Cortes 27,6 km (dr 46,6; Rio do Cágado); Ibitinga(SP)->Iacanga 43,6 km (dr 61,6; Tietê); Lagoinha(SP)->São Luiz do Paraitinga 32,8 km (dr 46,7; Córrego Botucatu); Morretes(PR)->Antonina 29,3 km (dr 39,6; Rio Marumbi); Gov. Celso Ramos(SC)->Tijucas 16,6 km (dr 26,0; Linha de Costa/Tijucas); Rio Casca(MG)->Sem-Peixe 33,0 km (dr 41,6; Doce); Turvo(SC)->Ermo 18,5 km (dr 25,2; Rio Turvo); Soledade(RS)->Barros Cassal 70,3 km (dr 74,8; Arroio Fao).
+
+validar 192 OK / 0 FALHAS; decidir 38/38; relatorio 203 linhas.
