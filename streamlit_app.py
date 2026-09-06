@@ -28539,6 +28539,71 @@ def API_Valhalla_Routing(lat_o, lon_o, lat_d, lon_d):
     return None
 
 
+def API_Valhalla_Multimodal_Routing(lat_o, lon_o, lat_d, lon_d):
+    """[VALHALLA-MULTIMODAL - 433ª geração] Motor multi-modal (auto + boat + foot) via Valhalla.
+    Encontra rotas intermodais: rodovia → acesso a rio → navegação fluvial/marítima → rodovia.
+    Usa costing 'multimodal' com boat profile. Fail-open: qualquer falha → None (não regride).
+    Budget: mesmo throttle fair-use do Valhalla auto (≤1 req/s instância pública)."""
+    if lat_o == 0.0 or lat_d == 0.0:
+        return None
+    start_t = time.time()
+    try:
+        def _http_valhalla_mm():
+            _payload = {
+                "locations": [{"lat": float(lat_o), "lon": float(lon_o)},
+                              {"lat": float(lat_d), "lon": float(lon_d)}],
+                "costing": "multimodal",
+                "costing_options": {
+                    "auto": {"country_crossing_penalty": 1000.0},
+                    "boat": {"speed": 15.0},  # km/h typical river/coastal boat
+                    "pedestrian": {"speed": 5.0}
+                },
+                "directions_options": {"units": "kilometers"},
+            }
+            _hdrs = {"Content-Type": "application/json",
+                     "User-Agent": "MotorLogisticoExames/1.0 (roteamento institucional; contato via app)",
+                     "X-Client-Id": "motor-logistico-exames"}
+            return session.post(f"{VALHALLA_URL}/route", data=json.dumps(_payload),
+                                headers=_hdrs, timeout=(3.05, 10)).json()
+        if _valhalla_instancia_propria():
+            _j = _http_valhalla_mm()
+        else:
+            def _call_pub():
+                _throttle_valhalla()
+                return _http_valhalla_mm()
+            _j = FILA_VALHALLA.submit(_call_pub).result()
+        _trip = _j.get("trip") if isinstance(_j, dict) else None
+        if not _trip or _trip.get("status") != 0:
+            registrar_telemetria("VALHALLA_MM", False, time.time() - start_t)
+            return None
+        _sum = _trip.get("summary") or {}
+        _km = round(float(_sum.get("length", 0.0)), 2)
+        if _km <= 0:
+            registrar_telemetria("VALHALLA_MM", False, time.time() - start_t)
+            return None
+        _tmin = round(float(_sum.get("time", 0.0)) / 60.0)
+        _balsa = "Não"
+        _coords_geojson = []
+        for _leg in (_trip.get("legs") or []):
+            _sh = _leg.get("shape") or ""
+            if _sh:
+                _coords_geojson.extend([(_ln, _la) for (_la, _ln) in _decodificar_polyline(_sh, 6)])
+            for _mnv in (_leg.get("maneuvers") or []):
+                if _mnv.get("type") in (18, 19) or "ferry" in str(_mnv.get("instruction", "")).lower():
+                    _balsa = "Sim"
+        _geo5 = ""
+        try:
+            _geo5 = _codificar_polyline_de_coords(_coords_geojson) if _coords_geojson else ""
+        except Exception:
+            _geo5 = ""
+        registrar_telemetria("VALHALLA_MM", True, time.time() - start_t)
+        return (_km, _tmin, _balsa, 1, _geo5, "valhalla-multimodal")
+    except Exception:
+        pass
+    registrar_telemetria("VALHALLA_MM", False, time.time() - start_t)
+    return None
+
+
 # [TELEMETRIA-MOTORES - 195ª geração] Registro observacional multi-motor por rota (para o dashboard de
 # "observabilidade total" pedido). Buffer circular limitado em cache (persiste entre reruns na sessão),
 # thread-safe, memória limitada (máx. 5000 registros). NÃO influencia decisão nenhuma — só mede.
@@ -34171,7 +34236,7 @@ def _pares_fossgis_fluviais_candidatos(topk_map, resultados, coords_f=None, g=No
         return []
 
 
-def _fluvial_sweep_resgate(resultados, coords_f, g, topk_map=None, max_pares=200, max_reta_km=100.0):
+def _fluvial_sweep_resgate(resultados, coords_f, g, topk_map=None, max_pares=200, max_reta_km=200.0):
     """[FLUVIAL-SWEEP - 432b] VARREDURA FLUVIAL AMPLA: testa rota fluvial real (Dijkstra no grafo hidrográfico
     nacional) em TODOS os pares (origem, hub) cuja geodésia cruza água, não só os hubs rodoviários ótimos.
     - Fonte de hubs: universo reatribuível (topk_map) + todos municípios a ≤max_reta_km reta da origem
@@ -45231,7 +45296,7 @@ if _secao == _SECOES[2]:   # tab_alocacao
                         try:
                             _res_fs = _fluvial_sweep_resgate(
                                 _resultados, _coords_fr, _grafo_fluvial_memoizado(), topk_map=_topk_reatrib,
-                                max_pares=150, max_reta_km=100.0)
+                                max_pares=150, max_reta_km=200.0)
                             if _res_fs:
                                 _nd_fs = 0
                                 for _kfs, _vfs in (_res_fs or {}).items():
