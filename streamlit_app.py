@@ -45745,13 +45745,17 @@ if _secao == _SECOES[2]:   # tab_alocacao
                                 logger.error(f"[FLUVIAL-ROTA-DIRETA] Falha na rota fluvial direta: {_e_fd}")
                         except Exception as _e_fc:
                             logger.error(f"[FERRY-CANDIDATO] Falha no ampliamento do hall com ferry: {_e_fc}")
-                        # [FLUVIAL-SWEEP - 432b] VARREDURA FLUVIAL AMPLA: testa rota fluvial real em TODOS os pares
-                        # (origem, hub) com geodésia cruzando água, não só hubs rodoviários ótimos.
-                        # Maximiza a malha aquaviária sem custo de rede (sem budget FOSSGIS).
+                        # [FLUVIAL-SWEEP-OTIMIZADO - 434ª] VARREDURA FLUVIAL INTELIGENTE COM MULTI-HOP E RAIO ADAPTATIVO
+                        # Raio base 300km (era 200km), adaptativo por densidade hidrográfica.
+                        # USA rota MULTI-HOP nativa - permite transbordos em confluências.
+                        # Prioriza hubs: mesma componente conexa > confluência viável > menor reta.
+                        # Filtro: geodésia cruza água + mesma componente OU confluência viável.
+                        # Budget: max_pares total; prioriza origens com excesso pequeno (< 10km).
+                        # Cache agressivo de componentes/confluências.
                         try:
-                            _res_fs = _fluvial_sweep_resgate(
+                            _res_fs = _fluvial_sweep_otimizado(
                                 _resultados, _coords_fr, _grafo_fluvial_memoizado(), topk_map=_topk_reatrib,
-                                max_pares=150, max_reta_km=200.0)
+                                max_pares=300, max_reta_km=300.0)
                             if _res_fs:
                                 _nd_fs = 0
                                 for _kfs, _vfs in (_res_fs or {}).items():
@@ -45765,10 +45769,10 @@ if _secao == _SECOES[2]:   # tab_alocacao
                                     except Exception:
                                         pass
                                     st.session_state['alo_resultados'] = _resultados
-                                    logger.warning("[FLUVIAL-SWEEP] %d par(es) reclassificado(s) pela "
-                                                   "varredura fluvial ampla.", _nd_fs)
+                                    logger.warning("[FLUVIAL-SWEEP-OTIMIZADO] %d par(es) reclassificado(s) pela "
+                                                   "varredura fluvial inteligente multi-hop.", _nd_fs)
                         except Exception as _e_fs:
-                            logger.error(f"[FLUVIAL-SWEEP] Falha na varredura fluvial ampla: {_e_fs}")
+                            logger.error(f"[FLUVIAL-SWEEP-OTIMIZADO] Falha na varredura fluvial inteligente: {_e_fs}")
                         _novo_dest_mc, _mcda_mc = _reatribuir_hubs_multicriterio(
                             _topk_reatrib, _resultados, params=_params_mc,
                             dist_matriz=st.session_state.get('alo_dist_matriz'),
