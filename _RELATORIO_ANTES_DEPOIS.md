@@ -1,6 +1,6 @@
 # RELATÓRIO ANTES × DEPOIS — Motor de Rotas (Prompt 1.1.1, §20/§25)
 
-Gerado em 2026-09-05 23:06 por `py _testes_motor_rotas.py relatorio` — mesma fila de decisões do `decidir`.
+Gerado em 2026-09-06 20:47 por `py _testes_motor_rotas.py relatorio` — mesma fila de decisões do `decidir`.
 
 ## 1. Funções alteradas (streamlit_app.py)
 
@@ -62,17 +62,17 @@ Gerado em 2026-09-05 23:06 por `py _testes_motor_rotas.py relatorio` — mesma f
 | Gurupá/PA | Portel 128.6 | Almeirim 119.3 | **Portel** (129.0 km) | mantido (fluvial-realista) | menor custo logístico global (desempate) |
 | São José do Norte/RS | Rio Grande 6.8 | Osório 317.8 | **Rio Grande** (6.8 km) | mantido §6 (balsa inevitável) | menor custo logístico global (desempate) |
 | Triunfo/RS | Sao Jeronimo 2.5 | Montenegro 50.1 | **CHARQUEADAS** (11.5 km) | balsa demovida (§7) | menor distância viária |
-| Carutapera/MA | Braganca 96.4 | Capanema 229.2 | **LUIS DOMINGUES** (27.6 km) | Braganca → LUIS DOMINGUES (68.8) | menor distância viária |
+| Carutapera/MA | Braganca 96.4 | Capanema 229.2 | **VISEU** (9.4 km) | Braganca → VISEU (87.0) | menor distância viária |
 | Arroio do Tigre/RS | Santa Cruz Do… 98.0 | Restinga Sêca 94.8 | **SOBRADINHO** (12.0 km) | Santa Cruz Do… → SOBRADINHO (86.0) | menor distância viária |
 | Dormentes/PE | Ouricuri 130.3 | Petrolina 127.2 | **AFRANIO** (31.8 km) | Ouricuri → AFRANIO (98.5) | menor distância viária |
 | Centro Novo do Maranhão/MA | Capitao Poco 228.8 | Pinheiro 148.5 | **MARACACUME** (23.9 km) | Capitao Poco → MARACACUME (204.9) | menor distância viária |
 | Palestina do Pará/PA | Xambioa 173.6 | Marabá 108.3 | **BREJO GRANDE DO ARAGUAIA** (15.3 km) | Xambioa → BREJO GRANDE DO ARAGUAIA (158.3) | menor distância viária |
 | São Vicente do Seridó/PB | Parelhas 104.2 | Parelhas 52.0 | **CUBATI** (12.7 km) | Parelhas → CUBATI (91.5) | menor distância viária |
-| Canutama/AM | Labrea 116.0 | Lábrea 12.5 | **TAPAUA** (775.0 km) | Labrea → TAPAUA (-659.0) | — |
+| Canutama/AM | Labrea 116.0 | Lábrea 12.5 | **Labrea** (313.5 km) | Labrea → Labrea (-197.5) | menor custo logístico global (desempate) |
 | Muana/PA | Abaetetuba 53.0 | Abaetetuba 1.8 | **PONTA DE PEDRAS** (62.9 km) | Abaetetuba → PONTA DE PEDRAS (-9.9) | menor distância viária |
 | Anajas/PA | Breves 123.6 | Breves 25.2 | **CAMETA** (55.0 km) | Breves → CAMETA (68.6) | menor distância viária |
 | Afua/PA | Macapa 88.8 | Macapá 45.3 | **ANAJAS** (854.8 km) | Macapa → ANAJAS (-766.0) | menor distância viária |
-| Urucurituba/AM | Itacoatiara 40.4 | Itacoatiara 6.5 | **ITAPIRANGA** (159.7 km) | Itacoatiara → ITAPIRANGA (-119.3) | menor custo logístico global (desempate) |
+| Urucurituba/AM | Itacoatiara 40.4 | Itacoatiara 6.5 | **Itacoatiara** (72.7 km) | Itacoatiara → Itacoatiara (-32.3) | menor custo logístico global (desempate) |
 | Itapiranga/AM | Urucara 46.6 | Urucará 12.7 | **SILVES** (37.3 km) | Urucara → SILVES (9.3) | menor distância viária |
 | Prainha/PA | Monte Alegre 127.2 | Monte Alegre 91.5 | **Monte Alegre** (127.2 km) | Monte Alegre → Monte Alegre (-0.0) | menor custo logístico global (desempate) |
 | Cachoeira Do Arari/PA | Belem 128.2 | Belém 95.8 | **SALVATERRA** (70.2 km) | Belem → SALVATERRA (58.0) | menor distância viária |
