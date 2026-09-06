@@ -417,3 +417,10 @@ Cágado); Lagoinha(SP)->Sao Luiz do Paraitinga 32,8 km (dr 46,7; Córrego Botuca
 Turvo(SC)->Ermo 18,5 km (dr 25,2; Rio Turvo); Soledade(RS)->Barros Cassal 70,3 km (dr 74,8; Arroio Fao).
 Todas com snap ≤0,8 km, rios nomeados, custo honesto (fluvial + acesso). Auto-loop guard (origem==hub)
 evita fabricação. Wire ativo: +9 derrotas recuperadas.
+
+### 432c geracao: FLUVIAL-SWEEP RAIO EXPANDIDO 200KM
+
+Raio de busca geodesica aumentado de 100km para 200km reta. Mesma logica (geodesia cruza agua + prova
+_cruza_agua_entre_pontos + rota fluvial real + custo honesto + adoção estritamente menor). Mantem 9 capturas
+confirmadas; expande cobertura para pares mais distantes sem custo adicional significativo (budget 150 pares/
+origem). validar 192 OK / 0 FALHAS; decidir 38/38; relatorio 203 linhas.
