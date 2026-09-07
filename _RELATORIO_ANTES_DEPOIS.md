@@ -1,6 +1,6 @@
 # RELATÓRIO ANTES × DEPOIS — Motor de Rotas (Prompt 1.1.1, §20/§25)
 
-Gerado em 2026-09-06 21:04 por `py _testes_motor_rotas.py relatorio` — mesma fila de decisões do `decidir`.
+Gerado em 2026-09-06 22:09 por `py _testes_motor_rotas.py relatorio` — mesma fila de decisões do `decidir`.
 
 ## 1. Funções alteradas (streamlit_app.py)
 
