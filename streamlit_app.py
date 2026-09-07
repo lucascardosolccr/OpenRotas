@@ -33521,51 +33521,29 @@ def _vantagem_banda_balsa(da, dr, balsa_app, balsa_ref, margem, fallback="Empate
       • um lado com balsa: a RODOVIÁRIA razoável vence; a travessia só vence quando a rodovia é
         desvio desproporcional (não razoável) — São José do Norte continua ganhando com a balsa;
       • nunca tempo/custo invertem a menor rota. PURA/defensiva."""
-    _a = _num_seguro(da); _b = _num_seguro(dr)
-    if _a is None or _b is None:
+    try:
+        _a = _num_seguro(da); _b = _num_seguro(dr)
+        if _a is None or _b is None:
+            return fallback
+        _ba, _br = bool(balsa_app), bool(balsa_ref)
+        if _ba == _br:
+            if abs(_a - _b) < max(1.0, float(margem)):
+                return "Empate"
+            return "Aplicação" if _a < _b else "Referência"
+        if _ba and not _br:
+            if _rota_sem_balsa_razoavel(_a, _b):
+                return "Referência"
+            if abs(_a - _b) < max(1.0, float(margem)):
+                return "Empate"
+            return "Aplicação"
+        if _br and not _ba:
+            if _rota_sem_balsa_razoavel(_b, _a):
+                return "Aplicação"
+            if abs(_a - _b) < max(1.0, float(margem)):
+                return "Empate"
+            return "Referência"
+    except Exception:
         return fallback
-    _ba, _br = bool(balsa_app), bool(balsa_ref)
-    if _ba == _br:
-        if abs(_a - _b) < max(1.0, float(margem)):
-            return "Empate"
-        return "Aplicação" if _a < _b else "Referência"
-    if _ba and not _br:
-        # app usa balsa; referência é rodoviária
-        if _rota_sem_balsa_razoavel(_a, _b):
-            return "Referência"                      # rodovia razoável → prefere a referência (sem balsa)
-        if abs(_a - _b) < max(1.0, float(margem)):
-            return "Empate"
-        return "Aplicação" if _a <= _b else "Referência"
-    # referência usa balsa; app é rodoviária
-    if _rota_sem_balsa_razoavel(_b, _a):
-        return "Aplicação"                           # rodovia razoável → prefere a aplicação (sem balsa)
-    if abs(_a - _b) < max(1.0, float(margem)):
-        return "Empate"
-    return "Referência" if _b < _a else "Aplicação"
-
-
-
-
-# ==============================================================================
-# [V307 · FATIA 1] CAMADA DE PROVENIÊNCIA E VALIDAÇÃO DA DECISÃO DE ROTA
-# ------------------------------------------------------------------------------
-# Funções PURAS, DEFENSIVAS e READ-ONLY (não alteram nenhuma decisão existente).
-# Atendem, de forma ADITIVA, os requisitos da Rodada 1:
-#   §9  toda distância carrega metadados (tipo/motor/método/status/fallback);
-#   §11 auditoria "por que venceu / por que os outros perderam";
-#   §12 classificação diagnóstica da derrota (aprendizado com derrotas);
-#   §15 validação cruzada: vencedor com viária MAIOR que o 2º = erro crítico;
-#       vencedor >> 2º = anomalia; distância viária confundida com linha reta;
-#   §21 nenhum campo vazio sem explicação (rótulo honesto de ausência).
-# Orientação do usuário: BALSA NÃO É PENALIDADE — é um trecho da rede. Travessia
-# CURTA vence desvio rodoviário ENORME; quem decide é a distância/tempo real.
-# Esta fatia apenas CLASSIFICA e SINALIZA; a mudança de decisão (circuidade) é a
-# Fatia 2 (V308). Verificada offline contra os 13 casos reais de derrota.
-# ==============================================================================
-_V307_MOTORES_VIARIOS = {"GOOGLE", "OSRM", "GRAPHHOPPER", "ORS", "OSRM_FOSSGIS",
-                         "VALHALLA", "TOMTOM"}
-_V307_MARCAS_ESTIMADA = ("linha reta", "haversine", "geodés", "geodes", "estimad",
-                         "fallback", "sem rota", "sem malha", "reta")
 
 def _v307_num(v):
     try:

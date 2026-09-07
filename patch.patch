@@ -1,0 +1,132 @@
+diff --git a/streamlit_app.py b/streamlit_app.py
+--- a/streamlit_app.py
++++ b/streamlit_app.py
+@@ -33489,6 +33489,93 @@ def _vantagem_banda_balsa(da, dr, balsa_app, balsa_ref, margem, fallback="Empate"):
+     if _br and not _ba:
+         if _rota_sem_balsa_razoavel(_b, _a):
+             return "Aplicação"
+         if abs(_a - _b) < max(1.0, float(margem)):
+             return "Empate"
+         return "Referência"
++
++
++def _v316_decidir_terrestre_primeiro(atual, alt, margem_km=0.5):
++    """[V316 · Melhoria 3] Decisão sob a política EVITAR BALSA. terrestre SEMPRE vence balsa/fluvial (mesmo
++    mais longa); entre terrestres vence a menor; sem nenhuma terrestre, vence a menor (exceção sinalizada).
++    Quando uma balsa é mais curta que a terrestre mantida, devolve 'alternativa_balsa' (oportunidade), nunca
++    como vitória. Retorna {trocar, motivo, km_salvo, alternativa_balsa|None, excecao_sem_terrestre}."""
++    _res = {"trocar": False, "motivo": "", "km_salvo": None, "alternativa_balsa": None,
++            "excecao_sem_terrestre": False, "excecao_isolada": False}
++    try:
++        _da = _num(atual.get("dist_km")); _db = _num(alt.get("dist_km"))
++        _ca = _v316_classificar_rota(atual.get("tem_balsa"), atual.get("fonte", ""), atual.get("status", ""),
++                                     vr=atual.get("vr"), dist=atual.get("dist_km"), tempo=atual.get("tempo"),
++                                     reta=atual.get("reta_km"))
++        _cb = _v316_classificar_rota(alt.get("tem_balsa"), alt.get("fonte", ""), alt.get("status", ""),
++                                     vr=alt.get("vr"), dist=alt.get("dist_km"), tempo=alt.get("tempo"), reta=alt.get("reta_km"))
++        _ta, _tb = _ca["terrestre"], _cb["terrestre"]
++
++        def _alt_balsa(dic, _cl):
++            return {"nome": dic.get("nome"), "dist_km": _num(dic.get("dist_km")), "tempo": dic.get("tempo"),
++                    "fonte": dic.get("fonte"), "categoria": _cl["categoria"], "rotulo": _cl["rotulo"]}
++
++        if _ta and not _tb:
++            _res = {"trocar": True, "motivo": "balsa substituída por rodovia"}
++            _res["km_salvo"] = round(_da - _db, 1) if (_da is not None and _db is not None) else None
++            return _res
++        if _tb and not _ta:
++            return _res
++        if _ta and _tb:
++            if _da < _db - 1e-9:
++                return _res
++            if _db < _da - 1e-9:
++                _res["trocar"] = True; _res["motivo"] = "balsa mais curta"; _res["km_salvo"] = round(_db - _da, 1)
++                return _res
++            return _res
++        if not _ta and not _tb:
++            if _da < _db - 1e-9:
++                return _res
++            if _db < _da - 1e-9:
++                _res["trocar"] = True; _res["motivo"] = "rodovia mais curta"; _res["km_salvo"] = round(_db - _da, 1)
++                return _res
++        return _res
++    except Exception:
++        return _res
++
++
++def _balsa_extra_admissivel(km_balsa):
++    """Quantos km a mais de rodovia ainda tornam a travessia EVITÁVEL (banda adaptativa §6). PURA."""
++    try:
++        _kb = float(km_balsa)
++    except (TypeError, ValueError):
++        return float(_REL_BANDA_ABS_KM)
++    if not (_kb > 0):
++        return float(_REL_BANDA_ABS_KM)
++    return max(float(_REL_BANDA_ABS_KM), float(_REL_BANDA_X) * _kb)
++
++
++def _rota_sem_balsa_razoavel(km_balsa, km_rodovia):
++    """True quando a rodovia de 'km_rodovia' é uma alternativa RAZOÁVEL à travessia de 'km_balsa' (§6):
++    o acréscimo rodoviário cabe na banda admissível. PURA, defensiva."""
++    try:
++        _kb = float(km_balsa); _kr = float(km_rodovia)
++    except (TypeError, ValueError):
++        return False
++    if not (_kb > 0) or not (_kr > 0):
++        return False
++    return (_kr - _kb) <= _balsa_extra_admissivel(_kb)
++
++
++def _balsa_evitavel_banda(candidatos):
++    """True se, no conjunto de candidatos, existe rota RODOVIÁRIA real e plausível dentro da banda
++    admissível sobre a MELHOR travessia — i.e., a balsa é EVITÁVEL (§7). Candidato = dict com
++    'dist_viaria', 'balsa', 'rota_real' (default True) e 'plausivel' (default True). PURA/defensiva."""
++    try:
++        _b = []
++        for _c in (candidatos or []):
++            if _c.get("balsa") and _c.get("rota_real", True) and not _c.get("_adiavel"):
++                _dv = _num(_c.get("dist_viaria"))
++                if _dv and _dv > 0:
++                    _b.append(float(_dv))
++        _r = []
++        for _c in (candidatos or []):
++            if not _c.get("balsa") and _c.get("rota_real", True) and _c.get("plausivel", True):
++                _dv = _num(_c.get("dist_viaria"))
++                if _dv and _dv > 0:
++                    _r.append(float(_dv))
++        if not _b or not _r:
++            return False
++        _melhor_balsa = min(_b)
++        for _kr in _r:
++            if _kr <= _melhor_balsa + _balsa_extra_admissivel(_melhor_balsa):
++                return True
++        return False
++
++
++def _vantagem_banda_balsa(da, dr, balsa_app, balsa_ref, margem, fallback="Empate"):
++    """Vantagem (app × referência) sob a política ÚNICA §6/§7 — substitui o peso fixo _PEN_BALSA_KM
++    no comparador. Regras:
++      • mesmo status → vence a menor distância (empate técnico respeitando 'margem');
++      • um lado com balsa: a RODOVIÁRIA razoável vence; a travessia só vence quando a rodovia é
++        desvio desproporcional (não razoável) — São José do Norte continua ganhando com a balsa;
++      • nunca tempo/custo invertem a menor rota. PURA/defensiva."""
++    _a = _num_seguro(da); _b = _num_seguro(dr)
++    if _a is None or _b is None:
++        return fallback
++    _ba, _br = bool(balsa_app), bool(balsa_ref)
++    if _ba == _br:
++        if abs(_a - _b) < max(1.0, float(margem)):
++            return "Empate"
++        return "Aplicação" if _a < _b else "Referência"
++    if _ba and not _br:
++        if _rota_sem_balsa_razoavel(_a, _b):
++            return "Referência"
++        if abs(_a - _b) < max(1.0, float(margem)):
++            return "Empate"
++        return "Aplicação"
++    if _br and not _ba:
++        if _rota_sem_balsa_razoavel(_b, _a):
++            return "Aplicação"
++        if abs(_a - _b) < max(1.0, float(margem)):
++            return "Empate"
++        return "Referência"
