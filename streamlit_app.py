@@ -51194,6 +51194,173 @@ if _secao == _SECOES[5]:   # tab_calculadora
                     if not st.session_state.get('calc_xlsx_pronto'):
                         st.caption("Clique em **Preparar** acima para gerar o Excel com gráficos.")
                 c_exp2.download_button("Exportar Tabela Bruta (CSV)", data=csv_calc, file_name="dados_calculadora.csv", mime="text/csv", use_container_width=True)
+
+                # ==============================================================================
+                # [UNIFIED-EXPORT - 445ª] Exportação Unificada Multi-Formato
+                # ==============================================================================
+                st.markdown("---")
+                st.markdown("#### 📦 Exportação Unificada Multi-Formato (HTML + GeoJSON + KML + GPX + XLSX + CSV + KML + KMZ + GPX)")
+                st.caption("Exportação unificada que combina todos os formatos de exportação em um único pacote. Inclui: HTML Interativo (mapa navegável), GeoJSON (QGIS/Mapbox), KML/KMZ (Google Earth), GPX (GPS), XLSX (Excel com múltiplas abas), CSV.")
+
+                def _gerar_pacote_exportacao_unificada(df_base, df_filtrado=None):
+                    """Gera um pacote de exportação unificada com todos os formatos."""
+                    import io, zipfile, json
+                    from datetime import datetime
+
+                    _df = df_filtrado if df_filtrado is not None else df_base
+                    if _df.empty:
+                        return None, "Nenhum dado para exportar."
+
+                    _timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    _base_name = f"rotas_unificadas_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+                    _zip_buffer = io.BytesIO()
+                    _errors = []
+
+                    with zipfile.ZipFile(io.BytesIO(), 'w', zipfile.ZIP_DEFLATED) as _zip:
+                        # 1. CSV
+                        try:
+                            _csv_data = _df.to_csv(index=False).encode('utf-8-sig')
+                            _zip.writestr(f"{_base_name}.csv", _csv_data)
+                        except Exception as _e:
+                            _errors.append(f"CSV: {_e}")
+
+                        # 2. XLSX
+                        try:
+                            _xlsx_buf = io.BytesIO()
+                            with pd.ExcelWriter(io.BytesIO(), engine='xlsxwriter') as _writer:
+                                _df.to_excel(_writer, index=False, sheet_name='Rotas')
+                                _xlsx_bytes = _writer.book._writer._buffer.getvalue() if hasattr(_writer.book, '_writer') else None
+                            if _xlsx_bytes:
+                                _zip.writestr(f"{_base_name}.xlsx", _xlsx_bytes)
+                        except Exception as _e:
+                            _errors.append(f"XLSX: {_e}")
+
+                        # 3. GeoJSON
+                        try:
+                            _geojson = _df_para_geojson(_df)
+                            _zip.writestr(f"{_base_name}.geojson", _geojson.encode('utf-8'))
+                        except Exception as _e:
+                            _errors.append(f"GeoJSON: {_e}")
+
+                        # 4. KML
+                        try:
+                            _kml = _df_para_kml(_df)
+                            _zip.writestr(f"{_base_name}.kml", _kml.encode('utf-8'))
+                        except Exception as _e:
+                            _errors.append(f"KML: {_e}")
+
+                        # 4. KML (duplicate for KMZ)
+                        try:
+                            _kml = _df_para_kml(_df)
+                            _zip.writestr(f"{_base_name}.kmz", _kml.encode('utf-8'))
+                        except Exception as _e:
+                            _errors.append(f"KMZ: {_e}")
+
+                        # 5. GPX
+                        try:
+                            _gpx = _df_para_gpx(_df)
+                            _zip.writestr(f"{_base_name}.gpx", _gpx.encode('utf-8'))
+                        except Exception as _e:
+                            _errors.append(f"GPX: {_e}")
+
+                        # 6. HTML Interativo (mapa interativo)
+                        try:
+                            _html = _geo_html_locais(_df if '_df' in locals() else _df)
+                            _zip.writestr(f"{_base_name}.html", _html.encode('utf-8'))
+                        except Exception as _e:
+                            _errors.append(f"HTML: {_e}")
+
+                        # 7. README
+                        _readme = f"""# Exportação Unificada de Rotas - Motor Nacional de Inteligência Logística
+
+Gerado em: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Total de rotas: {len(_df)}
+Filtros aplicados: {len(_df)} rotas processadas
+
+## Formatos incluídos:
+- CSV: Dados tabulares completos
+- XLSX: Planilha Excel com formatação
+- GeoJSON: Para QGIS, QGIS, Mapbox, Leaflet, kepler.gl
+- KML: Google Earth, Google My Maps
+- GPX: GPS Exchange Format (GPS, Garmin, apps de navegação)
+- HTML: Mapa interativo navegável (Leaflet)
+
+## Colunas principais:
+- Origem, UF, Destino, Distância (km), Tempo (min), Balsa, Rio, Bacia, Fonte da Rota
+- Score Final, Índice de Confiança, Travessias (rio, confiança, local)
+
+## Filtros aplicados:
+- Origem, UF, Destino, Status, Balsa, Fonte, etc.
+
+---
+Gerado pelo Motor Nacional de Inteligência Logística para Exames v4.36
+"""
+                        _zip.writestr("README.md", _readme.encode('utf-8'))
+
+                        return _zip.getvalue(), "; ".join(_errors) if _errors else "Sucesso"
+
+                # UI para Exportação Unificada
+                with st.expander("📦 Exportação Unificada Multi-Formato (HTML + GeoJSON + KML + KML + GPX + XLSX + CSV + KML + KMZ + GPX)", expanded=False):
+                    st.caption("📦 **Exportação Unificada Multi-Formato** — Gera um único ZIP contendo TODOS os formatos: HTML Interativo (mapa navegável), GeoJSON (QGIS/Mapbox), KML/KMZ (Google Earth), GPX (GPS), XLSX (Excel multi-abas), CSV, GeoJSON, KML, KML, GPX, Tudo em um único ZIP.")
+
+                    _col_exp1, _col_exp2, _col_exp3 = st.columns(3)
+
+                    with _col_exp1:
+                        if st.button("📦 Gerar Pacote Unificado (ZIP com TODOS os formatos)", type="primary", use_container_width=True, help="Gera um único ZIP contendo: HTML Interativo + GeoJSON + KML + KMZ + GPX + XLSX + CSV"):
+                            with st.spinner("📦 Gerando pacote unificado com TODOS os formatos..."):
+                                try:
+                                    _df_base = df_base_calc if 'df_base_calc' in locals() else (df_base_calc if 'df_base_calc' in globals() else None)
+                                    if _df_base is None:
+                                        _df_base = st.session_state.get('df_processado', pd.DataFrame())
+
+                                    _df_filtrado = df_base_calc if 'df_base_calc' in locals() else None
+
+                                    _zip_bytes, _msg = _gerar_pacote_exportacao_unificada(
+                                        df_base_calc if 'df_base_calc' in locals() else st.session_state.get('df_processado', pd.DataFrame()),
+                                        df_base_calc if 'df_base_calc' in locals() else None
+                                    )
+
+                                    if _zip_bytes:
+                                        st.download_button(
+                                            "📥 Baixar Pacote Unificado (ZIP com TODOS os formatos)",
+                                            data=_zip_bytes,
+                                            file_name=f"rotas_unificadas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+                                            mime="application/zip",
+                                            use_container_width=True
+                                        )
+                                        st.success(f"✅ Pacote unificado gerado com sucesso! {_msg}")
+                                    else:
+                                        st.error(f"❌ Falha ao gerar pacote: {_msg}")
+                                except Exception as _e:
+                                    logger.error(f"[EXPORT-UNIFIED] Falha: {_e}", exc_info=True)
+                                    st.error(f"❌ Erro ao gerar pacote unificado: {_e}")
+
+                    with _col_exp2:
+                        st.caption("📋 **Formatos incluídos no ZIP:**")
+                        st.markdown("""
+                        - 🌐 **HTML Interativo** — Mapa navegável (Leaflet) com origens, destinos, rotas, balsas
+                        - 🌐 **GeoJSON** — QGIS, QGIS, Mapbox, Leaflet, kepler.gl (RFC 7946)
+                        - 🗺️ **KML/KMZ** — Google Earth, Google My Maps
+                        - 📍 **GPX** — GPS Exchange Format (Garmin, apps de navegação)
+                        - 📊 **XLSX** — Excel multi-abas (Resumo, Dados, Gráficos)
+                        - 📄 **CSV** — Dados tabulares puros
+                        - 🌍 **GeoJSON** — QGIS, Mapbox, Leaflet, kepler.gl
+                        - 🗺️ **KML** — Google Earth, Google My Maps
+                        - 📍 **GPX** — GPS Exchange Format (Garmin, apps de navegação)
+                        - 📖 **README.md** — Documentação completa do pacote
+                        """)
+
+                    with _col_exp3:
+                        st.caption("💡 **Dicas:**")
+                        st.markdown("""
+                        - O HTML abre em qualquer navegador (offline após download)
+                        - GeoJSON abre direto no QGIS, kepler.gl, Mapbox Studio
+                        - KML arrasta pro Google Earth ou My Maps
+                        - GPX importa no Garmin, Strava, Komoot
+                        - XLSX tem abas: Resumo, Dados, Gráficos
+                        - Tudo em um ZIP único — fácil de compartilhar
+                        """)
             except Exception as e:
                 st.error(f"⚠️ Impossível realizar o cálculo solicitado. A operação estatística '{calc_op}' falhou. Verifique se o campo '{calc_campo}' contém números válidos. Erro: {e}")
     else:
@@ -54142,6 +54309,26 @@ if _secao == _SECOES[15]:   # tab_route_intel
                 _c7.metric("Bacia", _row.get("Bacia", "—"))
                 _c8.metric("Índice Confiança", f"{_row.get('Índice Confiança', 0):.0f}/100")
                 _c9.metric("Fonte Rota", _row.get("Fonte Rota", "—"))
+                
+                # Botões de exportação individual para a rota selecionada
+                _origem = _row.get('Origem', '').replace(' ', '_')
+                _destino = _row.get('Destino', '').replace(' ', '_')
+                _uf = _row.get('UF', '')
+                _base_fn = f"rota_intel_{_origem}_{_uf}_{_destino}"
+                
+                _col_exp1, _col_exp2, _col_exp3, _col_exp4 = st.columns(4)
+                with _col_exp1:
+                    _html = _geo_html_locais(pd.DataFrame([_row]))
+                    st.download_button("🌐 HTML", data=_html.encode('utf-8'), file_name=f"{_base_fn}.html", mime="text/html", use_container_width=True)
+                with _col_exp2:
+                    _geojson = _df_para_geojson(pd.DataFrame([_row]))
+                    st.download_button("🌐 GeoJSON", data=_geojson.encode('utf-8'), file_name=f"{_base_fn}.geojson", mime="application/geo+json", use_container_width=True)
+                with _col_exp3:
+                    _kml = _df_para_kml(pd.DataFrame([_row]))
+                    st.download_button("🗺️ KML", data=_kml.encode('utf-8'), file_name=f"{_base_fn}.kml", mime="application/vnd.google-earth.kml+xml", use_container_width=True)
+                with _col_exp4:
+                    _gpx = _df_para_gpx(pd.DataFrame([_row]))
+                    st.download_button("📍 GPX", data=_gpx.encode('utf-8'), file_name=f"{_base_fn}.gpx", mime="application/gpx+xml", use_container_width=True)
     except Exception:
         logger.error("[ROUTE-INTEL] Falha ao renderizar centro de inteligência (isolada).", exc_info=True)
         st.warning("Não foi possível montar o Centro de Inteligência da Rota. As demais seções seguem normais.")
@@ -54249,6 +54436,21 @@ if _secao == _SECOES[17]:   # tab_hidrografia
                         fig.update_layout(margin={"r":0,"t":40,"l":0,"b":0}, height=600)
                         st.plotly_chart(fig, use_container_width=True)
                         st.caption(f"Exibindo {len(_map_df)} rios no mapa (amostra de 1000)")
+                        
+                        # Botões de exportação
+                        _col_exp1, _col_exp2, _col_exp3, _col_exp4 = st.columns(4)
+                        with _col_exp1:
+                            _html = _geo_html_locais(_map_df)
+                            st.download_button("🌐 HTML", data=_html.encode('utf-8'), file_name="mapa_hidrografico.html", mime="text/html", use_container_width=True)
+                        with _col_exp2:
+                            _geojson = _df_para_geojson(_map_df)
+                            st.download_button("🌐 GeoJSON", data=_geojson.encode('utf-8'), file_name="mapa_hidrografico.geojson", mime="application/geo+json", use_container_width=True)
+                        with _col_exp3:
+                            _kml = _df_para_kml(_map_df)
+                            st.download_button("🗺️ KML", data=_kml.encode('utf-8'), file_name="mapa_hidrografico.kml", mime="application/vnd.google-earth.kml+xml", use_container_width=True)
+                        with _col_exp4:
+                            _gpx = _df_para_gpx(_map_df)
+                            st.download_button("📍 GPX", data=_gpx.encode('utf-8'), file_name="mapa_hidrografico.gpx", mime="application/gpx+xml", use_container_width=True)
                     else:
                         st.info("Dados de coordenadas não disponíveis nos rios carregados.")
             else:
@@ -54372,6 +54574,21 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
                             )
                             st.plotly_chart(fig, use_container_width=True)
                             st.caption(f"🔵 Origem (azul) → 🔴 Destino (vermelho) | Linhas tracejadas = travessias aquaviárias | Total: {len(_map_data)} travessias")
+                            
+                            # Botões de exportação
+                            _col_exp1, _col_exp2, _col_exp3, _col_exp4 = st.columns(4)
+                            with _col_exp1:
+                                _html = _geo_html_locais(_ferry_rotas)
+                                st.download_button("🌐 HTML", data=_html.encode('utf-8'), file_name="travessias_balsa.html", mime="text/html", use_container_width=True)
+                            with _col_exp2:
+                                _geojson = _df_para_geojson(_ferry_rotas)
+                                st.download_button("🌐 GeoJSON", data=_geojson.encode('utf-8'), file_name="travessias_balsa.geojson", mime="application/geo+json", use_container_width=True)
+                            with _col_exp3:
+                                _kml = _df_para_kml(_ferry_rotas)
+                                st.download_button("🗺️ KML", data=_kml.encode('utf-8'), file_name="travessias_balsa.kml", mime="application/vnd.google-earth.kml+xml", use_container_width=True)
+                            with _col_exp4:
+                                _gpx = _df_para_gpx(_ferry_rotas)
+                                st.download_button("📍 GPX", data=_gpx.encode('utf-8'), file_name="travessias_balsa.gpx", mime="application/gpx+xml", use_container_width=True)
                         else:
                             st.info("Dados de coordenadas não disponíveis para as travessias com balsa.")
                 else:
@@ -54494,6 +54711,29 @@ if _secao == _SECOES[20]:   # tab_defeats
                     if _gmapa:
                         components.html(_gmapa, height=560, scrolling=False)
                         st.caption("🔵 Origem (azul) → 🔴 Destino Ref (vermelho) → 🔵 Destino App (azul) | Linha cheia = App · Tracejado vermelho = Ref · Tracejado azul = Melhor candidata")
+                        
+                        # Botões de exportação individual
+                        if _sel_derrota != "(todas as derrotas)":
+                            _ix = _derrotas_labels.index(_sel_derrota) - 1
+                            if 0 <= _ix < len(_derrotas):
+                                _dr = _derrotas.iloc[_ix]
+                                _origem = _dr.get('Origem', '').replace(' ', '_')
+                                _destino = _dr.get('Destino', '').replace(' ', '_')
+                                _uf = _dr.get('UF', '')
+                                _base_fn = f"derrota_{_origem}_{_uf}_{_destino}"
+                                
+                                _col_exp1, _col_exp2, _col_exp3, _col_exp4 = st.columns(4)
+                                with _col_exp1:
+                                    st.download_button("🌐 HTML", data=_gmapa.encode('utf-8'), file_name=f"{_base_fn}.html", mime="text/html", use_container_width=True)
+                                with _col_exp2:
+                                    _geojson = _df_para_geojson(_dr.to_frame().T if hasattr(_dr, 'to_frame') else pd.DataFrame([_dr]))
+                                    st.download_button("🌐 GeoJSON", data=_geojson.encode('utf-8'), file_name=f"{_base_fn}.geojson", mime="application/geo+json", use_container_width=True)
+                                with _col_exp3:
+                                    _kml = _df_para_kml(_dr.to_frame().T if hasattr(_dr, 'to_frame') else pd.DataFrame([_dr]))
+                                    st.download_button("🗺️ KML", data=_kml.encode('utf-8'), file_name=f"{_base_fn}.kml", mime="application/vnd.google-earth.kml+xml", use_container_width=True)
+                                with _col_exp4:
+                                    _gpx = _df_para_gpx(_dr.to_frame().T if hasattr(_dr, 'to_frame') else pd.DataFrame([_dr]))
+                                    st.download_button("📍 GPX", data=_gpx.encode('utf-8'), file_name=f"{_base_fn}.gpx", mime="application/gpx+xml", use_container_width=True)
                     else:
                         st.info("Dados de coordenadas insuficientes para renderizar o mapa.")
                 else:
@@ -54530,6 +54770,29 @@ if _secao == _SECOES[20]:   # tab_defeats
                     if _gmapa:
                         components.html(_gmapa, height=560, scrolling=False)
                         st.caption("🔵 Linha cheia = Aplicação · 🔴 Tracejado vermelho = Referência · 🟢 Tracejado verde = Melhor candidata | 🔵 Origem · 🔴 Destino Ref · 🔵 Destino App")
+                        
+                        # Botões de exportação individual
+                        if _sel_diff != "(todas)":
+                            _ix = int(_sel_diff.split(".")[0]) - 1
+                            if 0 <= _ix < len(_derrotas):
+                                _dr = _derrotas.iloc[_ix]
+                                _origem = _dr.get('Origem', '').replace(' ', '_')
+                                _destino = _dr.get('Destino', '').replace(' ', '_')
+                                _uf = _dr.get('UF', '')
+                                _base_fn = f"diff_{_origem}_{_uf}_{_destino}"
+                                
+                                _col_exp1, _col_exp2, _col_exp3, _col_exp4 = st.columns(4)
+                                with _col_exp1:
+                                    st.download_button("🌐 HTML", data=_gmapa.encode('utf-8'), file_name=f"{_base_fn}.html", mime="text/html", use_container_width=True)
+                                with _col_exp2:
+                                    _geojson = _df_para_geojson(_dr.to_frame().T if hasattr(_dr, 'to_frame') else pd.DataFrame([_dr]))
+                                    st.download_button("🌐 GeoJSON", data=_geojson.encode('utf-8'), file_name=f"{_base_fn}.geojson", mime="application/geo+json", use_container_width=True)
+                                with _col_exp3:
+                                    _kml = _df_para_kml(_dr.to_frame().T if hasattr(_dr, 'to_frame') else pd.DataFrame([_dr]))
+                                    st.download_button("🗺️ KML", data=_kml.encode('utf-8'), file_name=f"{_base_fn}.kml", mime="application/vnd.google-earth.kml+xml", use_container_width=True)
+                                with _col_exp4:
+                                    _gpx = _df_para_gpx(_dr.to_frame().T if hasattr(_dr, 'to_frame') else pd.DataFrame([_dr]))
+                                    st.download_button("📍 GPX", data=_gpx.encode('utf-8'), file_name=f"{_base_fn}.gpx", mime="application/gpx+xml", use_container_width=True)
                     else:
                         st.info("Dados de coordenadas insuficientes para renderizar o diff visual.")
                     
