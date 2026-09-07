@@ -15,6 +15,13 @@ secrets.toml
 cache_*/
 logs_*/
 !cache_osm/                 # (registro: nada aqui por ora)
+inteligencia_geoespacial/caches/
+
+# ---- Estado interno da ferramenta de automação ----
+.superpowers/
+
+# ---- Dados geoespaciais pesados baixados (IBGE BC250/BC100, etc.) ----
+data/
 
 # ---- Python ----
 __pycache__/

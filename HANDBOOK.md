@@ -3,7 +3,7 @@
 
 > **Versão:** 4.36 (Build 436)  
 > **Data:** 2026-09-06  
-> **Status:** ✅ Produção — Gates: 192 OK / 0 FALHAS | `decidir` 38/38 | `relatorio` 203 linhas  
+> **Status:** ✅ Produção — Gates: 192 OK / 0 FALHAS | `decidir` 38/38 | `relatorio` 203 linhas | enriquecimento: -41% derrotas residuais  
 > **Branch:** `main` → `origin/main` (up to date)  
 > **Commit:** `c75eb1c` — feat(aquaviaria 436)
 
@@ -363,7 +363,16 @@ grep "RESGATE-FERRIES\|FLUVIAL-ROTA\|FLUVIAL-SWEEP" logs/*.log
 ## 11. ROADMAP / PRÓXIMOS PASSOS
 
 ### Imediato (Infraestrutura)
-- [ ] **Download BC250/BC100 completos** (1.6GB+ shapefiles IBGE)
+- [x] **Download BC250/BC100 completos** (1.6GB+; baixado em `data/brasil/ibge/` — BC250 v2025 71 camadas + BC100 AC/AL/ES/GO-DF/RS/SE/BCAL/RR em SHP e GPKG)
+- [x] **Camadas derivadas locais (IBGE)** — `construir_bases_locais_ibge.py` gera 12 Parquet em `data/brasil/ibge/derivadas/` (pontes 14.812, travessias/balsas 4.046, hidrovias 179, atracadouros 172, portos 171, eclusas 22, sinalização 388, rodovias 287.136, ferrovias 889, massas d'água 64.850, drenagem 2.181.288, municípios 5.571). Consumidas por `inteligencia_geoespacial/bases_locais.py` (`municipio_do_ponto`, `mais_proximos`) sem GDAL/geopandas.
+- [x] **Seção na UI: "🗺️ Geoespacial IBGE"** (grupo "🧠 Inteligência", seção 22) — consulta local por município/coordenadas, mostra o município IBGE do ponto e as feições próximas (pontes, balsas, eclusas, hidrovias, portos, rede viária) com raio/filtro/mapa.
+- [x] **Validator cruzado + Enriquecimento de rotas** — `inteligencia_geoespacial/validators.py` (`CoordinateValidator`: `municipio`, `rio_mais_proximo` com drenagem NOMEADA, `perfil`, `confianca` 0-100 com `fontes_concordam` e `validar_trecho`) e `enrichment_engine.py` (`enriquecer_ponto`/`enriquecer_rota` com `rios_detectados`, `pontes_encontradas`, `balsas_confirmadas`, `infraestrutura_aquaviaria`, `confianca_geral`, `motivo_decisao`). 100% local, sem rede/GDAL. Testes: `test_validators.py` + `test_enrichment.py` (16 casos novos).
+- [x] **XAI Formatter (Task 7)** — `inteligencia_geoespacial/xai_formatter.py` (`formatar_confianca`, `formatar_ponto`, `formatar_enriquecimento` em Markdown + `formatar_enriquecimento_html`) e integração na SEÇÃO 22: botão "⚡ Gerar enriquecimento auditável (IBGE local)" renderiza o painel XAI no app. Testes: `test_xai.py` (6 casos; total do pacote 46/47, única falha é a pré-existente `test_cache_read`).
+- [x] **Provider unificado (Task 4)** — `providers/ibge_derivadas_provider.py` (`IBGEDerivadasProvider`: `fetch(lat, lon, camada, raio_km, limite, filtros)` sobre `bases_locais`, `validate`, `transform` para o schema padrão, `to_geojson`, helper `wkb_para_geojson`; camada especial `municipios` = point-in-polygon) + `providers/factory.py` (`ProviderFactory.criar("ibge_der_*")` com resolução automática e `registrar_tipo`). Testes: `test_provider_ibge_derivadas.py` (13 casos).
+- [x] **Enriquecimento ligado à rota real (Task 6 no app)** — SEÇÃO 18 "Rotas com Balsa": card "🧠 Enriquecimento geoespacial da rota" que lê as coordenadas reais de `ultima_rota_individual` (ou da 1ª linha do estudo), roda `enriquecer_rota(raio)` em demanda (sem atrasar o roteamento) e renderiza o XAI completo.
+- [x] **Gates de zero regressão (Task 8)** — `_testes_motor_rotas.py` com marcadores de fase (PHASE 6): `validar` permanece **192 OK / 0 FALHAS**, `decidir` permanece **100% das propriedades da missão**, `relatorio` regera `_RELATORIO_ANTES_DEPOIS.md` (203 linhas). Nenhuma das tasks de enriquecimento alterou estes números.
+- [x] **Avaliação ANTES×DEPOIS (Task 9)** — `inteligencia_geoespacial/evaluation.py` (CLI `py -X utf8 -m inteligencia_geoespacial.evaluation --max 0 --write on`) mede o impacto nas 163 derrotas do baseline: **96 residuais (-41% derrotas explicáveis por balsa/fluvial/infra), 72 balsas confirmadas (baseline 21; alvo 35+), 100% de explicação auditável (alvo ≥95%)**. Resultado persistido em `docs/ANTES_DEPOIS_ENRIQUECIMENTO.md`.
+- [x] **Documentação de arquitetura e integração (Task 10)** — `docs/ARQUITETURA_INTELIGENCIA.md` (diagrama, módulos, cache/TTL, cotas, benchmarks, troubleshooting) e `docs/GUIA_INTEGRACAO_NOVOS_DADOS.md` (passo-a-passo para novas fontes).
 - [ ] **Self-hosted Valhalla** (Docker + Brazil PBF 4GB+)
 - [ ] **Brazil OSM PBF + osmium** (hidrografia completa OSM)
 - [ ] **FOSSGIS self-hosted** (remover limite 300/sessão)

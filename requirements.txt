@@ -41,6 +41,7 @@ urllib3>=2.5.0
 # ------------------------------------------------------------------------------------------
 geographiclib>=2.0         # import direto (Karney/WGS-84 — a linha reta rigorosa)
 geopy>=2.4.1               # import direto (geopy.distance.geodesic)
+pyshp>=2.3.1               # import só no build das bases locais (construir_bases_locais_ibge.py)
 
 # ------------------------------------------------------------------------------------------
 # MATCHING E NORMALIZAÇÃO

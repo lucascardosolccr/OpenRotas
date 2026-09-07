@@ -70,6 +70,19 @@ try:
 except ImportError:
     GEOPY_DISPONIVEL = False
 
+# Camadas geoespaciais derivadas do IBGE (BC250/BC100) — consulta local via Parquet.
+# Import leve: bases_locais só importa stdlib no topo (pandas/numpy são lazy dentro das funções).
+try:
+    from inteligencia_geoespacial import bases_locais as _bases_locais_ibge
+    from inteligencia_geoespacial import enrichment_engine as _geo_enricher
+    from inteligencia_geoespacial import xai_formatter as _geo_xai
+    _BASES_LOCAIS_IBGE = True
+except Exception:
+    _bases_locais_ibge = None
+    _geo_enricher = None
+    _geo_xai = None
+    _BASES_LOCAIS_IBGE = False
+
 # ==============================================================================
 # CONFIGURAÇÃO DE LOGS E AUDITORIA CRÍTICA
 # ==============================================================================
@@ -39724,6 +39737,7 @@ _SECOES = [
     "🛣️ Rotas sem Balsa",   # [LAND-ROUTES - 439ª] rotas puramente rodoviárias (índice 19)
     "❌ Derrotas",   # [DEFEATS-TAB - 440ª] central de derrotas e correções (índice 20)
     "🔍 Auditoria Completa",   # [AUDIT-TAB - 441ª] trilha completa de auditoria (índice 21)
+    "🗺️ Geoespacial IBGE",   # [IBGE-GEO - 442ª] camadas derivadas oficiais BC250/BC100 via bases_locais (índice 22)
 ]
 # [UI-LAZY - 142ª geração] TRAVA DURANTE O PROCESSAMENTO. Efeito colateral REAL da renderização
 # preguiçosa: com st.tabs, o corpo de todas as abas executava sempre, então o processamento em chunks
@@ -40374,7 +40388,7 @@ _GRUPOS_NAV = {
     "📊 Analisar":  [4, 5, 6, 14],  # Painel · Calculadora · Classificação · Análise Geográfica
     "📚 Aprender":  [8, 9, 13],    # Enciclopédia · Manual · Sobre o Desenvolvedor
     "⚙️ Sistema":   [10, 11, 12],  # Monitor APIs · Auditoria · Satisfação
-    "🧠 Inteligência": [15, 16, 17, 18, 19, 20, 21],  # Centro Inteligência · Fontes · Hidrografia · Rotas Balsa · Rotas Terra · Derrotas · Auditoria
+    "🧠 Inteligência": [15, 16, 17, 18, 19, 20, 21, 22],  # Centro Inteligência · Fontes · Hidrografia · Rotas Balsa · Rotas Terra · Derrotas · Auditoria · Geoespacial IBGE
 }
 assert sorted(_i for _v in _GRUPOS_NAV.values() for _i in _v) == list(range(len(_SECOES))), \
     "toda seção precisa estar em exatamente um grupo"
@@ -54798,6 +54812,175 @@ if _secao == _SECOES[17]:   # tab_hidrografia
 
 
 # ==============================================================================
+# SEÇÃO 22 — GEOESPACIAL IBGE  [IBGE-GEO - 442ª]
+# ==============================================================================
+# Camadas derivadas oficiais do IBGE (BC250 1:250.000 + BC100 1:100.000 por UF)
+# consultadas LOCALMENTE (Parquet em data/brasil/ibge/derivadas/ via
+# inteligencia_geoespacial/bases_locais) — pontes, travessias/balsas, eclusas,
+# hidrovias, atracadouros, portos, sinalização, rede viária e municípios.
+# ==============================================================================
+if _secao == _SECOES[22]:   # tab_geo_ibge
+    st.header("🗺️ Geoespacial IBGE")
+    st.caption("Infraestrutura de transporte e hidrografia oficiais IBGE (BC250 em todo o Brasil + BC100 em 8 UFs) — pontes, travessias/balsas, eclusas, hidrovias, portos, sinalização, rede viária e limites municipais, sem depender de GDAL/geopandas.")
+
+    if not _BASES_LOCAIS_IBGE:
+        st.warning("Camadas derivadas IBGE indisponíveis nesta execução. As demais seções seguem normais.")
+    else:
+        try:
+            _geo_camadas = _bases_locais_ibge.camadas_disponiveis()
+            if not _geo_camadas:
+                st.info("Nenhuma camada derivada em data/brasil/ibge/derivadas/. Gere com `py -X utf8 construir_bases_locais_ibge.py`.")
+            else:
+                # ---- local de consulta -------------------------------------------------
+                st.subheader("📍 Local de consulta")
+                _c1, _c2 = st.columns([3, 1])
+                with _c1:
+                    _geo_local = st.text_input("Localidade (cidade ou endereço)", value="Manaus, AM", key="geo_ibge_local")
+                with _c2:
+                    _geo_btn = st.button("🌐 Geocodificar", key="geo_ibge_geocod")
+                if _geo_btn:
+                    with st.spinner("Geocodificando (multi-motor)..."):
+                        try:
+                            _geo_res9 = obter_coordenadas_e_endereco_oficial(_geo_local)
+                            _geo_lat_ok = float(_geo_res9[0])
+                            _geo_lon_ok = float(_geo_res9[1])
+                            if _geo_lat_ok and _geo_lon_ok:
+                                st.session_state["geo_ibge_lat"] = _geo_lat_ok
+                                st.session_state["geo_ibge_lon"] = _geo_lon_ok
+                                st.success("Coordenadas: %.5f, %.5f — %s" % (_geo_lat_ok, _geo_lon_ok, (_geo_res9[2] or _geo_local)))
+                            else:
+                                st.warning("Geocodificação não retornou coordenadas válidas.")
+                        except Exception:
+                            logger.error("[IBGE-GEO] Falha ao geocodificar localidade.", exc_info=True)
+                            st.warning("Falha na geocodificação. Use as coordenadas manuais abaixo.")
+
+                _r1, _r2 = st.columns(2)
+                with _r1:
+                    _geo_lat = st.number_input("Latitude", value=float(st.session_state.get("geo_ibge_lat", -3.1190)),
+                                               format="%.6f", key="geo_ibge_lat_inp")
+                with _r2:
+                    _geo_lon = st.number_input("Longitude", value=float(st.session_state.get("geo_ibge_lon", -60.0217)),
+                                               format="%.6f", key="geo_ibge_lon_inp")
+
+                _geo_mun = _bases_locais_ibge.municipio_do_ponto(float(_geo_lat), float(_geo_lon))
+                if _geo_mun:
+                    st.metric("Município IBGE (point-in-polygon)",
+                              "%s (%s)" % (_geo_mun["nome"], _geo_mun["geocodigo"]),
+                              "IBGE BC250 v2025 · EPSG:4326")
+                else:
+                    st.info("Ponto fora das malhas municipais (oceano, fronteira ou país vizinho).")
+
+                st.caption("Alternativa: escolha um município (usa um ponto do polígono IBGE como consulta).")
+                try:
+                    _geo_df_mun = _bases_locais_ibge._ler("municipios", colunas=["nome", "geocodigo", "lon", "lat"])
+                except Exception:
+                    _geo_df_mun = None
+                if _geo_df_mun is not None and not _geo_df_mun.empty:
+                    _geo_mun_opcoes = [(r.nome + "  ·  " + str(r.geocodigo), r.lat, r.lon)
+                                       for r in _geo_df_mun.itertuples()]
+                    _geo_pick = st.selectbox("Ou escolha por município:", _geo_mun_opcoes, index=None,
+                                             format_func=lambda _t: str(_t[0]),
+                                             placeholder="Digite o nome do município...", key="geo_ibge_mun_pick")
+                    if _geo_pick:
+                        _geo_lat, _geo_lon = float(_geo_pick[1]), float(_geo_pick[2])
+                        st.caption("Usando ponto do polígono de %s (%.4f, %.4f)." % (_geo_pick[0], _geo_lat, _geo_lon))
+
+                st.divider()
+
+                # ---- feições próximas ---------------------------------------------------
+                st.subheader("🔎 Feições próximas (raio)")
+                _GEO_FILTROS_IBGE = {
+                    "travessias": ("tipotraves", "Tipo de travessia"),
+                    "hidrovias": ("regime", "Regime"),
+                    "massas_dagua": ("tipomassad", "Tipo de massa d'água"),
+                    "sinalizacao": ("tiposinal", "Tipo de sinalização"),
+                    "ferrovias": ("bitola", "Bitola"),
+                    "rodovias": ("revestimen", "Revestimento"),
+                }
+                _g1, _g2, _g3, _g4 = st.columns([2, 1, 1, 1])
+                with _g1:
+                    _geo_camada = st.selectbox("Camada", _geo_camadas, key="geo_ibge_camada")
+                with _g2:
+                    _geo_raio = st.number_input("Raio (km)", min_value=1.0, max_value=2000.0,
+                                                value=60.0, step=5.0, key="geo_ibge_raio")
+                with _g3:
+                    _geo_limite = st.number_input("Limite", min_value=1, max_value=100,
+                                                  value=15, step=1, key="geo_ibge_limite")
+                with _g4:
+                    st.markdown("&nbsp;")
+                    _geo_btn_busca = st.button("🔍 Buscar", key="geo_ibge_busca", type="primary")
+
+                _geo_col_filtro = _GEO_FILTROS_IBGE.get(_geo_camada)
+                _geo_filtros = None
+                if _geo_col_filtro:
+                    _geo_fk = _geo_col_filtro[0]
+                    try:
+                        _geo_vals = sorted(str(x) for x in _bases_locais_ibge._ler(_geo_camada, colunas=[_geo_fk])
+                                           [_geo_fk].dropna().astype(str).unique())
+                    except Exception:
+                        _geo_vals = []
+                    _geo_fpick = st.selectbox("Filtro — %s" % _geo_col_filtro[1], ["Todos"] + _geo_vals,
+                                              key="geo_ibge_filtro")
+                    if _geo_fpick != "Todos":
+                        _geo_filtros = {_geo_fk: _geo_fpick}
+
+                if _geo_btn_busca:
+                    with st.spinner("Buscando %s em até %.0f km..." % (_geo_camada, float(_geo_raio))):
+                        try:
+                            _geo_res = _bases_locais_ibge.mais_proximos(
+                                _geo_camada, float(_geo_lon), float(_geo_lat),
+                                raio_km=float(_geo_raio), limite=int(_geo_limite), filtros=_geo_filtros)
+                            st.session_state["geo_ibge_resultado"] = _geo_res
+                        except Exception:
+                            logger.error("[IBGE-GEO] Falha na busca de feições.", exc_info=True)
+                            st.warning("Falha na busca. Ajuste o raio/camada e tente novamente.")
+
+                _geo_res = st.session_state.get("geo_ibge_resultado")
+                if _geo_res is not None:
+                    if _geo_res:
+                        _rr = [dict(x) for x in _geo_res]
+                        for _it in _rr:
+                            _it["distancia_km"] = round(float(_it["distancia_km"]), 2)
+                            _geo_pontos = _bases_locais_ibge._deco_wkb(_it["geometry_wkb"])
+                            if isinstance(_geo_pontos, tuple):
+                                _it["geometry_wkb"] = "ponto"
+                            elif _geo_pontos and isinstance(_geo_pontos[0], list):
+                                _it["geometry_wkb"] = "polígono (%d anéis)" % len(_geo_pontos)
+                            else:
+                                _it["geometry_wkb"] = "linha (%d pontos)" % len(_geo_pontos)
+                        _mm1, _mm2 = st.columns(2)
+                        _mm1.metric("Feições encontradas", len(_rr))
+                        _mm2.metric("Mais próxima (km)", min(_it["distancia_km"] for _it in _rr))
+                        st.dataframe(_rr, use_container_width=True, hide_index=True)
+                        st.map(pd.DataFrame([{"lat": _it["lat"], "lon": _it["lon"]} for _it in _rr]))
+                        st.caption("Origem: IBGE BC250 v2025 e BC100 (AC/AL/ES/GO/RS/SE/RR). Marcador ≈ ponto representativo da feição.")
+                    else:
+                        st.info("Nenhuma feição dentro do raio. Aumente o raio, troque a camada ou o filtro.")
+
+                st.divider()
+                st.subheader("🧠 XAI — enriquecimento do ponto")
+                if _geo_enricher is not None and _geo_xai is not None:
+                    if st.button("⚡ Gerar enriquecimento auditável (IBGE local)", key="geo_ibge_xai_btn"):
+                        with st.spinner("Enriquecendo ponto (município + rios + balsas + pontes)..."):
+                            try:
+                                _geo_enr = _geo_enricher.enriquecer_ponto(
+                                    float(_geo_lat), float(_geo_lon),
+                                    raio_km=float(_geo_raio), limite=int(_geo_limite))
+                                st.session_state["geo_ibge_xai"] = _geo_enr
+                            except Exception:
+                                logger.error("[IBGE-GEO-XAI] Falha no enriquecimento do ponto.", exc_info=True)
+                                st.warning("Falha no enriquecimento. Ajuste o ponto/raio e tente novamente.")
+                    _geo_enr = st.session_state.get("geo_ibge_xai")
+                    if _geo_enr:
+                        st.markdown(_geo_xai.formatar_ponto(_geo_enr))
+                else:
+                    st.caption("Enriquecimento XAI indisponível nesta execução.")
+        except Exception:
+            logger.error("[IBGE-GEO] Falha ao renderizar a central geoespacial (isolada).", exc_info=True)
+            st.warning("Não foi possível montar a central geoespacial. As demais seções seguem normais.")
+
+
+# ==============================================================================
 # SEÇÃO 18 — ROTAS COM BALSA  [FERRY-ROUTES - 438ª]
 # ==============================================================================
 # Central de rotas que dependem de travessias aquaviárias (balsas/ferries).
@@ -54825,7 +55008,54 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
         except Exception:
             logger.error("[FERRY-ROUTES] Falha ao renderizar rotas com balsa (isolada).", exc_info=True)
             st.warning("Não foi possível montar a central de rotas com balsa. As demais seções seguem normais.")
-    
+
+        st.divider()
+        st.subheader("🧠 Enriquecimento geoespacial da rota (IBGE local)")
+        if _geo_enricher is not None and _geo_xai is not None:
+            try:
+                _geo_rot = st.session_state.get('ultima_rota_individual')
+                _geo_latO = _geo_lonO = _geo_latD = _geo_lonD = _geo_rotulo = None
+                if _geo_rot and _geo_rot.get('lat_origem'):
+                    _geo_latO, _geo_lonO = float(_geo_rot['lat_origem']), float(_geo_rot['lon_origem'])
+                    _geo_latD, _geo_lonD = float(_geo_rot['lat_destino']), float(_geo_rot['lon_destino'])
+                    _geo_rotulo = "%s → %s" % (_geo_rot.get('origem'), _geo_rot.get('destino'))
+                else:
+                    _geo_pd = st.session_state.get('df_processado')
+                    if _geo_pd is not None and not _geo_pd.empty and 'Lat Origem' in _geo_pd.columns:
+                        _geo_c0 = _geo_pd.iloc[0]
+                        _geo_latO, _geo_lonO = float(_geo_c0['Lat Origem']), float(_geo_c0['Lon Origem'])
+                        _geo_latD, _geo_lonD = float(_geo_c0['Lat Destino']), float(_geo_c0['Lon Destino'])
+                        _geo_rotulo = "Linha 1 do estudo"
+
+                if _geo_latO is None:
+                    st.info("Rode uma rota (aba 'Locais de Aplicação') para enriquecê-la (município + rios + balsas + pontes + portos).")
+                else:
+                    _r1x, _r2x = st.columns([1, 2])
+                    with _r1x:
+                        _geo_raio_x = st.number_input("Raio (km)", min_value=10.0, max_value=500.0,
+                                                      value=50.0, step=10.0, key="ferry_geo_raio")
+                    with _r2x:
+                        st.markdown("&nbsp;")
+                        _geo_btn_x = st.button("⚡ Enriquecer rota (IBGE local)", key="ferry_geo_xai_btn")
+                    if _geo_btn_x:
+                        with st.spinner("Enriquecendo trecho %s ..." % _geo_rotulo):
+                            try:
+                                _xai_rot = _geo_enricher.enriquecer_rota(
+                                    origem=(_geo_latO, _geo_lonO), destino=(_geo_latD, _geo_lonD),
+                                    raio_km=float(_geo_raio_x))
+                                st.session_state['geo_rota_xai'] = _xai_rot
+                            except Exception:
+                                logger.error("[FERRY-GEO-XAI] Falha no enriquecimento da rota.", exc_info=True)
+                                st.warning("Falha no enriquecimento. Tente novamente.")
+                    _xai_rot = st.session_state.get('geo_rota_xai')
+                    if _xai_rot:
+                        st.markdown(_geo_xai.formatar_enriquecimento(_xai_rot))
+            except Exception:
+                logger.error("[FERRY-GEO-XAI] Falha ao renderizar enriquecimento (isolada).", exc_info=True)
+                st.warning("Não foi possível exibir o enriquecimento geoespacial. As demais seções seguem normais.")
+        else:
+            st.caption("Enriquecimento geoespacial indisponível nesta execução.")
+
     with _aba_ferry[1]:
         st.subheader("🗺️ Mapa das Travessias Aquaviárias")
         st.caption("Visualização geográfica das travessias por balsa: 🔵 origem · 🔴 destino · 🔵 linha tracejada = travessia aquaviária")

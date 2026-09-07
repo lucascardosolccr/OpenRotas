@@ -222,7 +222,8 @@ streamlit run streamlit_app.py
 |------------|------|--------|
 | **Infraestrutura** | Brazil OSM PBF + osmium/GDAL | ⏳ Windows env sem GDAL |
 | **Infraestrutura** | Self-hosted Valhalla multi-modal | ⏳ Docker + Brazil PBF |
-| **Dados** | BC250/BC100 Shapefiles completos | ⚠️ Download 1.6GB+ |
+| **Dados** | BC250/BC100 Shapefiles completos | ✅ `data/brasil/ibge/` (1.6GB, 71 camadas BC250 + BC100 por UF) |
+| **Dados** | Camadas derivadas IBGE (Parquet local) | ✅ 12 camadas em `data/brasil/ibge/derivadas/` + `bases_locais.py` (pontes, balsas, hidrovias, eclusas, rodovias, drenagem, municípios) |
 | **Infraestrutura** | Self-hosted Valhalla multi-modal | ⏳ Docker + Brazil PBF |
 | **Infraestrutura** | FOSSGIS budget increase | ⚠️ 300/sessão limitante |
 | **Dados** | PRF/Defesa Civil/CEMADEN APIs | 🔴 Pendente |

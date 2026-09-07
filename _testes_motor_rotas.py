@@ -6,6 +6,12 @@ Uso:
     py _testes_motor_rotas.py report    # relatório offline a partir do cache
     py _testes_motor_rotas.py decidir   # roda a decisao atual (e a nova politica) sobre o cache
 
+FASES (gates de regressão — PHASE 6, plano enriquecer-motor):
+    Phase 1-5: tasks 1-7 (providers/validators/enrichment/XAI) — sem tocar nestas gates.
+    Phase 6   : task 8 — `validar` deve permanecer 192 OK / 0 FALHAS; `decidir` 100% das
+                propriedades da missão; `relatorio` deve regerar _RELATORIO_ANTES_DEPOIS.md
+                com baseline 1452 intacto. Qualquer regressão aqui bloqueia a fase seguinte.
+
 Usa a MESMA base de municípios da aplicação (streamlit_app importável em bare mode)
 e a MESMA métrica geodésica IUGG, para que as retas coincidam com o app.
 """
@@ -1597,6 +1603,8 @@ def validar():
 
 
 if __name__ == "__main__":
+    # PHASE 6 / TASK 8: gatilho das gates de zero regressão (validar/decidir/relatorio).
+    # O enriquecimento geoespacial (tasks 4-7) é ADITIVO e não altera estes numeros.
     cmd = sys.argv[1] if len(sys.argv) > 1 else "report"
     if cmd == "collect":
         collect()

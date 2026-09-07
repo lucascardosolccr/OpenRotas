@@ -1,0 +1,194 @@
+"""
+XAI Formatter - explicações auditáveis do enriquecimento geoespacial IBGE.
+
+Funções PURAS que convertem a saída de `enrichment_engine` (enriquecer_ponto /
+enriquecer_rota) e de `validators` (confianca) em Markdown/HTML legíveis para o
+painel de auditoria — sem nenhum efeito colateral (testável com fixtures).
+"""
+
+from __future__ import annotations
+
+_BADGE_NIVEL = {
+    "alta": "🟢",
+    "media": "🟡",
+    "baixa": "🔴",
+}
+
+
+def formatar_confianca(confianca: dict) -> str:
+    """Uma linha-resumo: pontuação, nível e fontes que concordam."""
+    if not confianca:
+        return "_confiança indisponível_"
+    pts = confianca.get("pontuacao")
+    nivel = confianca.get("nivel", "baixa")
+    badge = _BADGE_NIVEL.get(nivel, "⚪")
+    fontes = confianca.get("fontes_concordam") or []
+    linha = "**Confiança:** %s **%d/100** (%s)" % (badge, int(pts or 0), nivel.upper())
+    if fontes:
+        linha += " — fontes: %s" % "; ".join(fontes)
+    return linha
+
+
+def _mun_rotulo(municipio: dict | None) -> str:
+    if not municipio:
+        return "_fora das malhas municipais IBGE_"
+    nome = municipio.get("nome")
+    geo = municipio.get("geocodigo")
+    return "%s (%s)" % (nome, geo) if geo else str(nome)
+
+
+def formatar_ponto(enriquecido: dict) -> str:
+    """Painel Markdown para `enrichment_engine.enriquecer_ponto(...)`."""
+    conf = (enriquecido or {}).get("confianca") or {}
+    linhas = []
+    linhas.append("#### 🧠 XAI — enriquecimento do ponto")
+    linhas.append(formatar_confianca(conf))
+    linhas.append("")
+
+    mun = (enriquecido or {}).get("municipio")
+    linhas.append("**📍 Município IBGE:** %s" % _mun_rotulo(mun))
+
+    rio = (enriquecido or {}).get("rio_mais_proximo")
+    if rio:
+        nav = rio.get("navegavel")
+        linhas.append("**🌊 Rio mais próximo:** %s — %s km%s" % (
+            rio.get("nome"), rio.get("distancia_km"),
+            (" (navegável: %s)" % nav) if nav else ""))
+
+    balsas = (enriquecido or {}).get("balsas_confirmadas") or []
+    if balsas:
+        linhas.append("**🛶 Balsas no entorno:** %s" % "; ".join(
+            "`%s` a %s km" % (b.get("nome"), b.get("distancia_km")) for b in balsas[:5]))
+
+    pontes = (enriquecido or {}).get("pontes_encontradas") or []
+    if pontes:
+        linhas.append("**🌉 Pontes próximas (top):** %s" % "; ".join(
+            "`%s` a %s km" % (p.get("nome"), p.get("distancia_km")) for p in pontes[:5]))
+
+    fonte = (enriquecido or {}).get("fonte")
+    if fonte:
+        linhas.append("")
+        linhas.append("_Fonte: %s_" % fonte)
+    return "\n".join(linhas)
+
+
+def formatar_enriquecimento(enriquecido: dict) -> str:
+    """Painel Markdown completo para `enrichment_engine.enriquecer_rota(...)`."""
+    if not enriquecido:
+        return "_enriquecimento indisponível_"
+
+    linhas = []
+    linhas.append("#### 🧠 XAI — auditoria de trecho (IBGE local)")
+
+    conf = enriquecido.get("confianca_geral")
+    nivel = enriquecido.get("confianca_nivel") or "—"
+    linhas.append("**⚖️ Confiança geral do trecho:** %s **%s/100** (%s)" % (
+        _BADGE_NIVEL.get(nivel, "⚪") if nivel != "—" else "⚪", conf, nivel))
+    fontes = enriquecido.get("fontes_concordam") or []
+    if fontes:
+        linhas.append("**🔗 Fontes que concordam:** %s" % "; ".join(fontes))
+    linhas.append("")
+
+    orig = enriquecido.get("origem") or {}
+    dest = enriquecido.get("destino") or {}
+    linhas.append("**📍 Origem:** %s" % _mun_rotulo(orig.get("municipio")))
+    linhas.append(formatar_confianca(orig.get("confianca")))
+    linhas.append("**📍 Destino:** %s" % _mun_rotulo(dest.get("municipio")))
+    linhas.append(formatar_confianca(dest.get("confianca")))
+    linhas.append("")
+
+    rios = enriquecido.get("rios_detectados") or []
+    if rios:
+        linhas.append("**🌊 Rios detectados:**")
+        for r in rios:
+            nav = r.get("navegavel")
+            linhas.append("- `%s` a %s km (%s)%s" % (
+                r.get("nome"), r.get("distancia_km"), r.get("referencia"),
+                (" — nav.: %s" % nav) if nav else ""))
+        linhas.append("")
+
+    balsas = enriquecido.get("balsas_confirmadas") or []
+    if balsas:
+        linhas.append("**🛶 Balsas confirmadas:**")
+        for b in balsas:
+            linhas.append("- `%s` a %s km (%s)" % (
+                b.get("nome"), b.get("distancia_km"), b.get("referencia")))
+        linhas.append("")
+
+    pontes = enriquecido.get("pontes_encontradas") or []
+    if pontes:
+        linhas.append("**🌉 Pontes encontradas:**")
+        for p in pontes[:8]:
+            nome = p.get("nome")
+            do_ = " — %s" % p.get("atributo") if p.get("atributo") else ""
+            linhas.append("- `%s` a %s km (%s)%s" % (
+                nome, p.get("distancia_km"), p.get("referencia"), do_))
+        linhas.append("")
+
+    infra = enriquecido.get("infraestrutura_aquaviaria") or {}
+    if infra:
+        linhas.append("**⚓ Infraestrutura aquaviária:**")
+        rotulos = {
+            "atracadouros_terminal": "Atracadouros/terminais",
+            "complexos_portuarios": "Complexos portuários",
+            "eclusas": "Eclusas",
+        }
+        for camada, itens in infra.items():
+            if not itens:
+                continue
+            resumo = "; ".join(
+                "`%s` a %s km (%s)" % (i.get("nome"), i.get("distancia_km"), i.get("referencia"))
+                for i in itens[:4])
+            linha = "- **%s:** %s" % (rotulos.get(camada, camada), resumo)
+            if len(itens) > 4:
+                linha += " (+%d)" % (len(itens) - 4)
+            linhas.append(linha)
+        linhas.append("")
+
+    motivo = enriquecido.get("motivo_decisao")
+    if motivo:
+        linhas.append("**📜 Motivo da decisão:**")
+        linhas.append("> %s" % motivo)
+        linhas.append("")
+
+    fonte = enriquecido.get("fonte")
+    if fonte:
+        linhas.append("_Fonte: %s_ (raio %s km)" % (fonte, enriquecido.get("raio_km", "—")))
+    return "\n".join(linhas)
+
+
+def formatar_enriquecimento_html(enriquecido: dict) -> str:
+    """Versão HTML (inline-safe) do painel — para relatórios/exportação."""
+    parts = []
+    _add = parts.append
+    _add("<div style='font-family:system-ui;font-size:14px;line-height:1.5'>")
+    _add("<h4>🧠 XAI — auditoria de trecho (IBGE local)</h4>")
+
+    conf = enriquecido.get("confianca_geral") or 0
+    _add("<p><b>Confiança geral:</b> <span style='font-size:16px'>%d/100</span></p>" % conf)
+    fontes = enriquecido.get("fontes_concordam") or []
+    if fontes:
+        _add("<p><b>Fontes que concordam:</b> %s</p>" % "; ".join(fontes))
+
+    orig = (enriquecido.get("origem") or {}).get("municipio")
+    dest = (enriquecido.get("destino") or {}).get("municipio")
+    _add("<p><b>Origem:</b> %s &nbsp;|&nbsp; <b>Destino:</b> %s</p>" % (
+        _mun_rotulo(orig), _mun_rotulo(dest)))
+
+    rios = enriquecido.get("rios_detectados") or []
+    if rios:
+        _add("<p><b>Rios:</b> %s</p>" % "; ".join(
+            "`%s` %skm (%s)" % (r.get("nome"), r.get("distancia_km"), r.get("referencia"))
+            for r in rios[:5]))
+
+    balsas = enriquecido.get("balsas_confirmadas") or []
+    if balsas:
+        _add("<p><b>Balsas:</b> %s</p>" % "; ".join(
+            "`%s` %skm (%s)" % (b.get("nome"), b.get("distancia_km"), b.get("referencia"))
+            for b in balsas[:5]))
+
+    motivo = enriquecido.get("motivo_decisao")
+    if motivo:
+        _add("<p style='border-left:3px solid #aaa;padding-left:8px'>%s</p>" % motivo)
+    _add("</div>")
+    return "".join(parts)
