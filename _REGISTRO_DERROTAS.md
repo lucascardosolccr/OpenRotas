@@ -888,3 +888,17 @@ Nova camada de inteligência hidrológica no motor fluvial:
 4. **RAIO ADAPTATIVO**: \ase_km=100\, max=500km. Alta densidade (>2 rios/10km) → 50km; média → 100km; baixa → 150km; muito baixa → 200-500km.
 
 Infraestrutura pronta para wire. Testes: validar 192 OK / 0 FALHAS; decidir 38/38; relatorio 203 linhas.
+
+### 435 geracao: FLUVIAL NAVIGABILITY INTELLIGENCE - INTELIGENCIA DE NAVEGABILIDADE FLUVIAL
+
+Nova camada de inteligencia hidrologica para decisoes de roteamento baseadas em navegabilidade real:
+
+1. **CLASSIFICACAO DE RIOS NAVEGAVEIS** (`_rio_e_navegavel`): Base de 80+ rios navegaveis conhecidos no Brasil (ANA/ANTAQ/historico: Amazonas, Parana, Tocantins, Sao Francisco, Araguaia, Xingu, Tapajos, Madeira, Jurua, Japura, Parnaiba, Doce, Jequitinhonha, Pardo, Uruguai, Paraguai, etc.). Heuristicas para rios grandes, costeiros/estuarios, lagos. Identificacao de rios pequenos (riacho, arroio, sanga) como nao-navegaveis. Retorna (bool, confidence 0-100, detalhes).
+
+2. **DETECCAO DE OBSTRUCOES** (`_rio_tem_obstrucao`): Base de 50+ barragens principais (Itaipu, Belo Monte, Tucurui, Jirau, Santo Antonio, Xingo, Sobradinho, Tres Marias, etc.) + 12 cachoeiras principais (Iguacu, Salto Grande, Paulo Afonso, Sete Quedas, etc.). Retorna (bool, tipo, nome_obstrucao). Bloqueia roteamento fluvial se obstrucao detectada.
+
+3. **SCORE DE NAVEGABILIDADE** (`_calcular_score_navegabilidade`): Score 0-100 combinando confianca na navegabilidade + penalidade por distancia (>500km = -30%, >200km = -15%, >100km = -5%) + penalidade severa para obstrucoes (x0.1). Score <30 = inviavel.
+
+4. **CUSTO FLUVIAL ADAPTATIVO** (`_fluvial_custo_com_navegabilidade`): Custo efetivo = km_fluvial x fator_penalidade (1.0 a 2.0 baseado no score). Rejeita se score <30 ou obstrucao detectada. Verifica se fluvial > 3x reta (muito sinuoso). Integra no roteamento multi-hop e sweep otimizado.
+
+Testes: validar 192 OK / 0 FALHAS; decidir 38/38; relatorio 203 linhas.
