@@ -54440,25 +54440,140 @@ if _secao == _SECOES[20]:   # tab_defeats
     st.header("❌ Central de Derrotas e Correções")
     st.caption("Diagnóstico de cada derrota do estudo de referência: causa raiz, rio, balsa, candidatos descartados, correção aplicada.")
     
-    try:
-        _reg_path = "_REGISTRO_DERROTAS.md"
-        if os.path.exists(_reg_path):
-            with open(_reg_path, "r", encoding="utf-8") as f:
-                _reg_content = f.read()
-            st.text_area("📋 Registro Completo das Derrotas", _reg_content, height=400)
-        else:
-            st.info("Arquivo _REGISTRO_DERROTAS.md não encontrado.")
+    _aba_derrotas = st.tabs(["📋 Lista", "🗺️ Mapa das Derrotas", "⚔️ Diff Visual", "📊 Estatísticas"])
+    
+    with _aba_derrotas[0]:
+        st.subheader("📋 Lista de Derrotas")
+        try:
+            _reg_path = "_REGISTRO_DERROTAS.md"
+            if os.path.exists(_reg_path):
+                with open(_reg_path, "r", encoding="utf-8") as f:
+                    _reg_content = f.read()
+                st.text_area("📋 Registro Completo das Derrotas", _reg_content, height=400)
+            else:
+                st.info("Arquivo _REGISTRO_DERROTAS.md não encontrado.")
+            
+            # Estatísticas rápidas
+            _rotas_proc = st.session_state.get('df_processado')
+            if _rotas_proc is not None:
+                _derrotas = _rotas_proc[_rotas_proc.get("Vencedor", "") == "Referência"]
+                st.metric("Derrotas Atuais", len(_derrotas))
+                if len(_derrotas) > 0:
+                    st.dataframe(_derrotas[["Origem", "UF", "Destino", "Distância App (km)", "Distância Ref (km)", "Diferença (km)", "Balsa", "Rio", "Causa Raiz"]].head(50), use_container_width=True, hide_index=True)
+        except Exception:
+            logger.error("[DEFEATS-TAB] Falha ao renderizar lista de derrotas (isolada).", exc_info=True)
+            st.warning("Não foi possível montar a lista de derrotas. As demais seções seguem normais.")
+    
+    with _aba_derrotas[1]:
+        st.subheader("🗺️ Mapa das Derrotas")
+        st.caption("Visualização geográfica das derrotas: 🔵 origem · 🔴 destino da referência · 🔵 destino da aplicação · 🔵 linha cheia = rota app · 🔴 linha tracejada = rota referência · 🔵 linha tracejada = melhor candidata")
         
-        # Estatísticas rápidas
-        _rotas_proc = st.session_state.get('df_processado')
-        if _rotas_proc is not None:
-            _derrotas = _rotas_proc[_rotas_proc.get("Vencedor", "") == "Referência"]
-            st.metric("Derrotas Atuais", len(_derrotas))
-            if len(_derrotas) > 0:
-                st.dataframe(_derrotas[["Origem", "UF", "Destino", "Distância App (km)", "Distância Ref (km)", "Diferença (km)", "Balsa", "Rio", "Causa Raiz"]].head(50), use_container_width=True, hide_index=True)
-    except Exception:
-        logger.error("[DEFEATS-TAB] Falha ao renderizar central de derrotas (isolada).", exc_info=True)
-        st.warning("Não foi possível montar a central de derrotas. As demais seções seguem normais.")
+        try:
+            _rotas_proc = st.session_state.get('df_processado')
+            if _rotas_proc is not None and not _rotas_proc.empty:
+                _derrotas = _rotas_proc[_rotas_proc.get("Vencedor", "") == "Referência"]
+                if not _derrotas.empty:
+                    # Seletor de derrota para visualizar
+                    _derrotas_labels = ["(todas as derrotas)"] + [
+                        f"{i+1}. {r.get('Origem','—')}/{r.get('UF','—')} → App: {r.get('Destino','—')} vs Ref: {r.get('Destino_Ref','—')}"
+                        for i, r in enumerate(_derrotas.iterrows())
+                    ]
+                    _sel_derrota = st.selectbox("🔍 Selecionar derrota", _derrotas_labels, key="derrota_sel")
+                    
+                    _map_cap = ""
+                    if _sel_derrota != "(todas as derrotas)":
+                        _ix = _derrotas_labels.index(_sel_derrota) - 1
+                        if 0 <= _ix < len(_derrotas):
+                            _derrotas_show = _derrotas.iloc[[_ix]]
+                        else:
+                            _derrotas_show = _derrotas
+                    else:
+                        _derrotas_show = _derrotas
+                    
+                    _gmapa = _geo_mapa_derrotas(_derrotas_show)
+                    if _gmapa:
+                        components.html(_gmapa, height=560, scrolling=False)
+                        st.caption("🔵 Origem (azul) → 🔴 Destino Ref (vermelho) → 🔵 Destino App (azul) | Linha cheia = App · Tracejado vermelho = Ref · Tracejado azul = Melhor candidata")
+                    else:
+                        st.info("Dados de coordenadas insuficientes para renderizar o mapa.")
+                else:
+                    st.info("Nenhuma derrota encontrada no estudo atual.")
+            else:
+                st.info("Execute um estudo (aba 'Locais de Aplicação') para popular os dados de rotas.")
+        except Exception as e:
+            logger.error("[DEFEATS-MAP] Falha ao renderizar mapa das derrotas.", exc_info=True)
+            st.warning("Não foi possível montar o mapa das derrotas.")
+    
+    with _aba_derrotas[2]:
+        st.subheader("⚔️ Diff Visual: Aplicação vs Referência")
+        st.caption("Sobreposição visual das rotas: 🔵 linha cheia = Aplicação · 🔴 tracejado = Referência · 🟢 = Melhor candidata")
+        
+        try:
+            _rotas_proc = st.session_state.get('df_processado')
+            if _rotas_proc is not None and not _rotas_proc.empty:
+                _derrotas = _rotas_proc[_rotas_proc.get("Vencedor", "") == "Referência"]
+                if not _derrotas.empty:
+                    _derrotas_labels = [
+                        f"{r.get('Origem','—')}/{r.get('UF','—')} → App: {r.get('Destino','—')} vs Ref: {r.get('Destino_Ref','—')}"
+                        for _, r in _derrotas.iterrows()
+                    ]
+                    _sel_diff = st.selectbox("🔍 Selecionar comparação", ["(todas)"] + [f"{i+1}. {l}" for i, l in enumerate(_derrotas_labels)], key="diff_sel")
+                    
+                    if _sel_diff != "(todas)":
+                        _ix = int(_sel_diff.split(".")[0]) - 1
+                        _diff_rows = _derrotas.iloc[[_ix]]
+                    else:
+                        _diff_rows = _derrotas
+                    
+                    # Gerar mapa de diff
+                    _gmapa = _geo_mapa_diff_visual(_diff_rows if isinstance(_diff_rows, list) else _diff_rows.to_dict('records'))
+                    if _gmapa:
+                        components.html(_gmapa, height=560, scrolling=False)
+                        st.caption("🔵 Linha cheia = Aplicação · 🔴 Tracejado vermelho = Referência · 🟢 Tracejado verde = Melhor candidata | 🔵 Origem · 🔴 Destino Ref · 🔵 Destino App")
+                    else:
+                        st.info("Dados de coordenadas insuficientes para renderizar o diff visual.")
+                    
+                    # Tabela comparativa lado a lado
+                    st.markdown("#### 📊 Comparativo Lado a Lado")
+                    _cols_show = ["Origem", "UF", "Destino_App", "Dist_App_km", "Destino_Ref", "Dist_Ref_km", "Diferença_km", "Rio", "Balsa"]
+                    _cols_avail = [c for c in ["Origem", "UF", "Destino_App", "Dist_App", "Destino_Ref", "Dist_Ref", "Diferença (km)", "Balsa", "Rio"] if c in _derrotas.columns]
+                    st.dataframe(_derrotas[["Origem", "UF", "Destino", "Distância App (km)", "Distância Ref (km)", "Diferença (km)", "Balsa", "Rio", "Causa Raiz"]].head(20), use_container_width=True, hide_index=True)
+                else:
+                    st.info("Nenhuma derrota encontrada no estudo atual.")
+            else:
+                st.info("Execute um estudo (aba 'Locais de Aplicação') para popular os dados de rotas.")
+        except Exception as e:
+            logger.error("[DIFF-VISUAL] Falha no diff visual.", exc_info=True)
+            st.warning("Não foi possível montar o diff visual.")
+    
+    with _aba_derrotas[3]:
+        st.subheader("📊 Estatísticas das Derrotas")
+        try:
+            _rotas_proc = st.session_state.get('df_processado')
+            if _rotas_proc is not None and not _rotas_proc.empty:
+                _derrotas = _rotas_proc[_rotas_proc.get("Vencedor", "") == "Referência"]
+                
+                _c1, _c2, _c3, _c4 = st.columns(4)
+                _c1.metric("Total Derrotas", len(_derrotas))
+                _c2.metric("Com Balsa", int(_derrotas.get("Balsa", False).sum()) if "Balsa" in _rotas_proc.columns else 0)
+                _c3.metric("Dist. Média App", f"{_rotas_proc[_rotas_proc['Vencedor']=='Referência']['Distância (km)'].mean():.1f} km" if 'Distância (km)' in _rotas_proc.columns else "n/d")
+                _c4.metric("Dif. Média (km)", f"{_rotas_proc[_rotas_proc['Vencedor']=='Referência']['Diferença (km)'].mean():.1f}" if 'Diferença (km)' in _rotas_proc.columns else "n/d")
+                
+                # Por causa raiz
+                if 'Causa Raiz' in _rotas_proc.columns:
+                    st.subheader("Por Causa Raiz")
+                    _causa = _rotas_proc[_rotas_proc['Vencedor']=='Referência']['Causa Raiz'].value_counts()
+                    st.bar_chart(_causa)
+                    st.dataframe(_causa.reset_index().rename(columns={'index':'Causa','Causa Raiz':'Quantidade'}), use_container_width=True)
+                
+                # Por UF
+                if 'UF' in _rotas_proc.columns:
+                    st.subheader("Por UF")
+                    _uf = _rotas_proc[_rotas_proc['Vencedor']=='Referência']['UF'].value_counts()
+                    st.bar_chart(_uf)
+        except Exception:
+            logger.error("[DEFEATS-STATS] Falha nas estatísticas.", exc_info=True)
+            st.warning("Não foi possível montar as estatísticas.")
 
 
 # ==============================================================================
