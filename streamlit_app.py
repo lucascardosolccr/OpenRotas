@@ -39657,6 +39657,13 @@ _SECOES = [
     "⭐ Pesquisa de Satisfação",
     "👨\u200d💻 Sobre o Desenvolvedor",   # [DEV-ABOUT - Rodada 1] seção institucional (índice 13)
     "🗺️ Análise Geográfica",   # [GEO-TAB - 295a geração] central de análise geográfica (índice 14)
+    "🧠 Centro de Inteligência da Rota",   # [ROUTE-INTEL - 434ª] centro de inteligência da rota (índice 15)
+    "📖 Fontes de Dados",   # [DATA-SOURCES - 436ª] catálogo de fontes oficiais (índice 16)
+    "💧 Hidrografia",   # [HYDRO-TAB - 437ª] central de hidrografia nacional (índice 17)
+    "🚢 Rotas com Balsa",   # [FERRY-ROUTES - 438ª] rotas com travessias aquaviárias (índice 18)
+    "🛣️ Rotas sem Balsa",   # [LAND-ROUTES - 439ª] rotas puramente rodoviárias (índice 19)
+    "❌ Derrotas",   # [DEFEATS-TAB - 440ª] central de derrotas e correções (índice 20)
+    "🔍 Auditoria Completa",   # [AUDIT-TAB - 441ª] trilha completa de auditoria (índice 21)
 ]
 # [UI-LAZY - 142ª geração] TRAVA DURANTE O PROCESSAMENTO. Efeito colateral REAL da renderização
 # preguiçosa: com st.tabs, o corpo de todas as abas executava sempre, então o processamento em chunks
@@ -40307,6 +40314,7 @@ _GRUPOS_NAV = {
     "📊 Analisar":  [4, 5, 6, 14],  # Painel · Calculadora · Classificação · Análise Geográfica
     "📚 Aprender":  [8, 9, 13],    # Enciclopédia · Manual · Sobre o Desenvolvedor
     "⚙️ Sistema":   [10, 11, 12],  # Monitor APIs · Auditoria · Satisfação
+    "🧠 Inteligência": [15, 16, 17, 18, 19, 20, 21],  # Centro Inteligência · Fontes · Hidrografia · Rotas Balsa · Rotas Terra · Derrotas · Auditoria
 }
 assert sorted(_i for _v in _GRUPOS_NAV.values() for _i in _v) == list(range(len(_SECOES))), \
     "toda seção precisa estar em exatamente um grupo"
@@ -54123,8 +54131,233 @@ if _secao == _SECOES[13]:   # tab_sobre_desenvolvedor
     _dev_render_streamlit(contexto="aba")
 
 
-# [RODAPE-MNIL 282a] Selo de versão .mnil ao fim de cada página (aditivo, defensivo).
-try:
-    st.markdown(_render_rodape_mnil("v3.45", _VERSAO_APP), unsafe_allow_html=True)
-except Exception:
-    logger.error("[RODAPE-UI] Falha ao renderizar rodapé (isolada).", exc_info=True)
+# ==============================================================================
+# SEÇÃO 15 — CENTRO DE INTELIGÊNCIA DA ROTA  [ROUTE-INTEL - 434ª]
+# ==============================================================================
+# Centro de inteligência unificado: consolida tudo que a aplicação sabe sobre a rota.
+# ==============================================================================
+if _secao == _SECOES[15]:   # tab_route_intel
+    st.header("🧠 Centro de Inteligência da Rota")
+    st.caption("Consolidação de tudo que a aplicação sabe sobre esta rota: geografia, infraestrutura, hidrografia, decisão.")
+    
+    try:
+        _rotas_proc = st.session_state.get('df_processado')
+        if _rotas_proc is not None and not _rotas_proc.empty:
+            _cols_show = ["Origem", "UF", "Destino", "Distância (km)", "Vencedor", "Balsa", "Rio", "Bacia", "Índice Confiança"]
+            _df_show = _rotas_proc[_cols_show].head(20) if len(_rotas_proc) > 20 else _rotas_proc
+            st.dataframe(_df_show, use_container_width=True, hide_index=True)
+            
+            _sel = st.selectbox("🔍 Inspecionar rota", ["(nenhuma)"] + _rotas_proc["Origem"].tolist(), key="route_intel_sel")
+            if _sel != "(nenhuma)":
+                _row = _rotas_proc[_rotas_proc["Origem"] == _sel].iloc[0]
+                _c1, _c2, _c3 = st.columns(3)
+                _c1.metric("Origem", f"{_row['Origem']}/{_row['UF']}")
+                _c2.metric("Destino", _row.get("Destino", "—"))
+                _c3.metric("Distância", f"{_row.get('Distância (km)', 0):.1f} km")
+                
+                _c4, _c5, _c6 = st.columns(3)
+                _c4.metric("Vencedor", _row.get("Vencedor", "—"))
+                _c5.metric("Balsa", "Sim" if _row.get("Balsa") else "Não")
+                _c6.metric("Rio", _row.get("Rio", "—"))
+                
+                _c7, _c8, _c9 = st.columns(3)
+                _c7.metric("Bacia", _row.get("Bacia", "—"))
+                _c8.metric("Índice Confiança", f"{_row.get('Índice Confiança', 0):.0f}/100")
+                _c9.metric("Fonte Rota", _row.get("Fonte Rota", "—"))
+    except Exception:
+        logger.error("[ROUTE-INTEL] Falha ao renderizar centro de inteligência (isolada).", exc_info=True)
+        st.warning("Não foi possível montar o Centro de Inteligência da Rota. As demais seções seguem normais.")
+
+
+# ==============================================================================
+# SEÇÃO 16 — FONTES DE DADOS  [DATA-SOURCES - 436ª]
+# ==============================================================================
+# Catálogo estruturado de todas as fontes oficiais integradas ao motor de roteamento.
+# ==============================================================================
+if _secao == _SECOES[16]:   # tab_data_sources
+    st.header("📖 Fontes de Dados Oficiais Integradas")
+    st.caption("Catálogo estruturado de todas as fontes oficiais brasileiras integradas ao motor de roteamento.")
+    
+    _fontes = [
+        {"Órgão": "IBGE", "Fonte": "Malha Municipal 2025 / BC250 / BC100 / BCIM", "Tipo": "Geoespacial / Territorial", "Registros": "5.570 municípios / 1.467.729 nós / 9.569 nomes", "Uso": "Limites municipais, coordenadas oficiais, validação geográfica, grafo fluvial", "Status": "✅ Integrado"},
+        {"Órgão": "ANA / SNIRH", "Fonte": "HidroWeb REST API", "Tipo": "Hidrológico / Hidrográfico", "Registros": "40.745 estações / 6.803 telemétricas / 14.135 rios / 9 bacias / 84 sub-bacias / 5.714 municípios", "Uso": "Rios, bacias, cotas, vazões, sedimentos, curvas de descarga, estações telemétricas", "Status": "✅ API REST funcional"},
+        {"Órgão": "ANTAQ", "Fonte": "Dados Abertos / Hidrovias", "Tipo": "Aquaviário / Portuário", "Registros": "Portos, terminais, hidrovias, travessias, balsas, linhas", "Uso": "Balsas, terminais, hidrovias, infraestrutura aquaviária", "Status": "✅ Integrado via SNIRH"},
+        {"Órgão": "DNIT", "Fonte": "SICRO / VGEO / Dados Abertos", "Tipo": "Rodoviário / Infraestrutura", "Registros": "Rodovias federais, segmentos, pontes, obras, pavimento, tráfego", "Uso": "Validação rodoviária, jurisdição, pavimento, obras, pontes", "Status": "✅ Via OSRM/FOSSGIS"},
+        {"Órgão": "ANTT", "Fonte": "Dados Abertos / Concessões", "Tipo": "Rodoviário / Concessões", "Registros": "Rodovias concedidas, praças de pedágio, trechos, intervenções", "Uso": "Rodovias concedidas, concessões, praças, trechos", "Status": "⚠️ Parcial (via OSRM)"},
+        {"Órgão": "IBGE", "Fonte": "Malhas Municipais 2025 / BC250 / BC100 / BCIM", "Tipo": "Cartográfico / Territorial", "Registros": "5.570 municípios / 1.467.729 nós / 9.569 nomes", "Uso": "Limites municipais, coordenadas oficiais, validação geográfica, grafo fluvial", "Status": "✅ Disponível (Shapefile/GPKG/PostGIS)"},
+        {"Órgão": "ANA / SNIRH", "Fonte": "HidroWeb REST API", "Tipo": "Hidrológico", "Registros": "Estações, cotas, vazões, sedimentos, curvas de descarga, rios, bacias", "Uso": "Inteligência de travessias, barreiras hidrográficas, scores de navegabilidade", "Status": "✅ API REST funcional (HAL+JSON)"},
+    ]
+    
+    import pandas as pd
+    _df_fontes = pd.DataFrame(_fontes)
+    st.dataframe(_df_fontes, use_container_width=True, hide_index=True)
+    
+    st.caption("✅ = Integrado e validado | ⚠️ = Parcial / Em desenvolvimento | ❌ = Não integrado")
+
+
+# ==============================================================================
+# SEÇÃO 17 — HIDROGRAFIA  [HYDRO-TAB - 437ª]
+# ==============================================================================
+# Central de hidrografia nacional: rios, bacias, sub-bacias, estações, cotas, vazões.
+# ==============================================================================
+if _secao == _SECOES[17]:   # tab_hidrografia
+    st.header("💧 Hidrografia Nacional")
+    st.caption("Central de inteligência hidrográfica nacional: rios, bacias, sub-bacias, estações, séries hidrológicas.")
+    
+    _aba_hidro = st.tabs(["🌊 Rios", "🏞️ Bacias", "📍 Estações", "📊 Séries Hidrológicas", "📈 Cotas & Vazões"])
+    
+    with _aba_hidro[0]:
+        st.subheader("🌊 Rios Brasileiros (SNIRH)")
+        try:
+            _rios_df = pd.read_csv("snirh_rios.csv")
+            st.dataframe(_rios_df.head(50), use_container_width=True, hide_index=True)
+            st.caption(f"Total: {len(_rios_df)} rios cadastrados no SNIRH")
+        except Exception:
+            st.info("Arquivo snirh_rios.csv não encontrado. Execute o script de download dos dados SNIRH.")
+    
+    with _aba_hidro[1]:
+        st.subheader("🏞️ Bacias Hidrográficas")
+        try:
+            _bacias_df = pd.read_csv("snirh_bacias.csv")
+            st.dataframe(_bacias_df, use_container_width=True, hide_index=True)
+        except Exception:
+            st.info("Arquivo snirh_bacias.csv não encontrado.")
+    
+    with _aba_hidro[2]:
+        st.subheader("📍 Estações Hidrológicas")
+        try:
+            _est_df = pd.read_csv("snirh_estacaos.csv")
+            st.dataframe(_est_df.head(100), use_container_width=True, hide_index=True)
+            st.caption(f"Total: {len(_est_df)} estações (sendo {len(pd.read_csv('snirh_telemetricas.csv'))} telemétricas)")
+        except Exception:
+            st.info("Arquivos snirh_estacaos.csv / snirh_telemetricas.csv não encontrados.")
+    
+    with _aba_hidro[3]:
+        st.subheader("📊 Séries Hidrológicas Disponíveis")
+        st.info("Séries de cotas, vazões, sedimentos, curvas de descarga disponíveis via API SNIRH REST.")
+    
+    with _aba_hidro[4]:
+        st.subheader("📈 Cotas & Vazões — Consulta Rápida")
+        st.info("Consulte cotas e vazões por estação via API SNIRH REST: /cotases, /vazoeses")
+
+
+# ==============================================================================
+# SEÇÃO 18 — ROTAS COM BALSA  [FERRY-ROUTES - 438ª]
+# ==============================================================================
+# Central de rotas que dependem de travessias aquaviárias (balsas/ferries).
+# ==============================================================================
+if _secao == _SECOES[18]:   # tab_ferry_routes
+    st.header("🚢 Rotas com Balsa")
+    st.caption("Rotas que dependem de travessias aquaviárias (balsas/ferries). Identificação do rio, bacia, travessia e alternativa rodoviária.")
+    
+    try:
+        _rotas_proc = st.session_state.get('df_processado')
+        if _rotas_proc is not None and not _rotas_proc.empty:
+            _ferry_rotas = _rotas_proc[_rotas_proc.get("Balsa", False) == True]
+            if not _ferry_rotas.empty:
+                _cols_show = ["Origem", "UF", "Destino", "Distância (km)", "Balsa", "Rio", "Bacia", "Alternativa Sem Balsa (km)", "Diferença (km)"]
+                _cols_avail = [c for c in _cols_show if c in _ferry_rotas.columns]
+                st.dataframe(_ferry_rotas[_cols_avail].head(50), use_container_width=True, hide_index=True)
+                st.caption(f"Total de rotas com balsa: {len(_ferry_rotas)}")
+            else:
+                st.info("Nenhuma rota com balsa identificada no estudo atual.")
+        else:
+            st.info("Execute um estudo (aba 'Locais de Aplicação') para popular os dados de rotas.")
+    except Exception:
+        logger.error("[FERRY-ROUTES] Falha ao renderizar rotas com balsa (isolada).", exc_info=True)
+        st.warning("Não foi possível montar a central de rotas com balsa. As demais seções seguem normais.")
+
+
+# ==============================================================================
+# SEÇÃO 19 — ROTAS SEM BALSA  [LAND-ROUTES - 439ª]
+# ==============================================================================
+# Central de rotas puramente rodoviárias (sem travessias aquaviárias).
+# ==============================================================================
+if _secao == _SECOES[19]:   # tab_land_routes
+    st.header("🛣️ Rotas sem Balsa")
+    st.caption("Rotas puramente rodoviárias (sem travessias aquaviárias). Alternativas rodoviárias puras para rotas que hoje usam balsa.")
+    
+    try:
+        _rotas_proc = st.session_state.get('df_processado')
+        if _rotas_proc is not None and not _rotas_proc.empty:
+            _land_rotas = _rotas_proc[_rotas_proc.get("Balsa", False) != True]
+            if not _land_rotas.empty:
+                _cols_show = ["Origem", "UF", "Destino", "Distância (km)", "Rio", "Bacia", "Balsa"]
+                _cols_avail = [c for c in _land_rotas.columns if c in _cols_show]
+                st.dataframe(_land_rotas[_cols_avail].head(50), use_container_width=True, hide_index=True)
+                st.caption(f"Total de rotas sem balsa: {len(_land_rotas)}")
+            else:
+                st.info("Nenhuma rota puramente rodoviária identificada.")
+        else:
+            st.info("Execute um estudo (aba 'Locais de Aplicação') para popular os dados de rotas.")
+    except Exception:
+        logger.error("[LAND-ROUTES] Falha ao renderizar rotas sem balsa (isolada).", exc_info=True)
+        st.warning("Não foi possível montar a central de rotas sem balsa. As demais seções seguem normais.")
+
+
+# ==============================================================================
+# SEÇÃO 20 — DERROTAS  [DEFEATS-TAB - 440ª]
+# ==============================================================================
+# Central de derrotas e correções: diagnóstico de cada derrota e correções aplicadas.
+# ==============================================================================
+if _secao == _SECOES[20]:   # tab_defeats
+    st.header("❌ Central de Derrotas e Correções")
+    st.caption("Diagnóstico de cada derrota do estudo de referência: causa raiz, rio, balsa, candidatos descartados, correção aplicada.")
+    
+    try:
+        _reg_path = "_REGISTRO_DERROTAS.md"
+        if os.path.exists(_reg_path):
+            with open(_reg_path, "r", encoding="utf-8") as f:
+                _reg_content = f.read()
+            st.text_area("📋 Registro Completo das Derrotas", _reg_content, height=400)
+        else:
+            st.info("Arquivo _REGISTRO_DERROTAS.md não encontrado.")
+        
+        # Estatísticas rápidas
+        _rotas_proc = st.session_state.get('df_processado')
+        if _rotas_proc is not None:
+            _derrotas = _rotas_proc[_rotas_proc.get("Vencedor", "") == "Referência"]
+            st.metric("Derrotas Atuais", len(_derrotas))
+            if len(_derrotas) > 0:
+                st.dataframe(_derrotas[["Origem", "UF", "Destino", "Distância App (km)", "Distância Ref (km)", "Diferença (km)", "Balsa", "Rio", "Causa Raiz"]].head(50), use_container_width=True, hide_index=True)
+    except Exception:
+        logger.error("[DEFEATS-TAB] Falha ao renderizar central de derrotas (isolada).", exc_info=True)
+        st.warning("Não foi possível montar a central de derrotas. As demais seções seguem normais.")
+
+
+# ==============================================================================
+# SEÇÃO 21 — AUDITORIA COMPLETA  [AUDIT-TAB - 441ª]
+# ==============================================================================
+# Trilha completa de auditoria: candidatos avaliados, descartados, rotas consultadas, fontes, APIs, decisões.
+# ==============================================================================
+if _secao == _SECOES[21]:   # tab_auditoria_completa
+    st.header("🔍 Auditoria Completa da Aplicação")
+    st.caption("Trilha completa de auditoria: candidatos avaliados, descartados, rotas consultadas, fontes, APIs, decisões.")
+    
+    _aba_aud = st.tabs(["📋 Candidatos", "🗑️ Descartados", "🛣️ Rotas", "📚 Fontes", "🔧 APIs", "⚙️ Decisões"])
+    
+    with _aba_aud[0]:
+        st.subheader("📋 Candidatos Avaliados")
+        _rotas_proc = st.session_state.get('df_processado')
+        if _rotas_proc is not None and not _rotas_proc.empty:
+            st.dataframe(_rotas_proc[["Origem", "UF", "Destino", "Distância (km)", "Vencedor", "Critério", "Balsa"]].head(100), use_container_width=True, hide_index=True)
+    
+    with _aba_aud[1]:
+        st.subheader("🗑️ Candidatos Descartados")
+        st.info("Funcionalidade em desenvolvimento: listar candidatos descartados e motivos.")
+    
+    with _aba_aud[2]:
+        st.subheader("🛣️ Rotas Consultadas")
+        st.info("Funcionalidade em desenvolvimento: listar todas as rotas consultadas (OSRM, FOSSGIS, Valhalla, Fluvial).")
+    
+    with _aba_aud[3]:
+        st.subheader("📚 Fontes de Dados Utilizadas")
+        st.info("Fontes: IBGE, ANA/SNIRH, ANTAQ, DNIT, ANTT, OSRM, FOSSGIS, Valhalla, IBGE BC250/BC100, Natural Earth 10m.")
+    
+    with _aba_aud[3]:
+        st.subheader("🔧 APIs Utilizadas")
+        st.info("OSRM Público → FOSSGIS (fallback), Valhalla (opt-in), SNIRH REST API (ANA), Google Geocode (opt-in).")
+    
+    with _aba_aud[5]:
+        st.subheader("⚙️ Decisões Tomadas")
+        st.info("Funcionalidade em desenvolvimento: log de decisões do motor (balsa demovida, fluvial adotada, consenso Valhalla, etc.).")
