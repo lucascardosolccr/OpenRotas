@@ -54315,20 +54315,30 @@ if _secao == _SECOES[15]:   # tab_route_intel
                 _destino = _row.get('Destino', '').replace(' ', '_')
                 _uf = _row.get('UF', '')
                 _base_fn = f"rota_intel_{_origem}_{_uf}_{_destino}"
+                _df_single = pd.DataFrame([_row])
                 
-                _col_exp1, _col_exp2, _col_exp3, _col_exp4 = st.columns(4)
+                _col_exp1, _col_exp2, _col_exp3, _col_exp4, _col_exp5, _col_exp6 = st.columns(6)
                 with _col_exp1:
-                    _html = _geo_html_locais(pd.DataFrame([_row]))
+                    _html = _geo_html_locais(_df_single)
                     st.download_button("🌐 HTML", data=_html.encode('utf-8'), file_name=f"{_base_fn}.html", mime="text/html", use_container_width=True)
                 with _col_exp2:
-                    _geojson = _df_para_geojson(pd.DataFrame([_row]))
+                    _geojson = _df_para_geojson(_df_single)
                     st.download_button("🌐 GeoJSON", data=_geojson.encode('utf-8'), file_name=f"{_base_fn}.geojson", mime="application/geo+json", use_container_width=True)
                 with _col_exp3:
-                    _kml = _df_para_kml(pd.DataFrame([_row]))
+                    _kml = _df_para_kml(_df_single)
                     st.download_button("🗺️ KML", data=_kml.encode('utf-8'), file_name=f"{_base_fn}.kml", mime="application/vnd.google-earth.kml+xml", use_container_width=True)
                 with _col_exp4:
-                    _gpx = _df_para_gpx(pd.DataFrame([_row]))
+                    _gpx = _df_para_gpx(_df_single)
                     st.download_button("📍 GPX", data=_gpx.encode('utf-8'), file_name=f"{_base_fn}.gpx", mime="application/gpx+xml", use_container_width=True)
+                with _col_exp5:
+                    import io
+                    _xlsx_buf = io.BytesIO()
+                    with pd.ExcelWriter(_xlsx_buf, engine='xlsxwriter') as _writer:
+                        _df_single.to_excel(_writer, index=False, sheet_name='Rota')
+                    st.download_button("📊 XLSX", data=_xlsx_buf.getvalue(), file_name=f"{_base_fn}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+                with _col_exp6:
+                    _csv = _df_single.to_csv(index=False).encode('utf-8-sig')
+                    st.download_button("📄 CSV", data=_csv, file_name=f"{_base_fn}.csv", mime="text/csv", use_container_width=True)
     except Exception:
         logger.error("[ROUTE-INTEL] Falha ao renderizar centro de inteligência (isolada).", exc_info=True)
         st.warning("Não foi possível montar o Centro de Inteligência da Rota. As demais seções seguem normais.")
@@ -54438,7 +54448,7 @@ if _secao == _SECOES[17]:   # tab_hidrografia
                         st.caption(f"Exibindo {len(_map_df)} rios no mapa (amostra de 1000)")
                         
                         # Botões de exportação
-                        _col_exp1, _col_exp2, _col_exp3, _col_exp4 = st.columns(4)
+                        _col_exp1, _col_exp2, _col_exp3, _col_exp4, _col_exp5, _col_exp6 = st.columns(6)
                         with _col_exp1:
                             _html = _geo_html_locais(_map_df)
                             st.download_button("🌐 HTML", data=_html.encode('utf-8'), file_name="mapa_hidrografico.html", mime="text/html", use_container_width=True)
@@ -54451,6 +54461,15 @@ if _secao == _SECOES[17]:   # tab_hidrografia
                         with _col_exp4:
                             _gpx = _df_para_gpx(_map_df)
                             st.download_button("📍 GPX", data=_gpx.encode('utf-8'), file_name="mapa_hidrografico.gpx", mime="application/gpx+xml", use_container_width=True)
+                        with _col_exp5:
+                            import io
+                            _xlsx_buf = io.BytesIO()
+                            with pd.ExcelWriter(_xlsx_buf, engine='xlsxwriter') as _writer:
+                                _map_df.to_excel(_writer, index=False, sheet_name='Rios')
+                            st.download_button("📊 XLSX", data=_xlsx_buf.getvalue(), file_name="mapa_hidrografico.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+                        with _col_exp6:
+                            _csv = _map_df.to_csv(index=False).encode('utf-8-sig')
+                            st.download_button("📄 CSV", data=_csv, file_name="mapa_hidrografico.csv", mime="text/csv", use_container_width=True)
                     else:
                         st.info("Dados de coordenadas não disponíveis nos rios carregados.")
             else:
@@ -54576,7 +54595,7 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
                             st.caption(f"🔵 Origem (azul) → 🔴 Destino (vermelho) | Linhas tracejadas = travessias aquaviárias | Total: {len(_map_data)} travessias")
                             
                             # Botões de exportação
-                            _col_exp1, _col_exp2, _col_exp3, _col_exp4 = st.columns(4)
+                            _col_exp1, _col_exp2, _col_exp3, _col_exp4, _col_exp5, _col_exp6 = st.columns(6)
                             with _col_exp1:
                                 _html = _geo_html_locais(_ferry_rotas)
                                 st.download_button("🌐 HTML", data=_html.encode('utf-8'), file_name="travessias_balsa.html", mime="text/html", use_container_width=True)
@@ -54589,6 +54608,15 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
                             with _col_exp4:
                                 _gpx = _df_para_gpx(_ferry_rotas)
                                 st.download_button("📍 GPX", data=_gpx.encode('utf-8'), file_name="travessias_balsa.gpx", mime="application/gpx+xml", use_container_width=True)
+                            with _col_exp5:
+                                import io
+                                _xlsx_buf = io.BytesIO()
+                                with pd.ExcelWriter(_xlsx_buf, engine='xlsxwriter') as _writer:
+                                    _ferry_rotas.to_excel(_writer, index=False, sheet_name='Travessias')
+                                st.download_button("📊 XLSX", data=_xlsx_buf.getvalue(), file_name="travessias_balsa.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+                            with _col_exp6:
+                                _csv = _ferry_rotas.to_csv(index=False).encode('utf-8-sig')
+                                st.download_button("📄 CSV", data=_csv, file_name="travessias_balsa.csv", mime="text/csv", use_container_width=True)
                         else:
                             st.info("Dados de coordenadas não disponíveis para as travessias com balsa.")
                 else:
@@ -54721,19 +54749,29 @@ if _secao == _SECOES[20]:   # tab_defeats
                                 _destino = _dr.get('Destino', '').replace(' ', '_')
                                 _uf = _dr.get('UF', '')
                                 _base_fn = f"derrota_{_origem}_{_uf}_{_destino}"
+                                _df_single = _dr.to_frame().T if hasattr(_dr, 'to_frame') else pd.DataFrame([_dr])
                                 
-                                _col_exp1, _col_exp2, _col_exp3, _col_exp4 = st.columns(4)
+                                _col_exp1, _col_exp2, _col_exp3, _col_exp4, _col_exp5, _col_exp6 = st.columns(6)
                                 with _col_exp1:
                                     st.download_button("🌐 HTML", data=_gmapa.encode('utf-8'), file_name=f"{_base_fn}.html", mime="text/html", use_container_width=True)
                                 with _col_exp2:
-                                    _geojson = _df_para_geojson(_dr.to_frame().T if hasattr(_dr, 'to_frame') else pd.DataFrame([_dr]))
+                                    _geojson = _df_para_geojson(_df_single)
                                     st.download_button("🌐 GeoJSON", data=_geojson.encode('utf-8'), file_name=f"{_base_fn}.geojson", mime="application/geo+json", use_container_width=True)
                                 with _col_exp3:
-                                    _kml = _df_para_kml(_dr.to_frame().T if hasattr(_dr, 'to_frame') else pd.DataFrame([_dr]))
+                                    _kml = _df_para_kml(_df_single)
                                     st.download_button("🗺️ KML", data=_kml.encode('utf-8'), file_name=f"{_base_fn}.kml", mime="application/vnd.google-earth.kml+xml", use_container_width=True)
                                 with _col_exp4:
-                                    _gpx = _df_para_gpx(_dr.to_frame().T if hasattr(_dr, 'to_frame') else pd.DataFrame([_dr]))
+                                    _gpx = _df_para_gpx(_df_single)
                                     st.download_button("📍 GPX", data=_gpx.encode('utf-8'), file_name=f"{_base_fn}.gpx", mime="application/gpx+xml", use_container_width=True)
+                                with _col_exp5:
+                                    import io
+                                    _xlsx_buf = io.BytesIO()
+                                    with pd.ExcelWriter(_xlsx_buf, engine='xlsxwriter') as _writer:
+                                        _df_single.to_excel(_writer, index=False, sheet_name='Derrota')
+                                    st.download_button("📊 XLSX", data=_xlsx_buf.getvalue(), file_name=f"{_base_fn}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+                                with _col_exp6:
+                                    _csv = _df_single.to_csv(index=False).encode('utf-8-sig')
+                                    st.download_button("📄 CSV", data=_csv, file_name=f"{_base_fn}.csv", mime="text/csv", use_container_width=True)
                     else:
                         st.info("Dados de coordenadas insuficientes para renderizar o mapa.")
                 else:
@@ -54780,19 +54818,29 @@ if _secao == _SECOES[20]:   # tab_defeats
                                 _destino = _dr.get('Destino', '').replace(' ', '_')
                                 _uf = _dr.get('UF', '')
                                 _base_fn = f"diff_{_origem}_{_uf}_{_destino}"
+                                _df_single = _dr.to_frame().T if hasattr(_dr, 'to_frame') else pd.DataFrame([_dr])
                                 
-                                _col_exp1, _col_exp2, _col_exp3, _col_exp4 = st.columns(4)
+                                _col_exp1, _col_exp2, _col_exp3, _col_exp4, _col_exp5, _col_exp6 = st.columns(6)
                                 with _col_exp1:
                                     st.download_button("🌐 HTML", data=_gmapa.encode('utf-8'), file_name=f"{_base_fn}.html", mime="text/html", use_container_width=True)
                                 with _col_exp2:
-                                    _geojson = _df_para_geojson(_dr.to_frame().T if hasattr(_dr, 'to_frame') else pd.DataFrame([_dr]))
+                                    _geojson = _df_para_geojson(_df_single)
                                     st.download_button("🌐 GeoJSON", data=_geojson.encode('utf-8'), file_name=f"{_base_fn}.geojson", mime="application/geo+json", use_container_width=True)
                                 with _col_exp3:
-                                    _kml = _df_para_kml(_dr.to_frame().T if hasattr(_dr, 'to_frame') else pd.DataFrame([_dr]))
+                                    _kml = _df_para_kml(_df_single)
                                     st.download_button("🗺️ KML", data=_kml.encode('utf-8'), file_name=f"{_base_fn}.kml", mime="application/vnd.google-earth.kml+xml", use_container_width=True)
                                 with _col_exp4:
-                                    _gpx = _df_para_gpx(_dr.to_frame().T if hasattr(_dr, 'to_frame') else pd.DataFrame([_dr]))
+                                    _gpx = _df_para_gpx(_df_single)
                                     st.download_button("📍 GPX", data=_gpx.encode('utf-8'), file_name=f"{_base_fn}.gpx", mime="application/gpx+xml", use_container_width=True)
+                                with _col_exp5:
+                                    import io
+                                    _xlsx_buf = io.BytesIO()
+                                    with pd.ExcelWriter(_xlsx_buf, engine='xlsxwriter') as _writer:
+                                        _df_single.to_excel(_writer, index=False, sheet_name='Diff')
+                                    st.download_button("📊 XLSX", data=_xlsx_buf.getvalue(), file_name=f"{_base_fn}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+                                with _col_exp6:
+                                    _csv = _df_single.to_csv(index=False).encode('utf-8-sig')
+                                    st.download_button("📄 CSV", data=_csv, file_name=f"{_base_fn}.csv", mime="text/csv", use_container_width=True)
                     else:
                         st.info("Dados de coordenadas insuficientes para renderizar o diff visual.")
                     
