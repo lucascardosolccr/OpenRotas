@@ -54204,7 +54204,7 @@ if _secao == _SECOES[17]:   # tab_hidrografia
     st.header("💧 Hidrografia Nacional")
     st.caption("Central de inteligência hidrográfica nacional: rios, bacias, sub-bacias, estações, séries hidrológicas.")
     
-    _aba_hidro = st.tabs(["🌊 Rios", "🏞️ Bacias", "📍 Estações", "📊 Séries Hidrológicas", "📈 Cotas & Vazões"])
+    _aba_hidro = st.tabs(["🌊 Rios", "🏞️ Bacias", "📍 Estações", "📊 Séries Hidrológicas", "📈 Cotas & Vazões", "🗺️ Mapa Hidrográfico"])
     
     with _aba_hidro[0]:
         st.subheader("🌊 Rios Brasileiros (SNIRH)")
@@ -54239,6 +54239,45 @@ if _secao == _SECOES[17]:   # tab_hidrografia
     with _aba_hidro[4]:
         st.subheader("📈 Cotas & Vazões — Consulta Rápida")
         st.info("Consulte cotas e vazões por estação via API SNIRH REST: /cotases, /vazoeses")
+    
+    with _aba_hidro[5]:
+        st.subheader("🗺️ Mapa Hidrográfico Nacional")
+        st.caption("Visualização geográfica de rios, bacias e estações hidrológicas.")
+        
+        try:
+            _rios_df = pd.read_csv("snirh_rios.csv")
+            _bacias_df = pd.read_csv("snirh_bacias.csv")
+            _est_df = pd.read_csv("snirh_estacaos.csv")
+            
+            # Preparar dados para o mapa
+            _map_df = _rios_df.head(1000).copy()
+            if 'latitude' in _map_df.columns and 'longitude' in _map_df.columns:
+                _map_df = _map_df.dropna(subset=['latitude', 'longitude'])
+                _map_df = _map_df[(_map_df['latitude'] != 0) & (_map_df['longitude'] != 0)]
+                
+                if not _map_df.empty:
+                    _map_df['latitude'] = pd.to_numeric(_map_df['latitude'], errors='coerce')
+                    _map_df['longitude'] = pd.to_numeric(_map_df['longitude'], errors='coerce')
+                    _map_df = _map_df.dropna(subset=['latitude', 'longitude'])
+                    
+                    if not _map_df.empty:
+                        fig = px.scatter_mapbox(
+                            _map_df, lat='latitude', lon='longitude', 
+                            hover_name='nome' if 'nome' in _map_df.columns else 'nome_rio',
+                            hover_data=['bacia', 'uf'] if 'bacia' in _map_df.columns and 'uf' in _map_df.columns else None,
+                            zoom=3.5, mapbox_style="carto-darkmatter",
+                            height=600, size_max=10, color_discrete_sequence=['#3498db']
+                        )
+                        fig.update_layout(margin={"r":0,"t":40,"l":0,"b":0}, height=600)
+                        st.plotly_chart(fig, use_container_width=True)
+                        st.caption(f"Exibindo {len(_map_df)} rios no mapa (amostra de 1000)")
+                    else:
+                        st.info("Dados de coordenadas não disponíveis nos rios carregados.")
+            else:
+                st.info("Dados de coordenadas (latitude/longitude) não disponíveis nos rios carregados.")
+        except Exception as e:
+            st.info("Arquivos de hidrografia não encontrados. Execute o script de download dos dados SNIRH.")
+            logger.error("[HYDRO-MAP] Falha ao renderizar mapa hidrográfico.", exc_info=True)
 
 
 # ==============================================================================
@@ -54250,22 +54289,141 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
     st.header("🚢 Rotas com Balsa")
     st.caption("Rotas que dependem de travessias aquaviárias (balsas/ferries). Identificação do rio, bacia, travessia e alternativa rodoviária.")
     
-    try:
-        _rotas_proc = st.session_state.get('df_processado')
-        if _rotas_proc is not None and not _rotas_proc.empty:
-            _ferry_rotas = _rotas_proc[_rotas_proc.get("Balsa", False) == True]
-            if not _ferry_rotas.empty:
-                _cols_show = ["Origem", "UF", "Destino", "Distância (km)", "Balsa", "Rio", "Bacia", "Alternativa Sem Balsa (km)", "Diferença (km)"]
-                _cols_avail = [c for c in _cols_show if c in _ferry_rotas.columns]
-                st.dataframe(_ferry_rotas[_cols_avail].head(50), use_container_width=True, hide_index=True)
-                st.caption(f"Total de rotas com balsa: {len(_ferry_rotas)}")
+    _aba_ferry = st.tabs(["📋 Lista", "🗺️ Mapa das Travessias", "📊 Análise"])
+    
+    with _aba_ferry[0]:
+        try:
+            _rotas_proc = st.session_state.get('df_processado')
+            if _rotas_proc is not None and not _rotas_proc.empty:
+                _ferry_rotas = _rotas_proc[_rotas_proc.get("Balsa", False) == True]
+                if not _ferry_rotas.empty:
+                    _cols_show = ["Origem", "UF", "Destino", "Distância (km)", "Balsa", "Rio", "Bacia", "Alternativa Sem Balsa (km)", "Diferença (km)"]
+                    _cols_avail = [c for c in _cols_show if c in _ferry_rotas.columns]
+                    st.dataframe(_ferry_rotas[_cols_avail].head(50), use_container_width=True, hide_index=True)
+                    st.caption(f"Total de rotas com balsa: {len(_ferry_rotas)}")
+                else:
+                    st.info("Nenhuma rota com balsa identificada no estudo atual.")
             else:
-                st.info("Nenhuma rota com balsa identificada no estudo atual.")
-        else:
-            st.info("Execute um estudo (aba 'Locais de Aplicação') para popular os dados de rotas.")
-    except Exception:
-        logger.error("[FERRY-ROUTES] Falha ao renderizar rotas com balsa (isolada).", exc_info=True)
-        st.warning("Não foi possível montar a central de rotas com balsa. As demais seções seguem normais.")
+                st.info("Execute um estudo (aba 'Locais de Aplicação') para popular os dados de rotas.")
+        except Exception:
+            logger.error("[FERRY-ROUTES] Falha ao renderizar rotas com balsa (isolada).", exc_info=True)
+            st.warning("Não foi possível montar a central de rotas com balsa. As demais seções seguem normais.")
+    
+    with _aba_ferry[1]:
+        st.subheader("🗺️ Mapa das Travessias Aquaviárias")
+        st.caption("Visualização geográfica das travessias por balsa: 🔵 origem · 🔴 destino · 🔵 linha tracejada = travessia aquaviária")
+        
+        try:
+            _rotas_proc = st.session_state.get('df_processado')
+            if _rotas_proc is not None and not _rotas_proc.empty:
+                _ferry_rotas = _rotas_proc[_rotas_proc.get("Balsa", False) == True]
+                if not _ferry_rotas.empty:
+                    # Preparar dados para o mapa
+                    _map_data = []
+                    for _, row in _ferry_rotas.iterrows():
+                        if all(k in row for k in ['lat_origem', 'lon_origem', 'lat_destino', 'lon_destino']):
+                            _map_data.append({
+                                'origem': row.get('Origem', '—'),
+                                'destino': row.get('Destino', '—'),
+                                'lat_origem': row['lat_origem'],
+                                'lon_origem': row['lon_origem'],
+                                'lat_destino': row['lat_destino'],
+                                'lon_destino': row['lon_destino'],
+                                'rio': row.get('Rio', '—'),
+                                'bacia': row.get('Bacia', '—'),
+                                'dist_km': row.get('Distância (km)', 0),
+                                'rio_nome': row.get('Rio', '—')
+                            })
+                    
+                    if _map_data:
+                        _map_df = pd.DataFrame(_map_data)
+                        _map_df['lat_origem'] = pd.to_numeric(_map_df['lat_origem'], errors='coerce')
+                        _map_df['lon_origem'] = pd.to_numeric(_map_df['lon_origem'], errors='coerce')
+                        _map_df['lat_destino'] = pd.to_numeric(_map_df['lat_destino'], errors='coerce')
+                        _map_df['lon_destino'] = pd.to_numeric(_map_df['lon_destino'], errors='coerce')
+                        _map_df = _map_df.dropna(subset=['lat_origem', 'lon_origem', 'lat_destino', 'lon_destino'])
+                        
+                        if not _map_df.empty:
+                            # Criar mapa com linhas de travessia
+                            fig = go.Figure()
+                            
+                            # Origens
+                            fig.add_trace(go.Scattermapbox(
+                                lat=_map_df['lat_origem'],
+                                lon=_map_df['lon_origem'],
+                                mode='markers',
+                                marker=dict(size=10, color='blue'),
+                                name='Origem',
+                                text=_map_df['origem'],
+                                hoverinfo='text',
+                                hovertext=_map_df['origem'] + ' → ' + _map_df['destino'] + '<br>Rio: ' + _map_df['rio_nome'].fillna('—') + '<br>Distância: ' + _map_df['dist_km'].astype(str) + ' km'
+                            ))
+                            
+                            # Destinos
+                            fig.add_trace(go.Scattermapbox(
+                                lat=_map_df['lat_destino'],
+                                lon=_map_df['lon_destino'],
+                                mode='markers',
+                                marker=dict(size=10, color='red'),
+                                name='Destino',
+                                text=_map_df['destino'],
+                                hoverinfo='text',
+                                hovertext=_map_df['origem'] + ' → ' + _map_df['destino'] + '<br>Rio: ' + _map_df['rio_nome'].fillna('—') + '<br>Distância: ' + _map_df['dist_km'].astype(str) + ' km'
+                            ))
+                            
+                            # Linhas de travessia
+                            for _, row in _map_df.iterrows():
+                                fig.add_trace(go.Scattermapbox(
+                                    lat=[row['lat_origem'], row['lat_destino']],
+                                    lon=[row['lon_origem'], row['lon_destino']],
+                                    mode='lines',
+                                    line=dict(width=2, color='blue', dash='dash'),
+                                    showlegend=False,
+                                    hoverinfo='skip'
+                                ))
+                            
+                            fig.update_layout(
+                                mapbox=dict(
+                                    style="carto-darkmatter",
+                                    center=dict(lat=-15, lon=-55),
+                                    zoom=3.5
+                                ),
+                                height=600,
+                                margin={"r":0,"t":40,"l":0,"b":0},
+                                showlegend=True
+                            )
+                            st.plotly_chart(fig, use_container_width=True)
+                            st.caption(f"🔵 Origem (azul) → 🔴 Destino (vermelho) | Linhas tracejadas = travessias aquaviárias | Total: {len(_map_data)} travessias")
+                        else:
+                            st.info("Dados de coordenadas não disponíveis para as travessias com balsa.")
+                else:
+                    st.info("Nenhuma rota com balsa identificada no estudo atual.")
+            else:
+                st.info("Execute um estudo (aba 'Locais de Aplicação') para popular os dados de rotas.")
+        except Exception as e:
+            logger.error("[FERRY-MAP] Falha ao renderizar mapa de travessias.", exc_info=True)
+            st.warning("Não foi possível montar o mapa de travessias.")
+    
+    with _aba_ferry[2]:
+        st.subheader("📊 Análise das Travessias")
+        try:
+            _rotas_proc = st.session_state.get('df_processado')
+            if _rotas_proc is not None and not _rotas_proc.empty:
+                _ferry_rotas = _rotas_proc[_rotas_proc.get("Balsa", False) == True]
+                if not _ferry_rotas.empty:
+                    _col1, _col2, _col3 = st.columns(3)
+                    _col1.metric("Total Travessias", len(_ferry_rotas))
+                    _col2.metric("Distância Média (km)", f"{_ferry_rotas['Distância (km)'].mean():.1f}")
+                    _col3.metric("Rio Mais Comum", _ferry_rotas['Rio'].mode()[0] if 'Rio' in _ferry_rotas.columns else "—")
+                    
+                    # Top rios
+                    if 'Rio' in _ferry_rotas.columns:
+                        _top_rios = _ferry_rotas['Rio'].value_counts().head(10)
+                        st.bar_chart(_top_rios)
+                else:
+                    st.info("Nenhuma rota com balsa identificada.")
+        except Exception:
+            logger.error("[FERRY-ANALYSIS] Falha na análise de travessias.", exc_info=True)
 
 
 # ==============================================================================
