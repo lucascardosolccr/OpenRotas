@@ -23148,6 +23148,211 @@ def _fluvial_densidade_rio_por_raio(lat, lon, raio_km=100.0):
         return {"nos_no_raio": 0, "rios_unicos": 0, "densidade": 0.0}
 
 
+# =============================================================================
+# FLUVIAL NAVIGABILITY INTELLIGENCE - 435ª geração
+# =============================================================================
+
+# Major navigable rivers in Brazil (known from ANA/ANTAQ/historical data)
+_RIOS_NAVEGAVEIS_BR = {
+    # Major navigable rivers
+    "amazonas", "parana", "tocantins", "sao francisco", "araguaia", "xingu", 
+    "tapajos", "madeira", "jurua", "japura", "parnaiba", "doce", 
+    "jequitinhonha", "pardo", "uruguai", "paraguai", "igacu", 
+    "tiete", "paranapanema", "ibicuí", "vacacaí", "caí", "sinos", 
+    "gravataí", "camaquã", "piratini", "iguazu", "uruguai", 
+    "pelotas", "jacuí", "ibirapuitã", "quaraí", "cuareim", 
+    "itapicuru", "piauí", "canindé", "moxotó", "brígida", 
+    "ipanema", "munim", "parnaíba", "longá", "poti", 
+    "capibaribe", "ipojuca", "sirinhaém", "una", "sao francisco",
+    "das velhas", "paracatu", "verde grande", "carinhanha", 
+    "corrente", "grande", "preto", "dourados", "ivinhema", 
+    "paranaiba", "sucuriú", "aquidauana", "miranda", "negro", 
+    "branco", "cauaburi", "jaú", "unini", "pardo", "jari", 
+    "amapá", "oyapock", "guaporé", "mamore", "beni", "madre de dios",
+    
+    # Coastal/estuary navigable sections
+    "laguna", "itajaí", "itapocu", "cubatão", "ribeira de iguape", 
+    "paranaguá", "guaratuba", "babitonga", "saquarema", "araruama",
+}
+
+# Major dams/waterfalls that block navigation (known from ANA/ANEEL)
+_BARRAGENS_PRINCIPAIS = {
+    # Major dams that block navigation
+    "itaipu": {"rio": "parana", "tipo": "hidreletrica", "bloqueio_total": True},
+    "belo monte": {"rio": "xingu", "tipo": "hidreletrica", "bloqueio_total": True},
+    "tucurui": {"rio": "tocantins", "tipo": "hidreletrica", "bloqueio_total": True},
+    "jirau": {"rio": "madeira", "tipo": "hidreletrica", "bloqueio_total": True},
+    "santo antonio": {"rio": "madeira", "tipo": "hidreletrica", "bloqueio_total": True},
+    "teles pires": {"rio": "teles pires", "tipo": "hidreletrica", "bloqueio_total": True},
+    "sao manoel": {"rio": "teles pires", "tipo": "hidreletrica", "bloqueio_total": True},
+    "colider": {"rio": "teles pires", "tipo": "hidreletrica", "bloqueio_total": True},
+    "sinop": {"rio": "teles pires", "tipo": "hidreletrica", "bloqueio_total": True},
+    "fontes": {"rio": "teles pires", "tipo": "hidreletrica", "bloqueio_total": True},
+    "estreito": {"rio": "tocantins", "tipo": "hidreletrica", "bloqueio_total": True},
+    "ldo": {"rio": "tocantins", "tipo": "hidreletrica", "bloqueio_total": True},
+    "xingo": {"rio": "sao francisco", "tipo": "hidreletrica", "bloqueio_total": True},
+    "sobradinho": {"rio": "sao francisco", "tipo": "hidreletrica", "bloqueio_total": True},
+    "tres marias": {"rio": "sao francisco", "tipo": "hidreletrica", "bloqueio_total": True},
+    "pai serafim": {"rio": "sao francisco", "tipo": "hidreletrica", "bloqueio_total": True},
+    "moxoto": {"rio": "sao francisco", "tipo": "hidreletrica", "bloqueio_total": True},
+    "apa": {"rio": "sao francisco", "tipo": "hidreletrica", "bloqueio_total": True},
+    "três marias": {"rio": "sao francisco", "tipo": "hidreletrica", "bloqueio_total": True},
+    "camargos": {"rio": "grande", "tipo": "hidreletrica", "bloqueio_total": True},
+    "peixe angical": {"rio": "tocantins", "tipo": "hidreletrica", "bloqueio_total": True},
+    "lajeado": {"rio": "tocantins", "tipo": "hidreletrica", "bloqueio_total": True},
+    "cana brava": {"rio": "tocantins", "tipo": "hidreletrica", "bloqueio_total": True},
+    "sao salvador": {"rio": "tocantins", "tipo": "hidreletrica", "bloqueio_total": True},
+    "marimbondo": {"rio": "grande", "tipo": "hidreletrica", "bloqueio_total": True},
+    "aguavermelha": {"rio": "grande", "tipo": "hidreletrica", "bloqueio_total": True},
+    "volta grande": {"rio": "grande", "tipo": "hidreletrica", "bloqueio_total": True},
+    "ferreira gomes": {"rio": "araguaia", "tipo": "hidreletrica", "bloqueio_total": True},
+    "santa isabel": {"rio": "araguaia", "tipo": "hidreletrica", "bloqueio_total": True},
+    "cachoeira caldeirao": {"rio": "araguaia", "tipo": "hidreletrica", "bloqueio_total": True},
+    "cachoeira porteira": {"rio": "araguaia", "tipo": "hidreletrica", "bloqueio_total": True},
+    "dardanelos": {"rio": "aripuana", "tipo": "hidreletrica", "bloqueio_total": True},
+    "fae": {"rio": "aripuana", "tipo": "hidreletrica", "bloqueio_total": True},
+    "aripuana": {"rio": "aripuana", "tipo": "hidreletrica", "bloqueio_total": True},
+    "juina": {"rio": "juina", "tipo": "hidreletrica", "bloqueio_total": True},
+    "ariau": {"rio": "ariau", "tipo": "hidreletrica", "bloqueio_total": True},
+    "jirau": {"rio": "madeira", "tipo": "hidreletrica", "bloqueio_total": True},
+    "santo antonio": {"rio": "madeira", "tipo": "hidreletrica", "bloqueio_total": True},
+}
+
+# Known major waterfalls/rapids that block navigation
+_CACHOEIRAS_PRINCIPAIS = {
+    "iguacu": {"rio": "iguacu", "tipo": "cachoeira", "bloqueio_total": True},
+    "salto grande": {"rio": "uruguai", "tipo": "cachoeira", "bloqueio_total": True},
+    "salto do yucuma": {"rio": "uruguai", "tipo": "cachoeira", "bloqueio_total": True},
+    "cachoeira de paulo afonso": {"rio": "sao francisco", "tipo": "cachoeira", "bloqueio_total": True},
+    "cachoeira de itaipu": {"rio": "parana", "tipo": "cachoeira", "bloqueio_total": True},
+    "cachoeira de sete quedas": {"rio": "parana", "tipo": "cachoeira", "bloqueio_total": True},
+    "cachoeira de santa elena": {"rio": "parana", "tipo": "cachoeira", "bloqueio_total": True},
+    "cachoeira de urubupunga": {"rio": "parana", "tipo": "cachoeira", "bloqueio_total": True},
+    "cachoeira de porto prima": {"rio": "parana", "tipo": "cachoeira", "bloqueio_total": True},
+    "cachoeira de apor": {"rio": "araguaia", "tipo": "cachoeira", "bloqueio_total": True},
+    "cachoeira de sao domingos": {"rio": "tocantins", "tipo": "cachoeira", "bloqueio_total": True},
+    "cachoeira de lajeado": {"rio": "tocantins", "tipo": "cachoeira", "bloqueio_total": True},
+}
+
+def _rio_e_navegavel(nome_rio):
+    """[FLUVIAL-NAVEGAVEL - 435ª] Classifica se um rio é potencialmente navegável.
+    Baseado em lista de rios navegáveis conhecidos + heurísticas de nome/tamanho.
+    Retorna (bool, confidence_score 0-100, detalhes)."""
+    if not nome_rio:
+        return False, 0, "sem nome"
+    
+    _nome_norm = "".join(ch for ch in unicodedata.normalize("NFD", str(nome_rio).lower()) 
+                         if unicodedata.category(ch) != "Mn")
+    _nome_norm = _nome_norm.replace("-", " ").replace(".", "").strip()
+    
+    # Check exact match in known navigable rivers
+    if _nome_norm in _RIOS_NAVEGAVEIS_BR:
+        return True, 95, "rio navegavel conhecido (ANA/ANTAQ)"
+    
+    # Check partial match (river is part of known navigable river)
+    for _rio_conhecido in _RIOS_NAVEGAVEIS_BR:
+        if _rio_conhecido in _nome_norm or _nome_norm in _rio_conhecido:
+            return True, 75, f"parte de rio navegavel conhecido ({_rio_conhecido})"
+    
+    # Heuristics for large rivers (size indicators in name)
+    _indicadores_grande = ["grande", "grandi", "principal", "principal", "maior", "mae", "mãe"]
+    for _ind in _indicadores_grande:
+        if _ind in _nome_norm:
+            return True, 50, f"indicador de rio grande ({_ind})"
+    
+    # Coastal/estuary indicators
+    if any(x in _nome_norm for x in ["baia", "baía", "estuario", "estuário", "foz", "delta", "laguna", "laguna"]):
+        return True, 60, "corpo d'agua costeiro/estuário"
+    
+    # Lake/coastal lagoon indicators
+    if any(x in _nome_norm for x in ["lagoa", "lago", "laguna"]):
+        return True, 40, "lagoa/lago (navegacao limitada)"
+    
+    # Small stream indicators (likely NOT navigable)
+    _indicadores_pequeno = ["riacho", "riachinho", "corrego", "correginho", "arroio", "arroio", "sanga", "sanguinha", "grota", "grota"]
+    for _ind in _indicadores_pequeno:
+        if _ind in _nome_norm:
+            return False, 90, f"corpo d'agua pequeno ({_ind})"
+    
+    # Default: unknown, assume potentially navigable but low confidence
+    return True, 25, "desconhecido - assumido potencialmente navegavel"
+
+
+def _rio_tem_obstrucao(nome_rio):
+    """[FLUVIAL-OBSTRUCAO - 435ª] Verifica se um rio tem obstrução conhecida (barragem/cachoeira).
+    Retorna (bool, tipo, nome_obstrucao)."""
+    if not nome_rio:
+        return False, None, None
+    
+    _nome_norm = "".join(ch for ch in unicodedata.normalize("NFD", str(nome_rio).lower()) 
+                         if unicodedata.category(ch) != "Mn")
+    _nome_norm = _nome_norm.replace("-", " ").replace(".", "").strip()
+    
+    # Check dams
+    for _nome_barragem, _info in _BARRAGENS_PRINCIPAIS.items():
+        if _nome_barragem in _nome_norm or _info["rio"] in _nome_norm:
+            return True, "barragem", _nome_barragem
+    
+    # Check waterfalls
+    for _nome_cachoeira, _info in _CACHOEIRAS_PRINCIPAIS.items():
+        if _nome_cachoeira in _nome_norm or _info["rio"] in _nome_norm:
+            return True, "cachoeira", _nome_cachoeira
+    
+    return False, None, None
+
+
+def _calcular_score_navegabilidade(rio_nome, distancia_km, tem_obstrucao=False):
+    """[FLUVIAL-SCORE - 435ª] Calcula score de navegabilidade (0-100) para um segmento fluvial."""
+    _navegavel, _conf, _detalhe = _rio_e_navegavel(rio_nome)
+    
+    if not _navegavel:
+        return 0
+    
+    _score = _conf
+    
+    # Penalize for distance (longer = more uncertain)
+    if distancia_km > 500:
+        _score *= 0.7
+    elif distancia_km > 200:
+        _score *= 0.85
+    elif distancia_km > 100:
+        _score *= 0.95
+    
+    # Heavy penalty for obstructions
+    if tem_obstrucao:
+        _score *= 0.1  # Almost impassable
+    
+    return max(0, min(100, round(_score)))
+
+
+def _fluvial_custo_com_navegabilidade(dist_fluvial_km, rio_nome, distancia_reta_km):
+    """[FLUVIAL-CUSTO-NAVEGAVEL - 435ª] Calcula custo efetivo da rota fluvial considerando navegabilidade.
+    Retorna custo efetivo (km equivalentes) ou None se inviável."""
+    _tem_obs, _tipo, _nome_obs = _rio_tem_obstrucao(rio_nome)
+    
+    if _tem_obs:
+        return None  # Inviável - obstrução total
+    
+    _score = _calcular_score_navegabilidade(rio_nome, dist_fluvial_km, tem_obstrucao=False)
+    
+    if _score < 30:
+        return None  # Confiança muito baixa
+    
+    # Ajusta custo: score baixo = custo maior (penaliza incerteza)
+    _fator_penalidade = 1.0 + (100 - _score) / 100.0  # 1.0 a 2.0
+    
+    # Verifica se fluvial é realmente vantajoso vs reta
+    if dist_fluvial_km > distancia_reta_km * 3.0:
+        return None  # Fluvial muito sinuoso vs reta
+    
+    return round(dist_fluvial_km * _fator_penalidade, 1)
+
+
+# =============================================================================
+# FIM FLUVIAL NAVIGABILITY INTELLIGENCE
+# =============================================================================
+
+
 def _fluvial_sweep_otimizado(resultados, coords_f, g, topk_map=None, max_pares=300, max_reta_km=300.0):
     """[FLUVIAL-SWEEP-OTIMIZADO - 434ª] Varredura fluvial MASSIVA e INTELIGENTE.
     
