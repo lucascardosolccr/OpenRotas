@@ -55566,16 +55566,76 @@ if _secao == _SECOES[19]:   # tab_land_routes
         st.warning("Não foi possível montar a central de rotas sem balsa. As demais seções seguem normais.")
 
 
+def _fig_pares_od(df, altura=560):
+    """[ABA-ROBUSTA] Figura Plotly origem→destino a partir da df canônica
+    (colunas 'Lat Origem'/'Lon Origem'/'Lat Destino'/'Lon Destino'). Nunca levanta."""
+    try:
+        if df is None or len(df) == 0:
+            return None
+        _pts = []
+        for _, _r in df.iterrows():
+            _lo = _num_seguro(_r.get('Lat Origem'))
+            _oo = _num_seguro(_r.get('Lon Origem'))
+            _ld = _num_seguro(_r.get('Lat Destino'))
+            _od = _num_seguro(_r.get('Lon Destino'))
+            if _lo is None or _oo is None or _ld is None or _od is None:
+                continue
+            _pts.append((_lo, _oo, _ld, _od,
+                         str(_r.get('Origem', '—')), str(_r.get('Destino', '—')),
+                         (_num_seguro(_r.get('Distância (km)'), 0.0) or 0.0)))
+        if not _pts:
+            return None
+        _dfp = pd.DataFrame(_pts, columns=['lio', 'lno', 'lid', 'lnd', 'orig', 'dst', 'km'])
+        _fig = go.Figure()
+        _fig.add_trace(go.Scattermapbox(
+            lat=_dfp['lio'], lon=_dfp['lno'], mode='markers',
+            marker=dict(size=10, color='blue'), name='Origem', text=_dfp['orig'],
+            hoverinfo='text',
+            hovertext=_dfp['orig'] + ' → ' + _dfp['dst'] + '<br>km: ' + _dfp['km'].astype(str)))
+        _fig.add_trace(go.Scattermapbox(
+            lat=_dfp['lid'], lon=_dfp['lnd'], mode='markers',
+            marker=dict(size=10, color='red'), name='Destino', text=_dfp['dst'],
+            hoverinfo='text',
+            hovertext=_dfp['orig'] + ' → ' + _dfp['dst'] + '<br>km: ' + _dfp['km'].astype(str)))
+        for _, _r in _dfp.iterrows():
+            _fig.add_trace(go.Scattermapbox(
+                lat=[_r['lio'], _r['lid']], lon=[_r['lno'], _r['lnd']],
+                mode='lines', line=dict(width=2, color='blue', dash='dash'),
+                showlegend=False, hoverinfo='skip'))
+        _fig.update_layout(
+            mapbox=dict(style="carto-darkmatter", center=dict(lat=-15, lon=-55), zoom=3.5),
+            height=altura, margin={"r": 0, "t": 40, "l": 0, "b": 0}, showlegend=True)
+        return _fig
+    except Exception:
+        return None
+
+
 # ==============================================================================
 # SEÇÃO 20 — DERROTAS  [DEFEATS-TAB - 440ª]
 # ==============================================================================
 # Central de derrotas e correções: diagnóstico de cada derrota e correções aplicadas.
+# [ABA-ROBUSTA 448ª] Opera sobre a projeção canônica (_df_rotas_para_analise) — o
+# df_processado real não tem 'Balsa'/'Vencedor'/'Distância App (km)'; o helper normaliza.
 # ==============================================================================
 if _secao == _SECOES[20]:   # tab_defeats
     st.header("❌ Central de Derrotas e Correções")
     st.caption("Diagnóstico de cada derrota do estudo de referência: causa raiz, rio, balsa, candidatos descartados, correção aplicada.")
     
     _aba_derrotas = st.tabs(["📋 Lista", "🗺️ Mapa das Derrotas", "⚔️ Diff Visual", "📊 Estatísticas"])
+    
+    try:
+        _rotas_proc = st.session_state.get('df_processado')
+        _df_derrota_canon = None
+        if _rotas_proc is not None and not _rotas_proc.empty:
+            _df_derrota_canon = _df_rotas_para_analise(_rotas_proc, max_linhas=600)
+    except Exception:
+        _df_derrota_canon = None
+    _derrotas = pd.DataFrame()
+    if _df_derrota_canon is not None and not _df_derrota_canon.empty:
+        try:
+            _derrotas = _df_derrota_canon[_df_derrota_canon["Vencedor"].astype(str).str.strip() == "Referência"]
+        except Exception:
+            _derrotas = pd.DataFrame()
     
     with _aba_derrotas[0]:
         st.subheader("📋 Lista de Derrotas")
@@ -55589,189 +55649,108 @@ if _secao == _SECOES[20]:   # tab_defeats
                 st.info("Arquivo _REGISTRO_DERROTAS.md não encontrado.")
             
             # Estatísticas rápidas
-            _rotas_proc = st.session_state.get('df_processado')
-            if _rotas_proc is not None:
-                _derrotas = _rotas_proc[_rotas_proc.get("Vencedor", "") == "Referência"]
-                st.metric("Derrotas Atuais", len(_derrotas))
-                if len(_derrotas) > 0:
-                    st.dataframe(_derrotas[["Origem", "UF", "Destino", "Distância App (km)", "Distância Ref (km)", "Diferença (km)", "Balsa", "Rio", "Causa Raiz"]].head(50), use_container_width=True, hide_index=True)
+            st.metric("Derrotas Atuais", len(_derrotas))
+            if len(_derrotas) > 0:
+                _cols_show = ["Origem", "UF", "Destino", "Distância (km)", "Balsa", "Rio", "Causa Raiz", "Vencedor"]
+                _cols_avail = [c for c in _cols_show if c in _derrotas.columns]
+                st.dataframe(_derrotas[_cols_avail].head(50), use_container_width=True, hide_index=True)
+            else:
+                st.info("Nenhuma derrota identificada no estudo atual (coluna 'Vencedor' ausente ou nenhuma linha = 'Referência').")
         except Exception:
             logger.error("[DEFEATS-TAB] Falha ao renderizar lista de derrotas (isolada).", exc_info=True)
             st.warning("Não foi possível montar a lista de derrotas. As demais seções seguem normais.")
     
     with _aba_derrotas[1]:
         st.subheader("🗺️ Mapa das Derrotas")
-        st.caption("Visualização geográfica das derrotas: 🔵 origem · 🔴 destino da referência · 🔵 destino da aplicação · 🔵 linha cheia = rota app · 🔴 linha tracejada = rota referência · 🔵 linha tracejada = melhor candidata")
+        st.caption("Visualização geográfica das derrotas: 🔵 origem · 🔴 destino (linha tracejada = deslocamento da derrota)")
         
         try:
-            _rotas_proc = st.session_state.get('df_processado')
-            if _rotas_proc is not None and not _rotas_proc.empty:
-                _derrotas = _rotas_proc[_rotas_proc.get("Vencedor", "") == "Referência"]
-                if not _derrotas.empty:
-                    # Seletor de derrota para visualizar
-                    _derrotas_labels = ["(todas as derrotas)"] + [
-                        f"{i+1}. {r.get('Origem','—')}/{r.get('UF','—')} → App: {r.get('Destino','—')} vs Ref: {r.get('Destino_Ref','—')}"
-                        for i, r in enumerate(_derrotas.iterrows())
-                    ]
-                    _sel_derrota = st.selectbox("🔍 Selecionar derrota", _derrotas_labels, key="derrota_sel")
-                    
-                    _map_cap = ""
-                    if _sel_derrota != "(todas as derrotas)":
-                        _ix = _derrotas_labels.index(_sel_derrota) - 1
-                        if 0 <= _ix < len(_derrotas):
-                            _derrotas_show = _derrotas.iloc[[_ix]]
-                        else:
-                            _derrotas_show = _derrotas
-                    else:
-                        _derrotas_show = _derrotas
-                    
-                    _gmapa = _geo_mapa_derrotas(_derrotas_show)
-                    if _gmapa:
-                        components.html(_gmapa, height=560, scrolling=False)
-                        st.caption("🔵 Origem (azul) → 🔴 Destino Ref (vermelho) → 🔵 Destino App (azul) | Linha cheia = App · Tracejado vermelho = Ref · Tracejado azul = Melhor candidata")
-                        
-                        # Botões de exportação individual
-                        if _sel_derrota != "(todas as derrotas)":
-                            _ix = _derrotas_labels.index(_sel_derrota) - 1
-                            if 0 <= _ix < len(_derrotas):
-                                _dr = _derrotas.iloc[_ix]
-                                _origem = _dr.get('Origem', '').replace(' ', '_')
-                                _destino = _dr.get('Destino', '').replace(' ', '_')
-                                _uf = _dr.get('UF', '')
-                                _base_fn = f"derrota_{_origem}_{_uf}_{_destino}"
-                                _df_single = _dr.to_frame().T if hasattr(_dr, 'to_frame') else pd.DataFrame([_dr])
-                                
-                                _col_exp1, _col_exp2, _col_exp3, _col_exp4, _col_exp5, _col_exp6 = st.columns(6)
-                                with _col_exp1:
-                                    st.download_button("🌐 HTML", data=_gmapa.encode('utf-8'), file_name=f"{_base_fn}.html", mime="text/html", use_container_width=True)
-                                with _col_exp2:
-                                    _geojson = _df_para_geojson(_df_single)
-                                    st.download_button("🌐 GeoJSON", data=_geojson.encode('utf-8'), file_name=f"{_base_fn}.geojson", mime="application/geo+json", use_container_width=True)
-                                with _col_exp3:
-                                    _kml = _df_para_kml(_df_single)
-                                    st.download_button("🗺️ KML", data=_kml.encode('utf-8'), file_name=f"{_base_fn}.kml", mime="application/vnd.google-earth.kml+xml", use_container_width=True)
-                                with _col_exp4:
-                                    _gpx = _df_para_gpx(_df_single)
-                                    st.download_button("📍 GPX", data=_gpx.encode('utf-8'), file_name=f"{_base_fn}.gpx", mime="application/gpx+xml", use_container_width=True)
-                                with _col_exp5:
-                                    import io
-                                    _xlsx_buf = io.BytesIO()
-                                    with pd.ExcelWriter(_xlsx_buf, engine='xlsxwriter') as _writer:
-                                        _df_single.to_excel(_writer, index=False, sheet_name='Derrota')
-                                    st.download_button("📊 XLSX", data=_xlsx_buf.getvalue(), file_name=f"{_base_fn}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-                                with _col_exp6:
-                                    _csv = _df_single.to_csv(index=False).encode('utf-8-sig')
-                                    st.download_button("📄 CSV", data=_csv, file_name=f"{_base_fn}.csv", mime="text/csv", use_container_width=True)
-                    else:
-                        st.info("Dados de coordenadas insuficientes para renderizar o mapa.")
-                else:
-                    st.info("Nenhuma derrota encontrada no estudo atual.")
+            if _derrotas.empty:
+                st.info("Nenhuma derrota para mapear no estudo atual.")
             else:
-                st.info("Execute um estudo (aba 'Locais de Aplicação') para popular os dados de rotas.")
-        except Exception as e:
+                _fig_derrotas = _fig_pares_od(_derrotas)
+                if _fig_derrotas is None:
+                    st.info("Dados de coordenadas insuficientes para renderizar o mapa das derrotas.")
+                else:
+                    st.plotly_chart(_fig_derrotas, use_container_width=True)
+                    st.caption(f"🔵 Origem → 🔴 Destino | Total: {len(_derrotas)} derrota(s)")
+                    _col_exp1, _col_exp2, _col_exp3, _col_exp4, _col_exp5, _col_exp6 = st.columns(6)
+                    with _col_exp1:
+                        st.download_button("🌐 HTML", data=str(_geo_html_locais(_derrotas)).encode('utf-8'), file_name="derrotas.html", mime="text/html", use_container_width=True)
+                    with _col_exp2:
+                        _geojson = _df_para_geojson(_derrotas)
+                        st.download_button("🌐 GeoJSON", data=_geojson.encode('utf-8'), file_name="derrotas.geojson", mime="application/geo+json", use_container_width=True)
+                    with _col_exp3:
+                        _kml = _df_para_kml(_derrotas)
+                        st.download_button("🗺️ KML", data=_kml.encode('utf-8'), file_name="derrotas.kml", mime="application/vnd.google-earth.kml+xml", use_container_width=True)
+                    with _col_exp4:
+                        _gpx = _df_para_gpx(_derrotas)
+                        st.download_button("📍 GPX", data=_gpx.encode('utf-8'), file_name="derrotas.gpx", mime="application/gpx+xml", use_container_width=True)
+                    with _col_exp5:
+                        import io
+                        _xlsx_buf = io.BytesIO()
+                        with pd.ExcelWriter(_xlsx_buf, engine='xlsxwriter') as _writer:
+                            _derrotas.to_excel(_writer, index=False, sheet_name='Derrotas')
+                        st.download_button("📊 XLSX", data=_xlsx_buf.getvalue(), file_name="derrotas.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+                    with _col_exp6:
+                        _csv = _derrotas.to_csv(index=False).encode('utf-8-sig')
+                        st.download_button("📄 CSV", data=_csv, file_name="derrotas.csv", mime="text/csv", use_container_width=True)
+        except Exception:
             logger.error("[DEFEATS-MAP] Falha ao renderizar mapa das derrotas.", exc_info=True)
             st.warning("Não foi possível montar o mapa das derrotas.")
     
     with _aba_derrotas[2]:
         st.subheader("⚔️ Diff Visual: Aplicação vs Referência")
-        st.caption("Sobreposição visual das rotas: 🔵 linha cheia = Aplicação · 🔴 tracejado = Referência · 🟢 = Melhor candidata")
+        st.caption("O df_processado deste estudo não carrega as colunas de comparação App×Ref (Destino_Ref, Distância Ref, Diferença) — exibindo as derrotas mapeadas com os campos disponíveis.")
         
         try:
-            _rotas_proc = st.session_state.get('df_processado')
-            if _rotas_proc is not None and not _rotas_proc.empty:
-                _derrotas = _rotas_proc[_rotas_proc.get("Vencedor", "") == "Referência"]
-                if not _derrotas.empty:
-                    _derrotas_labels = [
-                        f"{r.get('Origem','—')}/{r.get('UF','—')} → App: {r.get('Destino','—')} vs Ref: {r.get('Destino_Ref','—')}"
-                        for _, r in _derrotas.iterrows()
-                    ]
-                    _sel_diff = st.selectbox("🔍 Selecionar comparação", ["(todas)"] + [f"{i+1}. {l}" for i, l in enumerate(_derrotas_labels)], key="diff_sel")
-                    
-                    if _sel_diff != "(todas)":
-                        _ix = int(_sel_diff.split(".")[0]) - 1
-                        _diff_rows = _derrotas.iloc[[_ix]]
-                    else:
-                        _diff_rows = _derrotas
-                    
-                    # Gerar mapa de diff
-                    _gmapa = _geo_mapa_diff_visual(_diff_rows if isinstance(_diff_rows, list) else _diff_rows.to_dict('records'))
-                    if _gmapa:
-                        components.html(_gmapa, height=560, scrolling=False)
-                        st.caption("🔵 Linha cheia = Aplicação · 🔴 Tracejado vermelho = Referência · 🟢 Tracejado verde = Melhor candidata | 🔵 Origem · 🔴 Destino Ref · 🔵 Destino App")
-                        
-                        # Botões de exportação individual
-                        if _sel_diff != "(todas)":
-                            _ix = int(_sel_diff.split(".")[0]) - 1
-                            if 0 <= _ix < len(_derrotas):
-                                _dr = _derrotas.iloc[_ix]
-                                _origem = _dr.get('Origem', '').replace(' ', '_')
-                                _destino = _dr.get('Destino', '').replace(' ', '_')
-                                _uf = _dr.get('UF', '')
-                                _base_fn = f"diff_{_origem}_{_uf}_{_destino}"
-                                _df_single = _dr.to_frame().T if hasattr(_dr, 'to_frame') else pd.DataFrame([_dr])
-                                
-                                _col_exp1, _col_exp2, _col_exp3, _col_exp4, _col_exp5, _col_exp6 = st.columns(6)
-                                with _col_exp1:
-                                    st.download_button("🌐 HTML", data=_gmapa.encode('utf-8'), file_name=f"{_base_fn}.html", mime="text/html", use_container_width=True)
-                                with _col_exp2:
-                                    _geojson = _df_para_geojson(_df_single)
-                                    st.download_button("🌐 GeoJSON", data=_geojson.encode('utf-8'), file_name=f"{_base_fn}.geojson", mime="application/geo+json", use_container_width=True)
-                                with _col_exp3:
-                                    _kml = _df_para_kml(_df_single)
-                                    st.download_button("🗺️ KML", data=_kml.encode('utf-8'), file_name=f"{_base_fn}.kml", mime="application/vnd.google-earth.kml+xml", use_container_width=True)
-                                with _col_exp4:
-                                    _gpx = _df_para_gpx(_df_single)
-                                    st.download_button("📍 GPX", data=_gpx.encode('utf-8'), file_name=f"{_base_fn}.gpx", mime="application/gpx+xml", use_container_width=True)
-                                with _col_exp5:
-                                    import io
-                                    _xlsx_buf = io.BytesIO()
-                                    with pd.ExcelWriter(_xlsx_buf, engine='xlsxwriter') as _writer:
-                                        _df_single.to_excel(_writer, index=False, sheet_name='Diff')
-                                    st.download_button("📊 XLSX", data=_xlsx_buf.getvalue(), file_name=f"{_base_fn}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-                                with _col_exp6:
-                                    _csv = _df_single.to_csv(index=False).encode('utf-8-sig')
-                                    st.download_button("📄 CSV", data=_csv, file_name=f"{_base_fn}.csv", mime="text/csv", use_container_width=True)
-                    else:
-                        st.info("Dados de coordenadas insuficientes para renderizar o diff visual.")
-                    
-                    # Tabela comparativa lado a lado
-                    st.markdown("#### 📊 Comparativo Lado a Lado")
-                    _cols_show = ["Origem", "UF", "Destino_App", "Dist_App_km", "Destino_Ref", "Dist_Ref_km", "Diferença_km", "Rio", "Balsa"]
-                    _cols_avail = [c for c in ["Origem", "UF", "Destino_App", "Dist_App", "Destino_Ref", "Dist_Ref", "Diferença (km)", "Balsa", "Rio"] if c in _derrotas.columns]
-                    st.dataframe(_derrotas[["Origem", "UF", "Destino", "Distância App (km)", "Distância Ref (km)", "Diferença (km)", "Balsa", "Rio", "Causa Raiz"]].head(20), use_container_width=True, hide_index=True)
-                else:
-                    st.info("Nenhuma derrota encontrada no estudo atual.")
+            if _derrotas.empty:
+                st.info("Nenhuma derrota encontrada no estudo atual.")
             else:
-                st.info("Execute um estudo (aba 'Locais de Aplicação') para popular os dados de rotas.")
-        except Exception as e:
+                _fig_diff = _fig_pares_od(_derrotas)
+                if _fig_diff is None:
+                    st.info("Dados de coordenadas insuficientes para renderizar o diff visual.")
+                else:
+                    st.plotly_chart(_fig_diff, use_container_width=True)
+                    st.markdown("#### 📊 Comparativo das derrotas")
+                    _cols_show = ["Origem", "UF", "Destino", "Distância (km)", "Vencedor", "Balsa", "Rio", "Causa Raiz"]
+                    _cols_avail = [c for c in _cols_show if c in _derrotas.columns]
+                    st.dataframe(_derrotas[_cols_avail].head(20), use_container_width=True, hide_index=True)
+        except Exception:
             logger.error("[DIFF-VISUAL] Falha no diff visual.", exc_info=True)
             st.warning("Não foi possível montar o diff visual.")
     
     with _aba_derrotas[3]:
         st.subheader("📊 Estatísticas das Derrotas")
         try:
-            _rotas_proc = st.session_state.get('df_processado')
-            if _rotas_proc is not None and not _rotas_proc.empty:
-                _derrotas = _rotas_proc[_rotas_proc.get("Vencedor", "") == "Referência"]
-                
+            if _derrotas.empty:
+                st.info("Nenhuma derrota identificada no estudo atual.")
+            else:
                 _c1, _c2, _c3, _c4 = st.columns(4)
                 _c1.metric("Total Derrotas", len(_derrotas))
-                _c2.metric("Com Balsa", int(_derrotas.get("Balsa", False).sum()) if "Balsa" in _rotas_proc.columns else 0)
-                _c3.metric("Dist. Média App", f"{_rotas_proc[_rotas_proc['Vencedor']=='Referência']['Distância (km)'].mean():.1f} km" if 'Distância (km)' in _rotas_proc.columns else "n/d")
-                _c4.metric("Dif. Média (km)", f"{_rotas_proc[_rotas_proc['Vencedor']=='Referência']['Diferença (km)'].mean():.1f}" if 'Diferença (km)' in _rotas_proc.columns else "n/d")
+                _c2.metric("Com Balsa", int(_derrotas["Balsa"].sum()))
+                _dist_media = _derrotas["Distância (km)"].mean()
+                _dist_media = _dist_media if _dist_media == _dist_media else 0.0
+                _c3.metric("Dist. Média (km)", f"{float(_dist_media):.1f}")
+                _c4.metric("Sem Rio", int((_derrotas["Rio"].astype(str).str.strip() == "—").sum()))
                 
                 # Por causa raiz
-                if 'Causa Raiz' in _rotas_proc.columns:
+                _causa = _derrotas["Causa Raiz"].astype(str).str.strip().replace("—", "")
+                _causa_val = _causa[_causa != ""]
+                if not _causa_val.empty:
                     st.subheader("Por Causa Raiz")
-                    _causa = _rotas_proc[_rotas_proc['Vencedor']=='Referência']['Causa Raiz'].value_counts()
-                    st.bar_chart(_causa)
-                    st.dataframe(_causa.reset_index().rename(columns={'index':'Causa','Causa Raiz':'Quantidade'}), use_container_width=True)
+                    _cnt = _causa_val.value_counts()
+                    st.bar_chart(_cnt)
+                    st.dataframe(_cnt.reset_index().rename(columns={"index": "Causa", "Causa Raiz": "Quantidade"}),
+                                 use_container_width=True, hide_index=True)
                 
                 # Por UF
-                if 'UF' in _rotas_proc.columns:
+                _uf_val = _derrotas["UF"].astype(str).str.strip().replace("N/A", "").replace("—", "")
+                _uf_sel = _uf_val[_uf_val != ""]
+                if not _uf_sel.empty:
                     st.subheader("Por UF")
-                    _uf = _rotas_proc[_rotas_proc['Vencedor']=='Referência']['UF'].value_counts()
-                    st.bar_chart(_uf)
+                    _uf_cnt = _uf_sel.value_counts()
+                    st.bar_chart(_uf_cnt)
         except Exception:
             logger.error("[DEFEATS-STATS] Falha nas estatísticas.", exc_info=True)
             st.warning("Não foi possível montar as estatísticas.")
@@ -55790,9 +55769,23 @@ if _secao == _SECOES[21]:   # tab_auditoria_completa
     
     with _aba_aud[0]:
         st.subheader("📋 Candidatos Avaliados")
-        _rotas_proc = st.session_state.get('df_processado')
-        if _rotas_proc is not None and not _rotas_proc.empty:
-            st.dataframe(_rotas_proc[["Origem", "UF", "Destino", "Distância (km)", "Vencedor", "Critério", "Balsa"]].head(100), use_container_width=True, hide_index=True)
+        # [ABA-ROBUSTA 448ª] df_processado real não tem 'Distância (km)'/'Vencedor'/'Critério' —
+        # usa a projeção canônica (fallback para os campos disponíveis). Nunca quebra a aba.
+        try:
+            _rotas_proc = st.session_state.get('df_processado')
+            if _rotas_proc is not None and not _rotas_proc.empty:
+                _df_aud_canon = _df_rotas_para_analise(_rotas_proc, max_linhas=400)
+                if _df_aud_canon is not None and not _df_aud_canon.empty:
+                    _cols_show = ["Origem", "UF", "Destino", "Distância (km)", "Vencedor", "Balsa", "Rio", "Bacia"]
+                    _cols_avail = [c for c in _cols_show if c in _df_aud_canon.columns]
+                    st.dataframe(_df_aud_canon[_cols_avail].head(100), use_container_width=True, hide_index=True)
+                else:
+                    st.info("Nenhuma rota analisável nesta sessão.")
+            else:
+                st.info("Execute um estudo (aba 'Locais de Aplicação') para popular os dados de rotas.")
+        except Exception:
+            logger.error("[AUDIT-TAB] Falha ao renderizar candidatos (isolada).", exc_info=True)
+            st.warning("Não foi possível montar a lista de candidatos. As demais seções seguem normais.")
     
     with _aba_aud[1]:
         st.subheader("🗑️ Candidatos Descartados")
@@ -55806,7 +55799,7 @@ if _secao == _SECOES[21]:   # tab_auditoria_completa
         st.subheader("📚 Fontes de Dados Utilizadas")
         st.info("Fontes: IBGE, ANA/SNIRH, ANTAQ, DNIT, ANTT, OSRM, FOSSGIS, Valhalla, IBGE BC250/BC100, Natural Earth 10m.")
     
-    with _aba_aud[3]:
+    with _aba_aud[4]:
         st.subheader("🔧 APIs Utilizadas")
         st.info("OSRM Público → FOSSGIS (fallback), Valhalla (opt-in), SNIRH REST API (ANA), Google Geocode (opt-in).")
     
