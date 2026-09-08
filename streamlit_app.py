@@ -55615,6 +55615,51 @@ if _secao == _SECOES[15]:   # tab_route_intel
                 _cols_show = [c for c in _cols_show if c in _df_intel.columns]
                 st.dataframe(_df_intel[_cols_show].head(20), use_container_width=True, hide_index=True)
 
+                # [INTEL-VIS - 452ª] Painel visual/analítico (ADRITIVO + defensivo): KPIs, distribuições e mapa
+                # O/D de todo o estudo — complementa a tabela e o inspetor de rota, sem alterar o fluxo atual.
+                try:
+                    _int_tot = len(_df_intel)
+                    _int_km = pd.to_numeric(_df_intel["Distância (km)"], errors="coerce")
+                    _int_balsa = int(_df_intel["Balsa"].sum()) if "Balsa" in _df_intel.columns else 0
+                    _int_rios = int(_df_intel["Rio"].astype(str).str.strip().replace(["", "—"], pd.NA).dropna().nunique()) if "Rio" in _df_intel.columns else 0
+
+                    _ik1, _ik2, _ik3, _ik4 = st.columns(4)
+                    _ik1.metric("Rotas analisadas", _int_tot)
+                    _ik2.metric("Distância média", ("%.1f km" % float(_int_km.mean())) if _int_km.notna().any() else "—")
+                    _ik3.metric("Rotas com balsa", _int_balsa)
+                    _ik4.metric("Rios distintos", _int_rios)
+
+                    _ia1, _ia2 = st.columns(2)
+                    with _ia1:
+                        st.caption("Distribuição de distância (faixas, km)")
+                        _faixas = pd.cut(_int_km.dropna(), bins=[0, 50, 100, 200, 400, 800, float("inf")],
+                                         labels=["0–50", "50–100", "100–200", "200–400", "400–800", "800+"])
+                        st.bar_chart(_faixas.value_counts().sort_index())
+                    with _ia2:
+                        st.caption("Rotas por UF (top 12)")
+                        _ufs = _df_intel["UF"].astype(str).str.strip().replace(["", "N/A", "—"], pd.NA).dropna()
+                        st.bar_chart(_ufs.value_counts().head(12)) if _ufs.nunique() else st.caption("Sem UF disponível.")
+
+                    _ib1, _ib2 = st.columns(2)
+                    with _ib1:
+                        st.caption("Rios mais frequentes")
+                        _rios = (_df_intel["Rio"].astype(str).str.strip().replace(["", "—"], pd.NA).dropna()
+                                 if "Rio" in _df_intel.columns else pd.Series(dtype=object))
+                        st.bar_chart(_rios.value_counts().head(10)) if _rios.nunique() else st.caption("Sem rios identificados.")
+                    with _ib2:
+                        st.caption("Bacias mais frequentes")
+                        _bac = (_df_intel["Bacia"].astype(str).str.strip().replace(["", "—"], pd.NA).dropna()
+                                if "Bacia" in _df_intel.columns else pd.Series(dtype=object))
+                        st.bar_chart(_bac.value_counts().head(10)) if _bac.nunique() else st.caption("Sem bacias identificadas.")
+
+                    st.divider()
+                    st.caption("🗺️ Mapa origem → destino do estudo")
+                    _fig_intel = _fig_pares_od(_df_intel)
+                    if _fig_intel is not None:
+                        st.plotly_chart(_fig_intel, use_container_width=True)
+                except Exception:
+                    logger.debug("[ROUTE-INTEL-VIS] Análise visual isolada falhou (aditivo).", exc_info=True)
+
                 _labels = (_df_intel["Origem"].astype(str) + " → " + _df_intel["Destino"].astype(str)).tolist()
                 _opcoes = ["(nenhuma)"] + _labels
                 _sel = st.selectbox("🔍 Inspecionar rota", _opcoes, key="route_intel_sel")
@@ -55720,6 +55765,20 @@ if _secao == _SECOES[16]:   # tab_data_sources
     
     import pandas as pd
     _df_fontes = pd.DataFrame(_fontes)
+    
+    # [FONTES-VIS - 452ª] Saúde do catálogo (aditivo): nº de fontes integradas/parciais e órgãos.
+    try:
+        _f_total = len(_df_fontes)
+        _f_int = int(_df_fontes["Status"].astype(str).str.startswith("✅").sum())
+        _f_par = int(_df_fontes["Status"].astype(str).str.startswith("⚠").sum())
+        _f_org = int(_df_fontes["Órgão"].nunique())
+        _fk1, _fk2, _fk3, _fk4 = st.columns(4)
+        _fk1.metric("Fontes catalogadas", _f_total)
+        _fk2.metric("Integradas (✅)", _f_int)
+        _fk3.metric("Parciais (⚠️)", _f_par)
+        _fk4.metric("Órgãos distintos", _f_org)
+    except Exception:
+        logger.debug("[FONTES-VIS] Métricas de fontes isoladas falharam (aditivo).", exc_info=True)
     
     # Abas para melhor organização
     _aba_fontes = st.tabs(["📋 Tabela Completa", "🔗 Endpoints & APIs", "📊 Resumo por Tipo", "💾 Exportar"])
@@ -55878,6 +55937,17 @@ if _secao == _SECOES[17]:   # tab_hidrografia
             _cols_show = [c for c in ["nome", "nome_rio", "bacia", "uf", "latitude", "longitude", "fonte"] if c in _rios_df.columns]
             st.dataframe(_rios_df[_cols_show].head(100), use_container_width=True, hide_index=True)
             
+            # [HYDRO-VIS - 452ª] Rios por bacia (aditivo): dá a leitura analítica logo abaixo da tabela.
+            try:
+                _bacia_col = next((c for c in ["bacia", "nome_bacia"] if c in _rios_df.columns), None)
+                if _bacia_col:
+                    _rios_bac = _rios_df[_bacia_col].astype(str).str.strip().replace(["", "—"], pd.NA).dropna()
+                    if _rios_bac.nunique():
+                        st.caption("Rios por bacia (top 10)")
+                        st.bar_chart(_rios_bac.value_counts().head(10))
+            except Exception:
+                logger.debug("[HYDRO-VIS] Gráfico de bacias isolado falhou (aditivo).", exc_info=True)
+            
             # Botões de exportação
             _col_exp1, _col_exp2, _col_exp3, _col_exp4, _col_exp5, _col_exp6 = st.columns(6)
             with _col_exp1:
@@ -55942,6 +56012,17 @@ if _secao == _SECOES[17]:   # tab_hidrografia
             st.caption(f"Fonte: {_est_df['fonte'].iloc[0] if 'fonte' in _est_df.columns else 'Desconhecida'} | Total: {len(_est_df)} estações")
             _cols_show = [c for c in ["codigo", "nome", "rio", "bacia", "uf", "lat", "latitude", "lon", "longitude", "tipo", "fonte"] if c in _est_df.columns]
             st.dataframe(_est_df[_cols_show].head(100), use_container_width=True, hide_index=True)
+            
+            # [HYDRO-VIS - 452ª] Estações por UF (aditivo): leitura analítica ao lado da tabela.
+            try:
+                _uf_col = next((c for c in ["uf", "estado"] if c in _est_df.columns), None)
+                if _uf_col:
+                    _est_uf = _est_df[_uf_col].astype(str).str.strip().replace(["", "—"], pd.NA).dropna()
+                    if _est_uf.nunique():
+                        st.caption("Estações por UF (top 12)")
+                        st.bar_chart(_est_uf.value_counts().head(12))
+            except Exception:
+                logger.debug("[HYDRO-VIS] Gráfico de estações/UF isolado falhou (aditivo).", exc_info=True)
             
             # Botões de exportação
             _col_exp1, _col_exp2, _col_exp3, _col_exp4, _col_exp5, _col_exp6 = st.columns(6)
@@ -56523,6 +56604,21 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
                     _top_rios = _ferry_rotas['Rio'].replace("—", "").value_counts().head(10)
                     if not _top_rios.empty:
                         st.bar_chart(_top_rios)
+                    
+                    # [FERRY-VIS - 452ª] Distribuição de distância das travessias (aditivo).
+                    try:
+                        _fk_km = pd.to_numeric(_ferry_rotas["Distância (km)"], errors="coerce").dropna()
+                        if _fk_km.notna().any():
+                            _fk_fx = pd.cut(_fk_km, bins=[0, 25, 50, 100, 200, 400, float("inf")],
+                                            labels=["0–25", "25–50", "50–100", "100–200", "200–400", "400+"])
+                            st.caption("Distribuição de distância das travessias (faixas, km)")
+                            st.bar_chart(_fk_fx.value_counts().sort_index())
+                        _top_bacias = _ferry_rotas["Bacia"].astype(str).replace(["", "—"], pd.NA).dropna().value_counts().head(10)
+                        if not _top_bacias.empty:
+                            st.caption("Bacias das travessias (top 10)")
+                            st.bar_chart(_top_bacias)
+                    except Exception:
+                        logger.debug("[FERRY-VIS] Análise extra de travessias isolada falhou (aditivo).", exc_info=True)
                 else:
                     st.info("Nenhuma rota com balsa identificada.")
             else:
@@ -56552,6 +56648,46 @@ if _secao == _SECOES[19]:   # tab_land_routes
                     _cols_avail = [c for c in _land_rotas.columns if c in _cols_show]
                     st.dataframe(_land_rotas[_cols_avail].head(50), use_container_width=True, hide_index=True)
                     st.caption(f"Total de rotas sem balsa: {len(_land_rotas)}")
+
+                    # [LAND-VIS - 452ª] Painel visual/analítico (aditivo + defensivo): KPIs, faixas de distância,
+                    # top UF, top destino e mapa O/D — a seção antes só tinha a tabela.
+                    try:
+                        _lk1, _lk2, _lk3, _lk4 = st.columns(4)
+                        _lkm = pd.to_numeric(_land_rotas["Distância (km)"], errors="coerce")
+                        _lk1.metric("Rotas rodoviárias", len(_land_rotas))
+                        _lk2.metric("Distância média", ("%.1f km" % float(_lkm.mean())) if _lkm.notna().any() else "—")
+                        _lk3.metric("UFs alcançadas", int(_land_rotas["UF"].nunique()) if "UF" in _land_rotas.columns else 0)
+                        _lk4.metric("Destinos distintos", int(_land_rotas["Destino"].nunique()) if "Destino" in _land_rotas.columns else 0)
+
+                        _la1, _la2 = st.columns(2)
+                        with _la1:
+                            st.caption("Distribuição de distância (faixas, km)")
+                            _lfaixas = pd.cut(_lkm.dropna(), bins=[0, 50, 100, 200, 400, 800, float("inf")],
+                                              labels=["0–50", "50–100", "100–200", "200–400", "400–800", "800+"])
+                            st.bar_chart(_lfaixas.value_counts().sort_index())
+                        with _la2:
+                            st.caption("Rotas por UF (top 12)")
+                            _lufs = _land_rotas["UF"].astype(str).str.strip().replace(["", "N/A", "—"], pd.NA).dropna()
+                            st.bar_chart(_lufs.value_counts().head(12)) if _lufs.nunique() else st.caption("Sem UF disponível.")
+
+                        _lb1, _lb2 = st.columns(2)
+                        with _lb1:
+                            st.caption("Destinos mais frequentes")
+                            _ldst = _land_rotas["Destino"].astype(str).str.strip().dropna()
+                            st.bar_chart(_ldst.value_counts().head(10)) if _ldst.nunique() else st.caption("Sem destinos.")
+                        with _lb2:
+                            st.caption("Bacias mais frequentes")
+                            _lbac = (_land_rotas["Bacia"].astype(str).str.strip().replace(["", "—"], pd.NA).dropna()
+                                     if "Bacia" in _land_rotas.columns else pd.Series(dtype=object))
+                            st.bar_chart(_lbac.value_counts().head(10)) if _lbac.nunique() else st.caption("Sem bacias.")
+
+                        st.divider()
+                        st.caption("🗺️ Mapa origem → destino (rotas sem balsa)")
+                        _fig_land = _fig_pares_od(_land_rotas)
+                        if _fig_land is not None:
+                            st.plotly_chart(_fig_land, use_container_width=True)
+                    except Exception:
+                        logger.debug("[LAND-ROUTES-VIS] Análise visual isolada falhou (aditivo).", exc_info=True)
                 else:
                     st.info("Nenhuma rota puramente rodoviária identificada.")
             else:
@@ -56748,6 +56884,27 @@ if _secao == _SECOES[20]:   # tab_defeats
                     st.subheader("Por UF")
                     _uf_cnt = _uf_sel.value_counts()
                     st.bar_chart(_uf_cnt)
+                    
+                    # [DEFEATS-VIS - 452ª] Distribuição da perda + rios/bacias (aditivo).
+                    try:
+                        _dk_km = pd.to_numeric(_derrotas["Distância (km)"], errors="coerce").dropna()
+                        if _dk_km.notna().any():
+                            st.subheader("Distribuição de distância das derrotas")
+                            _dk_fx = pd.cut(_dk_km, bins=[0, 50, 100, 200, 400, float("inf")],
+                                            labels=["0–50", "50–100", "100–200", "200–400", "400+"])
+                            st.bar_chart(_dk_fx.value_counts().sort_index())
+                        if "Rio" in _derrotas.columns:
+                            _rios_d = _derrotas["Rio"].astype(str).replace(["", "—"], pd.NA).dropna().value_counts().head(10)
+                            if not _rios_d.empty:
+                                st.subheader("Rios nas derrotas (top 10)")
+                                st.bar_chart(_rios_d)
+                        if "Bacia" in _derrotas.columns:
+                            _bac_d = _derrotas["Bacia"].astype(str).replace(["", "—"], pd.NA).dropna().value_counts().head(10)
+                            if not _bac_d.empty:
+                                st.subheader("Bacias nas derrotas (top 10)")
+                                st.bar_chart(_bac_d)
+                    except Exception:
+                        logger.debug("[DEFEATS-VIS] Estatísticas extras isoladas falharam (aditivo).", exc_info=True)
         except Exception:
             logger.error("[DEFEATS-STATS] Falha nas estatísticas.", exc_info=True)
             st.warning("Não foi possível montar as estatísticas.")
@@ -56790,16 +56947,70 @@ if _secao == _SECOES[21]:   # tab_auditoria_completa
     
     with _aba_aud[2]:
         st.subheader("🛣️ Rotas Consultadas")
-        st.info("Funcionalidade em desenvolvimento: listar todas as rotas consultadas (OSRM, FOSSGIS, Valhalla, Fluvial).")
-    
+        # [AUDIT-VIS - 452ª] Telemetria REAL de roteamento (por motor: nº de rotas, latência, falhas).
+        try:
+            _snap = _TELEMETRIA.snapshot()
+            if _snap:
+                _rows_rotas = []
+                for _mot, _d in _snap.items():
+                    _lats = [x for x in _d.get("lat", []) if x is not None and x >= 0]
+                    _media = ("%.0f ms" % (sum(_lats) / len(_lats) * 1000)) if _lats else "—"
+                    _rows_rotas.append({"Motor": _mot, "Rotas": _d.get("n", 0), "Falhas": _d.get("falhas", 0),
+                                        "Latência média": _media})
+                _df_rotas_aud = pd.DataFrame(_rows_rotas)
+                st.dataframe(_df_rotas_aud, use_container_width=True, hide_index=True)
+                st.caption("Telemetria acumulada nesta sessão (OSRM, Google, Valhalla, FOSSGIS, Fluvial…).")
+            else:
+                st.info("Nenhuma rota roteada nesta sessão ainda.")
+        except Exception:
+            logger.debug("[AUDIT-VIS] Rotas consultadas isoladas falharam (aditivo).", exc_info=True)
+            st.info("Telemetria de rotas indisponível neste momento.")
+
     with _aba_aud[3]:
         st.subheader("📚 Fontes de Dados Utilizadas")
         st.info("Fontes: IBGE, ANA/SNIRH, ANTAQ, DNIT, ANTT, OSRM, FOSSGIS, Valhalla, IBGE BC250/BC100, Natural Earth 10m.")
-    
+
     with _aba_aud[4]:
         st.subheader("🔧 APIs Utilizadas")
         st.info("OSRM Público → FOSSGIS (fallback), Valhalla (opt-in), SNIRH REST API (ANA), Google Geocode (opt-in).")
-    
+        # [AUDIT-VIS - 452ª] Últimas falhas de API reais (buffer cronológico).
+        try:
+            _falhas_api = _ultimas_falhas_apresentaveis(_ULTIMOS_EVENTOS_API, n=8)
+            if _falhas_api:
+                st.caption("Últimas falhas de API nesta sessão")
+                st.dataframe(pd.DataFrame(_falhas_api), use_container_width=True, hide_index=True)
+        except Exception:
+            logger.debug("[AUDIT-VIS] Falhas de API isoladas falharam (aditivo).", exc_info=True)
+
     with _aba_aud[5]:
         st.subheader("⚙️ Decisões Tomadas")
-        st.info("Funcionalidade em desenvolvimento: log de decisões do motor (balsa demovida, fluvial adotada, consenso Valhalla, etc.).")
+        # [AUDIT-VIS - 452ª] Síntese das decisões do motor nesta sessão (do session_state, quando disponível).
+        try:
+            _ss = st.session_state
+            _n_res = len(_ss.get('alo_resultados') or {})
+            _n_org = len(_ss.get('alo_topk_map') or {})
+            _mc = bool(_ss.get('alo_multicriterio'))
+            _log = (_ss.get('alo_mcda_log') or [])
+            _linhas_dec = []
+            _linhas_dec.append("Multicritério (custo logístico)" if _mc else "Menor viária (padrão)")
+            if _n_org:
+                _linhas_dec.append("%d origem(ns) atribuídas" % _n_org)
+            if _n_res:
+                _linhas_dec.append("%d rota(s) roteadas no universo" % _n_res)
+            if _ss.get('alo_retry_viaria_feito'):
+                _linhas_dec.append("Segunda chance (retry viário) executada")
+            _resa = 0
+            try:
+                _resa = int(_resgate_fossgis_forca[0])
+            except Exception:
+                _resa = 0
+            if _resa:
+                _linhas_dec.append("%d travessia(s) resgatadas no 2º motor" % _resa)
+            if _linhas_dec:
+                for _dln in _linhas_dec:
+                    st.markdown("- %s" % _dln)
+            else:
+                st.info("Nenhuma decisão registrada ainda — rode um estudo.")
+        except Exception:
+            logger.debug("[AUDIT-VIS] Decisões isoladas falharam (aditivo).", exc_info=True)
+            st.info("Log de decisões do motor: rode um estudo para popular.")
