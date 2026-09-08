@@ -154,6 +154,20 @@ Ajuste o TTL em `BaseProvider.__init__` (via kwargs do provider) ou no construto
 | Teste de provider falha só no 2º run | cache persistente entre execuções | usar `tmp_path` como `cache_dir` nos testes |
 | UI sem a camada nova | import defensivo caiu | verificar parquet + flag `_BASES_LOCAIS_IBGE` |
 
+## Camadas pesadas no deploy (Streamlit Cloud)
+
+Camadas >100MB (`drenagem`, `rodovias`) e `snirh_estacaos.csv` não entram no git
+(limite do GitHub). Para adicionar/atualizar uma camada pesada ao deploy:
+
+1. Gere/atualize o arquivo no diretório esperado (ex.: `data/brasil/ibge/derivadas/`).
+2. Publique-o como asset da Release `dados-geoespaciais-v1` deste repositório
+   (`gh release upload dados-geoespaciais-v1 <arquivo>`).
+3. Atualize o tamanho esperado (bytes) em `inteligencia_geoespacial/dados_bootstrap.py`
+   (dict `EXTRAS`) e o `ausentes()` passa a detectar o novo arquivo.
+
+O app baixa sob demanda via `dados_bootstrap.baixar_ausentes(...)` nos botões das seções
+Geoespacial IBGE e Hidrografia → Estações.
+
 ---
 
 *Guia complementar a `docs/ARQUITETURA_INTELIGENCIA.md` e `docs/FONTES_BRASILEIRAS.md`.*

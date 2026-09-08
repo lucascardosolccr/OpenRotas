@@ -22,6 +22,19 @@ inteligencia_geoespacial/caches/
 
 # ---- Dados geoespaciais pesados baixados (IBGE BC250/BC100, etc.) ----
 data/
+# ... porém as camadas leves/resumidas IBGE são versionadas para o deploy no Streamlit Cloud
+!data/
+data/*
+!data/brasil/
+data/brasil/*
+!data/brasil/ibge/
+data/brasil/ibge/*
+!data/brasil/ibge/derivadas/
+!data/brasil/ibge/derivadas/manifest.json
+!data/brasil/ibge/derivadas/*.parquet
+# Camadas que excedem o limite de 100MB do GitHub (bootstrap via Release de dados):
+data/brasil/ibge/derivadas/drenagem.parquet
+data/brasil/ibge/derivadas/rodovias.parquet
 
 # ---- Python ----
 __pycache__/

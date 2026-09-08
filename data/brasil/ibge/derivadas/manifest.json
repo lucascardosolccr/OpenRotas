@@ -1,0 +1,160 @@
+{
+  "versao": "1.0",
+  "crs": "EPSG:4326",
+  "extraido_em_utc": "2026-09-07T21:39:14.196483+00:00",
+  "fontes": {
+    "bc250": {
+      "base": "BC250 v2025",
+      "path": "data\\brasil\\ibge\\bc250\\versao2025\\shapefiles\\extract",
+      "versao": "2025",
+      "url": "https://geoftp.ibge.gov.br/cartas_e_mapas/bases_cartograficas_continuas/bc250/versao2025/shapefiles/bc_250_shapefiles_2026_03_03.zip"
+    },
+    "bc100": {
+      "base": "BC100 por UF",
+      "path": "data\\brasil\\ibge\\bc100",
+      "ufs": {
+        "acre": {
+          "versoes": [
+            "2023"
+          ]
+        },
+        "alagoas": {
+          "versoes": [
+            "2022"
+          ]
+        },
+        "bcal": {
+          "versoes": [
+            "2016"
+          ]
+        },
+        "espirito_santo": {
+          "versoes": [
+            "2018_edgv_3.0"
+          ]
+        },
+        "go_df": {
+          "versoes": [
+            "2022"
+          ]
+        },
+        "rio_grande_do_sul": {
+          "versoes": [
+            "2021"
+          ]
+        },
+        "roraima": {
+          "versoes": [
+            "2016"
+          ]
+        },
+        "sergipe": {
+          "versoes": [
+            "2019"
+          ]
+        }
+      },
+      "urls": [
+        "https://geoftp.ibge.gov.br/cartas_e_mapas/bases_cartograficas_continuas/bc100/"
+      ]
+    }
+  },
+  "camadas": {
+    "pontes": {
+      "arquivo": "pontes.parquet",
+      "registros": 14812,
+      "contagem_por_fonte": {
+        "BC250": 7733,
+        "BC100": 7079
+      }
+    },
+    "travessias": {
+      "arquivo": "travessias.parquet",
+      "registros": 4046,
+      "contagem_por_fonte": {
+        "BC250": 476,
+        "BC100": 3570
+      }
+    },
+    "hidrovias": {
+      "arquivo": "hidrovias.parquet",
+      "registros": 179,
+      "contagem_por_fonte": {
+        "BC250": 134,
+        "BC100": 45
+      }
+    },
+    "atracadouros_terminal": {
+      "arquivo": "atracadouros_terminal.parquet",
+      "registros": 172,
+      "contagem_por_fonte": {
+        "BC250": 73,
+        "BC100": 99
+      }
+    },
+    "complexos_portuarios": {
+      "arquivo": "complexos_portuarios.parquet",
+      "registros": 171,
+      "contagem_por_fonte": {
+        "BC250": 135,
+        "BC100": 36
+      }
+    },
+    "eclusas": {
+      "arquivo": "eclusas.parquet",
+      "registros": 22,
+      "contagem_por_fonte": {
+        "BC250": 17,
+        "BC100": 5
+      }
+    },
+    "sinalizacao": {
+      "arquivo": "sinalizacao.parquet",
+      "registros": 388,
+      "contagem_por_fonte": {
+        "BC250": 326,
+        "BC100": 62
+      }
+    },
+    "rodovias": {
+      "arquivo": "rodovias.parquet",
+      "registros": 287136,
+      "contagem_por_fonte": {
+        "BC250": 124687,
+        "BC100": 162449
+      }
+    },
+    "ferrovias": {
+      "arquivo": "ferrovias.parquet",
+      "registros": 889,
+      "contagem_por_fonte": {
+        "BC250": 500,
+        "BC100": 389
+      }
+    },
+    "massas_dagua": {
+      "arquivo": "massas_dagua.parquet",
+      "registros": 64850,
+      "contagem_por_fonte": {
+        "BC250": 46533,
+        "BC100": 18317
+      }
+    },
+    "drenagem": {
+      "arquivo": "drenagem.parquet",
+      "registros": 2181288,
+      "contagem_por_fonte": {
+        "BC250": 1552635,
+        "BC100": 628653
+      }
+    },
+    "municipios": {
+      "arquivo": "municipios.parquet",
+      "registros": 5571,
+      "contagem_por_fonte": {
+        "BC250": 5571,
+        "BC100": 0
+      }
+    }
+  }
+}

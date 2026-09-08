@@ -1,0 +1,10 @@
+_links,codigoNome,dataAlt,dataIns,importado,importadoRepetido,nome,registroID,removido,respAlt,temporario
+"{'self': {'href': 'http://www.snirh.gov.br/hidroweb/rest/bacias/1'}, 'bacia': {'href': 'http://www.snirh.gov.br/hidroweb/rest/bacias/1'}}",1 - RIO AMAZONAS,,,0,0,RIO AMAZONAS,1,0,,0
+"{'self': {'href': 'http://www.snirh.gov.br/hidroweb/rest/bacias/2'}, 'bacia': {'href': 'http://www.snirh.gov.br/hidroweb/rest/bacias/2'}}",2 - RIO TOCANTINS,,,0,0,RIO TOCANTINS,2,0,,0
+"{'self': {'href': 'http://www.snirh.gov.br/hidroweb/rest/bacias/3'}, 'bacia': {'href': 'http://www.snirh.gov.br/hidroweb/rest/bacias/3'}}","3 - ATLÂNTICO,TRECHO NORTE/NORDESTE",,,0,0,"ATLÂNTICO,TRECHO NORTE/NORDESTE",3,0,,0
+"{'self': {'href': 'http://www.snirh.gov.br/hidroweb/rest/bacias/4'}, 'bacia': {'href': 'http://www.snirh.gov.br/hidroweb/rest/bacias/4'}}",4 - RIO SÃO FRANCISCO,,,0,0,RIO SÃO FRANCISCO,4,0,,0
+"{'self': {'href': 'http://www.snirh.gov.br/hidroweb/rest/bacias/5'}, 'bacia': {'href': 'http://www.snirh.gov.br/hidroweb/rest/bacias/5'}}","5 - ATLÂNTICO,TRECHO LESTE",,,0,0,"ATLÂNTICO,TRECHO LESTE",5,0,,0
+"{'self': {'href': 'http://www.snirh.gov.br/hidroweb/rest/bacias/6'}, 'bacia': {'href': 'http://www.snirh.gov.br/hidroweb/rest/bacias/6'}}",6 - RIO PARANÁ,,,0,0,RIO PARANÁ,6,0,,0
+"{'self': {'href': 'http://www.snirh.gov.br/hidroweb/rest/bacias/7'}, 'bacia': {'href': 'http://www.snirh.gov.br/hidroweb/rest/bacias/7'}}",7 - RIO URUGUAI,,,0,0,RIO URUGUAI,7,0,,0
+"{'self': {'href': 'http://www.snirh.gov.br/hidroweb/rest/bacias/8'}, 'bacia': {'href': 'http://www.snirh.gov.br/hidroweb/rest/bacias/8'}}","8 - ATLÂNTICO, TRECHO SUDESTE",,,0,0,"ATLÂNTICO, TRECHO SUDESTE",8,0,,0
+"{'self': {'href': 'http://www.snirh.gov.br/hidroweb/rest/bacias/9'}, 'bacia': {'href': 'http://www.snirh.gov.br/hidroweb/rest/bacias/9'}}",9 - OUTRAS,,,0,0,OUTRAS,9,0,,0

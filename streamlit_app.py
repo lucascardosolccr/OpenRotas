@@ -76,11 +76,13 @@ try:
     from inteligencia_geoespacial import bases_locais as _bases_locais_ibge
     from inteligencia_geoespacial import enrichment_engine as _geo_enricher
     from inteligencia_geoespacial import xai_formatter as _geo_xai
+    from inteligencia_geoespacial import dados_bootstrap as _dados_bootstrap
     _BASES_LOCAIS_IBGE = True
 except Exception:
     _bases_locais_ibge = None
     _geo_enricher = None
     _geo_xai = None
+    _dados_bootstrap = None
     _BASES_LOCAIS_IBGE = False
 
 # ==============================================================================
@@ -28624,28 +28626,45 @@ def _gerar_dados_rios_fallback():
             return None
         
         _nomes = g.get("names", [])
-        _coords = g.get("coords")
-        _C = g.get("C")
-        
-        if not _nomes or _coords is None or _C is None:
+        # [CLOUD-DADOS - 447ª] O loader retorna {"M","C","names","edic","tree"} — "C" já é o
+        # array de coordenadas (nó i ↔ nome i). Mantém compatibilidade com pickles antigos (raw).
+        _coords = g.get("C") if g.get("C") is not None else g.get("coords")
+
+        if not _nomes or _coords is None:
             return None
+        
+        # Detectar orientação lon/lat do grafo (arrays de rede fluvial costumam vir com
+        # (lon, lat)) para nunca publicar latitudes > 90 ou cidades trocadas no mapa.
+        _n_chk = min(int(len(_coords)), 3000)
+        _ok = _swap = 0
+        try:
+            for _vv in _coords[:_n_chk]:
+                _a, _b = float(_vv[0]), float(_vv[1])
+                if -35 <= _a <= 6 and -75 <= _b <= -33:
+                    _ok += 1
+                elif -35 <= _b <= 6 and -75 <= _a <= -33:
+                    _swap += 1
+        except Exception:
+            _ok, _swap = 1, 0
+        _trocar = _swap > _ok
         
         # Criar DataFrame com nomes válidos e coordenadas aproximadas
         _dados = []
         for i, nome in enumerate(_nomes):
             if not nome or str(nome).strip() == "" or str(nome).lower() == "nan":
                 continue
-            # Usar coordenada do nó mais próximo se disponível
-            if i < len(_C):
-                _idx = int(_C[i])
-                if 0 <= _idx < len(_coords):
-                    _lat, _lon = _coords[_idx]
-                    _dados.append({
-                        "nome": str(nome).strip(),
-                        "latitude": float(_lat),
-                        "longitude": float(_lon),
-                        "no_grafo": _idx
-                    })
+            # Usar coordenada do nó correspondente (nomes alinhados ao array de coordenadas)
+            if 0 <= i < len(_coords):
+                if _trocar:
+                    _lat, _lon = _coords[i][1], _coords[i][0]
+                else:
+                    _lat, _lon = _coords[i][0], _coords[i][1]
+                _dados.append({
+                    "nome": str(nome).strip(),
+                    "latitude": float(_lat),
+                    "longitude": float(_lon),
+                    "no_grafo": i
+                })
         
         if not _dados:
             return None
@@ -54543,6 +54562,22 @@ if _secao == _SECOES[16]:   # tab_data_sources
                 use_container_width=True)
 
 
+def _resolver_csv(nome):
+    """[CLOUD-DADOS - 447ª geração] Resolve um arquivo de dados (CSV) em qualquer ambiente:
+    CWD, pasta do app ou uma pasta acima (ex.: OneDrive com os arquivos fora do repo).
+    Retorna o caminho absoluto se existir, ou None. Usada pelos fallbacks das seções."""
+    import os as _os
+    _base = _os.path.dirname(_os.path.abspath(__file__))
+    _cands = [nome, _os.path.join(_base, nome), _os.path.join(_base, "..", nome)]
+    for _p in _cands:
+        try:
+            if _p and _os.path.exists(_p):
+                return _p
+        except Exception:
+            pass
+    return None
+
+
 # ==============================================================================
 # SEÇÃO 17 — HIDROGRAFIA  [HYDRO-TAB - 437ª]
 # ==============================================================================
@@ -54558,7 +54593,10 @@ if _secao == _SECOES[17]:   # tab_hidrografia
     @st.cache_data(show_spinner=False)
     def _carregar_rios_com_fallback():
         try:
-            _df = pd.read_csv("snirh_rios.csv")
+            _p = _resolver_csv("snirh_rios.csv")
+            if not _p:
+                raise FileNotFoundError("snirh_rios.csv")
+            _df = pd.read_csv(_p)
             _df["fonte"] = "SNIRH (CSV local)"
             return _df
         except Exception:
@@ -54567,20 +54605,26 @@ if _secao == _SECOES[17]:   # tab_hidrografia
                 _df_fb["fonte"] = "Grafo hidrográfico nacional (fallback)"
                 return _df_fb
             return pd.DataFrame()
-    
+
     @st.cache_data(show_spinner=False)
     def _carregar_bacias_com_fallback():
         try:
-            _df = pd.read_csv("snirh_bacias.csv")
+            _p = _resolver_csv("snirh_bacias.csv")
+            if not _p:
+                raise FileNotFoundError("snirh_bacias.csv")
+            _df = pd.read_csv(_p)
             _df["fonte"] = "SNIRH (CSV local)"
             return _df
         except Exception:
             return _gerar_dados_bacias_fallback()
-    
+
     @st.cache_data(show_spinner=False)
     def _carregar_estacoes_com_fallback():
         try:
-            _df = pd.read_csv("snirh_estacaos.csv")
+            _p = _resolver_csv("snirh_estacaos.csv")
+            if not _p:
+                raise FileNotFoundError("snirh_estacaos.csv")
+            _df = pd.read_csv(_p)
             _df["fonte"] = "SNIRH (CSV local)"
             return _df
         except Exception:
@@ -54687,7 +54731,18 @@ if _secao == _SECOES[17]:   # tab_hidrografia
                 st.download_button("📄 CSV", data=_csv, file_name="estacoes_hidrologicas.csv", mime="text/csv", use_container_width=True)
         else:
             st.warning("Nenhum dado de estações disponível.")
-    
+        _est_fonte = _est_df['fonte'].iloc[0] if (not _est_df.empty and 'fonte' in _est_df.columns) else None
+        if _est_fonte != "SNIRH (CSV local)" and _dados_bootstrap is not None and _dados_bootstrap.ausente("estacoes"):
+            _btn_est = st.button("⬇️ Baixar catálogo completo de estações ANA/SNIRH (~87 MB)",
+                                 key="hidro_bootstrap_estacoes")
+            if _btn_est:
+                with st.spinner("Baixando catálogo de estações do GitHub Release..."):
+                    _ok_est, _rel_est = _dados_bootstrap.baixar_ausentes(somente_para=["estacoes"])
+                for _r in _rel_est:
+                    (st.success if _r["ok"] else st.error)(_r["msg"])
+                if _ok_est:
+                    st.rerun()
+
     with _aba_hidro[3]:
         st.subheader("📊 Séries Hidrológicas Disponíveis")
         st.info("""
@@ -54807,7 +54862,12 @@ if _secao == _SECOES[17]:   # tab_hidrografia
             else:
                 st.info("Dados de coordenadas (latitude/longitude) não disponíveis para rios e estações.")
         except Exception as e:
-            st.info("Arquivos de hidrografia não encontrados. Execute o script de download dos dados SNIRH.")
+            _hint = ""
+            if _dados_bootstrap is not None:
+                _falt_geo = _dados_bootstrap.ausentes()
+                if _falt_geo:
+                    _hint = " — baixe os dados pesados no botão disponível nas abas para habilitar."
+            st.info("Dados de hidrografia indisponíveis neste ambiente%s" % _hint)
             logger.error("[HYDRO-MAP] Falha ao renderizar mapa hidrográfico.", exc_info=True)
 
 
@@ -54831,6 +54891,24 @@ if _secao == _SECOES[22]:   # tab_geo_ibge
             if not _geo_camadas:
                 st.info("Nenhuma camada derivada em data/brasil/ibge/derivadas/. Gere com `py -X utf8 construir_bases_locais_ibge.py`.")
             else:
+                # ---- camadas pesadas (Release de dados) -------------------------------
+                try:
+                    _heavy_falt = _dados_bootstrap.ausentes(somente_geoespacial=True) if _dados_bootstrap is not None else []
+                except Exception:
+                    _heavy_falt = []
+                if _heavy_falt:
+                    _peso_mb = sum(_dados_bootstrap.EXTRAS[n]["bytes"] for n in _heavy_falt) // 1048576
+                    st.caption("💡 Camadas pesadas opcionais fora do repositório (2 de 12) — baixadas do GitHub Release à sua escolha.")
+                    _btn_dl = st.button("⬇️ Baixar camadas pesadas (drenagem + rodovias, ~%d MB)" % _peso_mb,
+                                        key="geo_bootstrap_heavy")
+                    if _btn_dl:
+                        with st.spinner("Baixando camadas pesadas do GitHub Release... grandes (pode levar minutos)."):
+                            _ok_heavy, _rel_heavy = _dados_bootstrap.baixar_ausentes(somente_geoespacial=True)
+                        for _r in _rel_heavy:
+                            (st.success if _r["ok"] else st.error)(_r["msg"])
+                        if _ok_heavy:
+                            st.success("Camadas disponíveis. Recarregue a aba para listá-las.")
+                            st.rerun()
                 # ---- local de consulta -------------------------------------------------
                 st.subheader("📍 Local de consulta")
                 _c1, _c2 = st.columns([3, 1])
