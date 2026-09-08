@@ -9302,6 +9302,61 @@ def _df_para_gpx(df):
     linhas.append('</gpx>')
     return "\n".join(linhas)
 
+
+def _botoes_exportacao_geo(base_nome, df, sheet_name="Sheet1"):
+    """[Melhoria4-EXCEL 453ª · M3] Bloco ÚNICO (DRY) dos 6 botões de exportação geográfica que estavam
+    duplicados ~7 vezes (HTML/GeoJSON/KML/GPX/XLSX/CSV). Cada botão é ISOLADO — a falha de um formato não
+    derruba os demais nem o estudo (comportamento defensivo, igual aos blocos antigos)."""
+    _col_exp1, _col_exp2, _col_exp3, _col_exp4, _col_exp5, _col_exp6 = st.columns(6)
+    with _col_exp1:
+        try:
+            _html = _geo_html_locais(df)
+            st.download_button("🌐 HTML", data=_html.encode('utf-8'), file_name=f"{base_nome}.html",
+                               mime="text/html", use_container_width=True)
+        except Exception:
+            pass
+    with _col_exp2:
+        try:
+            _geojson = _df_para_geojson(df)
+            st.download_button("🌐 GeoJSON", data=_geojson.encode('utf-8'),
+                               file_name=f"{base_nome}.geojson", mime="application/geo+json",
+                               use_container_width=True)
+        except Exception:
+            pass
+    with _col_exp3:
+        try:
+            _kml = _df_para_kml(df)
+            st.download_button("🗺️ KML", data=_kml.encode('utf-8'), file_name=f"{base_nome}.kml",
+                               mime="application/vnd.google-earth.kml+xml", use_container_width=True)
+        except Exception:
+            pass
+    with _col_exp4:
+        try:
+            _gpx = _df_para_gpx(df)
+            st.download_button("📍 GPX", data=_gpx.encode('utf-8'), file_name=f"{base_nome}.gpx",
+                               mime="application/gpx+xml", use_container_width=True)
+        except Exception:
+            pass
+    with _col_exp5:
+        try:
+            import io
+            _xlsx_buf = io.BytesIO()
+            with pd.ExcelWriter(_xlsx_buf, engine='xlsxwriter') as _writer:
+                df.to_excel(_writer, index=False, sheet_name=sheet_name)
+            st.download_button("📊 XLSX", data=_xlsx_buf.getvalue(), file_name=f"{base_nome}.xlsx",
+                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                               use_container_width=True)
+        except Exception:
+            pass
+    with _col_exp6:
+        try:
+            _csv = df.to_csv(index=False).encode('utf-8-sig')
+            st.download_button("📄 CSV", data=_csv, file_name=f"{base_nome}.csv", mime="text/csv",
+                               use_container_width=True)
+        except Exception:
+            pass
+
+
 def _contar_rotas_geo_validas(df):
     """Conta quantas linhas têm ao menos um par de coordenadas válido (para o usuário
     saber se a exportação GIS terá conteúdo). [AUDITORIA - 109ª geração] Vetorizado (antes usava
@@ -10349,6 +10404,64 @@ def _validar_centroide_br(lat, lon, uf=""):
     return {"ok": not _r, "razoes": _r}
 
 
+def _auditar_coordenadas_df(df, max_amostra=2000):
+    """[Melhoria4-EXCEL 453ª · M1] Audita as colunas de coordenadas de um df processado e devolve as LINHAS
+    suspeitas (fora do Brasil, troca lat/lon, (0,0), fora da bbox da UF) via _validar_centroide_br. É a
+    validação PRÉ-ROTEAMENTO que evita "decisão errada por dado sujo". PURA/defensiva: retorna lista de dicts
+    {linha, campo, lat, lon, uf, motivos} (amostra ≤ 60) — o chamador exibe como aviso NÃO-bloqueante."""
+    try:
+        if df is None or len(df) == 0:
+            return []
+        _col_uf = _col_existente(df, "UF", "UF Origem", "Estado")
+        _lat_cols = [c for c in df.columns if "LAT" in unidecode(str(c)).upper()]
+        _lon_cols = [c for c in df.columns if "LON" in unidecode(str(c)).upper()]
+        if not _lat_cols or not _lon_cols:
+            return []
+        _pares = []
+        for _lc in _lat_cols:
+            _suf = next((kw for kw in ("Origem", "Destino", "Cliente", "Hub")
+                         if kw in unidecode(str(_lc)).upper()), "")
+            _lonc = None
+            if _suf:
+                _lonc = next((c for c in _lon_cols if _suf in unidecode(str(c)).upper()), None)
+            if _lonc is None:
+                _lonc = _lon_cols[0]
+            _pares.append((_lc, _lonc, _suf or _lc))
+        _sus = []
+        _nlin = 2  # 1ª linha = cabeçalho do Excel → 1ª dado = linha 2
+        for _, _row in df.head(max_amostra).iterrows():
+            for _lc, _lonc, _campo in _pares:
+                _uf = str(_row.get(_col_uf, "") or "").strip() if _col_uf else ""
+                _v = _validar_centroide_br(_row.get(_lc), _row.get(_lonc), _uf[:2])
+                if not _v.get("ok", False):
+                    _sus.append({"linha": _nlin, "campo": _campo, "lat": _row.get(_lc),
+                                 "lon": _row.get(_lonc), "uf": _uf, "motivos": _v.get("razoes", [])})
+                    if len(_sus) >= 60:
+                        return _sus
+            _nlin += 1
+        return _sus
+    except Exception:
+        return []
+
+
+def _exibir_auditoria_coordenadas(df):
+    """[Melhoria4-EXCEL 453ª · M1] Exibe, como aviso NÃO-bloqueante, linhas com coordenadas suspeitas.
+    Defensiva: qualquer falha → sem aviso (nunca interrompe o estudo)."""
+    try:
+        _sus = _auditar_coordenadas_df(df)
+        if _sus:
+            with st.expander(f"📍 Validação de coordenadas — {len(_sus)} valor(es) suspeito(s) "
+                             f"(fora do Brasil, troca lat/lon, (0,0) ou fora da UF)", expanded=False):
+                st.caption("Estas linhas podem carregar coordenada inválida; a decisão de rota fica comprometida "
+                           "só se o geocoder não corrigir. Revise a planilha de origem.")
+                for _s in _sus:
+                    st.markdown("- linha **%d** · `%s` (%s, %s): %s"
+                                % (_s["linha"], _s["campo"], _s.get("lat"), _s.get("lon"),
+                                   ", ".join(_s["motivos"])))
+    except Exception:
+        pass
+
+
 def _regime_suspeita_rota(km_osrm, km_reta, tem_balsa):
     """True quando a rota do motor primário está na ZONA DE SUSPEITA (V/R alto ou balsa indireta). PURA.
     Entradas inválidas/zeros → False (não engaja). Limiares abaixo dos gatilhos de fantasma hídrica — o
@@ -10625,6 +10738,36 @@ def _ultimas_falhas_apresentaveis(eventos, n=12):
     except Exception:
         return []
     return linhas
+
+
+def _confianca_motor_regiao(eventos, min_amostra=3):
+    """[Melhoria4-EXCEL 453ª · M4] Agrega a taxa de sucesso por motor×UF a partir do buffer cronológico de
+    eventos ({quando, fonte, ok, uf}). Devolve {(fonte · UF): {"n", "taxa"}} para leitura no Monitor/Auditoria.
+    É OBSERVABILIDADE pura (não decide rota) — base para futura seleção adaptativa de fallback por região,
+    alinhada a "rápido quando simples, profundo quando complexo". PURA/defensiva."""
+    try:
+        _agg = {}
+        for _e in (eventos or []):
+            if not isinstance(_e, dict):
+                continue
+            _m = str(_e.get("fonte", "") or "").strip()
+            if not _m:
+                continue
+            _uf = str(_e.get("uf", "") or "").strip().upper()[:2]
+            _a = _agg.setdefault((_m, _uf), {"n": 0, "ok": 0})
+            _a["n"] += 1
+            if _e.get("ok"):
+                _a["ok"] += 1
+        _out = {}
+        for (_m, _uf), _a in _agg.items():
+            if _a["n"] < max(1, int(min_amostra)):
+                continue
+            _rot = f"{_m} · {_uf}" if _uf else _m
+            _out[_rot] = {"n": _a["n"], "taxa": round(100.0 * _a["ok"] / _a["n"], 1)}
+        return _out
+    except Exception:
+        return {}
+
 
 def registrar_telemetria(fonte, sucesso, tempo_gasto, uf=""):
     global _TELEMETRIA_BUFFER, _TELEMETRIA_CONTADORES
@@ -22921,6 +23064,42 @@ def _geo_mem_aprender_derrotas(analises, uf_para_regiao=None, agora=None):
         return {"registros_novos": _novos, "salvou": _salvou}
     except Exception:
         return {"registros_novos": 0, "salvou": False}
+
+
+def _geo_mem_registrar_vencedores(vencedor_map, uf_map=None):
+    """[Melhoria4-EXCEL 453ª · M2] Registra na memória geográfica, por origem, o VENCEDOR já PROVADO da menor
+    rota — gravado no MESMO campo 'polos_resgatar' que _resgates_para_origem já força à matriz na próxima
+    execução. Assim o ótimo encontrado vira SEED do universo (convergência mais rápida e estável em
+    reexecuções) — reaproveitando a mecânica já validada, sem criar novo canal. Aditivo/defensivo: hub que não
+    existir em hubs_validos é filtrado a jusante; falha → sem gravação (zero regressão)."""
+    try:
+        if not vencedor_map:
+            return {"registros": 0, "salvou": False}
+        _mem = _geo_mem_carregar(True)
+        _novos = 0
+        for _orig, _hub in (vencedor_map or {}).items():
+            _orig = str(_orig).strip()
+            _hub = str(_hub).strip()
+            if not _orig or not _hub:
+                continue
+            _uf = str((uf_map or {}).get(_orig, "") or "").strip().upper() if uf_map else ""
+            _chave = f"{_orig.lower()}|{_uf}"
+            _rec = _mem.get(_chave) or {"origem": _orig, "uf": _uf, "rodadas": 0, "motivos": [],
+                                        "severidade": 0, "km_potencial": 0.0, "polos_resgatar": []}
+            _hub_norm = unidecode(_hub).strip().lower()
+            _polos = [p for p in (_rec.get("polos_resgatar", []) or [])
+                      if unidecode(str(p)).strip().lower() != _hub_norm]
+            _polos.insert(0, _hub)  # o vencedor provado vira o 1º seed
+            _rec["polos_resgatar"] = _polos[:5]
+            _rec["ultima_rodada"] = float(time.time())
+            _rec["limpas_seguidas"] = 0
+            if _chave not in _mem:
+                _novos += 1
+            _mem[_chave] = _rec
+        _salvou = _geo_mem_salvar(_mem)
+        return {"registros": _novos, "salvou": _salvou}
+    except Exception:
+        return {"registros": 0, "salvou": False}
 
 
 def _geo_mem_aprender(df, _chave_uf_col="UF"):
@@ -44610,6 +44789,7 @@ if _secao == _SECOES[1]:   # tab_processamento
                     # risco de OOM/timeout na finalização travar a entrega. A finalização vai DIRETO à exibição.
                     st.session_state['df_processado'] = df_final
                     st.session_state['lote_tempo_total'] = tempo_lote_segundos
+                    _exibir_auditoria_coordenadas(df_final)  # [Melhoria4-EXCEL 453ª · M1] aviso não-bloqueante
                     st.session_state['lote_preaquecido_final'] = _preaq
                     st.session_state['lote_resultado_pronto'] = True
                     _ckpt_apagar('estudo_lote')  # [CHECKPOINT-DISCO - 269ª] estudo concluído: remove o checkpoint
@@ -47674,6 +47854,23 @@ if _secao == _SECOES[2]:   # tab_alocacao
                 st.session_state['df_processado'] = df_final_alo
                 st.session_state['alo_tempo_total'] = tempo_alo_segundos
                 st.session_state['alo_linhas'] = len(df_final_alo)
+                _exibir_auditoria_coordenadas(df_final_alo)  # [Melhoria4-EXCEL 453ª · M1] aviso não-bloqueante
+                try:  # [Melhoria4-EXCEL 453ª · M2] registra os vencedores provados como seed da próxima execução
+                    _mapa_venc = {}
+                    _mapa_uf = {}
+                    if "Origem" in df_final_alo.columns and "Destino" in df_final_alo.columns:
+                        for _, _r in df_final_alo.head(3000).iterrows():
+                            _o = str(_r.get("Origem", "")).strip()
+                            _d = str(_r.get("Destino", "")).strip()
+                            if _o and _d:
+                                _mapa_venc[_o] = _d
+                                _u = str(_r.get("UF", "")).strip()
+                                if _u:
+                                    _mapa_uf[_o] = _u
+                    if _mapa_venc:
+                        _geo_mem_registrar_vencedores(_mapa_venc, _mapa_uf)
+                except Exception:
+                    logger.debug("[GEO-MEM-SEED] Registro de vencedores isolado falhou (aditivo).", exc_info=True)
                 # [DUPLO-CENARIO - 217ª geração] Pré-computa a comparação Oficial × Puramente Viário UMA vez
                 # (topk+resultados ainda disponíveis) para o relatório HTML e a planilha usarem. Defensivo.
                 try:
@@ -55800,29 +55997,8 @@ if _secao == _SECOES[16]:   # tab_data_sources
         st.dataframe(_df_fontes, use_container_width=True, hide_index=True)
         st.caption("✅ = Integrado e validado | ⚠️ = Parcial / Em desenvolvimento | ❌ = Não integrado")
         
-        # Botões de exportação
-        _col_exp1, _col_exp2, _col_exp3, _col_exp4, _col_exp5, _col_exp6 = st.columns(6)
-        with _col_exp1:
-            _html = _geo_html_locais(_df_fontes)
-            st.download_button("🌐 HTML", data=_html.encode('utf-8'), file_name="fontes_dados.html", mime="text/html", use_container_width=True)
-        with _col_exp2:
-            _geojson = _df_para_geojson(_df_fontes)
-            st.download_button("🌐 GeoJSON", data=_geojson.encode('utf-8'), file_name="fontes_dados.geojson", mime="application/geo+json", use_container_width=True)
-        with _col_exp3:
-            _kml = _df_para_kml(_df_fontes)
-            st.download_button("🗺️ KML", data=_kml.encode('utf-8'), file_name="fontes_dados.kml", mime="application/vnd.google-earth.kml+xml", use_container_width=True)
-        with _col_exp4:
-            _gpx = _df_para_gpx(_df_fontes)
-            st.download_button("📍 GPX", data=_gpx.encode('utf-8'), file_name="fontes_dados.gpx", mime="application/gpx+xml", use_container_width=True)
-        with _col_exp5:
-            import io
-            _xlsx_buf = io.BytesIO()
-            with pd.ExcelWriter(_xlsx_buf, engine='xlsxwriter') as _writer:
-                _df_fontes.to_excel(_writer, index=False, sheet_name='Fontes')
-            st.download_button("📊 XLSX", data=_xlsx_buf.getvalue(), file_name="fontes_dados.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-        with _col_exp6:
-            _csv = _df_fontes.to_csv(index=False).encode('utf-8-sig')
-            st.download_button("📄 CSV", data=_csv, file_name="fontes_dados.csv", mime="text/csv", use_container_width=True)
+        # Botões de exportação (bloco único DRY — [Melhoria4-EXCEL 453ª · M3])
+        _botoes_exportacao_geo("fontes_dados", _df_fontes, sheet_name="Fontes")
     
     with _aba_fontes[1]:
         st.subheader("🔗 Endpoints das APIs e Fontes")
@@ -55961,29 +56137,8 @@ if _secao == _SECOES[17]:   # tab_hidrografia
             except Exception:
                 logger.debug("[HYDRO-VIS] Gráfico de bacias isolado falhou (aditivo).", exc_info=True)
             
-            # Botões de exportação
-            _col_exp1, _col_exp2, _col_exp3, _col_exp4, _col_exp5, _col_exp6 = st.columns(6)
-            with _col_exp1:
-                _html = _geo_html_locais(_rios_df)
-                st.download_button("🌐 HTML", data=_html.encode('utf-8'), file_name="rios_brasil.html", mime="text/html", use_container_width=True)
-            with _col_exp2:
-                _geojson = _df_para_geojson(_rios_df)
-                st.download_button("🌐 GeoJSON", data=_geojson.encode('utf-8'), file_name="rios_brasil.geojson", mime="application/geo+json", use_container_width=True)
-            with _col_exp3:
-                _kml = _df_para_kml(_rios_df)
-                st.download_button("🗺️ KML", data=_kml.encode('utf-8'), file_name="rios_brasil.kml", mime="application/vnd.google-earth.kml+xml", use_container_width=True)
-            with _col_exp4:
-                _gpx = _df_para_gpx(_rios_df)
-                st.download_button("📍 GPX", data=_gpx.encode('utf-8'), file_name="rios_brasil.gpx", mime="application/gpx+xml", use_container_width=True)
-            with _col_exp5:
-                import io
-                _xlsx_buf = io.BytesIO()
-                with pd.ExcelWriter(_xlsx_buf, engine='xlsxwriter') as _writer:
-                    _rios_df.to_excel(_writer, index=False, sheet_name='Rios')
-                st.download_button("📊 XLSX", data=_xlsx_buf.getvalue(), file_name="rios_brasil.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-            with _col_exp6:
-                _csv = _rios_df.to_csv(index=False).encode('utf-8-sig')
-                st.download_button("📄 CSV", data=_csv, file_name="rios_brasil.csv", mime="text/csv", use_container_width=True)
+            # Botões de exportação (bloco único DRY — [Melhoria4-EXCEL 453ª · M3])
+            _botoes_exportacao_geo("rios_brasil", _rios_df, sheet_name="Rios")
         else:
             st.warning("Nenhum dado de rios disponível. Verifique os arquivos SNIRH ou o grafo hidrográfico.")
     
@@ -55993,29 +56148,8 @@ if _secao == _SECOES[17]:   # tab_hidrografia
             st.caption(f"Fonte: {_bacias_df['fonte'].iloc[0] if 'fonte' in _bacias_df.columns else 'Desconhecida'} | Total: {len(_bacias_df)} bacias")
             st.dataframe(_bacias_df, use_container_width=True, hide_index=True)
             
-            # Botões de exportação
-            _col_exp1, _col_exp2, _col_exp3, _col_exp4, _col_exp5, _col_exp6 = st.columns(6)
-            with _col_exp1:
-                _html = _geo_html_locais(_bacias_df)
-                st.download_button("🌐 HTML", data=_html.encode('utf-8'), file_name="bacias_hidrograficas.html", mime="text/html", use_container_width=True)
-            with _col_exp2:
-                _geojson = _df_para_geojson(_bacias_df)
-                st.download_button("🌐 GeoJSON", data=_geojson.encode('utf-8'), file_name="bacias_hidrograficas.geojson", mime="application/geo+json", use_container_width=True)
-            with _col_exp3:
-                _kml = _df_para_kml(_bacias_df)
-                st.download_button("🗺️ KML", data=_kml.encode('utf-8'), file_name="bacias_hidrograficas.kml", mime="application/vnd.google-earth.kml+xml", use_container_width=True)
-            with _col_exp4:
-                _gpx = _df_para_gpx(_bacias_df)
-                st.download_button("📍 GPX", data=_gpx.encode('utf-8'), file_name="bacias_hidrograficas.gpx", mime="application/gpx+xml", use_container_width=True)
-            with _col_exp5:
-                import io
-                _xlsx_buf = io.BytesIO()
-                with pd.ExcelWriter(_xlsx_buf, engine='xlsxwriter') as _writer:
-                    _bacias_df.to_excel(_writer, index=False, sheet_name='Bacias')
-                st.download_button("📊 XLSX", data=_xlsx_buf.getvalue(), file_name="bacias_hidrograficas.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-            with _col_exp6:
-                _csv = _bacias_df.to_csv(index=False).encode('utf-8-sig')
-                st.download_button("📄 CSV", data=_csv, file_name="bacias_hidrograficas.csv", mime="text/csv", use_container_width=True)
+            # Botões de exportação (bloco único DRY — [Melhoria4-EXCEL 453ª · M3])
+            _botoes_exportacao_geo("bacias_hidrograficas", _bacias_df, sheet_name="Bacias")
         else:
             st.warning("Nenhum dado de bacias disponível.")
     
@@ -56037,29 +56171,8 @@ if _secao == _SECOES[17]:   # tab_hidrografia
             except Exception:
                 logger.debug("[HYDRO-VIS] Gráfico de estações/UF isolado falhou (aditivo).", exc_info=True)
             
-            # Botões de exportação
-            _col_exp1, _col_exp2, _col_exp3, _col_exp4, _col_exp5, _col_exp6 = st.columns(6)
-            with _col_exp1:
-                _html = _geo_html_locais(_est_df)
-                st.download_button("🌐 HTML", data=_html.encode('utf-8'), file_name="estacoes_hidrologicas.html", mime="text/html", use_container_width=True)
-            with _col_exp2:
-                _geojson = _df_para_geojson(_est_df)
-                st.download_button("🌐 GeoJSON", data=_geojson.encode('utf-8'), file_name="estacoes_hidrologicas.geojson", mime="application/geo+json", use_container_width=True)
-            with _col_exp3:
-                _kml = _df_para_kml(_est_df)
-                st.download_button("🗺️ KML", data=_kml.encode('utf-8'), file_name="estacoes_hidrologicas.kml", mime="application/vnd.google-earth.kml+xml", use_container_width=True)
-            with _col_exp4:
-                _gpx = _df_para_gpx(_est_df)
-                st.download_button("📍 GPX", data=_gpx.encode('utf-8'), file_name="estacoes_hidrologicas.gpx", mime="application/gpx+xml", use_container_width=True)
-            with _col_exp5:
-                import io
-                _xlsx_buf = io.BytesIO()
-                with pd.ExcelWriter(_xlsx_buf, engine='xlsxwriter') as _writer:
-                    _est_df.to_excel(_writer, index=False, sheet_name='Estacoes')
-                st.download_button("📊 XLSX", data=_xlsx_buf.getvalue(), file_name="estacoes_hidrologicas.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-            with _col_exp6:
-                _csv = _est_df.to_csv(index=False).encode('utf-8-sig')
-                st.download_button("📄 CSV", data=_csv, file_name="estacoes_hidrologicas.csv", mime="text/csv", use_container_width=True)
+            # Botões de exportação (bloco único DRY — [Melhoria4-EXCEL 453ª · M3])
+            _botoes_exportacao_geo("estacoes_hidrologicas", _est_df, sheet_name="Estacoes")
         else:
             st.warning("Nenhum dado de estações disponível.")
         _est_fonte = _est_df['fonte'].iloc[0] if (not _est_df.empty and 'fonte' in _est_df.columns) else None
@@ -56165,29 +56278,8 @@ if _secao == _SECOES[17]:   # tab_hidrografia
                     st.plotly_chart(fig, use_container_width=True)
                     st.caption(f"Exibindo {len(_map_df)} elementos no mapa (rios + estações)")
                     
-                    # Botões de exportação
-                    _col_exp1, _col_exp2, _col_exp3, _col_exp4, _col_exp5, _col_exp6 = st.columns(6)
-                    with _col_exp1:
-                        _html = _geo_html_locais(_map_df)
-                        st.download_button("🌐 HTML", data=_html.encode('utf-8'), file_name="mapa_hidrografico.html", mime="text/html", use_container_width=True)
-                    with _col_exp2:
-                        _geojson = _df_para_geojson(_map_df)
-                        st.download_button("🌐 GeoJSON", data=_geojson.encode('utf-8'), file_name="mapa_hidrografico.geojson", mime="application/geo+json", use_container_width=True)
-                    with _col_exp3:
-                        _kml = _df_para_kml(_map_df)
-                        st.download_button("🗺️ KML", data=_kml.encode('utf-8'), file_name="mapa_hidrografico.kml", mime="application/vnd.google-earth.kml+xml", use_container_width=True)
-                    with _col_exp4:
-                        _gpx = _df_para_gpx(_map_df)
-                        st.download_button("📍 GPX", data=_gpx.encode('utf-8'), file_name="mapa_hidrografico.gpx", mime="application/gpx+xml", use_container_width=True)
-                    with _col_exp5:
-                        import io
-                        _xlsx_buf = io.BytesIO()
-                        with pd.ExcelWriter(_xlsx_buf, engine='xlsxwriter') as _writer:
-                            _map_df.to_excel(_writer, index=False, sheet_name='Mapa')
-                        st.download_button("📊 XLSX", data=_xlsx_buf.getvalue(), file_name="mapa_hidrografico.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-                    with _col_exp6:
-                        _csv = _map_df.to_csv(index=False).encode('utf-8-sig')
-                        st.download_button("📄 CSV", data=_csv, file_name="mapa_hidrografico.csv", mime="text/csv", use_container_width=True)
+                    # Botões de exportação (bloco único DRY — [Melhoria4-EXCEL 453ª · M3])
+                    _botoes_exportacao_geo("mapa_hidrografico", _map_df, sheet_name="Mapa")
                 else:
                     st.info("Dados de coordenadas não disponíveis após processamento.")
             else:
@@ -56565,29 +56657,8 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
                             st.plotly_chart(fig, use_container_width=True)
                             st.caption(f"🔵 Origem (azul) → 🔴 Destino (vermelho) | Linhas tracejadas = travessias aquaviárias | Total: {len(_map_data)} travessias")
                             
-                            # Botões de exportação
-                            _col_exp1, _col_exp2, _col_exp3, _col_exp4, _col_exp5, _col_exp6 = st.columns(6)
-                            with _col_exp1:
-                                _html = _geo_html_locais(_ferry_rotas)
-                                st.download_button("🌐 HTML", data=_html.encode('utf-8'), file_name="travessias_balsa.html", mime="text/html", use_container_width=True)
-                            with _col_exp2:
-                                _geojson = _df_para_geojson(_ferry_rotas)
-                                st.download_button("🌐 GeoJSON", data=_geojson.encode('utf-8'), file_name="travessias_balsa.geojson", mime="application/geo+json", use_container_width=True)
-                            with _col_exp3:
-                                _kml = _df_para_kml(_ferry_rotas)
-                                st.download_button("🗺️ KML", data=_kml.encode('utf-8'), file_name="travessias_balsa.kml", mime="application/vnd.google-earth.kml+xml", use_container_width=True)
-                            with _col_exp4:
-                                _gpx = _df_para_gpx(_ferry_rotas)
-                                st.download_button("📍 GPX", data=_gpx.encode('utf-8'), file_name="travessias_balsa.gpx", mime="application/gpx+xml", use_container_width=True)
-                            with _col_exp5:
-                                import io
-                                _xlsx_buf = io.BytesIO()
-                                with pd.ExcelWriter(_xlsx_buf, engine='xlsxwriter') as _writer:
-                                    _ferry_rotas.to_excel(_writer, index=False, sheet_name='Travessias')
-                                st.download_button("📊 XLSX", data=_xlsx_buf.getvalue(), file_name="travessias_balsa.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-                            with _col_exp6:
-                                _csv = _ferry_rotas.to_csv(index=False).encode('utf-8-sig')
-                                st.download_button("📄 CSV", data=_csv, file_name="travessias_balsa.csv", mime="text/csv", use_container_width=True)
+                            # Botões de exportação (bloco único DRY — [Melhoria4-EXCEL 453ª · M3])
+                            _botoes_exportacao_geo("travessias_balsa", _ferry_rotas, sheet_name="Travessias")
                         else:
                             st.info("Dados de coordenadas não disponíveis para as travessias com balsa.")
                 else:
@@ -56820,27 +56891,7 @@ if _secao == _SECOES[20]:   # tab_defeats
                 else:
                     st.plotly_chart(_fig_derrotas, use_container_width=True)
                     st.caption(f"🔵 Origem → 🔴 Destino | Total: {len(_derrotas)} derrota(s)")
-                    _col_exp1, _col_exp2, _col_exp3, _col_exp4, _col_exp5, _col_exp6 = st.columns(6)
-                    with _col_exp1:
-                        st.download_button("🌐 HTML", data=str(_geo_html_locais(_derrotas)).encode('utf-8'), file_name="derrotas.html", mime="text/html", use_container_width=True)
-                    with _col_exp2:
-                        _geojson = _df_para_geojson(_derrotas)
-                        st.download_button("🌐 GeoJSON", data=_geojson.encode('utf-8'), file_name="derrotas.geojson", mime="application/geo+json", use_container_width=True)
-                    with _col_exp3:
-                        _kml = _df_para_kml(_derrotas)
-                        st.download_button("🗺️ KML", data=_kml.encode('utf-8'), file_name="derrotas.kml", mime="application/vnd.google-earth.kml+xml", use_container_width=True)
-                    with _col_exp4:
-                        _gpx = _df_para_gpx(_derrotas)
-                        st.download_button("📍 GPX", data=_gpx.encode('utf-8'), file_name="derrotas.gpx", mime="application/gpx+xml", use_container_width=True)
-                    with _col_exp5:
-                        import io
-                        _xlsx_buf = io.BytesIO()
-                        with pd.ExcelWriter(_xlsx_buf, engine='xlsxwriter') as _writer:
-                            _derrotas.to_excel(_writer, index=False, sheet_name='Derrotas')
-                        st.download_button("📊 XLSX", data=_xlsx_buf.getvalue(), file_name="derrotas.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-                    with _col_exp6:
-                        _csv = _derrotas.to_csv(index=False).encode('utf-8-sig')
-                        st.download_button("📄 CSV", data=_csv, file_name="derrotas.csv", mime="text/csv", use_container_width=True)
+                    _botoes_exportacao_geo("derrotas", _derrotas, sheet_name="Derrotas")
         except Exception:
             logger.error("[DEFEATS-MAP] Falha ao renderizar mapa das derrotas.", exc_info=True)
             st.warning("Não foi possível montar o mapa das derrotas.")
@@ -56992,6 +57043,14 @@ if _secao == _SECOES[21]:   # tab_auditoria_completa
             if _falhas_api:
                 st.caption("Últimas falhas de API nesta sessão")
                 st.dataframe(pd.DataFrame(_falhas_api), use_container_width=True, hide_index=True)
+            # [Melhoria4-EXCEL 453ª · M4] Confiança por motor×UF (observabilidade p/ seleção adaptativa).
+            _conf_regiao = _confianca_motor_regiao(_ULTIMOS_EVENTOS_API, min_amostra=3)
+            if _conf_regiao:
+                st.caption("Confiança por motor · UF (taxa de sucesso)")
+                _df_conf = pd.DataFrame(
+                    [{"Motor · UF": k, "Chamadas": v["n"], "Sucesso (%)": v["taxa"]}
+                     for k, v in sorted(_conf_regiao.items(), key=lambda kv: kv[1]["taxa"])])
+                st.dataframe(_df_conf, use_container_width=True, hide_index=True)
         except Exception:
             logger.debug("[AUDIT-VIS] Falhas de API isoladas falharam (aditivo).", exc_info=True)
 
