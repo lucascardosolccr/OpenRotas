@@ -7604,8 +7604,10 @@ def _geo_tempo_par(v, em_seg=False):
         return (None, None)
 
 
-def _geo_analise_dataset(df, ratio_suspeito=3.0, dist_longa=200.0):
-    """Monta a lista de rotas geográficas + resumo, a partir dos dados já calculados. dict|None. Defensivo."""
+def _geo_analise_dataset_impl(df, ratio_suspeito=3.0, dist_longa=200.0):
+    """Monta a lista de rotas geográficas + resumo, a partir dos dados já calculados. dict|None. Defensivo.
+    O corpo vivia em _geo_analise_dataset; a partir de [MELHORIA4-450 · M3] o acesso público passa pelo
+    wrapper cacheado por sessão (_geo_analise_dataset), que só recomputa quando o df muda."""
     try:
         if df is None or len(df) == 0:
             return None
@@ -7627,7 +7629,8 @@ def _geo_analise_dataset(df, ratio_suspeito=3.0, dist_longa=200.0):
         rotas = []
         # [PERF-GEO-DATASET - 394ª geração] to_dict("records") no lugar de iterrows(): o loop acessa a linha
         # SÓ via r.get(...), que funciona idêntico em dict; to_dict é ~10-50× mais rápido em df grande (iterrows
-        # cria uma Series por linha). Esta função NÃO é cacheada e roda a cada rerun da aba Análise Geográfica.
+        # cria uma Series por linha). [MELHORIA4-450 · M3] O conjunto é caro (lookup IBGE por linha) e só depende
+        # do df: o wrapper _geo_analise_dataset cacheia-o por sessão — este corpo roda apenas quando o df muda.
         for r in df.to_dict("records"):
             lat_o, lon_o = _geo_num(r.get(c_lato)), _geo_num(r.get(c_lono))
             if lat_o is None or lon_o is None:
@@ -7707,6 +7710,34 @@ def _geo_analise_dataset(df, ratio_suspeito=3.0, dist_longa=200.0):
     except Exception:
         logger.error("[GEO-ANALISE] Falha (isolada).", exc_info=True)
         return None
+
+
+def _geo_analise_dataset(df, ratio_suspeito=3.0, dist_longa=200.0):
+    """[MELHORIA4-450 · M3] Wrapper com cache por sessão do dataset da aba Análise Geográfica. O resultado só
+    depende do conteúdo do df (estável em st.session_state), mas era reconstruído do zero (com lookup IBGE por
+    linha) a cada rerun e por cada consumidor (mapa, tabela, exports). Fingerprint leve (id + len + 1ª linha)
+    em st.session_state devolve a MESMA saída em custo zero quando o estudo não mudou; invalidado sozinha quando
+    o df muda (id/len/1ª linha). Fail-open: qualquer falha → recomputa direto (comportamento original)."""
+    _fp = None
+    try:
+        _fp = (id(df), (len(df) if (df is not None) else -1))
+        if df is not None and len(df):
+            try:
+                _fp = _fp + (str(df.iloc[0].to_dict())[:128],)
+            except Exception:
+                pass
+        _cac = st.session_state.get("_geo_analise_cache")
+        if isinstance(_cac, dict) and _cac.get("fp") == _fp and "res" in _cac:
+            return _cac["res"]
+    except Exception:
+        _fp = None
+    _res = _geo_analise_dataset_impl(df, ratio_suspeito, dist_longa)
+    try:
+        if _fp is not None:
+            st.session_state["_geo_analise_cache"] = {"fp": _fp, "res": _res}
+    except Exception:
+        logger.error("[GEO-ANALISE-CACHE] Falha ao gravar cache de sessão (isolada).", exc_info=True)
+    return _res
 
 
 # Mapa Leaflet autocontido da Análise Geográfica (overview). Origens azuis (raio ~ candidatos),
@@ -12529,6 +12560,46 @@ def _validar_consistencia_ibge(codigo, municipio, uf, indice=None):
     return {"consistente": False, "status": "divergência", "campo_conflito": " e ".join(_nomes),
             "detalhe": "Inconsistência em: " + "; ".join(_campos) + ".",
             "correcao": f"Adotar o oficial do código {codigo}: {_res['municipio']}/{_res['uf']}."}
+
+
+def _analise_prevoo_lote_cached(file_id, df):
+    """[MELHORIA4-450 · M4] Análise do upload do Lote memoizada pela identidade do arquivo (nome_tamanho):
+    detecção de coluna IBGE + validação de consistência (amostra 500) + raio-X da planilha (O(N) com
+    normalização semântica por célula) eram re-executados do ZERO a cada rerun, embora o resultado dependa
+    só do df. Cache em st.session_state limitado a 2 arquivos. Retorna dict {cols_ibge, conflitos, raxio}.
+    Fail-open: o próprio corpo trata exceções e, sem cache, recomputa (comportamento original)."""
+    _cache = st.session_state.get("prevoo_lote_cache")
+    if isinstance(_cache, dict) and file_id in _cache:
+        return _cache[file_id]
+    _res = {"cols_ibge": [], "conflitos": [], "raxio": None}
+    try:
+        _res["cols_ibge"] = _detectar_coluna_ibge(df)
+        _col_cod_l = _res["cols_ibge"][0] if _res["cols_ibge"] else None
+        _col_mun_l = next((c for c in df.columns if 'MUNIC' in unidecode(str(c)).upper()), None)
+        _col_uf_l = next((c for c in df.columns if unidecode(str(c)).upper().strip() in ('UF', 'ESTADO')), None)
+        if _col_cod_l and (_col_mun_l or _col_uf_l):
+            _idx_ibge_l = _indice_ibge_por_codigo()
+            _confl_l = []
+            for _, _row_l in df.head(500).iterrows():
+                _rv_l = _validar_consistencia_ibge(
+                    _row_l.get(_col_cod_l),
+                    _row_l.get(_col_mun_l) if _col_mun_l else "",
+                    _row_l.get(_col_uf_l) if _col_uf_l else "", indice=_idx_ibge_l)
+                if _rv_l['consistente'] is False:
+                    _confl_l.append((_row_l.get(_col_cod_l), _rv_l['detalhe'], _rv_l['correcao']))
+            _res["conflitos"] = _confl_l
+        _res["raxio"] = _raio_x_planilha(
+            df['Origem'].tolist() if 'Origem' in df.columns else [],
+            df['Destino'].tolist() if 'Destino' in df.columns else [])
+    except Exception as _e_pl:
+        logger.error(f"[PREVOO-LOTE-CACHE] Falha na análise do upload: {_e_pl}")
+    _cache = dict(_cache) if isinstance(_cache, dict) else {}
+    _cache[file_id] = _res
+    if len(_cache) > 2:
+        for _k in list(_cache)[:-2]:
+            _cache.pop(_k, None)
+    st.session_state["prevoo_lote_cache"] = _cache
+    return _res
 
 
 
@@ -19251,10 +19322,12 @@ def _comparar_alocacoes(linhas, parse_tempo=None, limiar_empate_km=1.0, limiar_r
 
 
 
-def _estatisticas_comparacao(linhas, uf_para_regiao=None):
+def _estatisticas_comparacao(linhas, uf_para_regiao=None, limiar_empate_km=1.0):
     """[COMPARADOR - 138ª geração] Agrega a comparação em Brasil / Região / UF. Todo indicador de impacto é
     PONDERADO POR INSCRITOS — é o número de candidatos que importa, não o de linhas: 1 município com 5.000
-    inscritos pesa mais que 50 municípios com 10. PURO; mapa UF→região injetável."""
+    inscritos pesa mais que 50 municípios com 10. PURO; mapa UF→região injetável. [MELHORIA4-450 · M5]
+    `limiar_empate_km` (default 1.0, preservando o legado) passa a régua do placar para 'beneficiados'/
+    'prejudicados' — antes usavam literal fixo de 1 km mesmo quando o usuário subia o limiar comparativo."""
     ufr = uf_para_regiao if uf_para_regiao is not None else _UF_PARA_REGIAO
 
     def _bloco(ls):
@@ -19272,8 +19345,9 @@ def _estatisticas_comparacao(linhas, uf_para_regiao=None):
         _econ_km = sum(float(l.get("Diferenca Abs (km)") or 0) for l in ls)
         _econ_pond = sum(float(l.get("Economia km x Inscritos") or 0) for l in ls)
         _econ_t = sum(float(l.get("Economia Tempo x Inscritos (min)") or 0) for l in ls)
-        _benef = sum(float(l.get("Inscritos") or 0) for l in ls if (l.get("Diferenca Abs (km)") or 0) > 1)
-        _prej = sum(float(l.get("Inscritos") or 0) for l in ls if (l.get("Diferenca Abs (km)") or 0) < -1)
+        _lim_m5 = float(limiar_empate_km)
+        _benef = sum(float(l.get("Inscritos") or 0) for l in ls if (l.get("Diferenca Abs (km)") or 0) > _lim_m5)
+        _prej = sum(float(l.get("Inscritos") or 0) for l in ls if (l.get("Diferenca Abs (km)") or 0) < -_lim_m5)
         _difs = [float(l["Diferenca Pct (%)"]) for l in ls if l.get("Diferenca Pct (%)") is not None]
         _faixas = {}
         for _f in (5, 10, 20, 50, 100):
@@ -19546,6 +19620,22 @@ def _v318_vantagem_viaria(dist_app, dist_ref, balsa_app, balsa_ref, limiar_empat
         return "Referência", f"menor rota viária sem balsa ({abs(_dif):.1f} km)"
     # Caso geral: CUSTO EFETIVO = viária + risco de travessia (bounded). Prioriza rodovia; usa balsa só quando
     # ela economiza mais que o risco-equivalente (travessia inevitável/óbvia).
+    # [MELHORIA4-450 · M2] Quando os lados têm status de balsa DIFERENTE, a decisão DELEGA para a banda
+    # adaptativa §6/§7 (_vantagem_banda_balsa: max(60 km, 5×travessia)) — a MESMA política única usada pelo
+    # seletor de hub e pelo diagnóstico "Vantagem de". Antes usava _PEN_BALSA_KM +50 fixo, o que fazia a
+    # mesma linha exibir "Vantagem de: Referência" e "Vencedor (Qualidade): Aplicação" ao mesmo tempo.
+    if _ba != _br:
+        _vband = _vantagem_banda_balsa(_da, _dr, _ba, _br, _lim,
+                                       fallback=("Referência" if _ba else "Aplicação"))
+        if _vband == "Empate":
+            return "Empate", f"custo efetivo equivalente (viária + banda de balsa, < {_lim:g} km)"
+        if _vband == "Aplicação":
+            return "Aplicação", ("travessia praticamente inevitável: a alternativa rodoviária da referência é um "
+                                 "desvio desproporcional (fora da banda max(60 km, 5×travessia))" if _ba
+                                 else "menor rota viária, sem balsa")
+        return "Referência", ("rota rodoviária razoável preferível à balsa da aplicação (a economia caberia na "
+                              "banda max(60 km, 5×travessia))" if _ba
+                              else "menor rota viária")
     _eff_app = _da + (_PEN_BALSA_KM if _ba else 0.0)
     _eff_ref = _dr + (_PEN_BALSA_KM if _br else 0.0)
     _dife = _eff_ref - _eff_app
@@ -21179,15 +21269,19 @@ def _painel_divergencias_ui(diag, st):
         st.markdown("### 🔬 Diagnóstico Inteligente das Divergências")
         st.caption("Para cada município em que os dois estudos escolheram locais de prova diferentes, roteamos "
                    "a escolha da referência pelos mesmos motores e explicamos, por evidência, por que cada "
-                   "opção é melhor ou pior para o candidato e para a operação.")
+                   "opção é melhor ou pior para o candidato e para a operação. "
+                   "⚠️ **Este painel é por Índice de Qualidade multicritério** — o placar acima conta apenas "
+                   "a distância (menor rota). Por isso os dois números de 'vitória' podem divergir e ambos estarão certos.")
 
         # ---- KPIs ----
         _c = st.columns(5)
         _c[0].metric("Divergências", f"{diag.get('n_divergencias', 0):,}".replace(",", "."))
         _c[1].metric("Candidatos impactados", f"{int(_res.get('inscritos_impactados', 0)):,}".replace(",", "."))
         _c[2].metric("Vence a aplicação", f"{int(_res.get('app_superior', 0))}",
-                     help="Casos em que o Índice de Qualidade multicritério favorece a aplicação.")
-        _c[3].metric("Vence a referência", f"{int(_res.get('ref_superior', 0))}")
+                     help="Casos em que o Índice de Qualidade multicritério favorece a aplicação "
+                          "(mesma régua em que o placar acima conta distância — aqui o critério é qualidade).")
+        _c[3].metric("Vence a referência", f"{int(_res.get('ref_superior', 0))}",
+                     help="Casos em que o Índice de Qualidade multicritério favorece a referência.")
         _c[4].metric("Empates técnicos", f"{int(_res.get('empates', 0))}")
 
         # [CARTOES-DIVERGENCIA - 244ª] resumo visual escaneável no topo (antes do conteúdo denso)
@@ -22769,6 +22863,79 @@ def _reconciliar_golden_no_lote(df, limiar_pct=10.0):
         return {"total_golden": _tot, "divergentes": _div, "linhas": _linhas}
     except Exception:
         return {"total_golden": 0, "divergentes": 0, "linhas": []}
+
+
+def _exibir_auditoria_geo_memoria(df, _label_sensores="Origem"):
+    """[MELHORIA4-450 · M1] Auditoria read-only UNIFICADA da memória geográfica + sensores de drift
+    (golden divergente e migração de coordenada). Extraída do bloco da Alocação e agora aplicada TAMBÉM
+    ao pipeline do Lote (mesma política, mesmo aviso — antes o Lote ficava cego a esses sinais). Aditiva:
+    nunca altera df; apenas renderiza avisos; isolada em try/except."""
+    try:
+        _mg = _v317_memoria_geografica(df)
+        if _mg.get("n_problematicos"):
+            with st.expander(f"🧭 Memória geográfica — {_fmt_num(_mg['n_problematicos'])} "
+                             f"município(s) a conferir", expanded=False):
+                st.caption("Diagnóstico read-only: municípios sinalizados por rota indireta, "
+                           "fallback geodésico, balsa ou divergência entre motores. Não altera "
+                           "nenhuma decisão — serve para você priorizar a conferência.")
+                if _mg.get("por_motivo"):
+                    st.markdown("**Ocorrências por motivo:** " + " · ".join(
+                        f"{_k} ({_v})" for _k, _v in _mg["por_motivo"].items()))
+                st.dataframe(pd.DataFrame([{
+                    "Origem": _x["origem"], "UF": _x["uf"], "Severidade": _x["severidade"],
+                    "Motivos": "; ".join(_x["motivos"])} for _x in _mg["municipios"][:300]],
+                    ), use_container_width=True, hide_index=True)
+                # [GEO-MEM - P2/§8] Persistência cross-execução + contador de recorrentes.
+                _aprend = _geo_mem_aprender(df)
+                _gmem = _geo_mem_carregar()
+                _recorrentes = 0
+                if _gmem:
+                    _nomes_estudo = set()
+                    for _x in _mg.get("municipios", []):
+                        _nomes_estudo.add(str(_x.get("origem", "")).lower())
+                    for _ky, _rv in _gmem.items():
+                        if _ky.split("|", 1)[0] in _nomes_estudo and int(_rv.get("rodadas", 0) or 0) > 1:
+                            _recorrentes += 1
+                _rot_aprend = ("persistida neste estudo" if _aprend.get("salvou") else "leitura apenas (gravação indisponível)")
+                st.caption(f"🧠 Memória persistente: {len(_gmem or {})} registro(s) em disco ({_rot_aprend}). "
+                           f"**{_recorrentes}** origem(ns) destes municípios são RECORRENTES problemáticas "
+                           "(≥2 rodadas) — o top-K delas será ampliado automaticamente na próxima medição (§7/§8).")
+                # [M4 · DRIFT] Sensores automáticos de degradação silenciosa: golden divergente
+                # no lote e migração de coordenada. Read-only — só avisam a auditoria.
+                try:
+                    _gd = _reconciliar_golden_no_lote(df)
+                    if _gd.get("total_golden") and _gd.get("divergentes"):
+                        _gdl = _gd["linhas"]
+                        with st.expander(f"⚠️ Golden drift no lote — {_gd['divergentes']}/{_gd['total_golden']} "
+                                         f"rota(s) verificada(s) divergente(s) do recálculo", expanded=False):
+                            st.caption("A via pode ter mudado ou a verificação está desatualizada — "
+                                       "confira e re-verifique em 1 clique na aba individual.")
+                            st.dataframe(pd.DataFrame(_gdl), use_container_width=True, hide_index=True)
+                    _nr_drift = 0
+                    _cm_d = {str(c).strip().lower(): c for c in df.columns}
+                    _cd_org = _cm_d.get("origem") or _cm_d.get("municipio origem") or _cm_d.get("município origem")
+                    _cd_uf = _cm_d.get("uf") or _cm_d.get("uf origem")
+                    _cd_lat = _cm_d.get("lat origem") or _cm_d.get("lat_origem") or _cm_d.get("lat o")
+                    _cd_lon = _cm_d.get("lon origem") or _cm_d.get("lon_origem") or _cm_d.get("lon o")
+                    if _cd_org and _cd_lat and _cd_lon:
+                        try:
+                            _amostra = df.head(200).reset_index(drop=True)
+                        except Exception:
+                            _amostra = df
+                        for _ix_e in range(min(200, len(_amostra))):
+                            _rr = _amostra.iloc[_ix_e]
+                            _ss = _sensor_drift_geocodificacao(
+                                _rr.get(_cd_org), _rr.get(_cd_uf or "UF", ""),
+                                _rr.get(_cd_lat), _rr.get(_cd_lon))
+                            if _ss.get("suspeito"):
+                                _nr_drift += 1
+                        if _nr_drift:
+                            st.caption(f"📍 **{_nr_drift}** origem(ns) com possível migração de coordenada "
+                                       f"(>5 km vs execução anterior) — confira a geocodificação das mais recentes.")
+                except Exception:
+                    pass
+    except Exception:
+        logger.error("[V317-MEMGEO] memória geográfica falhou (auditoria unificada).", exc_info=True)
 
 
 def _v316_comparador_balsa(dist_app, dist_ref, balsa_app, balsa_ref):
@@ -43397,6 +43564,9 @@ if _secao == _SECOES[1]:   # tab_processamento
         # continuam seguras. Fecha uma INCONSISTÊNCIA que a 184ª deixou: a otimização existia só na Alocação.
         df = _ler_planilha_upload(arquivo_carregado.getvalue())
         df.columns = df.columns.str.strip().str.title()
+        # [MELHORIA4-450 · M4] Identidade do arquivo calculada UMA vez e reutilizada no cache do pré-processamento
+        # (detecção IBGE + validação + raio-X) e na contagem de rotas únicas — antes, esses O(N) rodavam a cada rerun.
+        _file_id_prevoo = f"{getattr(arquivo_carregado, 'name', 'file')}_{getattr(arquivo_carregado, 'size', 0)}"
         
         if 'Origem' not in df.columns or 'Destino' not in df.columns:
             st.error("Erro de Validação: A planilha deve possuir as colunas 'Origem' e 'Destino'.")
@@ -43404,7 +43574,8 @@ if _secao == _SECOES[1]:   # tab_processamento
             # [IBGE-INPUT - 100ª/101ª geração] Detecção automática de coluna com Código IBGE + validação
             # de consistência (Código × Município × UF) quando essas colunas coexistem na planilha.
             try:
-                _cols_ibge = _detectar_coluna_ibge(df)
+                _analise_prevoo = _analise_prevoo_lote_cached(_file_id_prevoo, df)  # [M4] 1× por arquivo
+                _cols_ibge = _analise_prevoo.get("cols_ibge") or []
                 if _cols_ibge:
                     st.info(f"🏛️ **Código IBGE detectado** na(s) coluna(s): {', '.join(map(str, _cols_ibge))}. "
                             "Entradas de 'Origem'/'Destino' que forem códigos de 7 dígitos são resolvidas "
@@ -43412,27 +43583,20 @@ if _secao == _SECOES[1]:   # tab_processamento
                 _col_cod_l = _cols_ibge[0] if _cols_ibge else None
                 _col_mun_l = next((c for c in df.columns if 'MUNIC' in unidecode(str(c)).upper()), None)
                 _col_uf_l = next((c for c in df.columns if unidecode(str(c)).upper().strip() in ('UF', 'ESTADO')), None)
+                _confl_l = None
                 if _col_cod_l and (_col_mun_l or _col_uf_l):
-                    _idx_ibge_l = _indice_ibge_por_codigo()
-                    _confl_l = []
-                    for _, _row_l in df.head(500).iterrows():
-                        _rv_l = _validar_consistencia_ibge(
-                            _row_l.get(_col_cod_l),
-                            _row_l.get(_col_mun_l) if _col_mun_l else "",
-                            _row_l.get(_col_uf_l) if _col_uf_l else "", indice=_idx_ibge_l)
-                        if _rv_l['consistente'] is False:
-                            _confl_l.append((_row_l.get(_col_cod_l), _rv_l['detalhe'], _rv_l['correcao']))
-                    if _confl_l:
-                        # [UI-ESTAVEL - 132ª geração] Rótulo ESTÁTICO (a contagem foi para o corpo): um rótulo que muda
-                        # entre reruns dá nova identidade ao container no React → unmount/remount → removeChild.
-                        with st.expander("⚠️ Validação IBGE — Código × Município/UF", expanded=False):
-                            st.caption(f"**{len(_confl_l)} inconsistência(s)** (amostra de até 500 linhas).")
-                            st.caption("Divergências entre o Código IBGE e o Município/UF informados na "
-                                       "planilha. O oficial do código é a referência sugerida.")
-                            for _cod_c, _det_c, _cor_c in _confl_l[:40]:
-                                st.markdown(f"- `{_cod_c}` — {_det_c} **Correção:** {_cor_c}")
-                    else:
-                        st.caption("🏛️ Validação IBGE: Código × Município/UF **consistentes** na amostra verificada.")
+                    _confl_l = _analise_prevoo.get("conflitos") or []
+                if _confl_l:
+                    # [UI-ESTAVEL - 132ª geração] Rótulo ESTÁTICO (a contagem foi para o corpo): um rótulo que muda
+                    # entre reruns dá nova identidade ao container no React → unmount/remount → removeChild.
+                    with st.expander("⚠️ Validação IBGE — Código × Município/UF", expanded=False):
+                        st.caption(f"**{len(_confl_l)} inconsistência(s)** (amostra de até 500 linhas).")
+                        st.caption("Divergências entre o Código IBGE e o Município/UF informados na "
+                                   "planilha. O oficial do código é a referência sugerida.")
+                        for _cod_c, _det_c, _cor_c in _confl_l[:40]:
+                            st.markdown(f"- `{_cod_c}` — {_det_c} **Correção:** {_cor_c}")
+                elif _col_cod_l and (_col_mun_l or _col_uf_l):
+                    st.caption("🏛️ Validação IBGE: Código × Município/UF **consistentes** na amostra verificada.")
             except Exception as _e_ib_l:
                 logger.error(f"[IBGE-INPUT] Falha na detecção/validação IBGE do lote: {_e_ib_l}")
             # [P31 - 3ª geração] Limite expandido de 5.000 → 100.000 linhas com avisos
@@ -43461,7 +43625,7 @@ if _secao == _SECOES[1]:   # tab_processamento
             # [SPEED-2 / Etapa 5] Estimativa dinâmica de tempo ANTES de processar.
             # [PERF-UI1] A contagem de rotas únicas agora é cacheada pela identidade do
             # arquivo, evitando recomputar set(zip(...)) sobre 100k linhas a cada rerun.
-            _file_id = f"{getattr(arquivo_carregado, 'name', 'file')}_{getattr(arquivo_carregado, 'size', 0)}"
+            _file_id = _file_id_prevoo  # [M4] identidade já calculada no início do bloco do arquivo
             _n_rotas_unicas_prev = _contar_rotas_unicas_preview(
                 _file_id, n_linhas,
                 tuple(df['Origem'].fillna('').astype(str).values),
@@ -43504,7 +43668,7 @@ if _secao == _SECOES[1]:   # tab_processamento
             # que mais degradam o resultado + higienização segura em 1 clique. Reusa dado já carregado
             # (custo ZERO, sem rede). Isolado em try/except — nunca bloqueia o fluxo do Lote.
             try:
-                _rx = _raio_x_planilha(
+                _rx = _analise_prevoo_lote_cached(_file_id_prevoo, df).get("raxio") or _raio_x_planilha(
                     df['Origem'].tolist() if 'Origem' in df.columns else [],
                     df['Destino'].tolist() if 'Destino' in df.columns else [])
                 _emoji_nota = {"Excelente": "🟢", "Boa": "🟢", "Atenção": "🟡", "Crítica": "🔴"}.get(_rx["nota"], "⚪")
@@ -44268,6 +44432,10 @@ if _secao == _SECOES[1]:   # tab_processamento
                                            "origem por origem.")
                     except Exception:
                         logger.error("[DELTA-LOTE-UI] Falha ao renderizar o delta do lote (isolada).", exc_info=True)
+                    # [MELHORIA4-450 · M1] Auditoria geográfica unificada TAMBÉM no Lote (antes: exclusiva da
+                    # Alocação) — memória geográfica, golden drift e migração de coordenada, mesma política.
+                    # Read-only; rodando dentro do try/except do painel (nunca quebra a conclusão).
+                    _exibir_auditoria_geo_memoria(st.session_state.get('df_processado'))
                     _lmets = []
                     if _lote_tempo_fin is not None:
                         _lmets.append(("Tempo total", _formatar_duracao(_lote_tempo_fin)))
@@ -47551,70 +47719,10 @@ if _secao == _SECOES[2]:   # tab_alocacao
                         logger.error(f"[V316-BALSA-AGG] análise agregada de balsa falhou: {_e_agb}")
                     # [Melhoria 4 · §8] MEMÓRIA GEOGRÁFICA DIAGNÓSTICA (read-only): municípios problemáticos por
                     # sinais já calculados. Não persiste nem altera decisão — auditoria/observabilidade.
+                    # [MELHORIA4-450 · M1] Auditoria unificada (memória + golden drift + drift de coordenada)
+                    # agora vive em _exibir_auditoria_geo_memoria e cobre TAMBÉM o pipeline do Lote (M1).
                     try:
-                        _mg = _v317_memoria_geografica(df_final_alo)
-                        if _mg.get("n_problematicos"):
-                            with st.expander(f"🧭 Memória geográfica — {_fmt_num(_mg['n_problematicos'])} "
-                                             f"município(s) a conferir", expanded=False):
-                                st.caption("Diagnóstico read-only: municípios sinalizados por rota indireta, "
-                                           "fallback geodésico, balsa ou divergência entre motores. Não altera "
-                                           "nenhuma decisão — serve para você priorizar a conferência.")
-                                if _mg.get("por_motivo"):
-                                    st.markdown("**Ocorrências por motivo:** " + " · ".join(
-                                        f"{_k} ({_v})" for _k, _v in _mg["por_motivo"].items()))
-                                st.dataframe(pd.DataFrame([{
-                                    "Origem": _x["origem"], "UF": _x["uf"], "Severidade": _x["severidade"],
-                                    "Motivos": "; ".join(_x["motivos"])} for _x in _mg["municipios"][:300]],
-                                    ), use_container_width=True, hide_index=True)
-                                # [GEO-MEM - P2/§8] Persistência cross-execução + contador de recorrentes.
-                                _aprend = _geo_mem_aprender(df_final_alo)
-                                _gmem = _geo_mem_carregar()
-                                _recorrentes = 0
-                                if _gmem:
-                                    _nomes_estudo = set()
-                                    for _x in _mg.get("municipios", []):
-                                        _nomes_estudo.add(str(_x.get("origem", "")).lower())
-                                    for _ky, _rv in _gmem.items():
-                                        if _ky.split("|", 1)[0] in _nomes_estudo and int(_rv.get("rodadas", 0) or 0) > 1:
-                                            _recorrentes += 1
-                                _rot_aprend = ("persistida neste estudo" if _aprend.get("salvou") else "leitura apenas (gravação indisponível)")
-                                st.caption(f"🧠 Memória persistente: {len(_gmem or {})} registro(s) em disco ({_rot_aprend}). "
-                                           f"**{_recorrentes}** origem(ns) destes municípios são RECORRENTES problemáticas "
-                                           "(≥2 rodadas) — o top-K delas será ampliado automaticamente na próxima medição (§7/§8).")
-                                # [M4 · DRIFT] Sensores automáticos de degradação silenciosa: golden divergente
-                                # no lote e migração de coordenada. Read-only — só avisam a auditoria.
-                                try:
-                                    _gd = _reconciliar_golden_no_lote(df_final_alo)
-                                    if _gd.get("total_golden") and _gd.get("divergentes"):
-                                        _gdl = _gd["linhas"]
-                                        with st.expander(f"⚠️ Golden drift no lote — {_gd['divergentes']}/{_gd['total_golden']} "
-                                                         f"rota(s) verificada(s) divergente(s) do recálculo", expanded=False):
-                                            st.caption("A via pode ter mudado ou a verificação está desatualizada — "
-                                                       "confira e re-verifique em 1 clique na aba individual.")
-                                            st.dataframe(pd.DataFrame(_gdl), use_container_width=True, hide_index=True)
-                                    _nr_drift = 0
-                                    _cm_d = {str(c).strip().lower(): c for c in df_final_alo.columns}
-                                    _cd_org = _cm_d.get("origem") or _cm_d.get("municipio origem") or _cm_d.get("município origem")
-                                    _cd_uf = _cm_d.get("uf") or _cm_d.get("uf origem")
-                                    _cd_lat = _cm_d.get("lat origem") or _cm_d.get("lat_origem") or _cm_d.get("lat o")
-                                    _cd_lon = _cm_d.get("lon origem") or _cm_d.get("lon_origem") or _cm_d.get("lon o")
-                                    if _cd_org and _cd_lat and _cd_lon:
-                                        try:
-                                            _amostra = df_final_alo.head(200).reset_index(drop=True)
-                                        except Exception:
-                                            _amostra = df_final_alo
-                                        for _ix_e in range(min(200, len(_amostra))):
-                                            _rr = _amostra.iloc[_ix_e]
-                                            _ss = _sensor_drift_geocodificacao(
-                                                _rr.get(_cd_org), _rr.get(_cd_uf or "UF", ""),
-                                                _rr.get(_cd_lat), _rr.get(_cd_lon))
-                                            if _ss.get("suspeito"):
-                                                _nr_drift += 1
-                                        if _nr_drift:
-                                            st.caption(f"📍 **{_nr_drift}** origem(ns) com possível migração de coordenada "
-                                                       f"(>5 km vs execução anterior) — confira a geocodificação das mais recentes.")
-                                except Exception:
-                                    pass
+                        _exibir_auditoria_geo_memoria(df_final_alo)
                     except Exception as _e_mg:
                         logger.error(f"[V317-MEMGEO] memória geográfica falhou: {_e_mg}")
                     # [V330 · Melhoria6 §10/§15] AUDITORIA DE COMPLETUDE: expõe o controle explícito de tarefas
@@ -50105,7 +50213,8 @@ if _secao == _SECOES[3]:   # tab_comparador
                             limiar_empate_km=float(st.session_state.get('cmp_limiar_empate', 1.0) or 1.0))
                         _cmp = _comparar_alocacoes(
                             _lin, limiar_empate_km=float(st.session_state.get('cmp_limiar_empate', 1.0) or 1.0))
-                        _st_c = _estatisticas_comparacao(_cmp)
+                        _st_c = _estatisticas_comparacao(
+                            _cmp, limiar_empate_km=float(st.session_state.get('cmp_limiar_empate', 1.0) or 1.0))
                         # [PERF - 139ª geração] Relatório e XLSX são calculados AQUI (uma vez, no clique) e
                         # guardados. Na 138ª eu os recalculava a CADA RERUN — 1,2 s de CPU bloqueante por
                         # interação em escala nacional. É o mesmo bug que diagnostiquei na 137ª; reincidi.
@@ -50263,20 +50372,33 @@ if _secao == _SECOES[3]:   # tab_comparador
                              % (_rz_selo["emoji"], _rz_selo["frase"]))
             except Exception:
                 pass
-            st.caption("Os 4 números de cima respondem **“quem venceu”**. Os 4 de baixo respondem "
-                       "**“qual o tamanho disso”**.")
+            st.caption("Os 4 números de cima respondem **“quem venceu”** (contagem de **municípios**, regra "
+                       "**menor distância** — leia suas réguas no help de cada KPI). Os 4 de baixo respondem "
+                       "**“qual o tamanho disso”** (ponderado por **candidatos**).")
+            _lim_m5_ui = float(st.session_state.get('cmp_limiar_empate', 1.0) or 1.0)
             _k1, _k2, _k3, _k4 = st.columns(4)
             _k1.metric("Aplicação venceu", f"{_br['pct_venceu_app']}%",
-                       help="Municípios em que o deslocamento da aplicação é MENOR (diferença ≥ 1 km).")
-            _k2.metric("Referência venceu", f"{_br['pct_venceu_ref']}%")
-            _k3.metric("Empate técnico", f"{_br['pct_empate']}%", help="Diferença < 1 km — ruído de geocodificação.")
-            _k4.metric("Mesmo local de prova", f"{_br['pct_convergencia']}%")
+                       help=f"Contagem de municípios em que o deslocamento da aplicação é MENOR "
+                            f"(diferença ≥ {_lim_m5_ui:g} km — régua configurada no controle acima).")
+            _k2.metric("Referência venceu", f"{_br['pct_venceu_ref']}%",
+                       help=f"Contagem de municípios em que a referência é MENOR "
+                            f"(diferença ≤ −{_lim_m5_ui:g} km — régua configurada acima).")
+            _k3.metric("Empate técnico", f"{_br['pct_empate']}%",
+                       help=f"Diferença < {_lim_m5_ui:g} km (régua configurada acima) — menor que isso é ruído de "
+                            "geocodificação, não vitória.")
+            _k4.metric("Mesmo local de prova", f"{_br['pct_convergencia']}%",
+                       help="Parcela dos municípios em que os dois estudos escolheram o MESMO destino. "
+                            "Denominador: SÓ municípios com destino válido dos dois lados (linhas '—' ficam fora).")
             _k5, _k6, _k7, _k8 = st.columns(4)
             _k5.metric("Economia ponderada", f"{_fmt_num(_br['economia_ponderada_km'])} km-cand.",
                        help="Σ (km economizados × inscritos). É o indicador que importa: pondera pelo nº de candidatos.")
             _k6.metric("Por candidato", f"{_fmt_num(_br['economia_km_por_candidato'], 2)} km")
-            _k7.metric("Candidatos beneficiados", _fmt_num(_br['candidatos_beneficiados']))
-            _k8.metric("Candidatos prejudicados", _fmt_num(_br['candidatos_prejudicados']))
+            _k7.metric("Candidatos beneficiados", _fmt_num(_br['candidatos_beneficiados']),
+                       help=f"Candidatos em municípios com diferença > {_lim_m5_ui:g} km a favor da aplicação "
+                            "(mesma régua configurada acima).")
+            _k8.metric("Candidatos prejudicados", _fmt_num(_br['candidatos_prejudicados']),
+                       help=f"Candidatos em municípios com diferença < −{_lim_m5_ui:g} km contra a aplicação "
+                            "(mesma régua configurada acima).")
             st.caption(f"Base: **{_br['municipios']} municípios** conciliados · **{_fmt_num(_br['inscritos'])} candidatos**.")
 
             # [M5 - ROBUSTEZ] Varredura do limiar de empate técnico: um vencedor estável mantém a
