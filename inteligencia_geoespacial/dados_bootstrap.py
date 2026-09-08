@@ -5,7 +5,8 @@ O repositório versiona apenas os dados que cabem no GitHub (grafos ~45MB, CSVs 
 leves, 10 das 12 camadas derivadas do IBGE). Os arquivos grandes demais para o limite
 de 100MB/arquivo do GitHub (drenagem.parquet + rodovias.parquet) e o catálogo completo
 de estações ANA/SNIRH (snirh_estacaos.csv) são publicados como ASSETS de um GitHub
-Release deste repositório e baixados sob demanda pelo app quando ausentes.
+Release do repositório público dedicado `lucascardosolccr/openrotas-dados` e baixados
+sob demanda pelo app quando ausentes.
 
 Módulo PURAMENTE Python (sem Streamlit) para poder ser testado fora do Streamlit.
 Fail-open: qualquer falha de rede/armazenamento apenas informa, nunca quebra a seção.
@@ -16,7 +17,7 @@ import sys
 
 _RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-REPO = "lucascardosolccr/OpenRotas"
+REPO = "lucascardosolccr/openrotas-dados"
 RELEASE_TAG = "dados-geoespaciais-v1"
 RELEASE_BASE = "https://github.com/%s/releases/download/%s/" % (REPO, RELEASE_TAG)
 
