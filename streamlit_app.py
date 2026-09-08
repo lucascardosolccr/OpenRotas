@@ -22567,9 +22567,10 @@ def _geo_mem_carimbar(mem, registros_atuais, agora=None, limiar_esquecimento=3):
 def _geo_mem_aprender_derrotas(analises, uf_para_regiao=None, agora=None):
     """[M1 · ORÁCULO] Aprende com as DERROTAS do Comparador (único fluxo com ground truth — sabe-se qual hub
     estava certo). Para cada derrota com 'Vencedor (Qualidade)'=='Referência' e V/R ≥ _VR_INDIRETA (evitável),
-    acumula {origem|UF → rodadas+1, memória, km_potencial} na memória persistente. Toda a profilaxia aqui é
-    ADITIVA e apenas sugere um top-K maior em _geo_mem_escala_k — nunca altera a decisão da menor rota viária.
-    Retorna {registros_novos, salvou}. Defensiva."""
+    acumula {origem|UF → rodadas+1, memória, km_potencial} na memória persistente. Também aprende derrotas por
+    ORIGEM SEM ROTA VIÁVEL (V/R indefinido / motor geodésico — casos amazônicos/fluviais): mesma mecânica, com
+    motivo próprio. Toda a profilaxia aqui é ADITIVA e apenas sugere um top-K maior em _geo_mem_escala_k — nunca
+    altera a decisão da menor rota viária. Retorna {registros_novos, salvou}. Defensiva."""
     try:
         if not analises:
             return {"registros_novos": 0, "salvou": False}
@@ -22581,7 +22582,12 @@ def _geo_mem_aprender_derrotas(analises, uf_para_regiao=None, agora=None):
             if _v != "Referência":
                 continue
             _vr = _num2(_a.get("Sinuosidade Aplicação (V/R)"))
-            if _vr is None or _vr < _VR_INDIRETA:
+            _motor_app = str(_a.get("Motor Aplicação") or "").lower()
+            _sem_viaria = (_vr is None or "geod" in _motor_app or "reta" in _motor_app
+                           or "haversine" in _motor_app or "estimad" in _motor_app)
+            _motivo = ("derrota por circuidade vs referência" if (_vr is not None and _vr >= _VR_INDIRETA)
+                       else ("origem sem rota viável (fallback geodésico)" if _sem_viaria else None))
+            if _motivo is None:
                 continue
             _nome = str(_a.get("Município") or _a.get("Origem") or "").strip()
             _uf = str(_a.get("UF") or "").strip().upper()
@@ -22597,8 +22603,8 @@ def _geo_mem_aprender_derrotas(analises, uf_para_regiao=None, agora=None):
             _km_ac = float(_rec.get("km_potencial", 0.0) or 0.0) + _km
             _rec["km_potencial"] = round(_km_ac, 1)
             _mot = list(_rec.get("motivos", []))
-            if "derrota por circuidade vs referência" not in _mot:
-                _mot.append("derrota por circuidade vs referência")
+            if _motivo not in _mot:
+                _mot.append(_motivo)
             _rec["motivos"] = sorted(set(_mot))
             _rec["ultima_rodada"] = agora or float(time.time())
             _rec["limpas_seguidas"] = 0
@@ -22927,14 +22933,15 @@ def _carregar_grafo_fluvial(url, arq):
         return None
 
 def _fluvial_grafo_disponivel():
-    """True se o grafo fluvial pôde ser carregado (arquivo local ou URL)."""
-    return _carregar_grafo_fluvial(_URL_GRAFO_FLUVIAL, _arq_grafo_fluvial()) is not None
+    """True se o grafo fluvial pôde ser carregado (arquivo local ou URL). Reusa o memo de módulo
+    (_grafo_fluvial_memoizado), sem reentrar no wrapper st.cache_resource por chamada em loops."""
+    return _grafo_fluvial_memoizado() is not None
 
 def _fluvial_rota_real_sob_demanda(lat_o, lon_o, lat_d, lon_d, limite_km=2500, snap_max_km=8.0):
     """[V368] Roteia a parte fluvial entre duas sedes na hidrografia IBGE, SOB DEMANDA (qualquer município).
     Retorna {km, rios, snap_km, path_lonlat} ou None. Distância navegável real + rios nomeados + traçado."""
     try:
-        _g = _carregar_grafo_fluvial(_URL_GRAFO_FLUVIAL, _arq_grafo_fluvial())
+        _g = _grafo_fluvial_memoizado()
         if not _g:
             return None
         import numpy as _np
@@ -23037,7 +23044,7 @@ def _apr3_melhor_fluvial(lat_o, lon_o, candidatos_reta, uf_hint="", k=3, teto_re
     mesmo resultado (antes: k buscas — agora 1, ~k× mais rápido). Gating de snap: origem/hub longe de qualquer
     rio → não é rota fluvial real. Devolve {hub, km, rios, snap_km, path_lonlat} ou None (inclui None sem grafo)."""
     try:
-        _g = _carregar_grafo_fluvial(_URL_GRAFO_FLUVIAL, _arq_grafo_fluvial())
+        _g = _grafo_fluvial_memoizado()
         if not _g:
             return None
         import numpy as _np
@@ -28838,7 +28845,9 @@ def _resgate_ferry_cruza_agua(lat_o, lon_o, lat_d, lon_d, g=None):
     (fair-use FOSSGIS ≤1 req/s). FAIL-OPEN em TUDO: sem grafo/coordenadas/exceção → True (mantém o
     comportamento da 421ª; nunca tira cobertura). Determinística, sem rede."""
     try:
-        _g = g if g is not None else _grafo_fluvial_memoizado()
+        if g is None:
+            return _cruza_agua_entre_pontos_lru(lat_o, lon_o, lat_d, lon_d)
+        _g = g
         if not (_g and (_g.get("C") is not None) and len(_g.get("C")) > 0):
             return True
         return _cruza_agua_entre_pontos(lat_o, lon_o, lat_d, lon_d, g=_g)
@@ -29021,6 +29030,31 @@ def _cruza_agua_entre_pontos(lat_o, lon_o, lat_d, lon_d, g=None):
         return True    # grafo grande sem índice espacial: não arrisca varredura O(N·amostras) — fail-open
     except Exception:
         return True
+
+
+def _cruza_agua_entre_pontos_impl(lat_o, lon_o, lat_d, lon_d):
+    """[FLUVIAL-PLAUS] Núcleo PURA do wrapper com cache: arredonda 5 casas (chave estável) e consulta o grafo
+    memoizado — mesmo resultado determinístico de _cruza_agua_entre_pontos com g default. Fail-open True."""
+    try:
+        _lao = round(float(_num(lat_o) or 0.0), 5); _loo = round(float(_num(lon_o) or 0.0), 5)
+        _lad = round(float(_num(lat_d) or 0.0), 5); _lod = round(float(_num(lon_d) or 0.0), 5)
+        return _cruza_agua_entre_pontos(_lao, _loo, _lad, _lod, g=_grafo_fluvial_memoizado())
+    except Exception:
+        return True
+
+
+def _cruza_agua_entre_pontos_lru(lat_o, lon_o, lat_d, lon_d):
+    """[FLUVIAL-PLAUS] Wrapper com lru_cache por COORDENADA (o grafo é constante por processo via
+    _grafo_fluvial_memoizado) — deduplica pares repetidos no hall/resgate em lote. Fail-open idêntico.
+    Quem precisa de um grafo EXPLÍCITO segue usando _cruza_agua_entre_pontos direto."""
+    return _cruza_agua_entre_pontos_impl(lat_o, lon_o, lat_d, lon_d)
+
+
+try:
+    import functools as _ft3
+    _cruza_agua_entre_pontos_lru = _ft3.lru_cache(maxsize=16384)(_cruza_agua_entre_pontos_impl)
+except Exception:
+    _cruza_agua_entre_pontos_lru = _cruza_agua_entre_pontos_impl
 
 
 def _filtrar_pares_resgate_fluvial(pares, resultados, coords_f=None, g=None):
@@ -30063,6 +30097,24 @@ def _consenso_motores_tempo(motores_dict):
         return {"concordancia_tempo_pct": _conc, "divergencia_tempo_pct": _div, "n": _n}
     except Exception:
         return {"concordancia_tempo_pct": None, "divergencia_tempo_pct": None, "n": 0}
+
+
+def _divergencia_tempo_da_linha(linha):
+    """[M3 · CONSENSO-TEMPO] Extrai a divergencia_tempo_pct (velocidade implícita km ÷ tempo) dos motores
+    secundários de uma linha enriquecida (dict). PURA/fail-open: sem ≥2 motores com (km, tempo) válidos →
+    None (termo NEUTRO no _indice_confianca_rota). Reusa _num/_consenso_motores_tempo."""
+    try:
+        _mot = {}
+        for _km_c, _tm_c in (("Distancia GraphHopper (km)", "Tempo GraphHopper (min)"),
+                             ("Distancia Valhalla (km)", "Tempo Valhalla (min)")):
+            _km_v = _num(linha.get(_km_c)) if isinstance(linha, dict) else _num(linha[_km_c])
+            _tm_v = _num(linha.get(_tm_c)) if isinstance(linha, dict) else _num(linha[_tm_c])
+            if _km_v and _km_v > 0 and _tm_v and _tm_v > 0:
+                _mot[_km_c] = (_km_v, _tm_v)
+        _c = _consenso_motores_tempo(_mot or None)
+        return _c.get("divergencia_tempo_pct")
+    except Exception:
+        return None
 
 
 def _indice_confianca_rota(km, km_reta, fonte="", balsa_str="", divergencia_pct=None, snap_m=None, n_motores=None,
@@ -36028,7 +36080,6 @@ def _nome_rio_na_travessia(lat, lon, raio_km=4.0, g=None):
 # módulo PERSISTE no processo — as consultas KDTree/segmento não repetem entre reruns das abas de análise.
 try:
     import functools as _ft
-    _LRC = _ft.lru_cache(maxsize=8192)
     def _nome_rio_na_travessia_lru(lat, lon, raio_km=4.0):
         """Cache por (lat, lon, raio) das consultas fluviais — determinístico e fail-open."""
         try:
@@ -36036,6 +36087,7 @@ try:
             return _nome_rio_na_travessia(_la, _lo, raio_km=_rk, g=_grafo_fluvial_memoizado())
         except Exception:
             return {"nome_rio": None, "nomes_rios": [], "dist_km": None, "confianca": "nao_determinado"}
+    _nome_rio_na_travessia_lru = _ft.lru_cache(maxsize=32768)(_nome_rio_na_travessia_lru)
 except Exception:
     def _nome_rio_na_travessia_lru(lat, lon, raio_km=4.0):
         return _nome_rio_na_travessia(lat, lon, raio_km=raio_km, g=_grafo_fluvial_memoizado())
@@ -36050,10 +36102,14 @@ def _enriquecer_travessias_rota(travessias, g=None, raio_km=4.0):
         if not travessias:
             return []
         _g = g
+        _usa_cache = _g is None
         _out = []
         for _t in travessias:
             _e = dict(_t)
-            _r = _nome_rio_na_travessia(_e.get("lat"), _e.get("lon"), raio_km=raio_km, g=_g)
+            if _usa_cache:
+                _r = _nome_rio_na_travessia_lru(_e.get("lat"), _e.get("lon"), raio_km=raio_km)
+            else:
+                _r = _nome_rio_na_travessia(_e.get("lat"), _e.get("lon"), raio_km=raio_km, g=_g)
             _e["nome_rio"] = _r.get("nome_rio")
             _e["nomes_rios"] = _r.get("nomes_rios") or ([_r.get("nome_rio")] if _r.get("nome_rio") else [])
             _e["confianca"] = _r.get("confianca") or "nao_determinado"
@@ -37263,7 +37319,8 @@ def _montar_dataframe_final(df, resultados_unicos, runner_up_map=None, hub_qual_
                         str(linha_dict.get('Balsas', '') or linha_dict.get('Balsa', '') or linha_dict.get('Tem Balsa', '')),
                         _num(linha_dict.get('Diferença (%)')),
                         _num(linha_dict.get('Deslocamento Snap Origem (m)')),
-                        _nmot_sinal if _nmot_sinal else None)
+                        _nmot_sinal if _nmot_sinal else None,
+                        divergencia_tempo_pct=_divergencia_tempo_da_linha(linha_dict))
                     linha_dict['Observações Automáticas da Auditoria'] = linha_dict['Alertas Automaticos']
                 except Exception as e:
                     logger.error(f"[ENRIQUECE-LOTE] Falha ao enriquecer linha (isolada, não interrompe): {e}")
@@ -43996,6 +44053,65 @@ if _secao == _SECOES[1]:   # tab_processamento
                         "Tempo Gasto (s)": tempo_lote_segundos,
                         "Tempo Médio/Rota (s)": round(tempo_lote_segundos / max(1, _total), 2)
                     }, expire=None)
+                    # [DELTA-LOTE · M5] "O que mudou vs execução anterior": persistimos um sumário LEVE por rota
+                    # (origem|destino → km/UF) numa chave rotativa (lote_delta_ultimo) e calculamos o diff contra
+                    # a execução precedente AQUI (na conclusão), guardando o delta pré-computado na sessão para o
+                    # painel (sem recomputar por rerun). Aditivo: jamais altera df_processado/decisões; limitado a
+                    # estudos ≤ 20k rotas para não inflar o shelf; sem histórico → painel mostra "primeira execução".
+                    try:
+                        _resumo_rotas = {}
+                        if df_final is not None and 0 < len(df_final) <= 20000:
+                            _cm_d5 = {str(c).strip().lower(): c for c in df_final.columns}
+                            _cO5 = _cm_d5.get("origem") or _cm_d5.get("municipio origem") or _cm_d5.get("município origem")
+                            _cD5 = _cm_d5.get("destino") or _cm_d5.get("municipio destino") or _cm_d5.get(
+                                "município destino") or _cm_d5.get("municipio de destino")
+                            _cU5 = _cm_d5.get("uf") or _cm_d5.get("uf origem")
+                            _cK5 = _cm_d5.get("distância (km)") or _cm_d5.get("distancia")
+                            if _cO5 and _cD5 and _cK5:
+                                for _r5 in df_final[[_cO5, _cD5, (_cU5 or _cO5), _cK5]].itertuples(index=False):
+                                    try:
+                                        _kmv = _num_seguro(_r5[3])
+                                        _resumo_rotas[f"{str(_r5[0]).strip()}|{str(_r5[1]).strip()}"] = {
+                                            "dist": round(float(_kmv or 0.0), 2),
+                                            "uf": str(_r5[2] or "").strip(),
+                                            "dest": str(_r5[1]).strip()}
+                                    except Exception:
+                                        continue
+                        _delta_lote = {"comparavel": False}
+                        _ant_resumo = cache_historico_lotes.get("lote_delta_ultimo") or {}
+                        if _resumo_rotas and _ant_resumo and isinstance(_ant_resumo, dict):
+                            _chaves_ant, _chaves_nov = set(_ant_resumo), set(_resumo_rotas)
+                            _novas, _removidas, _mudaram, _top = [], [], [], []
+                            _tot_ant = sum(float(_ant_resumo[k].get("dist", 0.0) or 0.0) for k in _chaves_ant)
+                            _tot_nov = sum(float(_resumo_rotas[k].get("dist", 0.0) or 0.0) for k in _chaves_nov)
+                            for _k in sorted(_chaves_nov - _chaves_ant):
+                                _novas.append(_k)
+                            for _k in sorted(_chaves_ant - _chaves_nov):
+                                _removidas.append(_k)
+                            for _k in sorted(_chaves_ant & _chaves_nov):
+                                _a = _ant_resumo[_k]; _n = _resumo_rotas[_k]
+                                if (abs(float(_n.get("dist", 0.0) or 0.0) - float(_a.get("dist", 0.0) or 0.0)) > 0.05
+                                        or str(_n.get("dest")) != str(_a.get("dest"))):
+                                    _mudaram.append(_k)
+                                    _top.append((_k,
+                                                 float(_n.get("dist", 0.0) or 0.0) - float(_a.get("dist", 0.0) or 0.0),
+                                                 str(_n.get("uf", ""))))
+                            _top.sort(key=lambda x: abs(x[1]), reverse=True)
+                            _delta_lote = {
+                                "comparavel": True,
+                                "novas": len(_novas), "removidas": len(_removidas), "mudaram": len(_mudaram),
+                                "total_km_ant": round(_tot_ant, 1), "total_km_nov": round(_tot_nov, 1),
+                                "delta_km": round(_tot_nov - _tot_ant, 1),
+                                "economia_vs_ant_km": round(_tot_ant - _tot_nov, 1),
+                                "top": _top[:10],
+                                "n": len(_chaves_nov)}
+                        try:
+                            cache_historico_lotes.set("lote_delta_ultimo", _resumo_rotas, expire=None)
+                        except Exception:
+                            logger.error("[DELTA-LOTE] Falha ao persistir sumário derivado.", exc_info=True)
+                        st.session_state['lote_delta'] = _delta_lote
+                    except Exception:
+                        st.session_state['lote_delta'] = {"comparavel": False}
                     
                     ordem_finais = list(_df_base.columns)
                     for col in NOVAS_COLUNAS_PADRAO:
@@ -44117,6 +44233,41 @@ if _secao == _SECOES[1]:   # tab_processamento
                                  else "- ○ Relatório HTML — **sob demanda** (botão abaixo)")
                     _lchk.append("- ✔ **Downloads disponíveis**")
                     st.markdown("\n".join(_lchk))
+                    # [DELTA-LOTE · M5] "O que mudou vs execução anterior" — diff pré-computado na conclusão
+                    # (sumário por rota persistido na chave rotativa lote_delta_ultimo). Read-only. Sem histórico
+                    # comparável → mensagem de primeira execução (nunca inventa delta).
+                    try:
+                        _delta_lote_ui = st.session_state.get('lote_delta') or {}
+                        if _delta_lote_ui.get("comparavel"):
+                            with st.expander("🔁 **Delta vs execução anterior** — o que mudou neste estudo",
+                                             expanded=False):
+                                _dl_novas = int(_delta_lote_ui.get("novas", 0) or 0)
+                                _dl_rem = int(_delta_lote_ui.get("removidas", 0) or 0)
+                                _dl_mud = int(_delta_lote_ui.get("mudaram", 0) or 0)
+                                _dl_eco = float(_delta_lote_ui.get("economia_vs_ant_km", 0.0) or 0.0)
+                                _sinal_eco = ("economizamos" if _dl_eco > 0 else ("gastamos" if _dl_eco < 0 else "neutro"))
+                                st.markdown(
+                                    f"- 🆕 **{_dl_novas:,}** rota(s) nova(s)  ·  🗑️ **{_dl_rem:,}** removida(s)  ·  "
+                                    f"✏️ **{_dl_mud:,}** com distância/destino alterados.".replace(",", "."))
+                                st.markdown(
+                                    f"- 📏 Total de km: **{float(_delta_lote_ui.get('total_km_ant', 0.0) or 0.0):,.1f}** → "
+                                    f"**{float(_delta_lote_ui.get('total_km_nov', 0.0) or 0.0):,.1f}** "
+                                    f"({_sinal_eco} **{abs(_dl_eco):,.1f} km**).".replace(",", "."))
+                                _dl_top = _delta_lote_ui.get("top") or []
+                                if _dl_top:
+                                    st.caption("**Maiores mudanças de distância (origem|destino → delta km):**")
+                                    _dl_rows = [{"Origem | Destino": _t[0], "Delta (km)": round(_t[1], 1), "UF": _t[2]}
+                                                for _t in _dl_top]
+                                    st.dataframe(pd.DataFrame(_dl_rows), use_container_width=True, hide_index=True)
+                                st.caption("Compara com a execução anterior do Lote mais recente. A distância é a "
+                                           "coluna-distância da planilha (medida ou estimada).")
+                        elif st.session_state.get('lote_delta') is not None:
+                            with st.expander("🔁 **Delta vs execução anterior**", expanded=False):
+                                st.caption("Primeira execução comparável deste app (ou estudo grande demais para o "
+                                           "diff granular, >20k rotas). As próximas rodadas mostrarão o que mudou "
+                                           "origem por origem.")
+                    except Exception:
+                        logger.error("[DELTA-LOTE-UI] Falha ao renderizar o delta do lote (isolada).", exc_info=True)
                     _lmets = []
                     if _lote_tempo_fin is not None:
                         _lmets.append(("Tempo total", _formatar_duracao(_lote_tempo_fin)))
@@ -54852,7 +55003,7 @@ def _enriquecer_linha_rio(lat_o, lon_o, lat_d=None, lon_d=None, g=None):
         _ld = _num(lat_d)
         _od = _num(lon_d)
         if _ld is None or _od is None:
-            return _nome_rio_na_travessia(_lo, _oo, raio_km=40.0, g=g) or None
+            return _nome_rio_na_travessia_lru(_lo, _oo, raio_km=40.0) or None
         _melhor = None
         try:
             for _t in np.linspace(0.0, 1.0, 11):
@@ -54954,6 +55105,29 @@ def _df_rotas_para_analise(df, max_linhas=300):
         return None
 
 
+def _proj_analise(cache_key, df, max_linhas=300):
+    """[PERF-ANALISE] Cache POR SESSÃO das projeções canônicas _df_rotas_para_analise: as abas de análise
+    re-executam a projeção (loop Python + consultas geoespaciais) em CADA rerun de widget, embora df_processado
+    não mude entre reruns. Fingerprint leve (id+len+1ª linha) → rerun sem dados alterados serve do cache.
+    Sempre recalcula quando o fingerprint divergir (nova execução/df novo). NULL-safe (devolve None igual)."""
+    try:
+        if df is None or len(df) == 0:
+            return None
+        _fp = (id(df), int(len(df)), str(df.iloc[0].to_dict())[:128])
+        _stt = st.session_state
+        if _stt.get((cache_key, "fp")) == _fp and _stt.get(cache_key, None) is not None:
+            return _stt[cache_key]
+        _out = _df_rotas_para_analise(df, max_linhas=max_linhas)
+        _stt[cache_key] = _out
+        _stt[(cache_key, "fp")] = _fp
+        return _out
+    except Exception:
+        try:
+            return _df_rotas_para_analise(df, max_linhas=max_linhas)
+        except Exception:
+            return None
+
+
 # ==============================================================================
 # SEÇÃO 15 — CENTRO DE INTELIGÊNCIA DA ROTA  [ROUTE-INTEL - 434ª]
 # ==============================================================================
@@ -54969,7 +55143,7 @@ if _secao == _SECOES[15]:   # tab_route_intel
             st.info("Rode um estudo (aba **⚙️ Estudo em Lote** ou **🎯 Locais de Aplicação**) para visualizar o Centro de Inteligência das rotas.")
         else:
             # Projeção robusta (aceita a nomenclatura real do df_processado).
-            _df_intel = _df_rotas_para_analise(_rotas_proc, max_linhas=200)
+            _df_intel = _proj_analise("proj_intel", _rotas_proc, max_linhas=200)
             if _df_intel is None or _df_intel.empty:
                 st.info("Não há linhas analisáveis nesta sessão. Rode um estudo primeiro.")
             else:
@@ -55677,7 +55851,7 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
     try:
         _rotas_proc = st.session_state.get('df_processado')
         if _rotas_proc is not None and not _rotas_proc.empty:
-            _df_ferry_canon = _df_rotas_para_analise(_rotas_proc, max_linhas=400)
+            _df_ferry_canon = _proj_analise("proj_ferry", _rotas_proc, max_linhas=400)
     except Exception:
         _df_ferry_canon = None
     
@@ -55908,7 +56082,7 @@ if _secao == _SECOES[19]:   # tab_land_routes
     try:
         _rotas_proc = st.session_state.get('df_processado')
         if _rotas_proc is not None and not _rotas_proc.empty:
-            _df_land_canon = _df_rotas_para_analise(_rotas_proc, max_linhas=400)
+            _df_land_canon = _proj_analise("proj_land", _rotas_proc, max_linhas=400)
             if _df_land_canon is not None and not _df_land_canon.empty:
                 _land_rotas = _df_land_canon[_df_land_canon["Balsa"] != True]
                 if not _land_rotas.empty:
@@ -55988,7 +56162,7 @@ if _secao == _SECOES[20]:   # tab_defeats
         _rotas_proc = st.session_state.get('df_processado')
         _df_derrota_canon = None
         if _rotas_proc is not None and not _rotas_proc.empty:
-            _df_derrota_canon = _df_rotas_para_analise(_rotas_proc, max_linhas=600)
+            _df_derrota_canon = _proj_analise("proj_derrota", _rotas_proc, max_linhas=600)
     except Exception:
         _df_derrota_canon = None
     _derrotas = pd.DataFrame()
@@ -56135,7 +56309,7 @@ if _secao == _SECOES[21]:   # tab_auditoria_completa
         try:
             _rotas_proc = st.session_state.get('df_processado')
             if _rotas_proc is not None and not _rotas_proc.empty:
-                _df_aud_canon = _df_rotas_para_analise(_rotas_proc, max_linhas=400)
+                _df_aud_canon = _proj_analise("proj_aud", _rotas_proc, max_linhas=400)
                 if _df_aud_canon is not None and not _df_aud_canon.empty:
                     _cols_show = ["Origem", "UF", "Destino", "Distância (km)", "Vencedor", "Balsa", "Rio", "Bacia"]
                     _cols_avail = [c for c in _cols_show if c in _df_aud_canon.columns]
