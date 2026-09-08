@@ -55309,11 +55309,21 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
     
     _aba_ferry = st.tabs(["📋 Lista", "🗺️ Mapa das Travessias", "📊 Análise"])
     
+    # [ABA-ROBUSTA 448ª] Projeção canônica do df_processado (sinonímia de colunas e balsa
+    # booleana). O df cru usa 'Balsas'/'Municipio Origem'/'Distancia' → este helper normaliza
+    # para "Balsa"/"Origem"/"Distância (km)". Todas as abas operam SOBRE ESTA projeção.
+    _df_ferry_canon = None
+    try:
+        _rotas_proc = st.session_state.get('df_processado')
+        if _rotas_proc is not None and not _rotas_proc.empty:
+            _df_ferry_canon = _df_rotas_para_analise(_rotas_proc, max_linhas=400)
+    except Exception:
+        _df_ferry_canon = None
+    
     with _aba_ferry[0]:
         try:
-            _rotas_proc = st.session_state.get('df_processado')
-            if _rotas_proc is not None and not _rotas_proc.empty:
-                _ferry_rotas = _rotas_proc[_rotas_proc.get("Balsa", False) == True]
+            if _df_ferry_canon is not None and not _df_ferry_canon.empty:
+                _ferry_rotas = _df_ferry_canon[_df_ferry_canon["Balsa"] == True]
                 if not _ferry_rotas.empty:
                     _cols_show = ["Origem", "UF", "Destino", "Distância (km)", "Balsa", "Rio", "Bacia", "Alternativa Sem Balsa (km)", "Diferença (km)"]
                     _cols_avail = [c for c in _cols_show if c in _ferry_rotas.columns]
@@ -55379,26 +55389,30 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
         st.caption("Visualização geográfica das travessias por balsa: 🔵 origem · 🔴 destino · 🔵 linha tracejada = travessia aquaviária")
         
         try:
-            _rotas_proc = st.session_state.get('df_processado')
-            if _rotas_proc is not None and not _rotas_proc.empty:
-                _ferry_rotas = _rotas_proc[_rotas_proc.get("Balsa", False) == True]
+            if _df_ferry_canon is not None and not _df_ferry_canon.empty:
+                _ferry_rotas = _df_ferry_canon[_df_ferry_canon["Balsa"] == True]
                 if not _ferry_rotas.empty:
                     # Preparar dados para o mapa
                     _map_data = []
                     for _, row in _ferry_rotas.iterrows():
-                        if all(k in row for k in ['lat_origem', 'lon_origem', 'lat_destino', 'lon_destino']):
-                            _map_data.append({
-                                'origem': row.get('Origem', '—'),
-                                'destino': row.get('Destino', '—'),
-                                'lat_origem': row['lat_origem'],
-                                'lon_origem': row['lon_origem'],
-                                'lat_destino': row['lat_destino'],
-                                'lon_destino': row['lon_destino'],
-                                'rio': row.get('Rio', '—'),
-                                'bacia': row.get('Bacia', '—'),
-                                'dist_km': row.get('Distância (km)', 0),
-                                'rio_nome': row.get('Rio', '—')
-                            })
+                        _lat_o = _num_seguro(row.get('Lat Origem'))
+                        _lon_o = _num_seguro(row.get('Lon Origem'))
+                        _lat_d = _num_seguro(row.get('Lat Destino'))
+                        _lon_d = _num_seguro(row.get('Lon Destino'))
+                        if _lat_o is None or _lon_o is None or _lat_d is None or _lon_d is None:
+                            continue
+                        _map_data.append({
+                            'origem': row.get('Origem', '—'),
+                            'destino': row.get('Destino', '—'),
+                            'lat_origem': _lat_o,
+                            'lon_origem': _lon_o,
+                            'lat_destino': _lat_d,
+                            'lon_destino': _lon_d,
+                            'rio': row.get('Rio', '—'),
+                            'bacia': row.get('Bacia', '—'),
+                            'dist_km': row.get('Distância (km)', 0),
+                            'rio_nome': row.get('Rio', '—')
+                        })
                     
                     if _map_data:
                         _map_df = pd.DataFrame(_map_data)
@@ -55496,23 +55510,29 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
     with _aba_ferry[2]:
         st.subheader("📊 Análise das Travessias")
         try:
-            _rotas_proc = st.session_state.get('df_processado')
-            if _rotas_proc is not None and not _rotas_proc.empty:
-                _ferry_rotas = _rotas_proc[_rotas_proc.get("Balsa", False) == True]
+            if _df_ferry_canon is not None and not _df_ferry_canon.empty:
+                _ferry_rotas = _df_ferry_canon[_df_ferry_canon["Balsa"] == True]
                 if not _ferry_rotas.empty:
                     _col1, _col2, _col3 = st.columns(3)
                     _col1.metric("Total Travessias", len(_ferry_rotas))
-                    _col2.metric("Distância Média (km)", f"{_ferry_rotas['Distância (km)'].mean():.1f}")
-                    _col3.metric("Rio Mais Comum", _ferry_rotas['Rio'].mode()[0] if 'Rio' in _ferry_rotas.columns else "—")
+                    _dist_media = _ferry_rotas["Distância (km)"].mean()
+                    _dist_media = _dist_media if _dist_media == _dist_media else 0.0
+                    _col2.metric("Distância Média (km)", f"{float(_dist_media):.1f}")
+                    _moda_rio = _ferry_rotas['Rio'].mode()
+                    _rio_comum = (str(_moda_rio[0]) if len(_moda_rio) and str(_moda_rio[0]) != "—" else "—")
+                    _col3.metric("Rio Mais Comum", _rio_comum)
                     
                     # Top rios
-                    if 'Rio' in _ferry_rotas.columns:
-                        _top_rios = _ferry_rotas['Rio'].value_counts().head(10)
+                    _top_rios = _ferry_rotas['Rio'].replace("—", "").value_counts().head(10)
+                    if not _top_rios.empty:
                         st.bar_chart(_top_rios)
                 else:
                     st.info("Nenhuma rota com balsa identificada.")
+            else:
+                st.info("Execute um estudo (aba 'Locais de Aplicação') para popular os dados de rotas.")
         except Exception:
             logger.error("[FERRY-ANALYSIS] Falha na análise de travessias.", exc_info=True)
+            st.warning("Não foi possível montar a análise das travessias. As demais seções seguem normais.")
 
 
 # ==============================================================================
@@ -55527,14 +55547,18 @@ if _secao == _SECOES[19]:   # tab_land_routes
     try:
         _rotas_proc = st.session_state.get('df_processado')
         if _rotas_proc is not None and not _rotas_proc.empty:
-            _land_rotas = _rotas_proc[_rotas_proc.get("Balsa", False) != True]
-            if not _land_rotas.empty:
-                _cols_show = ["Origem", "UF", "Destino", "Distância (km)", "Rio", "Bacia", "Balsa"]
-                _cols_avail = [c for c in _land_rotas.columns if c in _cols_show]
-                st.dataframe(_land_rotas[_cols_avail].head(50), use_container_width=True, hide_index=True)
-                st.caption(f"Total de rotas sem balsa: {len(_land_rotas)}")
+            _df_land_canon = _df_rotas_para_analise(_rotas_proc, max_linhas=400)
+            if _df_land_canon is not None and not _df_land_canon.empty:
+                _land_rotas = _df_land_canon[_df_land_canon["Balsa"] != True]
+                if not _land_rotas.empty:
+                    _cols_show = ["Origem", "UF", "Destino", "Distância (km)", "Rio", "Bacia", "Balsa"]
+                    _cols_avail = [c for c in _land_rotas.columns if c in _cols_show]
+                    st.dataframe(_land_rotas[_cols_avail].head(50), use_container_width=True, hide_index=True)
+                    st.caption(f"Total de rotas sem balsa: {len(_land_rotas)}")
+                else:
+                    st.info("Nenhuma rota puramente rodoviária identificada.")
             else:
-                st.info("Nenhuma rota puramente rodoviária identificada.")
+                st.info("Nenhuma rota analisável nesta sessão (projeção robusta vazia).")
         else:
             st.info("Execute um estudo (aba 'Locais de Aplicação') para popular os dados de rotas.")
     except Exception:
