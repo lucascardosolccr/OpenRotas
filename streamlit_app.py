@@ -5044,6 +5044,58 @@ def _fig_estados_divergente_report(estados, max_estados=18):
     return _fig
 
 
+def _estabilidade_limiar_empate(linhas, limiares=(0.0, 0.5, 1.0, 2.0, 3.0, 5.0, 10.0)):
+    """[M5 - ROBUSTEZ] Varre o limiar de empate técnico e mostra como o placar reage — um vencedor real
+    mantém a vantagem em QUALQUER régua; se a maioria dos casos fica no "empate" ao subir 1 km, a
+    diferença é ruído, não vitória. PURA e defensiva (sem linhas validas → []). Reusa o schema da
+    conciliação: 'Diferenca Abs (km)' (POSITIVO = aplicação mais curta) e 'Inscritos'."""
+    _out = []
+    try:
+        _ok = [l for l in (linhas or []) if l.get("Diferenca Abs (km)") is not None]
+        if not _ok:
+            return _out
+
+        def _n(v):
+            try:
+                return float(v)
+            except Exception:
+                return 0.0
+
+        for _lim in limiares:
+            _app = _ref = _emp = 0
+            _econ = 0.0
+            _ben = 0.0
+            _prej = 0.0
+            for _l in _ok:
+                _d = _n(_l.get("Diferenca Abs (km)"))
+                _ins = _n(_l.get("Inscritos"))
+                if _d > _lim:
+                    _app += 1
+                    _econ += _d * _ins
+                    _ben += _ins
+                elif _d < -_lim:
+                    _ref += 1
+                    _prej += _ins
+                else:
+                    _emp += 1
+            _tot = len(_ok)
+            _out.append({
+                "Limiar (km)": _lim,
+                "Aplicação vence": _app,
+                "Referência vence": _ref,
+                "Empates": _emp,
+                "% Vitórias App": round(100.0 * _app / _tot, 1),
+                "% Vitórias Ref": round(100.0 * _ref / _tot, 1),
+                "% Empates": round(100.0 * _emp / _tot, 1),
+                "Economia (km-cand.)": round(_econ),
+                "Candidatos beneficiados": int(_ben),
+                "Candidatos prejudicados": int(_prej),
+            })
+    except Exception:
+        return []
+    return _out
+
+
 def _gerar_relatorio_comparacao_html(stats, aud, titulo="Relatório da Comparação", data_str="", linhas=None,
                                      diagnostico_div=None):
     """[RELATORIO-HTML-PRO - 184ª geração] Relatório HTML AUTOCONTIDO (offline) da COMPARAÇÃO entre estudos,
@@ -21627,6 +21679,13 @@ def _montar_stage_a(diag, uf_para_regiao=None):
         diag["aprendizado"] = _aprender_com_derrotas(_analises, uf_para_regiao)
     except Exception:
         diag["aprendizado"] = {}
+    try:
+        # [M1 · ORÁCULO] Persiste o aprendizado das derrotas evitáveis (Comparador) na memória geográfica —
+        # a profilaxia dispara um top-K maior em _geo_mem_escala_k, jamais muda a decisão da menor rota.
+        _aprend_mem = _geo_mem_aprender_derrotas(_analises, uf_para_regiao)
+        diag["memoria_derrotas"] = _aprend_mem
+    except Exception:
+        diag["memoria_derrotas"] = {"registros_novos": 0, "salvou": False}
     diag["_stage_a"] = True
     return diag
 
@@ -22437,9 +22496,11 @@ def _geo_mem_salvar(_mem):
         return False
 
 
-def _geo_mem_escala_k(mem, nome, k, teto, fator=3, limiar_rodadas=1):
+def _geo_mem_escala_k(mem, nome, k, teto, fator=3, limiar_rodadas=1, limiar_esquecimento=3):
     """[GEO-MEM/P2] Escala o top-K (ADITIVO) quando a origem já aparece como problemática na memória
-    persistida (≥limiar_rodadas). PURA (sem estado/rede). Retorna k inalterado se não houver registro."""
+    persistida (≥limiar_rodadas). PURA (sem estado/rede). Retorna k inalterado se não houver registro.
+    [M1 · ESQUECIMENTO] A contagem é a EFETIVA: cada 'limpas_seguidas' ≥ limiar_esquecimento reduz 1 rodada
+    (decay temporal) — uma origem que deixou de reincidir volta ao k nominal ao longo do tempo."""
     try:
         if not nome or not mem or not k or not teto:
             return k
@@ -22450,16 +22511,105 @@ def _geo_mem_escala_k(mem, nome, k, teto, fator=3, limiar_rodadas=1):
         _top = 0
         for _ky in _keys:
             _r = mem[_ky]
-            if isinstance(_r, dict):
-                try:
-                    _top = max(_top, int(_r.get("rodadas", 0)))
-                except (TypeError, ValueError):
-                    pass
+            if not isinstance(_r, dict):
+                continue
+            try:
+                _rodadas = max(int(_r.get("rodadas", 0)), 1)
+            except (TypeError, ValueError):
+                continue
+            _limpas = 0
+            try:
+                _limpas = max(int(_r.get("limpas_seguidas", 0)), 0)
+            except (TypeError, ValueError):
+                _limpas = 0
+            _decay = max(1, _limpas) // max(1, limiar_esquecimento)
+            _rodadas_ef = max(1, _rodadas - _decay)
+            _top = max(_top, _rodadas_ef)
         if _top >= limiar_rodadas:
             return min(int(teto), max(int(k), fator * int(k)))
     except Exception:
         pass
     return k
+
+
+def _geo_mem_carimbar(mem, registros_atuais, agora=None, limiar_esquecimento=3):
+    """[M1 · ESQUECIMENTO] Atualiza os carimbos temporais e o decay dos registros persistentes. Para cada
+    chave em `mem`: se a origem apareceu nos `registros_atuais` (conjunto de chaves 'nome|UF'), zera
+    'limpas_seguidas' e atualiza 'ultima_rodada'; caso contrário, incrementa 'limpas_seguidas' — e, acima de
+    `limiar_esquecimento` rodadas limpas consecutivas, REMOVE o registro (o problema se corrigiu).
+    PURA/sem estado. Retorna a memória atualizada (não grava em disco)."""
+    try:
+        if not mem:
+            return mem
+        _agora = agora or float(time.time())
+        _atuais = set(str(x).strip().lower() for x in (registros_atuais or []))
+        _remover = []
+        for _ky in list(mem.keys()):
+            _r = mem[_ky]
+            if not isinstance(_r, dict):
+                continue
+            _q = str(_ky).strip().lower()
+            if _q in _atuais:
+                _r["ultima_rodada"] = _agora
+                _r["limpas_seguidas"] = 0
+            else:
+                _lm = _num(int(_r.get("limpas_seguidas", 0))) + 1
+                _r["limpas_seguidas"] = _lm
+                if _lm >= limiar_esquecimento:
+                    _remover.append(_ky)
+        for _ky in _remover:
+            mem.pop(_ky, None)
+        return mem
+    except Exception:
+        return mem
+
+
+def _geo_mem_aprender_derrotas(analises, uf_para_regiao=None, agora=None):
+    """[M1 · ORÁCULO] Aprende com as DERROTAS do Comparador (único fluxo com ground truth — sabe-se qual hub
+    estava certo). Para cada derrota com 'Vencedor (Qualidade)'=='Referência' e V/R ≥ _VR_INDIRETA (evitável),
+    acumula {origem|UF → rodadas+1, memória, km_potencial} na memória persistente. Toda a profilaxia aqui é
+    ADITIVA e apenas sugere um top-K maior em _geo_mem_escala_k — nunca altera a decisão da menor rota viária.
+    Retorna {registros_novos, salvou}. Defensiva."""
+    try:
+        if not analises:
+            return {"registros_novos": 0, "salvou": False}
+        _mem = _geo_mem_carregar()
+        _atuais = set()
+        _novos = 0
+        for _a in analises:
+            _v = str(_a.get("Vencedor (Qualidade)"))
+            if _v != "Referência":
+                continue
+            _vr = _num2(_a.get("Sinuosidade Aplicação (V/R)"))
+            if _vr is None or _vr < _VR_INDIRETA:
+                continue
+            _nome = str(_a.get("Município") or _a.get("Origem") or "").strip()
+            _uf = str(_a.get("UF") or "").strip().upper()
+            if not _nome or _nome.lower() in ("n/a", "nan", "none", "—"):
+                continue
+            _chave = f"{_nome.lower()}|{_uf}"
+            _atuais.add(_chave)
+            _km = abs(_num2(_a.get("Diferença (km)"), 0.0) or 0.0)
+            _rec = _mem.get(_chave) or {"origem": _nome, "uf": _uf, "rodadas": 0, "motivos": [],
+                                        "severidade": 0, "km_potencial": 0.0}
+            _rec["rodadas"] = int(_rec.get("rodadas", 0)) + 1
+            _rec["severidade"] = max(int(_rec.get("severidade", 0)), 1)
+            _km_ac = float(_rec.get("km_potencial", 0.0) or 0.0) + _km
+            _rec["km_potencial"] = round(_km_ac, 1)
+            _mot = list(_rec.get("motivos", []))
+            if "derrota por circuidade vs referência" not in _mot:
+                _mot.append("derrota por circuidade vs referência")
+            _rec["motivos"] = sorted(set(_mot))
+            _rec["ultima_rodada"] = agora or float(time.time())
+            _rec["limpas_seguidas"] = 0
+            if _chave not in _mem:
+                _novos += 1
+            _mem[_chave] = _rec
+        _mem = _geo_mem_carimbar(_mem, _atuais, agora=agora)
+        _salvou = _geo_mem_salvar(_mem)
+        return {"registros_novos": _novos, "salvou": _salvou}
+    except Exception:
+        return {"registros_novos": 0, "salvou": False}
 
 
 def _geo_mem_aprender(df, _chave_uf_col="UF"):
@@ -22519,6 +22669,100 @@ def _geo_mem_aprender(df, _chave_uf_col="UF"):
         return {"registros_novos": _novos, "salvou": _salvou}
     except Exception:
         return {"registros_novos": 0, "salvou": False}
+
+
+# [M4 · DRIFT] Sentinela de ESTABILIDADE TEMPORAL da geocodificação: o mesmo município pode "migrar" de
+# coordenada entre execuções (Nominatim/Photon mudou, homônimo escolhido). Persiste a última coordenada
+# observada (campo aditivo 'ultima_coord' na memória) e sinaliza deslocamento suspeito (> ~5 km), exceto
+# quando a coordenada anterior era o ponto-truncado (0,0) ou falhou. Defensiva/pura — nunca altera decisão.
+
+
+def _sensor_drift_geocodificacao(nome, uf, lat, lon, limiar_km=5.0, _mem=None):
+    """[M4 · SENSOR-DRIFT] Compara a coordenada atual com a última registrada na memória geográfica e grava a
+    nova ('ultima_coord') no registro. Retorna {'drift_km', 'suspeito', 'ultima_coord', 'has_historico'}.
+    Aditivo: ausência de histórico → has_historico False (sem alarme); (0,0) anterior → ignora."""
+    try:
+        _la = _num(lat)
+        _lo = _num(lon)
+        _nome = str(nome or "").strip()
+        if not _nome or _la is None or _lo is None or _nome.lower() in ("n/a", "nan", "none", "—"):
+            return {"drift_km": None, "suspeito": False, "ultima_coord": None, "has_historico": False}
+        _mem = _geo_mem_carregar() if _mem is None else _mem
+        _chave = f"{_nome.lower()}|{str(uf or '').upper()}"
+        _rec = _mem.get(_chave) or {}
+        _ant = _rec.get("ultima_coord")
+        _drift = None
+        _suspeito = False
+        _has = False
+        if isinstance(_ant, (list, tuple)) and len(_ant) >= 2:
+            _ala = _num(_ant[0]); _alo = _num(_ant[1])
+            # (0,0) = dado ausente/snap ruim no passado → não contabiliza
+            if _ala is not None and _alo is not None and not (_ala == 0.0 and _alo == 0.0):
+                _has = True
+                try:
+                    _drift = round(_haversine_km_consenso(float(_ala), float(_alo), float(_la), float(_lo)), 2)
+                except Exception:
+                    _drift = None
+                _suspeito = bool(_drift is not None and _drift > limiar_km)
+        _mem2 = dict(_mem)
+        _rec2 = dict(_rec)
+        _rec2["ultima_coord"] = [float(_la), float(_lo)]
+        _mem2[_chave] = _rec2
+        try:
+            _geo_mem_salvar(_mem2)
+        except Exception:
+            pass
+        return {"drift_km": _drift, "suspeito": _suspeito, "ultima_coord": [float(_la), float(_lo)],
+                "has_historico": _has}
+    except Exception:
+        return {"drift_km": None, "suspeito": False, "ultima_coord": None, "has_historico": False}
+
+
+# [M4 · DRIFT-GOLDEN] Reconciliação automática das rotas douradas NO LOTE: quando uma rota verificada diverge
+# do recálculo no df final, marca uma coluna de alerta por linha (padrão _set_col_seguro) e retorna o resumo.
+# Aditivo/defensivo — a detecção NUNCA muda o vencedor da menor rota viária; só avisa a auditoria.
+
+
+def _reconciliar_golden_no_lote(df, limiar_pct=10.0):
+    """[M4 · GOLDEN-LOTE] Varre pares (origem,destino) com registro dourado no df, chama
+    _reconciliar_rota_dourada e, quando 'divergente', grava 'Alerta Golden Drift' na linha +
+    contagem. Retorna {'total_golden', 'divergentes', 'linhas'}."""
+    try:
+        if df is None or not len(df):
+            return {"total_golden": 0, "divergentes": 0, "linhas": []}
+        _cm = {str(c).strip().lower(): c for c in df.columns}
+        _c_org = _cm.get("origem") or _cm.get("municipio origem") or _cm.get("município origem")
+        _c_dest = _cm.get("destino") or _cm.get("municipio destino") or _cm.get("município destino")
+        _c_dist = _cm.get("distancia") or _cm.get("distância") or _cm.get("distância real (km)")
+        if not _c_org or not _c_dest or not _c_dist:
+            return {"total_golden": 0, "divergentes": 0, "linhas": []}
+        _linhas = []
+        _tot = 0
+        _div = 0
+        for _i, _r in df.iterrows():
+            try:
+                _o = str(_r.get(_c_org, "")).strip()
+                _d = str(_r.get(_c_dest, "")).strip()
+                if not _o or not _d:
+                    continue
+                _reg = _buscar_rota_dourada(_o, _d)
+                if not isinstance(_reg, dict) or _reg.get("km") is None:
+                    continue
+                _tot += 1
+                _rec = _reconciliar_rota_dourada(_r.get(_c_dist), _reg, limiar_pct=limiar_pct)
+                if _rec["status"] == "divergente":
+                    _div += 1
+                    _msg = (f"Golden drift: verificado {_rec['km_verificado']} km vs recálculo "
+                            f"{_rec['km_calculado']} km (Δ {_rec['divergencia_pct']}%) — via pode ter mudado.")
+                    _set_col_seguro(df, df.index == _i, "Alerta Golden Drift", _msg)
+                    _linhas.append({"origem": _o, "destino": _d, "km_verificado": _rec["km_verificado"],
+                                    "km_calculado": _rec["km_calculado"],
+                                    "divergencia_pct": _rec["divergencia_pct"]})
+            except Exception:
+                continue
+        return {"total_golden": _tot, "divergentes": _div, "linhas": _linhas}
+    except Exception:
+        return {"total_golden": 0, "divergentes": 0, "linhas": []}
 
 
 def _v316_comparador_balsa(dist_app, dist_ref, balsa_app, balsa_ref):
@@ -29547,11 +29791,18 @@ def _registrar_telemetria_motores(vencedor, motores_dict, consenso, dist_linha_r
                 _razao = round(float(km_vencedor) / float(dist_linha_reta), 2)
         except (TypeError, ValueError):
             _razao = None
+        # [M3] Consenso temporal (velocidade implícita) — observacional, nunca decide.
+        try:
+            _cons_t = _consenso_motores_tempo(motores_dict)
+        except Exception:
+            _cons_t = {"concordancia_tempo_pct": None, "divergencia_tempo_pct": None}
         _reg = {
             "vencedor": str(vencedor), "km_vencedor": round(float(km_vencedor), 2) if km_vencedor else None,
             "n_motores": _n_resp, "distancias": _dists, "confiabilidade": _conf,
-            "outliers": _outs, "mediana_km": _mid, "concordancia_pct": _conc_pct,
+            "outliers": _outs, "mediana_km": _mid, "concordancia_pct": _conc,
             "razao_viaria_geodesica": _razao, "ts": time.time(),
+            "concordancia_tempo_pct": _cons_t.get("concordancia_tempo_pct"),
+            "divergencia_tempo_pct": _cons_t.get("divergencia_tempo_pct"),
         }
         _chave = str(vencedor).split(" ")[0]
         _deve_flush = False
@@ -29777,7 +30028,45 @@ def _consenso_motores_rota(motores_dict, dist_linha_reta):
                 "nao_outliers": dict(motores_dict or {})}
 
 
-def _indice_confianca_rota(km, km_reta, fonte="", balsa_str="", divergencia_pct=None, snap_m=None, n_motores=None):
+def _consenso_motores_tempo(motores_dict):
+    """[M3 · CONSENSO-TEMPO] Consenso sobre a velocidade IMPLÍCITA (km ÷ tempo) dos motores que devolveram
+    tempo (tupla[1]) em vez de só distância. Complementa _consenso_motores_rota: dois motores podem
+    "concordar" em km e divergir 3× em velocidade (perfil ferry vs pavimento). PURA/fail-open: sem tempo
+    suficiente → {concordancia_tempo_pct: None, divergencia_tempo_pct: None}.
+    Retorna dict {concordancia_tempo_pct, divergencia_tempo_pct, n}."""
+    try:
+        _vels = {}
+        for _n, _r in (motores_dict or {}).items():
+            if not (_r and len(_r) > 1):
+                continue
+            try:
+                _km = float(_r[0]); _min = float(_r[1])
+            except (TypeError, ValueError):
+                continue
+            if _km > 0.0 and _min > 0.0:
+                # velocidade em km/h (tempo pode vir em minutos ou segundos — assume ≥ 30 min = plausível)
+                _h = _min / 60.0 if _min < 36000.0 else _min / 3600.0
+                _v = _km / _h if _h > 0 else None
+                if _v and 3.0 <= _v <= 130.0:
+                    _vels[_n] = _v
+        _n = len(_vels)
+        if _n < 2:
+            return {"concordancia_tempo_pct": None, "divergencia_tempo_pct": None, "n": _n}
+        _vals = sorted(_vels.values())
+        _m = _vals[_n // 2] if _n % 2 == 1 else (_vals[_n // 2 - 1] + _vals[_n // 2]) / 2.0
+        if _m <= 0:
+            return {"concordancia_tempo_pct": None, "divergencia_tempo_pct": None, "n": _n}
+        _dentro = sum(1 for _v in _vals if abs(_v / _m - 1.0) <= 0.20)
+        _conc = round(100.0 * _dentro / _n, 1)
+        _maxsp = max(abs(v / _m - 1.0) for v in _vals)
+        _div = round(float(_maxsp) * 100.0, 1)
+        return {"concordancia_tempo_pct": _conc, "divergencia_tempo_pct": _div, "n": _n}
+    except Exception:
+        return {"concordancia_tempo_pct": None, "divergencia_tempo_pct": None, "n": 0}
+
+
+def _indice_confianca_rota(km, km_reta, fonte="", balsa_str="", divergencia_pct=None, snap_m=None, n_motores=None,
+                           divergencia_tempo_pct=None):
     """[CONF-ROTA - P3/§6] Índice de Confiabilidade da Rota 0–100 (maior = melhor). AGREGA sinais JÁ calculados
     em todo o pipeline: fonte real vs estimada/geodésica, plausibilidade física (V/R e rota impossível), balsa,
     divergência entre motores, deslocamento de snap e nº de motores independentes. É indicador AUXILIAR (§6):
@@ -29804,6 +30093,9 @@ def _indice_confianca_rota(km, km_reta, fonte="", balsa_str="", divergencia_pct=
         _dp = _num(divergencia_pct)
         if _dp is not None and _dp >= 0:
             _score -= min(30, _dp * 0.4)   # concordância entre motores enfraquecida
+        _dpt = _num(divergencia_tempo_pct)
+        if _dpt is not None and _dpt >= 0:
+            _score -= min(30, _dpt * 0.25)   # [M3] divergência de TEMPO/VELOCIDADE implícita (ex.: ferry vs pavimento)
         _sm = _num(snap_m)
         if _sm is not None:
             if _sm > 1500:
@@ -35643,13 +35935,15 @@ def _nome_rio_na_travessia(lat, lon, raio_km=4.0, g=None):
     pode cruzar um rio no meio de um trecho reto, longe dos nós. Só devolve nome quando a aresta NOMEADA está
     a ≤raio da travessia (confiança 'alta' ≤1 km, 'media' ≤raio); corpo d'água presente porém SEM nome
     → 'corpo_sem_nome' (incerteza EXPLÍCITA — proibido inventar); sem grafo → 'indisponivel'; fora do raio
-    → 'nao_determinado'. Determinístico, defensivo. Retorna {'nome_rio','dist_km','confianca'}."""
+    → 'nao_determinado'. Determinístico, defensivo. Retorna {'nome_rio','dist_km','confianca'}.
+    [M2] Quando `g` é None usa o grafo JÁ memoizado (_grafo_fluvial_memoizado, 1×/processo) em vez de
+    recarregar; o cálculo é delegado a `_nome_rio_na_travessia_lru` (cache por coordenada entre reruns)."""
     try:
         _la = _num(lat); _lo = _num(lon)
         if _la is None or _lo is None:
             return {"nome_rio": None, "nomes_rios": [], "dist_km": None, "confianca": "nao_determinado"}
         if g is None:
-            g = _carregar_grafo_fluvial(_URL_GRAFO_FLUVIAL, _arq_grafo_fluvial())
+            g = _grafo_fluvial_memoizado()
         if not g:
             return {"nome_rio": None, "nomes_rios": [], "dist_km": None, "confianca": "indisponivel"}
         _C = g.get("C")
@@ -35727,6 +36021,24 @@ def _nome_rio_na_travessia(lat, lon, raio_km=4.0, g=None):
         return {"nome_rio": None, "nomes_rios": [], "dist_km": None, "confianca": "nao_determinado"}
     except Exception:
         return {"nome_rio": None, "nomes_rios": [], "dist_km": None, "confianca": "nao_determinado"}
+
+
+# [M2 · CACHE ENTRE RERUNS] Wrapper com functools.lru_cache por COORDENADA (o grafo é constante por
+# processo via _grafo_fluvial_memoizado). O Streamlit re-executa o script a cada rerun, mas o cache de
+# módulo PERSISTE no processo — as consultas KDTree/segmento não repetem entre reruns das abas de análise.
+try:
+    import functools as _ft
+    _LRC = _ft.lru_cache(maxsize=8192)
+    def _nome_rio_na_travessia_lru(lat, lon, raio_km=4.0):
+        """Cache por (lat, lon, raio) das consultas fluviais — determinístico e fail-open."""
+        try:
+            _la = round(float(lat), 5); _lo = round(float(lon), 5); _rk = round(float(raio_km), 3)
+            return _nome_rio_na_travessia(_la, _lo, raio_km=_rk, g=_grafo_fluvial_memoizado())
+        except Exception:
+            return {"nome_rio": None, "nomes_rios": [], "dist_km": None, "confianca": "nao_determinado"}
+except Exception:
+    def _nome_rio_na_travessia_lru(lat, lon, raio_km=4.0):
+        return _nome_rio_na_travessia(lat, lon, raio_km=raio_km, g=_grafo_fluvial_memoizado())
 
 
 def _enriquecer_travessias_rota(travessias, g=None, raio_km=4.0):
@@ -47118,6 +47430,40 @@ if _secao == _SECOES[2]:   # tab_alocacao
                                 st.caption(f"🧠 Memória persistente: {len(_gmem or {})} registro(s) em disco ({_rot_aprend}). "
                                            f"**{_recorrentes}** origem(ns) destes municípios são RECORRENTES problemáticas "
                                            "(≥2 rodadas) — o top-K delas será ampliado automaticamente na próxima medição (§7/§8).")
+                                # [M4 · DRIFT] Sensores automáticos de degradação silenciosa: golden divergente
+                                # no lote e migração de coordenada. Read-only — só avisam a auditoria.
+                                try:
+                                    _gd = _reconciliar_golden_no_lote(df_final_alo)
+                                    if _gd.get("total_golden") and _gd.get("divergentes"):
+                                        _gdl = _gd["linhas"]
+                                        with st.expander(f"⚠️ Golden drift no lote — {_gd['divergentes']}/{_gd['total_golden']} "
+                                                         f"rota(s) verificada(s) divergente(s) do recálculo", expanded=False):
+                                            st.caption("A via pode ter mudado ou a verificação está desatualizada — "
+                                                       "confira e re-verifique em 1 clique na aba individual.")
+                                            st.dataframe(pd.DataFrame(_gdl), use_container_width=True, hide_index=True)
+                                    _nr_drift = 0
+                                    _cm_d = {str(c).strip().lower(): c for c in df_final_alo.columns}
+                                    _cd_org = _cm_d.get("origem") or _cm_d.get("municipio origem") or _cm_d.get("município origem")
+                                    _cd_uf = _cm_d.get("uf") or _cm_d.get("uf origem")
+                                    _cd_lat = _cm_d.get("lat origem") or _cm_d.get("lat_origem") or _cm_d.get("lat o")
+                                    _cd_lon = _cm_d.get("lon origem") or _cm_d.get("lon_origem") or _cm_d.get("lon o")
+                                    if _cd_org and _cd_lat and _cd_lon:
+                                        try:
+                                            _amostra = df_final_alo.head(200).reset_index(drop=True)
+                                        except Exception:
+                                            _amostra = df_final_alo
+                                        for _ix_e in range(min(200, len(_amostra))):
+                                            _rr = _amostra.iloc[_ix_e]
+                                            _ss = _sensor_drift_geocodificacao(
+                                                _rr.get(_cd_org), _rr.get(_cd_uf or "UF", ""),
+                                                _rr.get(_cd_lat), _rr.get(_cd_lon))
+                                            if _ss.get("suspeito"):
+                                                _nr_drift += 1
+                                        if _nr_drift:
+                                            st.caption(f"📍 **{_nr_drift}** origem(ns) com possível migração de coordenada "
+                                                       f"(>5 km vs execução anterior) — confira a geocodificação das mais recentes.")
+                                except Exception:
+                                    pass
                     except Exception as _e_mg:
                         logger.error(f"[V317-MEMGEO] memória geográfica falhou: {_e_mg}")
                     # [V330 · Melhoria6 §10/§15] AUDITORIA DE COMPLETUDE: expõe o controle explícito de tarefas
@@ -49781,6 +50127,21 @@ if _secao == _SECOES[3]:   # tab_comparador
             _k7.metric("Candidatos beneficiados", _fmt_num(_br['candidatos_beneficiados']))
             _k8.metric("Candidatos prejudicados", _fmt_num(_br['candidatos_prejudicados']))
             st.caption(f"Base: **{_br['municipios']} municípios** conciliados · **{_fmt_num(_br['inscritos'])} candidatos**.")
+
+            # [M5 - ROBUSTEZ] Varredura do limiar de empate técnico: um vencedor estável mantém a
+            # vantagem em qualquer régua; maioria virando "empate" ao subir 1 km = ruído, não vitória.
+            try:
+                _estab = _estabilidade_limiar_empate(_cmp)
+                if _estab:
+                    _df_estab = pd.DataFrame(_estab)
+                    with st.expander("🧪 Robustez ao limiar de empate técnico", expanded=False):
+                        st.caption("O que muda no placar se você redefinir o **empate técnico**? Compare a régua "
+                                   "**1 km** (padrão) com **2–5 km** (ruído comum entre matriz oficial e roteamento "
+                                   "ao vivo). Se as vitórias da aplicação evaporarem entre 1 e 2 km, a vantagem é "
+                                   "fina; se persistirem até 5 km, é estrutural.")
+                        st.dataframe(_df_estab, use_container_width=True, hide_index=True)
+            except Exception:
+                logger.error("[CMP-ROBUSTEZ] Falha na varredura do limiar (isolada).", exc_info=True)
 
             _df_c = pd.DataFrame(_cmp)
             with st.expander("📈 Gráficos da comparação", expanded=True):
@@ -54498,7 +54859,7 @@ def _enriquecer_linha_rio(lat_o, lon_o, lat_d=None, lon_d=None, g=None):
                 _la = _lo + (_ld - _lo) * _t
                 _ln = _oo + (_od - _oo) * _t
                 try:
-                    _r = _nome_rio_na_travessia(float(_la), float(_ln), raio_km=12.0, g=g)
+                    _r = _nome_rio_na_travessia_lru(float(_la), float(_ln), raio_km=12.0)
                 except Exception:
                     _r = None
                 _nm = (_r or {}).get("nome_rio")
@@ -54510,7 +54871,7 @@ def _enriquecer_linha_rio(lat_o, lon_o, lat_d=None, lon_d=None, g=None):
             _melhor = None
         if _melhor:
             return _melhor[2]
-        return _nome_rio_na_travessia(float(_lo), float(_oo), raio_km=40.0, g=g) or None
+        return _nome_rio_na_travessia_lru(float(_lo), float(_oo), raio_km=40.0) or None
     except Exception:
         return None
 
