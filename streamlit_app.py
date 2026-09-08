@@ -54392,6 +54392,208 @@ if _secao == _SECOES[13]:   # tab_sobre_desenvolvedor
 
 
 # ==============================================================================
+# [ABA-ROBUSTA - 448ª geração] HELPERS DAS ABAS DE ANÁLISE DE ROTAS
+# ------------------------------------------------------------------------------
+# As seções 15/18/19/20/21 foram escritas contra um df enriquecido ("Origem",
+# "Distância (km)", "Balsa", "Rio", "Bacia", "Vencedor", "Causa Raiz") que nem
+# sempre existe com essa nomenclatura no df_processado real. Estes helpers
+# resolvem colunas por sinonímia, formatam números com segurança, derivam
+# rótulos (rio/bacia) via grafo fluvial local e produzem uma projeção canônica
+# defensiva. 100% sem rede e fail-open.
+# ==============================================================================
+def _col_existente(df, *candidatos):
+    """Primeira coluna presente no DataFrame dentre os candidatos (ou None)."""
+    try:
+        _cols = set(getattr(df, "columns", []))
+    except Exception:
+        return None
+    for _c in candidatos:
+        if _c in _cols:
+            return _c
+    return None
+
+
+def _val_linha(row, *candidatos, padrao="—"):
+    """Primeiro valor não-nulo de uma linha (Series/dict) dentre os candidatos."""
+    for _c in candidatos:
+        if _c is None:
+            continue
+        try:
+            _v = row.get(_c)
+        except Exception:
+            _v = None
+        if _v is None:
+            continue
+        try:
+            if isinstance(_v, float) and pd.isna(_v):
+                continue
+        except Exception:
+            pass
+        if isinstance(_v, str):
+            _s = _v.strip()
+            if not _s or _s.lower() in ("nan", "none", "nat", "na", "—", "-"):
+                continue
+            return _v
+        try:
+            _s = str(_v).strip()
+        except Exception:
+            _s = ""
+        if not _s or _s.lower() in ("nan", "none", "nat", "na"):
+            continue
+        return _v
+    return padrao
+
+
+def _num_seguro(v, padrao=None):
+    """Converte para float com segurança total (fail-open → `padrao`)."""
+    try:
+        if v is None:
+            return padrao
+        f = float(v)
+        return f if f == f else padrao
+    except Exception:
+        return padrao
+
+
+def _bool_balsa(v):
+    """Interpreta 'Balsas'/'Balsa' (texto da rota OSRM, lista, bool) como booleano."""
+    if isinstance(v, bool):
+        return v
+    if v is None:
+        return False
+    try:
+        if isinstance(v, float) and pd.isna(v):
+            return False
+    except Exception:
+        pass
+    _s = str(v).strip().lower()
+    if not _s or _s in ("nan", "none", "false", "não", "nao", "0", "0.0", "falso", "[]"):
+        return False
+    if _s in ("1", "true", "sim", "verdadeiro", "verdad"):
+        return True
+    # texto tipo '[{"nome": ...}]' do OSRM → presença de travessia
+    return ("[" in _s or "balsa" in _s or "ferry" in _s or "travessia" in _s)
+
+
+def _enriquecer_linha_rio(lat_o, lon_o, lat_d=None, lon_d=None, g=None):
+    """[ABA-ROBUSTA] Nomeia o rio mais plausível atravessado pela rota (amostra a
+    corda origem→destino no grafo hidrográfico). Retorna dict do
+    _nome_rio_na_travessia (ou None). Determinístico e sem rede."""
+    try:
+        _lo = _num(lat_o)
+        _oo = _num(lon_o)
+        if _lo is None or _oo is None:
+            return None
+        if g is None:
+            g = _grafo_fluvial_memoizado()
+        if not g:
+            return None
+        _ld = _num(lat_d)
+        _od = _num(lon_d)
+        if _ld is None or _od is None:
+            return _nome_rio_na_travessia(_lo, _oo, raio_km=40.0, g=g) or None
+        _melhor = None
+        try:
+            for _t in np.linspace(0.0, 1.0, 11):
+                _la = _lo + (_ld - _lo) * _t
+                _ln = _oo + (_od - _oo) * _t
+                try:
+                    _r = _nome_rio_na_travessia(float(_la), float(_ln), raio_km=12.0, g=g)
+                except Exception:
+                    _r = None
+                _nm = (_r or {}).get("nome_rio")
+                _dk = (_r or {}).get("dist_km")
+                if _nm and _dk is not None:
+                    if _melhor is None or _num_seguro(_dk, 1e12) < _melhor[1]:
+                        _melhor = (_nm, _num_seguro(_dk, 1e12), _r)
+        except Exception:
+            _melhor = None
+        if _melhor:
+            return _melhor[2]
+        return _nome_rio_na_travessia(float(_lo), float(_oo), raio_km=40.0, g=g) or None
+    except Exception:
+        return None
+
+
+def _rotulo_rio_linha(row, lat_col, lon_col, lat_col2=None, lon_col2=None, g=None):
+    """[ABA-ROBUSTA] Rótulo 'Rio (xx km)' a partir das coordenadas de uma linha."""
+    _la = _num_seguro(row.get(lat_col)) if lat_col else None
+    _ln = _num_seguro(row.get(lon_col)) if lon_col else None
+    if _la is None or _ln is None:
+        return "—"
+    _la2 = _num_seguro(row.get(lat_col2)) if lat_col2 else None
+    _ln2 = _num_seguro(row.get(lon_col2)) if lon_col2 else None
+    _enr = _enriquecer_linha_rio(_la, _ln, _la2, _ln2, g=g)
+    if not _enr or not _enr.get("nome_rio"):
+        return "—"
+    _dk = _num_seguro(_enr.get("dist_km"), 0.0) or 0.0
+    return "%s (%.1f km)" % (_enr["nome_rio"], float(_dk))
+
+
+def _df_rotas_para_analise(df, max_linhas=300):
+    """[ABA-ROBUSTA] Projeção canônica de df_processado para as seções de análise.
+    Colunas de saída: Origem, UF, Destino, Distância (km), Balsa, Rio, Bacia,
+    Vencedor, Causa Raiz + coordenadas. Rio é enriquecido pelo grafo fluvial
+    apenas em rotas com balsa (custo baixo). Nunca levanta."""
+    if df is None or len(df) == 0:
+        return None
+    try:
+        _d = df.head(max_linhas).reset_index(drop=True).copy()
+    except Exception:
+        return None
+
+    _col_orig = _col_existente(_d, "Origem", "Municipio Origem", "Município Origem", "Municipio de Origem")
+    _col_dest = _col_existente(_d, "Destino", "Municipio Destino", "Município Destino", "Municipio de Destino")
+    _col_uf = _col_existente(_d, "UF", "UF Origem", "UF Destino", "Estado Origem")
+    _col_dist = _col_existente(_d, "Distância (km)", "Distância", "Distancia", "Distância Real (km)")
+    _col_balsa = _col_existente(_d, "Balsa", "Balsas", "Tem Balsa", "Balsa?"
+                               ) or _col_existente(_d, "Balsa", "Balsas")
+    _col_rio = _col_existente(_d, "Rio", "Rio Principal", "Nome do Rio", "nome_rio")
+    _col_bacia = _col_existente(_d, "Bacia", "Bacia Hidrográfica", "nome_bacia")
+    _col_venc = _col_existente(_d, "Vencedor", "Vencedor Distancia", "Vencedor (Qualidade)", "Vencedor Distância")
+    _col_causa = _col_existente(_d, "Causa Raiz", "Causa", "Motivo Resumido Perda")
+    _lat_o = _col_existente(_d, "Lat Origem", "Latitude Origem", "lat_origem", "latO")
+    _lon_o = _col_existente(_d, "Lon Origem", "Longitude Origem", "lon_origem", "lonO")
+    _lat_d = _col_existente(_d, "Lat Destino", "Latitude Destino", "lat_destino", "latD")
+    _lon_d = _col_existente(_d, "Lon Destino", "Longitude Destino", "lon_destino", "lonD")
+
+    try:
+        _g = _grafo_fluvial_memoizado()
+    except Exception:
+        _g = None
+
+    _rows = []
+    try:
+        for _, _r in _d.iterrows():
+            _balsa = _bool_balsa(_val_linha(_r, _col_balsa, padrao="")) if _col_balsa else False
+            _rio = _val_linha(_r, _col_rio, padrao="")
+            if (not _rio or _rio == "—") and _balsa and _lat_o and _lon_o:
+                _rio = _rotulo_rio_linha(_r, _lat_o, _lon_o, _lat_d, _lon_d, g=_g)
+            _bacia = _val_linha(_r, _col_bacia, padrao="")
+            _rows.append({
+                "Origem": str(_val_linha(_r, _col_orig)),
+                "UF": str(_val_linha(_r, _col_uf)),
+                "Destino": str(_val_linha(_r, _col_dest)),
+                "Distância (km)": _num_seguro(_r.get(_col_dist) if _col_dist else None, 0.0),
+                "Balsa": bool(_balsa),
+                "Rio": (str(_rio) if _rio and _rio != "—" else "—"),
+                "Bacia": (str(_bacia) if _bacia and _bacia != "—" else "—"),
+                "Vencedor": str(_val_linha(_r, _col_venc)),
+                "Causa Raiz": str(_val_linha(_r, _col_causa)),
+                "Lat Origem": (_num_seguro(_r.get(_lat_o)) if _lat_o else None),
+                "Lon Origem": (_num_seguro(_r.get(_lon_o)) if _lon_o else None),
+                "Lat Destino": (_num_seguro(_r.get(_lat_d)) if _lat_d else None),
+                "Lon Destino": (_num_seguro(_r.get(_lon_d)) if _lon_d else None),
+            })
+    except Exception:
+        return None
+    try:
+        return pd.DataFrame(_rows)
+    except Exception:
+        return None
+
+
+# ==============================================================================
 # SEÇÃO 15 — CENTRO DE INTELIGÊNCIA DA ROTA  [ROUTE-INTEL - 434ª]
 # ==============================================================================
 # Centro de inteligência unificado: consolida tudo que a aplicação sabe sobre a rota.
@@ -54402,58 +54604,96 @@ if _secao == _SECOES[15]:   # tab_route_intel
     
     try:
         _rotas_proc = st.session_state.get('df_processado')
-        if _rotas_proc is not None and not _rotas_proc.empty:
-            _cols_show = ["Origem", "UF", "Destino", "Distância (km)", "Vencedor", "Balsa", "Rio", "Bacia", "Índice Confiança"]
-            _df_show = _rotas_proc[_cols_show].head(20) if len(_rotas_proc) > 20 else _rotas_proc
-            st.dataframe(_df_show, use_container_width=True, hide_index=True)
-            
-            _sel = st.selectbox("🔍 Inspecionar rota", ["(nenhuma)"] + _rotas_proc["Origem"].tolist(), key="route_intel_sel")
-            if _sel != "(nenhuma)":
-                _row = _rotas_proc[_rotas_proc["Origem"] == _sel].iloc[0]
-                _c1, _c2, _c3 = st.columns(3)
-                _c1.metric("Origem", f"{_row['Origem']}/{_row['UF']}")
-                _c2.metric("Destino", _row.get("Destino", "—"))
-                _c3.metric("Distância", f"{_row.get('Distância (km)', 0):.1f} km")
-                
-                _c4, _c5, _c6 = st.columns(3)
-                _c4.metric("Vencedor", _row.get("Vencedor", "—"))
-                _c5.metric("Balsa", "Sim" if _row.get("Balsa") else "Não")
-                _c6.metric("Rio", _row.get("Rio", "—"))
-                
-                _c7, _c8, _c9 = st.columns(3)
-                _c7.metric("Bacia", _row.get("Bacia", "—"))
-                _c8.metric("Índice Confiança", f"{_row.get('Índice Confiança', 0):.0f}/100")
-                _c9.metric("Fonte Rota", _row.get("Fonte Rota", "—"))
-                
-                # Botões de exportação individual para a rota selecionada
-                _origem = _row.get('Origem', '').replace(' ', '_')
-                _destino = _row.get('Destino', '').replace(' ', '_')
-                _uf = _row.get('UF', '')
-                _base_fn = f"rota_intel_{_origem}_{_uf}_{_destino}"
-                _df_single = pd.DataFrame([_row])
-                
-                _col_exp1, _col_exp2, _col_exp3, _col_exp4, _col_exp5, _col_exp6 = st.columns(6)
-                with _col_exp1:
-                    _html = _geo_html_locais(_df_single)
-                    st.download_button("🌐 HTML", data=_html.encode('utf-8'), file_name=f"{_base_fn}.html", mime="text/html", use_container_width=True)
-                with _col_exp2:
-                    _geojson = _df_para_geojson(_df_single)
-                    st.download_button("🌐 GeoJSON", data=_geojson.encode('utf-8'), file_name=f"{_base_fn}.geojson", mime="application/geo+json", use_container_width=True)
-                with _col_exp3:
-                    _kml = _df_para_kml(_df_single)
-                    st.download_button("🗺️ KML", data=_kml.encode('utf-8'), file_name=f"{_base_fn}.kml", mime="application/vnd.google-earth.kml+xml", use_container_width=True)
-                with _col_exp4:
-                    _gpx = _df_para_gpx(_df_single)
-                    st.download_button("📍 GPX", data=_gpx.encode('utf-8'), file_name=f"{_base_fn}.gpx", mime="application/gpx+xml", use_container_width=True)
-                with _col_exp5:
-                    import io
-                    _xlsx_buf = io.BytesIO()
-                    with pd.ExcelWriter(_xlsx_buf, engine='xlsxwriter') as _writer:
-                        _df_single.to_excel(_writer, index=False, sheet_name='Rota')
-                    st.download_button("📊 XLSX", data=_xlsx_buf.getvalue(), file_name=f"{_base_fn}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-                with _col_exp6:
-                    _csv = _df_single.to_csv(index=False).encode('utf-8-sig')
-                    st.download_button("📄 CSV", data=_csv, file_name=f"{_base_fn}.csv", mime="text/csv", use_container_width=True)
+        if _rotas_proc is None or _rotas_proc.empty:
+            st.info("Rode um estudo (aba **⚙️ Estudo em Lote** ou **🎯 Locais de Aplicação**) para visualizar o Centro de Inteligência das rotas.")
+        else:
+            # Projeção robusta (aceita a nomenclatura real do df_processado).
+            _df_intel = _df_rotas_para_analise(_rotas_proc, max_linhas=200)
+            if _df_intel is None or _df_intel.empty:
+                st.info("Não há linhas analisáveis nesta sessão. Rode um estudo primeiro.")
+            else:
+                _col_ic = _col_existente(_rotas_proc, "Indice Confianca Rota", "Índice Confiança", "Score da Rota", "Score Final Global", "Score Final")
+                _col_fonte = _col_existente(_rotas_proc, "Fonte da Rota", "Fonte Rota", "Motor da Rota")
+                _cols_show = ["Origem", "UF", "Destino", "Distância (km)", "Vencedor", "Balsa", "Rio", "Bacia"]
+                _cols_show = [c for c in _cols_show if c in _df_intel.columns]
+                st.dataframe(_df_intel[_cols_show].head(20), use_container_width=True, hide_index=True)
+
+                _labels = (_df_intel["Origem"].astype(str) + " → " + _df_intel["Destino"].astype(str)).tolist()
+                _opcoes = ["(nenhuma)"] + _labels
+                _sel = st.selectbox("🔍 Inspecionar rota", _opcoes, key="route_intel_sel")
+                if _sel != "(nenhuma)":
+                    _ix = _opcoes.index(_sel) - 1
+                    if 0 <= _ix < len(_df_intel):
+                        _row = _df_intel.iloc[_ix]
+                        _orig = str(_row.get("Origem", "—"))
+                        _uf = str(_row.get("UF", "—"))
+                        _dest = str(_row.get("Destino", "—"))
+                        _dist_km = _num_seguro(_row.get("Distância (km)"), 0.0) or 0.0
+                        _c1, _c2, _c3 = st.columns(3)
+                        _c1.metric("Origem", ("%s/%s" % (_orig, _uf)).replace("//", "/"))
+                        _c2.metric("Destino", _dest)
+                        _c3.metric("Distância", "%.1f km" % float(_dist_km))
+
+                        _c4, _c5, _c6 = st.columns(3)
+                        _c4.metric("Vencedor", str(_row.get("Vencedor", "—")) or "—")
+                        _c5.metric("Balsa", "Sim" if _row.get("Balsa") else "Não")
+                        _c6.metric("Rio", str(_row.get("Rio", "—")) or "—")
+
+                        _c7, _c8, _c9 = st.columns(3)
+                        _c7.metric("Bacia", str(_row.get("Bacia", "—")) or "—")
+                        _row_orig = _rotas_proc.iloc[_ix] if _ix < len(_rotas_proc) else None
+                        _ic_val = _val_linha(_row_orig, _col_ic, padrao="—") if (_row_orig is not None and _col_ic) else "—"
+                        _fonte_val = _val_linha(_row_orig, _col_fonte, padrao="—") if (_row_orig is not None and _col_fonte) else "—"
+                        _c8.metric("Índice Confiança", _ic_val if _ic_val == "—" else ("%.0f/100" % _num_seguro(_ic_val, 0.0)))
+                        _c9.metric("Fonte Rota", str(_fonte_val) or "—")
+
+                        # Botões de exportação individual para a rota selecionada
+                        _origem_fn = str(_orig).replace(' ', '_').replace('/', '_')
+                        _destino_fn = str(_dest).replace(' ', '_').replace('/', '_')
+                        _base_fn = f"rota_intel_{_origem_fn}_{_uf}_{_destino_fn}"
+                        _df_single = pd.DataFrame([_row])
+                        _df_single = _df_single.loc[:, ~_df_single.columns.duplicated()]
+
+                        _col_exp1, _col_exp2, _col_exp3, _col_exp4, _col_exp5, _col_exp6 = st.columns(6)
+                        with _col_exp1:
+                            try:
+                                _html = _geo_html_locais(_df_single)
+                                st.download_button("🌐 HTML", data=str(_html).encode('utf-8'), file_name=f"{_base_fn}.html", mime="text/html", use_container_width=True)
+                            except Exception:
+                                logger.debug("[ROUTE-INTEL] Export HTML isolado falhou.")
+                        with _col_exp2:
+                            try:
+                                _geojson = _df_para_geojson(_df_single)
+                                st.download_button("🌐 GeoJSON", data=str(_geojson).encode('utf-8'), file_name=f"{_base_fn}.geojson", mime="application/geo+json", use_container_width=True)
+                            except Exception:
+                                logger.debug("[ROUTE-INTEL] Export GeoJSON isolado falhou.")
+                        with _col_exp3:
+                            try:
+                                _kml = _df_para_kml(_df_single)
+                                st.download_button("🗺️ KML", data=str(_kml).encode('utf-8'), file_name=f"{_base_fn}.kml", mime="application/vnd.google-earth.kml+xml", use_container_width=True)
+                            except Exception:
+                                logger.debug("[ROUTE-INTEL] Export KML isolado falhou.")
+                        with _col_exp4:
+                            try:
+                                _gpx = _df_para_gpx(_df_single)
+                                st.download_button("📍 GPX", data=str(_gpx).encode('utf-8'), file_name=f"{_base_fn}.gpx", mime="application/gpx+xml", use_container_width=True)
+                            except Exception:
+                                logger.debug("[ROUTE-INTEL] Export GPX isolado falhou.")
+                        with _col_exp5:
+                            try:
+                                import io
+                                _xlsx_buf = io.BytesIO()
+                                with pd.ExcelWriter(_xlsx_buf, engine='xlsxwriter') as _writer:
+                                    _df_single.to_excel(_writer, index=False, sheet_name='Rota')
+                                st.download_button("📊 XLSX", data=_xlsx_buf.getvalue(), file_name=f"{_base_fn}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+                            except Exception:
+                                logger.debug("[ROUTE-INTEL] Export XLSX isolado falhou.")
+                        with _col_exp6:
+                            try:
+                                _csv = _df_single.to_csv(index=False).encode('utf-8-sig')
+                                st.download_button("📄 CSV", data=_csv, file_name=f"{_base_fn}.csv", mime="text/csv", use_container_width=True)
+                            except Exception:
+                                logger.debug("[ROUTE-INTEL] Export CSV isolado falhou.")
     except Exception:
         logger.error("[ROUTE-INTEL] Falha ao renderizar centro de inteligência (isolada).", exc_info=True)
         st.warning("Não foi possível montar o Centro de Inteligência da Rota. As demais seções seguem normais.")
