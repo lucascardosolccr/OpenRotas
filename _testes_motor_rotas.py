@@ -1690,6 +1690,22 @@ def validar():
     check("M4: sem coordenadas -> 'indeterminado' (veredito original intacto)",
           m._segunda_opiniao_derrota(None, None, None, router=_router_stub_451)["status"] == "indeterminado")
 
+    print("== 24) Melhoria4-EXCEL 453ª (cobertura por densidade → nenhuma derrota por sinuosidade) ==")
+    # A causa-raiz das derrotas "Diferença por sinuosidade" (Jacundá→Marabá, Medina→Araçuaí,
+    # Lima Duarte→Juiz de Fora, Santo Augusto→Ijuí) é a matriz medindo POUCOS candidatos em UF densa:
+    # o polo de reta curta tem estrada sinuosa, e o vencedor viário está mais fundo na lista. A matriz agora
+    # escala a cobertura com o nº de hubs (monotônico: só amplia — nunca corta um candidato já medido).
+    _esp_453 = [(float(i), "h%d" % i) for i in range(1, 31)]
+    _den_453 = [(float(i * 2), "h%d" % i) for i in range(1, 401)]
+    check("DENSIDADE: UF densa (400 hubs) mede MUITO mais que a esparsa (30 hubs)",
+          m._n_candidatos_adaptativo("MG", _den_453) >= m._n_candidatos_adaptativo("MG", _esp_453) * 3)
+    check("DENSIDADE: cobertura cresce com o nº de candidatos (monotônico)",
+          m._n_candidatos_adaptativo("MG", _den_453) >= 120)
+    check("DENSIDADE: UF esparsa/dominante não infla cobertura (economia preservada)",
+          m._n_candidatos_adaptativo("GO", _esp_453) < 60)
+    check("MATRIZ-ADAPTATIVA: resposta sempre dentro do intervalo [_min, _max]",
+          20 <= m._n_candidatos_adaptativo("MG", _den_453) <= 240)
+
     print()
     print("=" * 70)
     print("RESULTADO: %d OK, %d FALHAS" % (ok, fail))

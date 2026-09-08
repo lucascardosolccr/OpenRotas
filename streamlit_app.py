@@ -22242,9 +22242,11 @@ _TETO_ADMISSIVEL_MAX = 160         # [V426] teto MÁXIMO sob alta incerteza (era
 # próximo com centenas de candidatos na fronteira). Garante matematicamente a MENOR rota viária.
 _GARANTIA_OTIMALIDADE_ATIVA = True
 _GARANTIA_TETO_FRONTEIRA = 300
-_GARANTIA_MESMA_UF_K = 10   # [V442] Item 4: nº de polos da MESMA UF (mais próximos por reta) SEMPRE
-                            # roteados na 1ª passada, mesmo além do corte geométrico — para o candidato
+_GARANTIA_MESMA_UF_K = 30   # [V442 / Melhoria4-EXCEL 453ª] nº de polos da MESMA UF (mais próximos por reta)
+                            # SEMPRE roteados na 1ª passada, mesmo além do corte geométrico — para o candidato
                             # rodoviário do próprio estado poder vencer. Monotônico (só amplia o universo).
+                            # 10 → 30: em UF densa o polo ótimo do próprio estado (ex. Ijuí p/ Santo Augusto, RS)
+                            # podia ficar além do 10º mais próximo por reta e ser cortado da 1ª passada.
 
 
 def _v319_teto_adaptativo(vr, balsa, fluvial, base=_MAX_ADMISSIVEL_ROTEAR, teto=_TETO_ADMISSIVEL_MAX):
@@ -28731,7 +28733,7 @@ def _shortlist_por_matriz(dist_matriz, margem=1.20, teto=4, teto_incerteza=6):
         return {}
 
 
-def _n_candidatos_adaptativo(uf, cands_reta, _base=40, _max=90, _min=20):
+def _n_candidatos_adaptativo(uf, cands_reta, _base=40, _max=240, _min=20):
     """[MATRIZ-ADAPTATIVA - 184ª geração] Decide DINAMICAMENTE quantos polos a matriz deve medir para uma
     origem, conforme a região e a incerteza logística (pontos 6 e 9 da nota). Fundamento: em regiões de malha
     esparsa (Amazônia Legal) ou quando há muitos polos empatados por linha reta, o vencedor viário pode estar
@@ -28765,6 +28767,17 @@ def _n_candidatos_adaptativo(uf, cands_reta, _base=40, _max=90, _min=20):
                 _n += 10
             elif _empatados <= 1 and not _amazonia:
                 _n -= 15  # 1º colocado domina com folga: baixa incerteza, reduz
+        # [Melhoria4-EXCEL - 453ª · M1 · DENSIDADE] Quanto MAIS hubs candidatos existirem, mais vale medir na
+        # matriz: em UF densa (MG/SP/RS/PR) o ótimo viário pode estar MUITO além do top-K por reta (o polo de
+        # reta curta pode ter estrada sinuosa — a assinatura das derrotas "Diferença por sinuosidade", ex.
+        # Jacundá→Marabá, Medina→Araçuaí, Lima Duarte→Juiz de Fora). Escala até ~60% dos candidatos, com teto
+        # _max. Monotônico: só AMPLIA a busca — nunca corta um candidato que já seria medido.
+        try:
+            _n_total = len(_retas)
+            if _n_total > _base:
+                _n = int(max(_n, min(_max, _n_total * 0.60)))
+        except Exception:
+            pass
         return int(max(_min, min(_max, _n)))
     except Exception:
         logger.error("[MATRIZ-ADAPTATIVA] Falha ao calcular nº adaptativo de candidatos", exc_info=True)
@@ -34296,7 +34309,7 @@ def calcular_matriz_competitiva_vetorizada(dest_coords, hubs_validos, dest_cod=N
             _ADAP_DENSO_FATOR = 1.2
             _ADAP_GAP_KM = 30.0
             _ADAP_TOPK_MIN_FATOR = 2
-            _ADAP_TOPK_TETO = 48
+            _ADAP_TOPK_TETO = 120
             if _k < n_hubs:
                 try:
                     _d0 = float(dists[int(ordem[0])])
@@ -46794,7 +46807,7 @@ if _secao == _SECOES[2]:   # tab_alocacao
                                 if _topk_full:
                                     _iter_prova = 0
                                     _total_prova = 0
-                                    while _iter_prova < 5:
+                                    while _iter_prova < 20:
                                         _pares_ot = _pares_garantia_otimalidade(_topk_full, _resultados)
                                         if not _pares_ot:
                                             break  # prova fechada: nenhum polo fora pode ter viária menor
