@@ -502,6 +502,30 @@ def relatorio():
       "futuro dependente de shapes. Sinaliza nos AIAS de linhas que carregam coordenadas.")
 
     a("")
+    a("### Melhoria4 — M1/M3/M4/M5 do 4º ciclo (excelência na menor rota, ZERO REGRESSÃO)")
+    a("")
+    a("- **M1 · Resgate-dirigido do polo da referência:** `_resgates_para_origem` (puro) + gravação de "
+      "`polos_resgatar` em `_geo_mem_aprender_derrotas` (cap 5/origem, dedupe por nome limpo). A derrota "
+      "evitável memoriza o polo EXATO da referência; no próximo run, `_descobrir_vencedores_por_matriz` FORÇA "
+      "esse polo ao conjunto candidato da matriz (mesmo fora do corte por reta) — cura a causa-raiz em que o "
+      "polo nunca fora medido. Aditivo: nunca remove candidatos.")
+    a("- **M3 · Forense com universo real:** `_universo_divergencias_por_origem` monta {origem: universo medido "
+      "(dist_matriz ∪ resultados) + topk re-roteado} a partir dos artefatos da sessão; o parecer de derrota "
+      "passa a injetá-los em `_apr2_forense_derrota` — os portões `fora_universo`/`cortado_preselecao`/"
+      "`nao_roteado` agora avaliam de verdade (antes `None`). Degrada para o legado quando indisponível.")
+    a("- **M4 · 2ª opinião na derrota EVITÁVEL:** `_segunda_opiniao_derrota` re-mede os DOIS polos (app × ref) "
+      "no 2º motor OSRM (FOSSGIS, throttled ≤1 req/s) com budget por execução (cap 4) e coordenadas oficiais "
+      "(sem invenção). Distingue 'derrota real CONFIRMADA' de 'ruído de medição entre motores'. Read-only: "
+      "ajusta o AVERBO do parecer, nunca o destino.")
+    a("- **M2 · Fallback FOSSGIS na matriz:** `API_OSRM_Table` ganha retentativa no 2º backend OSRM "
+      "(`routing.openstreetmap.de/routed-car/table`, blocos ≤25, fair-use ≤1 req/s) quando o OSRM público "
+      "falha/devolve ≠Ok — a origem deixa de perder a cobertura de matriz em falha transitória (porta de "
+      "entrada de derrotas evitáveis). Mesma semântica de `_out`; sem fallback → comportamento legado.")
+    a("- **M5 · Confirmação de qualidade do vencedor matrix-only:** `_pares_vencedor_matriz_para_qualidade` "
+      "(puro) + bloco no driver: vencedores que só têm km de tabela (flag `osrm_matriz`) são re-roteados em "
+      "rota REAL (runner Google-prioritário); a menor distância honesta é adotada e a reatribuição reavaliada. "
+      "O placar do comparador deixa de usar km de tabela (que inflava |Δkm| virando derrota por medição).")
+    a("")
     a("### Fechamento §24/§25 — hidrovia honesta e segundo motor (ZERO REGRESSÃO)")
     a("")
     a("- **Métrica fluvial justa NA DECISÃO (§8/§11/§12):** `_metrica_fluvial_justa_par` + "
@@ -670,7 +694,7 @@ def relatorio():
     a("")
     a("## 5. Validação")
     a("")
-    a("- `py _testes_motor_rotas.py validar` → 192 invariantes (22 seções, sem rede: banda exata, "
+    a("- `py _testes_motor_rotas.py validar` → 206 invariantes (23 seções, sem rede: banda exata, "
       "reflexividade, universo-fechado, não regressão, fallback OSRM→FOSSGIS, Valhalla/divergência+"
       "investigação, memória geográfica, Índice de Confiança, roteador fluvial offline, eventos cronológicos "
       "de API, geometria anômala, sensores R4 de circuidade em bandas e centróides, métrica fluvial justa na "
@@ -683,7 +707,8 @@ def relatorio():
       "(amostragem adaptativa da corda que alcança rios entre amostras esparsas), MULTI-RIO (nomes_rios com "
       "TODOS os rios nomeados a ≤raio, não só o mais próximo), SNAP-EXPANDIDO-COM-PROVA (snap largo a "
       "30 km só com prova de água ligando o par — geodésica cruzando rio; custo honesto = fluvial + acesso "
-      "às sedes; fonte 'fluvial-direta-largo' auditável) e convergência do hall.")
+      "às sedes; fonte 'fluvial-direta-largo' auditável), convergência do hall e Melhoria4-451 "
+      "(M1 resgate-dirigido, M3 forense-universo, M5 qualidade-matriz, M4 2ª opinião).")
     a("- `py _testes_motor_rotas.py decidir` → todos os casos passam nas propriedades da missão.")
     a("- `py -X utf8 -m py_compile streamlit_app.py _testes_motor_rotas.py` → OK.")
     a("- Balsa real conferida por geometria OSRM (steps `mode==ferry`) em ambos os servidores (4,12 / 39,33 / "
@@ -740,9 +765,9 @@ def relatorio():
     a("")
     a("| Check | Resultado |")
     a("|---|---|")
-    a("| `validar` (22 seções, sem rede) | **192 OK / 0 FALHAS** |")
+    a("| `validar` (23 seções, sem rede) | **206 OK / 0 FALHAS** |")
     a("| `decidir` (38 casos: 13 missão + 3 favoráveis §11 + 3 derrotas §22 + 19 famílias §24) | **38/38 nas propriedades** |")
-    a("| Causa-raiz corrigida | universo-fechado + política única de balsa + métrica fluvial justa + universo hidrográfico fail-open + consenso de 2 motores + resgate-FERRIES (FOSSGIS com ferry) |")
+    a("| Causa-raiz corrigida | universo-fechado + política única de balsa + métrica fluvial justa + universo hidrográfico fail-open + consenso de 2 motores + resgate-FERRIES (FOSSGIS com ferry) + resgate-dirigido (M1) + forense com universo real (M3) + 2ª opinião na derrota (M4) + confirmação de qualidade matrix-only (M5) |")
     a("| Benchmark menos que a reta (N1) | 9 famílias fluviais/ilha enquadradas como Tipo 10 com evidência de DOIS motores independentes |")
     a("| Honestidade | zero vitória artificial; grafo flúvio só entra com rota provada; segundo motor jamais decide contra a menor rota real; rio da travessia NUNCA inventado (incerteza explícita) |")
     a("| Cobertura | todas as 163 linhas venc=Referência atingidas pela mecânica; teto de perda evitável = 3355,6 km; reexecução DEPOIS do baseline: 1452 municípios, 42 origens recuperadas, 1309,2 km recuperados; com 2ª opinião de motor (ferry): 7 VENCE referência / 40 empates / 44 recuperadas / 69 inalteradas |")
@@ -1595,6 +1620,76 @@ def validar():
     check("SNAP-EXPANDIDO: fail-open de argumentos (None) mantém comportamento da 426ª",
           m._fluvial_para_resgate(None, None, None, g=_g_432) == {})
     m._fluvial_rota_real_sob_demanda = _rota_orig_432
+
+    print("== 23) Melhoria4-451 (M1 resgate-dirigido / M3 forense-universo / M5 qualidade-matriz / M4 2ª opinião) ==")
+    # M1 — _resgates_para_origem (PURO): devolve os polos da referência memorizados que existem em hubs_validos.
+    _hubs_451 = {"Rio Branco": (0, 0), "Sena Madureira": (0, 0), "Porto Acre": (0, 0)}
+    _mem_451 = {"pauini|AM": {"polos_resgatar": ["RIO BRANCO", "Porto Acre", "NAO_EXISTE"]}}
+    check("M1: resgata polos da referência que existem em hubs_validos (case/acento-insensível)",
+          set(m._resgates_para_origem(_mem_451, "Pauini", "AM", _hubs_451)) == {"Rio Branco", "Porto Acre"})
+    check("M1: origem sem registro -> []", m._resgates_para_origem(_mem_451, "Outro", "AM", _hubs_451) == [])
+    check("M1: UF diferente -> []", m._resgates_para_origem(_mem_451, "Pauini", "PA", _hubs_451) == [])
+    check("M1: mem/hubs vazios -> []",
+          m._resgates_para_origem({}, "Pauini", "AM", _hubs_451) == []
+          and m._resgates_para_origem(_mem_451, "Pauini", "AM", {}) == [])
+
+    # M1 — _geo_mem_aprender_derrotas grava polos_resgatar (memória isolada, sem tocar o disco do app).
+    _orig_car_451, _orig_sal_451 = m._geo_mem_carregar, m._geo_mem_salvar
+    _tmp_mem_451 = {}
+
+    def _carregar_451():
+        return dict(_tmp_mem_451)
+
+    def _salvar_451(mm):
+        _tmp_mem_451.clear()
+        _tmp_mem_451.update(mm or {})
+        return True
+
+    m._geo_mem_carregar, m._geo_mem_salvar = _carregar_451, _salvar_451
+    try:
+        _anal_451 = [{"Vencedor (Qualidade)": "Referência", "Sinuosidade Aplicação (V/R)": 3.1,
+                      "Município": "Pauini", "UF": "AM", "Diferença (km)": 100.0,
+                      "Destino Referência": "Rio Branco", "Motor Aplicação": "google"}]
+        m._geo_mem_aprender_derrotas(_anal_451, agora=1.0)
+        _rec_451 = _tmp_mem_451.get("pauini|AM")
+        check("M1: _geo_mem_aprender_derrotas grava o polo da referência em polos_resgatar",
+              _rec_451 is not None and "Rio Branco" in (_rec_451.get("polos_resgatar") or []))
+    finally:
+        m._geo_mem_carregar, m._geo_mem_salvar = _orig_car_451, _orig_sal_451
+
+    # M3 — _apr2_forense_derrota com universo/topk INJETADOS (antes sempre None): localiza o portão exato.
+    check("M3: universo conhecido e polo fora dele -> 'fora_universo'",
+          m._apr2_forense_derrota("Rio Branco", ["Pauini"], ["Pauini"], 100.0, False, True, 120.0)["classe"] == "fora_universo")
+    check("M3: no universo mas fora do topk -> 'cortado_preselecao'",
+          m._apr2_forense_derrota("Rio Branco", ["Pauini", "Rio Branco"], ["Pauini"], 100.0, False, True, 120.0)["classe"] == "cortado_preselecao")
+    check("M3: universo+topk, roda e é menor -> 'bug_algoritmo' (EVITÁVEL)",
+          m._apr2_forense_derrota("Rio Branco", ["Pauini", "Rio Branco"], ["Pauini", "Rio Branco"], 100.0, False, True, 120.0)["classe"] == "bug_algoritmo")
+    check("M3: universo None -> degrada p/ classificar por balsa/distância (comportamento legado)",
+          m._apr2_forense_derrota("Rio Branco", None, None, 100.0, False, True, 120.0)["classe"] == "bug_algoritmo")
+
+    # M5 — _pares_vencedor_matriz_para_qualidade (PURO): vencedor só-na-matriz vira par de rota de qualidade.
+    _novo_dest_451 = {"Pauini": "Porto Acre", "Jacundá": "Nova Ipixuna"}
+    _res_451 = {("Jacundá", "Nova Ipixuna"): (55.0, 90, "Não", "Não", "", "osrm")}
+    check("M5: vencedor só-na-matriz (ausente de resultados) entra no par de qualidade",
+          m._pares_vencedor_matriz_para_qualidade(_novo_dest_451, _res_451) == [("Pauini", "Porto Acre")])
+    check("M5: novo_dest/resultados vazios -> []",
+          m._pares_vencedor_matriz_para_qualidade({}, _res_451) == []
+          and m._pares_vencedor_matriz_para_qualidade(None, _res_451) == [])
+
+    # M4 — _segunda_opiniao_derrota com router INJETÁVEL (sem rede, sem FOSSGIS real).
+    def _router_stub_451(la_o, lo_o, la_d, lo_d):
+        return (10.0, 20, "Não", "Não", "", "fossgis") if abs(la_d + 9.0) < 1e-9 else (50.0, 60, "Não", "Não", "", "fossgis")
+
+    m._reset_segunda_opiniao()
+    check("M4: segundo motor CONFIRMA a derrota quando a referência roda MENOR no mesmo motor",
+          m._segunda_opiniao_derrota((-8.0, -70.0), (-9.5, -71.5), (-9.0, -71.0),
+                                     router=_router_stub_451, margem_km=1.0)["status"] == "confirma")
+    check("M4: mesmo motor APROXIMA app×ref -> 'ruido_motor'",
+          m._segunda_opiniao_derrota((-8.0, -70.0), (-9.6, -71.6), (-9.7, -71.7),
+                                     router=_router_stub_451, margem_km=1.0)["status"] == "ruido_motor")
+    check("M4: sem coordenadas -> 'indeterminado' (veredito original intacto)",
+          m._segunda_opiniao_derrota(None, None, None, router=_router_stub_451)["status"] == "indeterminado")
+
     print()
     print("=" * 70)
     print("RESULTADO: %d OK, %d FALHAS" % (ok, fail))

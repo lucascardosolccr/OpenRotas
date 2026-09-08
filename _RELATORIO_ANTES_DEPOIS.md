@@ -1,6 +1,6 @@
 # RELATÓRIO ANTES × DEPOIS — Motor de Rotas (Prompt 1.1.1, §20/§25)
 
-Gerado em 2026-09-08 06:35 por `py _testes_motor_rotas.py relatorio` — mesma fila de decisões do `decidir`.
+Gerado em 2026-09-08 09:20 por `py _testes_motor_rotas.py relatorio` — mesma fila de decisões do `decidir`.
 
 ## 1. Funções alteradas (streamlit_app.py)
 
@@ -35,6 +35,14 @@ Gerado em 2026-09-08 06:35 por `py _testes_motor_rotas.py relatorio` — mesma f
 
 - **R4-A · Circuidade como sensor em BANDAS por distância (§3/§5):** `_circuidade_banda_suspeita` (pura) aplica o caveat metodológico da literatura (o fator viária÷reta decresce com o comprimento do trecho) com gatilhos por faixa — curto 2,2 / médio 1,8 / longo 1,6 — acima da baseline densa do Brasil (≈1.33, Ballou et al.) e PROVAVEL_BARREIRA ≥2,0 (águas/relevo, Amazônia ~3,1). Segue o princípio da pesquisa: circuidade DISPARA investigação/expansão, nunca decide o vencedor. Nos alertas automáticos (AIAS) das linhas (aditivo, sem coordenadas → sem alerta).
 - **R4-B · Pré-validação de centróides brasileiros (§7.1/§7.2):** `_validar_centroide_br` (pura) aplica o pre-flight da pesquisa — limites continentais (lon ∈ [-74,-34.8], lat ∈ [-33.8,5.3]), detecção de troca lat/lon (lat brasileira nunca passa de ~34 de magnitude; lon tem magnitude 34–74), ponto (0,0) = dado ausente e faixa esperada da UF (BOUNDING_BOXES_UF). PIP contra a malha IBGE fica como passo futuro dependente de shapes. Sinaliza nos AIAS de linhas que carregam coordenadas.
+
+### Melhoria4 — M1/M3/M4/M5 do 4º ciclo (excelência na menor rota, ZERO REGRESSÃO)
+
+- **M1 · Resgate-dirigido do polo da referência:** `_resgates_para_origem` (puro) + gravação de `polos_resgatar` em `_geo_mem_aprender_derrotas` (cap 5/origem, dedupe por nome limpo). A derrota evitável memoriza o polo EXATO da referência; no próximo run, `_descobrir_vencedores_por_matriz` FORÇA esse polo ao conjunto candidato da matriz (mesmo fora do corte por reta) — cura a causa-raiz em que o polo nunca fora medido. Aditivo: nunca remove candidatos.
+- **M3 · Forense com universo real:** `_universo_divergencias_por_origem` monta {origem: universo medido (dist_matriz ∪ resultados) + topk re-roteado} a partir dos artefatos da sessão; o parecer de derrota passa a injetá-los em `_apr2_forense_derrota` — os portões `fora_universo`/`cortado_preselecao`/`nao_roteado` agora avaliam de verdade (antes `None`). Degrada para o legado quando indisponível.
+- **M4 · 2ª opinião na derrota EVITÁVEL:** `_segunda_opiniao_derrota` re-mede os DOIS polos (app × ref) no 2º motor OSRM (FOSSGIS, throttled ≤1 req/s) com budget por execução (cap 4) e coordenadas oficiais (sem invenção). Distingue 'derrota real CONFIRMADA' de 'ruído de medição entre motores'. Read-only: ajusta o AVERBO do parecer, nunca o destino.
+- **M2 · Fallback FOSSGIS na matriz:** `API_OSRM_Table` ganha retentativa no 2º backend OSRM (`routing.openstreetmap.de/routed-car/table`, blocos ≤25, fair-use ≤1 req/s) quando o OSRM público falha/devolve ≠Ok — a origem deixa de perder a cobertura de matriz em falha transitória (porta de entrada de derrotas evitáveis). Mesma semântica de `_out`; sem fallback → comportamento legado.
+- **M5 · Confirmação de qualidade do vencedor matrix-only:** `_pares_vencedor_matriz_para_qualidade` (puro) + bloco no driver: vencedores que só têm km de tabela (flag `osrm_matriz`) são re-roteados em rota REAL (runner Google-prioritário); a menor distância honesta é adotada e a reatribuição reavaliada. O placar do comparador deixa de usar km de tabela (que inflava |Δkm| virando derrota por medição).
 
 ### Fechamento §24/§25 — hidrovia honesta e segundo motor (ZERO REGRESSÃO)
 
@@ -156,7 +164,7 @@ Reexecutada a decisão do motor para os 1452 municípios com o universo-fechado 
 
 ## 5. Validação
 
-- `py _testes_motor_rotas.py validar` → 192 invariantes (22 seções, sem rede: banda exata, reflexividade, universo-fechado, não regressão, fallback OSRM→FOSSGIS, Valhalla/divergência+investigação, memória geográfica, Índice de Confiança, roteador fluvial offline, eventos cronológicos de API, geometria anômala, sensores R4 de circuidade em bandas e centróides, métrica fluvial justa na decisão, universo hidrográfico, consenso de segundo motor, resgate-FERRIES de travessia fluvial, FLUVIAL-PLAUS (filtro hidrográfico que concentra o budget no par com travessia de água plausível) e FERRY-CANDIDATO (medição ferry-aware no HALL da decisão, pré-reeleição, com priorização por folga), FERRY-BUDGET (auto-engajamento do FOSSGIS só com evidência de travessia de água/balsa; 424b: balsa manifesta cruza SEMPRE), FLUVIAL-ROTA-DIRETA (rota fluvial REAL do grafo como candidato sem rede), DETECÇÃO-POR-ARESTA (travessia validada no segmento do rio, não só no nó), MULTI-AMOSTRAGEM (amostragem adaptativa da corda que alcança rios entre amostras esparsas), MULTI-RIO (nomes_rios com TODOS os rios nomeados a ≤raio, não só o mais próximo), SNAP-EXPANDIDO-COM-PROVA (snap largo a 30 km só com prova de água ligando o par — geodésica cruzando rio; custo honesto = fluvial + acesso às sedes; fonte 'fluvial-direta-largo' auditável) e convergência do hall.
+- `py _testes_motor_rotas.py validar` → 206 invariantes (23 seções, sem rede: banda exata, reflexividade, universo-fechado, não regressão, fallback OSRM→FOSSGIS, Valhalla/divergência+investigação, memória geográfica, Índice de Confiança, roteador fluvial offline, eventos cronológicos de API, geometria anômala, sensores R4 de circuidade em bandas e centróides, métrica fluvial justa na decisão, universo hidrográfico, consenso de segundo motor, resgate-FERRIES de travessia fluvial, FLUVIAL-PLAUS (filtro hidrográfico que concentra o budget no par com travessia de água plausível) e FERRY-CANDIDATO (medição ferry-aware no HALL da decisão, pré-reeleição, com priorização por folga), FERRY-BUDGET (auto-engajamento do FOSSGIS só com evidência de travessia de água/balsa; 424b: balsa manifesta cruza SEMPRE), FLUVIAL-ROTA-DIRETA (rota fluvial REAL do grafo como candidato sem rede), DETECÇÃO-POR-ARESTA (travessia validada no segmento do rio, não só no nó), MULTI-AMOSTRAGEM (amostragem adaptativa da corda que alcança rios entre amostras esparsas), MULTI-RIO (nomes_rios com TODOS os rios nomeados a ≤raio, não só o mais próximo), SNAP-EXPANDIDO-COM-PROVA (snap largo a 30 km só com prova de água ligando o par — geodésica cruzando rio; custo honesto = fluvial + acesso às sedes; fonte 'fluvial-direta-largo' auditável), convergência do hall e Melhoria4-451 (M1 resgate-dirigido, M3 forense-universo, M5 qualidade-matriz, M4 2ª opinião).
 - `py _testes_motor_rotas.py decidir` → todos os casos passam nas propriedades da missão.
 - `py -X utf8 -m py_compile streamlit_app.py _testes_motor_rotas.py` → OK.
 - Balsa real conferida por geometria OSRM (steps `mode==ferry`) em ambos os servidores (4,12 / 39,33 / 6,82 km ferry=True) — a correção vale fim-a-fim no pipeline do app.
@@ -192,9 +200,9 @@ Para cada inspetor (hub da Referência), os DOIS motores independentes (OSRM = p
 
 | Check | Resultado |
 |---|---|
-| `validar` (22 seções, sem rede) | **192 OK / 0 FALHAS** |
+| `validar` (23 seções, sem rede) | **206 OK / 0 FALHAS** |
 | `decidir` (38 casos: 13 missão + 3 favoráveis §11 + 3 derrotas §22 + 19 famílias §24) | **38/38 nas propriedades** |
-| Causa-raiz corrigida | universo-fechado + política única de balsa + métrica fluvial justa + universo hidrográfico fail-open + consenso de 2 motores + resgate-FERRIES (FOSSGIS com ferry) |
+| Causa-raiz corrigida | universo-fechado + política única de balsa + métrica fluvial justa + universo hidrográfico fail-open + consenso de 2 motores + resgate-FERRIES (FOSSGIS com ferry) + resgate-dirigido (M1) + forense com universo real (M3) + 2ª opinião na derrota (M4) + confirmação de qualidade matrix-only (M5) |
 | Benchmark menos que a reta (N1) | 9 famílias fluviais/ilha enquadradas como Tipo 10 com evidência de DOIS motores independentes |
 | Honestidade | zero vitória artificial; grafo flúvio só entra com rota provada; segundo motor jamais decide contra a menor rota real; rio da travessia NUNCA inventado (incerteza explícita) |
 | Cobertura | todas as 163 linhas venc=Referência atingidas pela mecânica; teto de perda evitável = 3355,6 km; reexecução DEPOIS do baseline: 1452 municípios, 42 origens recuperadas, 1309,2 km recuperados; com 2ª opinião de motor (ferry): 7 VENCE referência / 40 empates / 44 recuperadas / 69 inalteradas |

@@ -19590,6 +19590,7 @@ def _fatos_rota_divergencia(campos):
         "velocidade_kmh": _vel,
         "score": _score,
         "coord_destino": (_lat_d, _lon_d) if (_lat_d is not None and _lon_d is not None) else None,
+        "coord_origem": (_lat_o, _lon_o) if (_lat_o is not None and _lon_o is not None) else None,
         "geodesica": _geodesica,
         "roteada": _roteada,
     }
@@ -19967,7 +19968,8 @@ def _hipoteses_divergencia(fatos_app, fatos_ref, dif_km, limiar_empate_km=1.0):
     return _h
 
 
-def _parecer_divergencia(ctx, fatos_app, fatos_ref, classif, iq_app, iq_ref, dif_km, dif_tempo, insc):
+def _parecer_divergencia(ctx, fatos_app, fatos_ref, classif, iq_app, iq_ref, dif_km, dif_tempo,
+                         insc, universo_app=None, topk_app=None):
     """[DIVERGENCIA-XAI - 236ª] PARECER TÉCNICO DIDÁTICO da divergência, em linguagem natural. PURO.
     Explica o que cada solução escolheu, POR QUE diverge, o trade-off, e o veredito para o candidato e para
     a operação — reconhecendo com transparência quando a referência é superior e diagnosticando o porquê.
@@ -20061,9 +20063,22 @@ def _parecer_divergencia(ctx, fatos_app, fatos_ref, classif, iq_app, iq_ref, dif
         # rodoviária mais longa) ou de DADO/roteamento. Decide pelos fatos de balsa/distância que já temos.
         try:
             _fz = _apr2_forense_derrota(
-                _dref, None, None, viaria_ref=_dr, tem_balsa_ref=bool(fatos_ref.get("tem_balsa")),
+                _dref, universo_app, topk_app, viaria_ref=_dr, tem_balsa_ref=bool(fatos_ref.get("tem_balsa")),
                 rota_ref_valida=(_dr is not None and _num_seguro(_dr, 0) > 0), viaria_vencedor=_da)
             _p.append(f"🔎 **Forense da derrota — {_fz['acionavel']}:** {_fz['explicacao']}")
+            # [MELHORIA4-451 · M4 · 2ª OPINIÃO] Derrota apontada como EVITÁVEL → re-meede os DOIS polos no
+            # 2º motor OSRM (FOSSGIS, throttled) para distinguir derrota REAL de ruído de medição entre
+            # motores. Read-only: veredito ajustado no AVERBO, nunca muda o destino. Orçamento por run.
+            if _fz.get("classe") == "bug_algoritmo":
+                try:
+                    _so = _segunda_opiniao_derrota(
+                        fatos_app.get("coord_origem"), fatos_app.get("coord_destino"),
+                        fatos_ref.get("coord_destino"), destino_app=_dapp, destino_ref=_dref,
+                        router=globals().get("API_OSRM_FOSSGIS_Routing"), margem_km=1.0)
+                    if _so.get("sufixo"):
+                        _p.append("🧪 " + _so["sufixo"])
+                except Exception:
+                    pass
         except Exception:
             pass
     else:
@@ -20074,6 +20089,131 @@ def _parecer_divergencia(ctx, fatos_app, fatos_ref, classif, iq_app, iq_ref, dif
     if _insc:
         _p.append(f"Impacto: **{_insc} candidato(s)**.")
     return " ".join(_p)
+
+
+def _universo_divergencias_por_origem():
+    """[MELHORIA4-451 · M3 · FORENSE-UNIVERSO] Monta, a partir dos artefatos da SESSÃO (Alocação), o mapa
+    {(origem, uf): {"universo": set de polos MEDIDOS, "topk": polos re-roteados}} por origem avaliada.
+    'universo' = dist_matriz ∪ resultados (todo polo que teve distância viária REAL calculada) e 'topk' =
+    shortlist/top-K re-roteados em rota de qualidade — consumido pela forense de derrota (_apr2_forense_derrota)
+    para localizar o portão exato (fora_universo/cortado_preselecao/nao_roteado). Sem sessão → {} e a forense
+    degrada para o comportamento legado (None) — ZERO regressão. DEFENSIVA/PURA (read-only de st.session_state)."""
+    try:
+        _map = {}
+        _dm = st.session_state.get('alo_dist_matriz') or {}
+        _res = st.session_state.get('alo_resultados') or {}
+        _topk_full = st.session_state.get('alo_topk_completo') or {}
+        _sl = st.session_state.get('alo_shortlist_matriz') or {}
+        if not (_dm or _res or _topk_full or _sl):
+            return _map
+        _chaves = set()
+        for _k in list(_dm.keys()) + list(_topk_full.keys()) + list(_sl.keys()):
+            _chaves.add(str(_k).strip())
+        for (_o2, _h2) in list(_res.keys()):
+            _chaves.add(str(_o2).strip())
+        for _org_k in _chaves:
+            if not _org_k:
+                continue
+            _uf_h = extrair_uf_precisa(_org_k)
+            _uni = set()
+            for _hub in (_dm.get(_org_k, {}) or {}):
+                _uni.add(str(_hub))
+            for (_o2, _h2) in list(_res.keys()):
+                if str(_o2).strip() == _org_k:
+                    _uni.add(str(_h2))
+            _topk = set()
+            for (_r_, _h_) in (_topk_full.get(_org_k) or []):
+                _topk.add(str(_h_))
+            for (_h2, _d_) in (_sl.get(_org_k) or []):
+                _topk.add(str(_h2))
+            _map[(_org_k, _uf_h)] = {"universo": sorted(_uni), "topk": sorted(_topk)}
+        return _map
+    except Exception:
+        return {}
+
+
+# [MELHORIA4-451 · M4 · 2ª OPINIÃO] Orçamento de pares re-medidos no 2º motor por execução do comparador.
+_SEG_OPINIAO_BUDGET = 4
+_SEG_OPINIAO_GASTO = [0]
+
+
+def _reset_segunda_opiniao():
+    """[MELHORIA4-451 · M4] Zera o contador de orçamento da 2ª opinião (chamado no início de cada rodada do
+    comparador, para o limite valer por run — o processo Streamlit é longevo)."""
+    try:
+        _SEG_OPINIAO_GASTO[0] = 0
+    except Exception:
+        pass
+
+
+def _segunda_opiniao_derrota(coord_origem, coord_destino_app, coord_destino_ref, destino_app=None,
+                             destino_ref=None, router=None, margem_km=1.0):
+    """[MELHORIA4-451 · M4 · 2ª OPINIÃO] Re-meede os DOIS polos (app × referência) no 2º motor OSRM (FOSSGIS,
+    throttled ≤1 req/s via FILA_OSRM2) para distinguir 'derrota REAL' de 'ruído de medição entre motores'
+    quando a forense conclui EVITÁVEL (bug_algoritmo). Resolve coordenadas oficialmente (sedes IBGE offline)
+    ou usa as que os fatos já trouxeram; nunca inventa: falta de coordenada ou rota → 'indeterminado'
+    (veredito original intacto). Obedece a _SEG_OPINIAO_BUDGET por execução. Retorna dict:
+    {'status': 'confirma'|'ruido_motor'|'indeterminado', 'sufixo': str} — o 'sufixo' é texto do parecer."""
+    try:
+        if _SEG_OPINIAO_GASTO[0] >= _SEG_OPINIAO_BUDGET:
+            return {"status": "indeterminado", "sufixo": ""}
+        if not coord_origem or (not coord_destino_app and not coord_destino_ref):
+            return {"status": "indeterminado", "sufixo": ""}
+
+        def _parse_coord(_c):
+            try:
+                if isinstance(_c, (tuple, list)) and len(_c) >= 2:
+                    _a, _b = float(_c[0]), float(_c[1])
+                    return (_a, _b) if (-90 <= _a <= 90 and -180 <= _b <= 180) else None
+                if isinstance(_c, str) and "," in _c:
+                    _p = _c.split(",")
+                    _a, _b = float(_p[0].strip()), float(_p[1].strip())
+                    return (_a, _b) if (-90 <= _a <= 90 and -180 <= _b <= 180) else None
+            except Exception:
+                return None
+            return None
+
+        def _coord_polo(_nome):
+            if not _nome:
+                return None
+            try:
+                _r = _resgatar_coordenadas_oficiais(_nome)
+            except Exception:
+                _r = None
+            if _r and len(_r) >= 2 and _r[0] and _r[1]:
+                try:
+                    return (float(_r[0]), float(_r[1]))
+                except Exception:
+                    return None
+            return None
+
+        _co = _parse_coord(coord_origem)
+        _capp = _parse_coord(coord_destino_app)
+        if not _capp and destino_app:
+            _capp = _coord_polo(destino_app)
+        _cref = _parse_coord(coord_destino_ref)
+        if not _cref and destino_ref:
+            _cref = _coord_polo(destino_ref)
+        if not _co or not _capp or not _cref:
+            return {"status": "indeterminado", "sufixo": ""}
+        _rt = router if router is not None else API_OSRM_FOSSGIS_Routing
+        _d_app2 = _rt(_co[0], _co[1], _capp[0], _capp[1])
+        _d_ref2 = _rt(_co[0], _co[1], _cref[0], _cref[1])
+        _SEG_OPINIAO_GASTO[0] += 1
+        _ka = float(_d_app2[0]) if (isinstance(_d_app2, (tuple, list)) and _d_app2 and _d_app2[0]) else None
+        _kr = float(_d_ref2[0]) if (isinstance(_d_ref2, (tuple, list)) and _d_ref2 and _d_ref2[0]) else None
+        if _ka is None or _kr is None or _ka <= 0 or _kr <= 0:
+            return {"status": "indeterminado", "sufixo": ""}
+        if _kr < _ka - float(margem_km):
+            return {"status": "confirma",
+                    "sufixo": f"**2ª opinião (FOSSGIS) CONFIRMA a derrota real** — {_kr:.1f} km da "
+                              f"referência × {_ka:.1f} km da aplicação, medidos no MESMO motor."}
+        return {"status": "ruido_motor",
+                "sufixo": f"**2ª opinião (FOSSGIS) NÃO confirmou a derrota** — {_ka:.1f} km (app) × "
+                          f"{_kr:.1f} km (referência) no mesmo motor (tolerância {float(margem_km):g} km): "
+                          f"ruído de medição entre motores, não derrota real."}
+    except Exception:
+        return {"status": "indeterminado", "sufixo": ""}
 
 
 def _diagnostico_derrota_app(fatos_app, fatos_ref, dif_km, classif):
@@ -20133,7 +20273,8 @@ def _recomendacao_divergencia(ctx, classif, iq_app, iq_ref, dif_km, insc, fatos_
     return "⚪ Empate técnico: qualquer das duas serve; manter a atual evita retrabalho."
 
 
-def _analisar_divergencia_par(linha, fatos_app, fatos_ref, limiar_empate_km=1.0):
+def _analisar_divergencia_par(linha, fatos_app, fatos_ref, limiar_empate_km=1.0,
+                              universo_app=None, topk_app=None):
     """[DIVERGENCIA-XAI - 236ª] Analisa UMA divergência município a município. PURO. Junta classificação,
     índices de qualidade das DUAS escolhas, parecer, hipóteses e recomendação, e define o vencedor por
     QUALIDADE. Retorna um dict rico (uma linha do diagnóstico)."""
@@ -20169,7 +20310,8 @@ def _analisar_divergencia_par(linha, fatos_app, fatos_ref, limiar_empate_km=1.0)
 
     _ctx = {"municipio": _mun, "uf": _uf}
     _parecer = _parecer_divergencia(_ctx, fatos_app, fatos_ref, _classif, _iq_app, _iq_ref,
-                                    _dif_km, _dif_tempo, _insc)
+                                    _dif_km, _dif_tempo, _insc,
+                                    universo_app=universo_app, topk_app=topk_app)
     _hip = _hipoteses_divergencia(fatos_app, fatos_ref, _dif_km, limiar_empate_km=limiar_empate_km)
     _rec = _recomendacao_divergencia(_ctx, _classif, _iq_app, _iq_ref, _dif_km, _insc, fatos_app, fatos_ref)
 
@@ -21047,11 +21189,16 @@ def _reprocessar_rotas_divergentes(linhas, limiar_empate_km=1.0, cb_progresso=No
                     and str(l.get("Destino Aplicacao") or "").strip()]
     _total = len(_divergentes)
     _analises, _uf_assumida, _falhas = [], 0, 0
+    # [MELHORIA4-451 · M3/M4] Universo real por origem (forense) e reset do orçamento da 2ª opinião por run.
+    _uni_map = _universo_divergencias_por_origem()
+    _reset_segunda_opiniao()
 
     for _i, _l in enumerate(_divergentes):
         _origem = str(_l.get("Origem") or "").strip()
         _uf = str(_l.get("UF") or "").strip()
         _origem_q = f"{_origem}, {_uf}" if (_uf and "," not in _origem) else _origem
+        _univ_orig = (_uni_map.get((_origem, _uf)) or {}).get("universo")
+        _topk_orig = (_uni_map.get((_origem, _uf)) or {}).get("topk")
         _destino_ref, _assumida = _montar_destino_ref(_l)
         if _assumida:
             _uf_assumida += 1
@@ -21096,7 +21243,8 @@ def _reprocessar_rotas_divergentes(linhas, limiar_empate_km=1.0, cb_progresso=No
                                                   "distancia_km": _l.get("Distancia Aplicacao")})
         # ---- análise da divergência ----
         try:
-            _analises.append(_analisar_divergencia_par(_l, _fatos_app, _fatos_ref, limiar_empate_km))
+            _analises.append(_analisar_divergencia_par(_l, _fatos_app, _fatos_ref, limiar_empate_km,
+                                                       universo_app=_univ_orig, topk_app=_topk_orig))
         except Exception:
             continue
 
@@ -22626,6 +22774,49 @@ def _geo_mem_escala_k(mem, nome, k, teto, fator=3, limiar_rodadas=1, limiar_esqu
     return k
 
 
+_GEO_MEM_RESGATE_TETO = 5  # [MELHORIA4-451 · M1] máx. de polos da referência forçados por origem/rodada
+
+
+def _resgates_para_origem(mem, nome, uf, hubs_validos, teto=None):
+    """[MELHORIA4-451 · M1 · RESGATE-DIRIGIDO] Devolve os polos da REFERÊNCIA registrados em memória para uma
+    origem (chave 'nome|uf') que existam de fato em `hubs_validos` (nomes normalizáveis) — o chamador os força
+    ao conjunto candidato da matriz para serem medidos e entrarem no universo fundido. PURA/defensiva: falha
+    ou sem registro → []. Usa unidecode + minúsculas para casar 'Rio Branco' da referência com 'RIO BRANCO' do
+    estudo. Capa em `teto` (padrão _GEO_MEM_RESGATE_TETO)."""
+    try:
+        if not mem or not nome or not hubs_validos:
+            return []
+        _q = str(nome).strip().lower()
+        _uf = str(uf or "").strip().upper()
+        if not _q:
+            return []
+        _chave = f"{_q}|{_uf}"
+        _rec = mem.get(_chave)
+        if not isinstance(_rec, dict):
+            return []
+        _polos = [str(h) for h in (list(_rec.get("polos_resgatar", []) or [])[: (teto or _GEO_MEM_RESGATE_TETO)])]
+        if not _polos:
+            return []
+        _norm = {}
+        for _h in list(hubs_validos.keys()):
+            try:
+                _norm[unidecode(str(_h)).strip().lower()] = _h
+            except Exception:
+                continue
+        _out = []
+        for _p in _polos:
+            try:
+                _pk = unidecode(str(_p)).strip().lower()
+            except Exception:
+                continue
+            _hub = _norm.get(_pk)
+            if _hub and _hub not in _out:
+                _out.append(_hub)
+        return _out
+    except Exception:
+        return []
+
+
 def _geo_mem_carimbar(mem, registros_atuais, agora=None, limiar_esquecimento=3):
     """[M1 · ESQUECIMENTO] Atualiza os carimbos temporais e o decay dos registros persistentes. Para cada
     chave em `mem`: se a origem apareceu nos `registros_atuais` (conjunto de chaves 'nome|UF'), zera
@@ -22691,7 +22882,7 @@ def _geo_mem_aprender_derrotas(analises, uf_para_regiao=None, agora=None):
             _atuais.add(_chave)
             _km = abs(_num2(_a.get("Diferença (km)"), 0.0) or 0.0)
             _rec = _mem.get(_chave) or {"origem": _nome, "uf": _uf, "rodadas": 0, "motivos": [],
-                                        "severidade": 0, "km_potencial": 0.0}
+                                        "severidade": 0, "km_potencial": 0.0, "polos_resgatar": []}
             _rec["rodadas"] = int(_rec.get("rodadas", 0)) + 1
             _rec["severidade"] = max(int(_rec.get("severidade", 0)), 1)
             _km_ac = float(_rec.get("km_potencial", 0.0) or 0.0) + _km
@@ -22700,6 +22891,24 @@ def _geo_mem_aprender_derrotas(analises, uf_para_regiao=None, agora=None):
             if _motivo not in _mot:
                 _mot.append(_motivo)
             _rec["motivos"] = sorted(set(_mot))
+            # [MELHORIA4-451 · M1 · RESGATE-DIRIGIDO] Grava o polo EXATO da referência desta derrota evitável.
+            # O próximo run força-o ao conjunto candidato da matriz (mesmo fora do corte por reta), já que o
+            # universo-fechado não resgata o que NUNCA foi medido. Cap 5 por origem, dedupe por nome limpo.
+            try:
+                _polo_ref = str(_a.get("Destino Referência") or "").strip()
+                if _polo_ref and _polo_ref.lower() not in ("—", "n/a", "nan", "none"):
+                    _prn = unidecode(str(_polo_ref)).strip().lower()
+                    _polos = []
+                    for _h in list(_rec.get("polos_resgatar", []) or []):
+                        try:
+                            if unidecode(str(_h)).strip().lower() != _prn:
+                                _polos.append(_h)
+                        except Exception:
+                            _polos.append(_h)
+                    _polos.append(_polo_ref)
+                    _rec["polos_resgatar"] = sorted(set(_polos))[:5]
+            except Exception:
+                pass
             _rec["ultima_rodada"] = agora or float(time.time())
             _rec["limpas_seguidas"] = 0
             if _chave not in _mem:
@@ -28585,6 +28794,12 @@ def _descobrir_vencedores_por_matriz(dest_coords, hubs_validos, topk_map_complet
     try:
         if not dest_coords or not hubs_validos:
             return _mapa
+        # [MELHORIA4-451 · M1 · RESGATE-DIRIGIDO] Memória de polos da referência (uma carga por chamada).
+        _mem_resg = {}
+        try:
+            _mem_resg = _geo_mem_carregar() or {}
+        except Exception:
+            _mem_resg = {}
 
         def _processar_origem(_item):
             """Processa UMA origem: monta candidatos, chama a matriz e aplica o filtro de sanidade física.
@@ -28637,6 +28852,20 @@ def _descobrir_vencedores_por_matriz(dest_coords, hubs_validos, topk_map_complet
                         pass
                 if _extra_uf:
                     _nomes = _nomes + _extra_uf
+            # [MELHORIA4-451 · M1 · RESGATE-DIRIGIDO] Polos da referência (derrotas evitáveis em memória) são
+            # FORÇADOS ao conjunto candidato da matriz — mesmo fora do corte por reta. Se existirem em
+            # hubs_validos, são medidos e entram no universo fundido (aditivo; nunca remove candidatos).
+            try:
+                _resg_extra = _resgates_para_origem(_mem_resg, _orig, _uf_orig, hubs_validos)
+                if _resg_extra:
+                    _ja_nomes = set(_nomes)
+                    _novos_rg = [h for h in _resg_extra if h not in _ja_nomes]
+                    if _novos_rg:
+                        _nomes = _nomes + _novos_rg
+                        logger.info("[RESGATE-DIRIGIDO] %d polo(s) da referência forçados à matriz de '%s'.",
+                                    len(_novos_rg), _orig)
+            except Exception:
+                pass
             _dest_coords_matriz = []
             for _h in _nomes:
                 _hc = hubs_validos.get(_h)
@@ -28770,6 +28999,14 @@ def _descobrir_vencedores_por_matriz(dest_coords, hubs_validos, topk_map_complet
         return {}
 
 
+# [MELHORIA4-451 · M2 · MATRIZ-FALLBACK] Endpoint /table do 2º backend OSRM (FOSSGIS) + bloco menor de
+# destinos por chamada. Usado em API_OSRM_Table quando o OSRM público falha (rede/rate/SSL): sem isso, a
+# origem ficava sem cobertura de matriz e o universo da decisão encolhia em falha transitória — a porta de
+# entrada de derrotas evitáveis (polo medido nunca vira 'visível'). Fair-use: serializado + ≤1 req/s.
+_BLOCO_MATRIZ_FOSSGIS = 25
+FOSSGIS_TABLE_URL = "https://routing.openstreetmap.de/routed-car/table/v1/driving"
+
+
 def API_OSRM_Table(lat_o, lon_o, destinos_coords, _timeout=8, _bloco=90):
     """[MATRIZ-VIARIA - 184ª geração] FASE 1 (descoberta) do novo motor de menor rota viária.
 
@@ -28822,6 +29059,37 @@ def API_OSRM_Table(lat_o, lon_o, destinos_coords, _timeout=8, _bloco=90):
         if not _faltam:
             return _out  # tudo veio do cache: zero rede
         # particiona os destinos FALTANTES em blocos (limite da matriz pública)
+        def _absorver_linha_matriz(_r_json, _chunk_local):
+            """Extrai distâncias (com fallback duration×65 km/h) de UMA resposta de matriz para o chunk e as
+            grava em _out (duplicado da lógica do loop para o fallback FOSSGIS não duplicar código)."""
+            _dist_row = None
+            if _r_json and _r_json.get("distances"):
+                _rows = _r_json["distances"]
+                if _rows and _rows[0] is not None:
+                    _dist_row = _rows[0]
+            _dur_row = None
+            if _r_json and _r_json.get("durations"):
+                _dr = _r_json["durations"]
+                if _dr and _dr[0] is not None:
+                    _dur_row = _dr[0]
+            for _idx, (_n, _la, _lo) in enumerate(_chunk_local):
+                _km = None
+                if _dist_row is not None and _idx < len(_dist_row) and _dist_row[_idx] is not None:
+                    _km = round(float(_dist_row[_idx]) / 1000.0, 2)
+                elif _dur_row is not None and _idx < len(_dur_row) and _dur_row[_idx] is not None:
+                    _km = round(float(_dur_row[_idx]) / 3600.0 * 65.0, 2)
+                if _km is not None and _km >= 0:
+                    _out[_n] = _km
+                    # [CACHE-MATRIZ - 184ª geração] grava o par recém-calculado (30 dias)
+                    if _tem_cache:
+                        try:
+                            _la_c = next((_a for (_nn, _a, _o) in _chunk_local if _nn == _n), None)
+                            _lo_c = next((_o for (_nn, _a, _o) in _chunk_local if _nn == _n), None)
+                            if _la_c is not None and _lo_c is not None:
+                                _cache_set_seguro(cache_rotas, _ckey(_la_c, _lo_c), float(_km), expire=2592000)
+                        except Exception:
+                            pass
+
         for _i in range(0, len(_faltam), _bloco):
             _chunk = _faltam[_i:_i + _bloco]
             # coords: origem primeiro (index 0), depois os destinos (1..N)
@@ -28829,44 +29097,46 @@ def API_OSRM_Table(lat_o, lon_o, destinos_coords, _timeout=8, _bloco=90):
             _dests = ";".join(str(_j) for _j in range(1, len(_chunk) + 1))
             _url = (f"{OSRM_URL}/table/v1/driving/{_coords}"
                     f"?sources=0&destinations={_dests}&annotations=distance,duration")
+            _r = None
             try:
                 # [HOTFIX-OSRM-HANG - 207ª] sessão fail-fast + timeout (connect, read) curto: se o servidor
                 # público estiver ruim/rate-limitado, falha rápido e o chamador degrada (não trava o lote).
-                _r = _get_tls_fallback(session_osrm_publico, _url, headers=headers, timeout=(3.05, min(_timeout, 6))).json()
+                _r = _get_tls_fallback(session_osrm_publico, _url, headers=headers,
+                                       timeout=(3.05, min(_timeout, 6))).json()
             except Exception:
-                continue  # bloco falhou: pula (o chamador tem fallback par-a-par)
-            if _r.get("code") != "Ok":
+                _r = None
+            if _r and _r.get("code") == "Ok":
+                _absorver_linha_matriz(_r, _chunk)
                 continue
-            _dist_row = None
-            if _r.get("distances"):
-                _rows = _r["distances"]
-                if _rows and _rows[0] is not None:
-                    _dist_row = _rows[0]  # linha da origem → distâncias em metros
-            # fallback: sem distances, estima por duration (s) × velocidade média rodoviária
-            _dur_row = None
-            if _r.get("durations"):
-                _dr = _r["durations"]
-                if _dr and _dr[0] is not None:
-                    _dur_row = _dr[0]
-            for _idx, (_n, _la, _lo) in enumerate(_chunk):
-                _km = None
-                if _dist_row is not None and _idx < len(_dist_row) and _dist_row[_idx] is not None:
-                    _km = round(float(_dist_row[_idx]) / 1000.0, 2)
-                elif _dur_row is not None and _idx < len(_dur_row) and _dur_row[_idx] is not None:
-                    # estimativa conservadora: duração × 65 km/h (só para RANQUEAR; o vencedor é
-                    # depois re-roteado por /route/v1, que fornece a distância AUTORITATIVA)
-                    _km = round(float(_dur_row[_idx]) / 3600.0 * 65.0, 2)
-                if _km is not None and _km >= 0:
-                    _out[_n] = _km
-                    # [CACHE-MATRIZ - 184ª geração] grava o par recém-calculado (30 dias)
-                    if _tem_cache:
-                        try:
-                            _la_c = next((_a for (_nn, _a, _o) in _chunk if _nn == _n), None)
-                            _lo_c = next((_o for (_nn, _a, _o) in _chunk if _nn == _n), None)
-                            if _la_c is not None and _lo_c is not None:
-                                _cache_set_seguro(cache_rotas, _ckey(_la_c, _lo_c), float(_km), expire=2592000)
-                        except Exception:
-                            pass
+            # [MELHORIA4-451 · M2 · MATRIZ-FALLBACK] OSRM público falhou (rede/rate/SSL) ou devolveu ≠Ok →
+            # tenta o 2º backend OSRM (FOSSGIS) NA MATRIZ: routing.openstreetmap.de/routed-car/table, ≤1 req/s
+            # (fair-use, FILA_OSRM2) e blocos menores. Sucesso entra no MESMO _out (mesma semântica). Se o
+            # FOSSGIS também falhar, o bloco é pulado — o chamador mantém o fluxo par-a-par (comportamento
+            # legado, ZERO regressão).
+            try:
+                _tentou_fs = False
+                for _fs_i in range(0, len(_chunk), _BLOCO_MATRIZ_FOSSGIS):
+                    _chunk_fs = _chunk[_fs_i:_fs_i + _BLOCO_MATRIZ_FOSSGIS]
+                    _coords_fs = f"{lon_o},{lat_o}" + "".join(f";{_lo},{_la}" for (_n, _la, _lo) in _chunk_fs)
+                    _dests_fs = ";".join(str(_j) for _j in range(1, len(_chunk_fs) + 1))
+                    _url_fs = (f"{FOSSGIS_TABLE_URL}/{_coords_fs}"
+                               f"?sources=0&destinations={_dests_fs}&annotations=distance,duration")
+
+                    def _call_fossgis_table():
+                        _throttle_osrm2()  # ≤1 req/s (política FOSSGIS)
+                        return _get_tls_fallback(session, _url_fs, headers=headers, timeout=8).json()
+
+                    try:
+                        _r_fs = FILA_OSRM2.submit(_call_fossgis_table).result()
+                    except Exception:
+                        continue
+                    if _r_fs and _r_fs.get("code") == "Ok":
+                        _tentou_fs = True
+                        _absorver_linha_matriz(_r_fs, _chunk_fs)
+                if _tentou_fs:
+                    continue
+            except Exception:
+                pass
         return _out
     except Exception:
         logger.error("[MATRIZ-VIARIA] Falha geral na matriz OSRM table", exc_info=True)
@@ -35836,6 +36106,32 @@ def _df_estudo_puramente_viaria(df_oficial, comparacao):
     except Exception:
         logger.error("[DUPLO-CENARIO-COMPARADOR] Falha ao construir Estudo 2; usando o oficial", exc_info=True)
         return df_oficial
+
+
+def _pares_vencedor_matriz_para_qualidade(novo_dest, resultados):
+    """[MELHORIA4-451 · M5 · QUALIDADE-MATRIZ] Devolve os pares (origem, hub) cujo vencedor eleito (`novo_dest`
+    é {origem: hub}) foi medido SOMENTE pela matriz — ou seja, NÃO há rota de qualidade em `resultados` (o par
+    não foi re-roteado em /route; só tem km de tabela, flag osrm_matriz). PURO e defensivo: falha → []. O
+    chamador re-roteia esses pares em rota REAL (Google-prioritário) e adota a MENOR distância honesta — o
+    placar do comparador deixa de usar km de tabela (que inflava |Δkm| virando derrota por medição)."""
+    try:
+        _pares = []
+        if not novo_dest or not resultados:
+            return _pares
+        for _org, _hub in novo_dest.items():
+            try:
+                _k = (_org, _hub)
+                if _k in resultados:
+                    continue
+                _v = resultados.get(_k)
+                if _v and isinstance(_v, (tuple, list)) and _v and _v[0]:
+                    continue
+                _pares.append(_k)
+            except Exception:
+                continue
+        return _pares
+    except Exception:
+        return []
 
 
 def _reatribuir_hubs_multicriterio(topk_map, resultados, params=None, parse_tempo=None, dist_matriz=None,
@@ -46715,6 +47011,50 @@ if _secao == _SECOES[2]:   # tab_alocacao
                             dist_matriz=st.session_state.get('alo_dist_matriz'),
                             segundo_motor_router=(API_Valhalla_Routing if _valhalla_ativo() else None))
                         if _novo_dest_mc:
+                            # [MELHORIA4-451 · M5 · QUALIDADE-MATRIZ] Vencedores que só existem na MATRIZ
+                            # (flag osrm_matriz) têm distância de tabela — sem rota de qualidade 'km oficial'.
+                            # A confirmação re-roteia esses pares em rota REAL (runner Google-prioritário) e,
+                            # se a rota real é MENOR que o km de tabela, adota-a: a distância honesta do
+                            # vencedor (hoje o placar do comparador usava o km de tabela, inflando |Δkm| e
+                            # virando derrota por medição). Read-only quanto à DECISÃO: nunca substitui o polo;
+                            # falha → segue idêntico (zero regressão).
+                            try:
+                                _pares_qm = _pares_vencedor_matriz_para_qualidade(_novo_dest_mc, _resultados)
+                                if _pares_qm:
+                                    with st.spinner(f"🎚️ Confirmando qualidade: re-roteando {len(_pares_qm)} "
+                                                    f"vencedor(es) medido(s) só pela matriz..."):
+                                        _res_qm = processar_chunk_rotas(
+                                            _pares_qm, runner_up_map=st.session_state.get('alo_runner_map'))
+                                    _acc_qm = 0
+                                    for _kq, _vq in (_res_qm or {}).items():
+                                        _fq = str(_vq[5]).lower() if (_vq and len(_vq) > 5) else "geodés"
+                                        if _vq and _vq[0] and "geodés" not in _fq and "falha" not in _fq:
+                                            _novo_qm = float(_vq[0])
+                                            # adota quando o par AINDA não tem rota de qualidade (era só tabela)
+                                            # ou quando a rota real vem MENOR que o que já havia (nunca regride)
+                                            _ant_qm = _resultados.get(_kq)
+                                            _deve_adotar = False
+                                            if _ant_qm is None or not isinstance(_ant_qm, (tuple, list)) or not _ant_qm[0]:
+                                                _deve_adotar = True
+                                            elif float(_novo_qm) < float(_ant_qm[0]):
+                                                _deve_adotar = True
+                                            if _deve_adotar:
+                                                _resultados[_kq] = _vq
+                                                _acc_qm += 1
+                                    if _acc_qm:
+                                        st.session_state['alo_resultados'] = _resultados
+                                        logger.warning("[QUALIDADE-MATRIZ] %d vencedor(es) matrix-only "
+                                                       "confirmado(s) em rota real.", _acc_qm)
+                                        # re-troca os pares novos e reavalia o vencedor (distância honesta)
+                                        try:
+                                            _novo_dest_mc, _mcda_mc = _reatribuir_hubs_multicriterio(
+                                                _topk_reatrib, _resultados, params=_params_mc,
+                                                dist_matriz=st.session_state.get('alo_dist_matriz'),
+                                                segundo_motor_router=(API_Valhalla_Routing if _valhalla_ativo() else None))
+                                        except Exception:
+                                            pass
+                            except Exception as _e_qm:
+                                logger.error(f"[QUALIDADE-MATRIZ] Falha na confirmação: {_e_qm}")
                             # [RESGATE-FERRIES - 421ª geração] Depois da reatribuição, vencedores com V/R alto
                             # (viária dispare do próprio piso geométrico) podem esconder travessia fluvial que o
                             # OSRM rodoviário ignora (Muana→Abaetetuba: OSRM 53,0 vs FOSSGIS 1,59 km — MESMO par,
