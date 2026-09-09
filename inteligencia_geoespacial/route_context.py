@@ -1,16 +1,21 @@
 """
 route_context.py — Motor de Contexto Geográfico da Rota (GeoIntelligenceEngine).
 
-Rodada 3 da missão "Aprimoramento máximo da aba de Inteligência": integração
-hidrográfica real. Detecta rios e corpos d'água cruzados pela GEOMETRIA da
-rota (não apenas quando o motor de roteamento reporta uma balsa), com bacia
-hidrográfica oficial (ANA/SNIRH), consultando as camadas locais derivadas do
-IBGE (`bases_locais.py`) — sem GDAL, sem geopandas, sem rede.
+Missão "Aprimoramento máximo da aba de Inteligência":
+  Rodada 3 — integração hidrográfica real (rios/corpos d'água pela GEOMETRIA
+             da rota, não só quando o motor de roteamento reporta balsa; bacia
+             hidrográfica oficial ANA/SNIRH).
+  Rodada 4 — integração aquaviária (travessias/balsas reais do IBGE, hidrovias,
+             portos/terminais/eclusas; índice de dependência aquaviária).
+
+Tudo consultando as camadas locais derivadas do IBGE (`bases_locais.py`) —
+sem GDAL, sem geopandas, sem rede.
 
 Este módulo é ADITIVO: não substitui nem altera `enrichment_engine.py` (usado
 hoje pelos dois botões manuais já em produção nas abas "Rotas com Balsa" e
-"Geoespacial IBGE"). Ele é o novo motor que, em rodadas futuras, passará a
-alimentar automaticamente cada rota calculada pela aplicação.
+"Geoespacial IBGE"). Ele é o novo motor que, em rodada futura (integração ao
+motor de rotas), passará a alimentar automaticamente cada rota calculada
+pela aplicação.
 
 Contrato principal:
 
@@ -20,16 +25,22 @@ Contrato principal:
                                  geometria=lista_de_(lat,lon)_ou_None,
                                  distancia_km=distancia_real_ou_None)
 
-    ctx.rios_detectados        # list[CruzamentoHidrografico]
-    ctx.corpos_dagua           # list[CruzamentoHidrografico]
-    ctx.bacia_hidrografica     # str | None (nunca inventado — só nome oficial ANA/SNIRH)
-    ctx.confianca_geral        # 0-100
-    ctx.avisos                 # incerteza explícita, nunca fabricação
+    ctx.rios_detectados          # list[CruzamentoHidrografico]
+    ctx.corpos_dagua             # list[CruzamentoHidrografico]
+    ctx.bacia_hidrografica       # str | None (nunca inventado — só nome oficial ANA/SNIRH)
+    ctx.travessias               # list[Feicao] — balsas reais (IBGE BC250/BC100)
+    ctx.hidrovias_proximas       # list[Feicao]
+    ctx.portos_terminais         # list[Feicao] — atracadouros/terminais/portos/eclusas
+    ctx.dependencia_aquaviaria   # 0-100
+    ctx.confianca_geral          # 0-100
+    ctx.avisos                   # incerteza explícita, nunca fabricação
 
-Campos ainda vazios nesta rodada (ficarão populados nas Rodadas 4/5 sem
-quebrar o contrato — o dataclass já reserva o formato final):
-    pontes, travessias, hidrovias_proximas, portos_terminais,
-    dependencia_aquaviaria, alternativa_sem_balsa.
+`alternativa_sem_balsa` continua reservado no contrato mas é responsabilidade
+de quem já tem as duas distâncias medidas pelo motor de rotas (este módulo
+não faz roteamento nem chamadas de rede) — ver `montar_alternativa_sem_balsa`,
+uma função pura de formatação para ser usada quando o pipeline principal
+integrar este motor (rodada de integração ao motor de rotas).
+`pontes` fica para a rodada de integração rodoviária/pontes.
 """
 
 from __future__ import annotations
@@ -292,17 +303,17 @@ class ContextoGeograficoRota:
 
     rios_detectados: list = field(default_factory=list)        # CruzamentoHidrografico
     corpos_dagua: list = field(default_factory=list)            # CruzamentoHidrografico
-    pontes: list = field(default_factory=list)                  # Feicao — Rodada 5
-    travessias: list = field(default_factory=list)              # Feicao — Rodada 4
-    hidrovias_proximas: list = field(default_factory=list)      # Feicao — Rodada 4
-    portos_terminais: list = field(default_factory=list)        # Feicao — Rodada 4
+    pontes: list = field(default_factory=list)                  # Feicao — rodada de pontes
+    travessias: list = field(default_factory=list)              # Feicao — balsas reais (IBGE)
+    hidrovias_proximas: list = field(default_factory=list)      # Feicao
+    portos_terminais: list = field(default_factory=list)        # Feicao
 
     bacia_hidrografica: str | None = None
     sub_bacia: str | None = None
 
-    complexidade_geografica: int | None = None    # Rodada 11/13
-    dependencia_aquaviaria: int | None = None      # Rodada 4
-    alternativa_sem_balsa: AlternativaRodoviaria | None = None   # Rodada 4/13
+    complexidade_geografica: int | None = None    # rodada de explicabilidade/Excel
+    dependencia_aquaviaria: int | None = None      # 0-100
+    alternativa_sem_balsa: AlternativaRodoviaria | None = None   # preenchido pelo pipeline (tem as 2 distâncias)
 
     confianca_geral: int = 0
     confianca_nivel: str = "nao_determinada"       # alta | media | baixa | nao_determinada
@@ -397,6 +408,125 @@ def _detectar_cruzamentos_hidro(pontos: list, repo: GeoIntelligenceRepository,
 
 
 # ==============================================================================
+# Detecção aquaviária por geometria (Rodada 4): travessias/balsas reais,
+# hidrovias e infraestrutura portuária próximas ao trajeto.
+#
+# LIMITAÇÃO CONHECIDA (bases_locais.mais_proximos, não deste módulo): para
+# feições LINHA muito longas (uma hidrovia nacional pode ter milhares de km),
+# o filtro inicial de `mais_proximos` compara o raio contra um ponto
+# representativo único da geometria, ANTES do refinamento ponto-a-segmento
+# mais preciso — então uma hidrovia cujo ponto representativo caia longe do
+# eixo consultado pode não aparecer mesmo que um trecho dela passe perto,
+# especialmente em raios pequenos (níveis 1-3). Travessias/portos (feições
+# curtas ou pontuais) não sofrem esse efeito. Registrado aqui para uma
+# rodada dedicada de correção em bases_locais.py — não é ajustado neste
+# módulo para não alterar uma função compartilhada por todo o pacote sem
+# a bateria de testes própria que ela merece.
+# ==============================================================================
+
+_CAMADAS_INFRA_AQUA = (
+    ("atracadouros_terminal", "atracadouro/terminal"),
+    ("complexos_portuarios", "complexo portuário"),
+    ("eclusas", "eclusa"),
+)
+
+
+def _detectar_feicoes(pontos: list, repo: GeoIntelligenceRepository, camada: str,
+                       raio_km: float, tipo_rotulo: str, fonte: str,
+                       filtros: dict | None = None, limite: int = 5) -> list:
+    """Generaliza a deduplicação de `_detectar_cruzamentos_hidro` para
+    qualquer camada de feições pontuais/lineares (travessias, hidrovias,
+    portos, eclusas), devolvendo `Feicao` já ordenadas pela posição no
+    trajeto. Nome ausente na base vira rótulo explícito, nunca None solto
+    (mesma convenção já usada em enrichment_engine.py)."""
+    achados: dict = {}
+    for la, lo, km_o in pontos:
+        try:
+            itens = repo.consultar(camada, la, lo, raio_km=raio_km, limite=limite, filtros=filtros)
+        except Exception:
+            itens = []
+        for it in itens:
+            nome = _nome(it.get("nome")) or ("<%s sem nome>" % tipo_rotulo)
+            chave = _unorm(nome)
+            try:
+                dist = round(float(it.get("distancia_km")), 2)
+            except Exception:
+                dist = None
+            atual = achados.get(chave)
+            if atual is not None and dist is not None and atual.distancia_eixo_km is not None \
+                    and dist >= atual.distancia_eixo_km:
+                continue
+            achados[chave] = Feicao(nome=nome, tipo=tipo_rotulo, distancia_eixo_km=dist,
+                                     km_desde_origem=round(km_o, 1), fonte=fonte)
+    return sorted(achados.values(), key=lambda f: (f.km_desde_origem or 0.0))
+
+
+def _detectar_aquaviario(pontos: list, repo: GeoIntelligenceRepository, raio_km: float):
+    """Travessias (balsas reais, `tipotraves=Balsa` — mesmo filtro já usado
+    e validado em enrichment_engine.enriquecer_ponto), hidrovias e
+    infraestrutura portuária (atracadouros/terminais, complexos portuários,
+    eclusas) ao longo do trajeto amostrado."""
+    travessias = _detectar_feicoes(
+        pontos, repo, "travessias", raio_km, "travessia (balsa)",
+        "IBGE BC250/BC100 (travessias)", filtros={"tipotraves": "Balsa"})
+    hidrovias = _detectar_feicoes(
+        pontos, repo, "hidrovias", raio_km, "hidrovia", "IBGE BC250/BC100 (hidrovias)")
+    portos: list = []
+    for camada, rotulo in _CAMADAS_INFRA_AQUA:
+        portos.extend(_detectar_feicoes(
+            pontos, repo, camada, raio_km, rotulo, "IBGE BC250/BC100 (%s)" % camada))
+    portos.sort(key=lambda f: (f.km_desde_origem or 0.0))
+    return travessias, hidrovias, portos
+
+
+def _indice_dependencia_aquaviaria(rios: list, travessias: list, hidrovias: list,
+                                    portos: list) -> int:
+    """0-100: quanto a rota parece depender de infraestrutura aquaviária,
+    não de sinuosidade hidrográfica incidental. Travessia real confirmada
+    pesa mais que apenas cruzar um rio navegável."""
+    pontos_ = 0
+    if travessias:
+        pontos_ += 50
+    if any((r.navegavel or "").strip().lower() in ("sim", "parcial") for r in rios):
+        pontos_ += 20
+    if hidrovias:
+        pontos_ += 15
+    if portos:
+        pontos_ += 15
+    return max(0, min(100, pontos_))
+
+
+def montar_alternativa_sem_balsa(distancia_atual_km, distancia_sem_balsa_km) -> AlternativaRodoviaria | None:
+    """Formata a comparação "rota atual (com travessia) vs. alternativa sem
+    balsa" pedida na missão (§13). Função PURA — não roteia nada e não faz
+    chamada de rede: recebe as duas distâncias já medidas pelo motor de
+    rotas (streamlit_app.py já calcula isso hoje em
+    `_vantagem_banda_balsa`/`_balsa_evitavel_banda`; este helper só formata
+    o resultado no contrato `ContextoGeograficoRota` para uso pelo pipeline
+    principal). Retorna None se as distâncias forem inválidas — nunca
+    inventa uma alternativa que não foi de fato medida."""
+    try:
+        atual = float(distancia_atual_km)
+        alt = float(distancia_sem_balsa_km)
+    except Exception:
+        return None
+    if atual <= 0 or alt <= 0:
+        return None
+    dif_km = alt - atual
+    dif_pct = (dif_km / atual) * 100.0
+    if dif_km <= 0:
+        conclusao = "A alternativa sem travessia é igual ou mais curta — não há motivo geográfico para manter a balsa."
+    elif dif_pct < 5.0:
+        conclusao = ("A alternativa sem travessia é apenas %.1f%% mais longa (+%.1f km) "
+                     "— considerar preferi-la para reduzir a dependência da balsa." % (dif_pct, dif_km))
+    else:
+        conclusao = ("A alternativa sem travessia é %.1f km (%.1f%%) mais longa "
+                     "— a travessia continua sendo a rota mais curta." % (dif_km, dif_pct))
+    return AlternativaRodoviaria(distancia_km=round(alt, 1), diferenca_km=round(dif_km, 1),
+                                 diferenca_pct=round(dif_pct, 1), conclusao=conclusao)
+
+
+# ==============================================================================
 # Entrada principal
 # ==============================================================================
 
@@ -404,10 +534,11 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
                    distancia_km: float | None = None, raio_km: float | None = None,
                    nivel: int | None = None, suspeita: bool = False,
                    repo: GeoIntelligenceRepository | None = None) -> ContextoGeograficoRota:
-    """Motor de contexto geográfico da rota — Rodada 3 (hidrografia real por
-    geometria + bacia oficial ANA/SNIRH). Fail-open honesto: qualquer falha
-    de dados vira aviso explícito em `avisos`, nunca um valor fabricado.
-    Nunca lança exceção."""
+    """Motor de contexto geográfico da rota: hidrografia real por geometria
+    + bacia oficial ANA/SNIRH (Rodada 3) e travessias/hidrovias/infra
+    aquaviária reais + índice de dependência aquaviária (Rodada 4).
+    Fail-open honesto: qualquer falha de dados vira aviso explícito em
+    `avisos`, nunca um valor fabricado. Nunca lança exceção."""
     try:
         lat_o, lon_o = float(origem[0]), float(origem[1])
         lat_d, lon_d = float(destino[0]), float(destino[1])
@@ -446,6 +577,37 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
     bacia_principal = bacias[0] if bacias else None
     sub_bacia = None  # Sem fonte oficial de sub-bacia por trecho na base atual — não inventado.
 
+    # Nível adaptativo (§32): rio detectado -> nível 3 (aquaviário mais denso);
+    # se o primeiro passe já achar uma balsa real, nível 4 e raio maior para
+    # hidrovias/portos (costumam ficar mais afastados do eixo estrito do rio
+    # do que a própria travessia). Nunca reduz o nível pedido explicitamente.
+    # Um `raio_km` passado explicitamente pelo chamador SEMPRE vale — o
+    # escalonamento automático de nível só define o raio quando o chamador
+    # deixou a escolha para o motor (raio_km=None).
+    nivel_aqua = max(nivel_ef, 3) if (rios or corpos) else nivel_ef
+    raio_aqua = raio_ef if (raio_km is not None or nivel_aqua <= nivel_ef) else _raio_para_nivel(nivel_aqua)
+
+    try:
+        travessias, hidrovias, portos = _detectar_aquaviario(pontos, repo, raio_aqua)
+    except Exception:
+        travessias, hidrovias, portos = [], [], []
+
+    if travessias and nivel_aqua < 4 and raio_km is None:
+        # Achou balsa real no passe inicial -> vale ampliar o raio da infra
+        # portuária/hidroviária (nível 4) numa segunda passada, mais cara mas
+        # só paga o custo quando há evidência real de travessia (e só quando
+        # o chamador não fixou o raio explicitamente).
+        raio_infra = _raio_para_nivel(4)
+        try:
+            _, hidrovias2, portos2 = _detectar_aquaviario(pontos, repo, raio_infra)
+            hidrovias = hidrovias2 or hidrovias
+            portos = portos2 or portos
+            nivel_aqua = 4
+        except Exception:
+            pass
+
+    dependencia = _indice_dependencia_aquaviaria(rios, travessias, hidrovias, portos)
+
     fontes: list = []
     if rios:
         fontes.append("IBGE BC250/BC100 (drenagem)")
@@ -453,6 +615,12 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
         fontes.append("IBGE BC250/BC100 (massas d'água)")
     if bacia_principal:
         fontes.append("ANA/SNIRH (bacias hidrográficas)")
+    if travessias:
+        fontes.append("IBGE BC250/BC100 (travessias)")
+    if hidrovias:
+        fontes.append("IBGE BC250/BC100 (hidrovias)")
+    if portos:
+        fontes.append("IBGE BC250/BC100 (infraestrutura portuária)")
 
     avisos: list = []
     if any(r.bacia is None for r in rios):
@@ -463,12 +631,16 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
         avisos.append("Nenhum cruzamento hidrográfico detectado no raio/amostragem deste nível de análise.")
     if geometria is None:
         avisos.append("Geometria real da rota não fornecida — cruzamentos estimados pela corda geodésica origem→destino.")
+    if not travessias and dependencia == 0:
+        avisos.append("Nenhuma evidência de travessia/infraestrutura aquaviária no raio consultado.")
 
     conf = 0
     if rios or corpos:
         conf = 70 if any(r.confianca == "alta" for r in (rios + corpos)) else 50
     if bacia_principal:
         conf = min(100, conf + 10)
+    if travessias:
+        conf = min(100, conf + 15)  # travessia real do IBGE é evidência forte, corrobora o cruzamento
     nivel_conf = "alta" if conf >= 70 else ("media" if conf >= 40 else "nao_determinada")
 
     motivo_partes: list = []
@@ -482,8 +654,17 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
                 len(corpos), ", ".join(c.nome for c in corpos[:2])))
     if bacia_principal:
         motivo_partes.append("Bacia hidrográfica: %s (ANA/SNIRH)." % bacia_principal)
+    if travessias:
+        motivo_partes.append(
+            "Travessia(s) aquaviária(s) real(is) próxima(s): %s." % ", ".join(t.nome for t in travessias[:2]))
+    if hidrovias:
+        motivo_partes.append("Hidrovia próxima: %s." % hidrovias[0].nome)
+    if portos:
+        motivo_partes.append(
+            "%d instalação(ões) portuária(s)/aquaviária(s) próxima(s) (%s)." % (
+                len(portos), ", ".join(p.nome for p in portos[:2])))
     if not motivo_partes:
-        motivo_partes.append("Nenhuma evidência hidrográfica relevante encontrada no trajeto amostrado.")
+        motivo_partes.append("Nenhuma evidência hidrográfica ou aquaviária relevante encontrada no trajeto amostrado.")
 
     return ContextoGeograficoRota(
         origem={"lat": lat_o, "lon": lon_o},
@@ -491,12 +672,16 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
         distancia_km=dist_total,
         rios_detectados=rios,
         corpos_dagua=corpos,
+        travessias=travessias,
+        hidrovias_proximas=hidrovias,
+        portos_terminais=portos,
         bacia_hidrografica=bacia_principal,
         sub_bacia=sub_bacia,
+        dependencia_aquaviaria=dependencia,
         confianca_geral=conf,
         confianca_nivel=nivel_conf,
         fontes_concordam=fontes,
         motivo_decisao=" ".join(motivo_partes),
         avisos=avisos,
-        nivel_analise=nivel_ef,
+        nivel_analise=nivel_aqua,
     )

@@ -121,6 +121,82 @@ def test_geo_intelligence_repository_fail_open(monkeypatch):
 
 
 # ==============================================================================
+# Rodada 4 — integração aquaviária (travessias/hidrovias/portos, índice de
+# dependência aquaviária, alternativa sem balsa). Utilidades puras.
+# ==============================================================================
+
+def test_montar_alternativa_sem_balsa_travessia_ainda_vence():
+    alt = rc.montar_alternativa_sem_balsa(50.0, 90.0)
+    assert isinstance(alt, rc.AlternativaRodoviaria)
+    assert alt.diferenca_km == 40.0
+    assert alt.diferenca_pct == 80.0
+    assert "travessia continua sendo a rota mais curta" in alt.conclusao
+
+
+def test_montar_alternativa_sem_balsa_diferenca_pequena_recomenda_trocar():
+    alt = rc.montar_alternativa_sem_balsa(100.0, 103.0)
+    assert alt.diferenca_pct == 3.0
+    assert "considerar preferi-la" in alt.conclusao
+
+
+def test_montar_alternativa_sem_balsa_alternativa_mais_curta():
+    alt = rc.montar_alternativa_sem_balsa(100.0, 95.0)
+    assert alt.diferenca_km == -5.0
+    assert "não há motivo geográfico" in alt.conclusao
+
+
+def test_montar_alternativa_sem_balsa_entradas_invalidas_fail_open():
+    assert rc.montar_alternativa_sem_balsa(None, 90.0) is None
+    assert rc.montar_alternativa_sem_balsa(50.0, "x") is None
+    assert rc.montar_alternativa_sem_balsa(0.0, 90.0) is None
+    assert rc.montar_alternativa_sem_balsa(50.0, -1.0) is None
+
+
+def test_indice_dependencia_aquaviaria_sem_evidencia_e_zero():
+    assert rc._indice_dependencia_aquaviaria([], [], [], []) == 0
+
+
+def test_indice_dependencia_aquaviaria_travessia_pesa_mais():
+    travessia = rc.Feicao(nome="X", tipo="travessia (balsa)", distancia_eixo_km=1.0,
+                          km_desde_origem=0.0, fonte="teste")
+    porto = rc.Feicao(nome="Y", tipo="complexo portuário", distancia_eixo_km=2.0,
+                      km_desde_origem=0.0, fonte="teste")
+    so_porto = rc._indice_dependencia_aquaviaria([], [], [], [porto])
+    com_travessia = rc._indice_dependencia_aquaviaria([], [travessia], [], [porto])
+    assert com_travessia > so_porto
+    assert com_travessia <= 100
+
+
+def test_detectar_feicoes_nome_ausente_vira_rotulo_explicito(monkeypatch):
+    def _fake(camada, lon, lat, raio_km=30.0, limite=10, filtros=None):
+        return [{"nome": None, "distancia_km": 3.0}]
+
+    monkeypatch.setattr(rc._bl, "mais_proximos", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    achados = rc._detectar_feicoes([(0.0, 0.0, 0.0)], repo, "eclusas", 10.0, "eclusa", "fonte-teste")
+    assert len(achados) == 1
+    assert achados[0].nome == "<eclusa sem nome>"
+
+
+def test_detectar_feicoes_deduplica_mantendo_menor_distancia(monkeypatch):
+    respostas = [
+        [{"nome": "Porto X", "distancia_km": 5.0}],
+        [{"nome": "Porto X", "distancia_km": 2.0}],  # mesmo nome, mais perto no 2º ponto amostrado
+    ]
+
+    def _fake(camada, lon, lat, raio_km=30.0, limite=10, filtros=None):
+        return respostas.pop(0)
+
+    monkeypatch.setattr(rc._bl, "mais_proximos", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    achados = rc._detectar_feicoes(
+        [(0.0, 0.0, 0.0), (0.0, 0.1, 10.0)], repo, "complexos_portuarios", 10.0,
+        "complexo portuário", "fonte-teste")
+    assert len(achados) == 1
+    assert achados[0].distancia_eixo_km == 2.0
+
+
+# ==============================================================================
 # Fim-a-fim com dados reais (mesmo ponto de referência já usado e validado em
 # test_validators.py::test_rio_mais_proximo_nomeado_manaus — reaproveita o
 # mesmo raio para permanecer consistente com um resultado já comprovado).
@@ -159,3 +235,41 @@ def test_analisar_rota_usa_repositorio_compartilhado_por_padrao():
     rc.analisar_rota((-3.1190, -60.0217), (-3.1190, -60.0217), raio_km=50.0, nivel=1)
     assert rc.repositorio_padrao() is repo_antes  # mesma instância, cache reaproveitado
     assert repo_antes.tamanho() > 0
+
+
+# ==============================================================================
+# Rodada 4 fim-a-fim: travessia real da BR-174 sobre o Rio Negro (Manaus) e o
+# Porto de Manaus — infraestrutura pública conhecida, boa prova de que a
+# detecção aquaviária por geometria encontra dado real, não um artefato.
+# ==============================================================================
+
+@pytestmark_dados
+def test_analisar_rota_detecta_travessia_real_br174_manaus():
+    origem = destino = (-3.1190, -60.0217)
+    ctx = rc.analisar_rota(origem, destino, raio_km=50.0, nivel=1)
+    nomes_travessias = [t.nome for t in ctx.travessias]
+    assert any("BR-174" in n for n in nomes_travessias)
+    for t in ctx.travessias:
+        assert t.tipo == "travessia (balsa)"
+        assert t.fonte == "IBGE BC250/BC100 (travessias)"
+    assert ctx.dependencia_aquaviaria is not None and ctx.dependencia_aquaviaria >= 50
+    assert ctx.nivel_analise >= 3
+
+
+@pytestmark_dados
+def test_analisar_rota_detecta_porto_de_manaus():
+    origem = destino = (-3.1190, -60.0217)
+    ctx = rc.analisar_rota(origem, destino, raio_km=50.0, nivel=1)
+    nomes_portos = [p.nome for p in ctx.portos_terminais]
+    assert "Porto de Manaus" in nomes_portos
+
+
+@pytestmark_dados
+def test_analisar_rota_raio_explicito_e_sempre_respeitado_na_fase_aquaviaria():
+    # Regressão do bug corrigido: um raio_km explícito não pode ser
+    # substituído silenciosamente por um raio menor do nível automático.
+    origem = destino = (-3.1190, -60.0217)
+    ctx_raio_curto = rc.analisar_rota(origem, destino, raio_km=1.0, nivel=1)
+    ctx_raio_largo = rc.analisar_rota(origem, destino, raio_km=50.0, nivel=1)
+    assert len(ctx_raio_largo.travessias) >= len(ctx_raio_curto.travessias)
+    assert len(ctx_raio_largo.portos_terminais) >= len(ctx_raio_curto.portos_terminais)
