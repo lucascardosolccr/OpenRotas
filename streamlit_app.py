@@ -56178,6 +56178,37 @@ if _secao == _SECOES[15]:   # tab_route_intel
                         _c8.metric("Índice Confiança", _ic_val if _ic_val == "—" else ("%.0f/100" % _num_seguro(_ic_val, 0.0)))
                         _c9.metric("Fonte Rota", str(_fonte_val) or "—")
 
+                        # [GEO-INTEL-EXPLICA - Rodada 13] Contexto geográfico completo desta rota (motor da
+                        # Rodada 10, não a projeção legada usada acima): bacia real, pontes, travessias e
+                        # dependência aquaviária — e uma explicação em texto ("por que esta rota"), reaproveitando
+                        # exatamente o que já foi calculado em df_processado, sem nenhum recálculo aqui.
+                        try:
+                            if _row_orig is not None and _col_existente(_rotas_proc, "QT_RIOS"):
+                                st.divider()
+                                st.markdown("##### 🧠 Por que esta rota — contexto geográfico completo")
+                                _c10, _c11, _c12 = st.columns(3)
+                                _c10.metric("Bacia hidrográfica", str(_row_orig.get("Bacia Hidrografica") or "—"))
+                                _qt_p = _num_seguro(_row_orig.get("QT_PONTES"))
+                                _c11.metric("Pontes no cruzamento", int(_qt_p) if _qt_p is not None else "—")
+                                _qt_t = _num_seguro(_row_orig.get("QT_TRAVESSIAS"))
+                                _c12.metric("Travessias aquaviárias", int(_qt_t) if _qt_t is not None else "—")
+                                _c13, _c14 = st.columns(2)
+                                _dep_v = _num_seguro(_row_orig.get("Dependencia Aquaviaria"))
+                                _c13.metric("Dependência aquaviária", f"{_dep_v:.0f}/100" if _dep_v is not None else "—")
+                                _conf_v = _num_seguro(_row_orig.get("Confianca Geografica"))
+                                _c14.metric("Confiança geográfica", f"{_conf_v:.0f}/100" if _conf_v is not None else "—")
+                                _pontes_txt = str(_row_orig.get("Pontes no Cruzamento") or "").strip()
+                                if _pontes_txt and _pontes_txt not in ("—", "nan"):
+                                    st.caption(f"🌉 Ponte(s): {_pontes_txt}")
+                                _trav_txt = str(_row_orig.get("Travessias Aquaviarias") or "").strip()
+                                if _trav_txt and _trav_txt not in ("—", "nan"):
+                                    st.caption(f"⛴️ Travessia(s): {_trav_txt}")
+                                if (_qt_p or 0) == 0 and (_qt_t or 0) == 0 and _num_seguro(_row_orig.get("QT_RIOS"), 0) > 0:
+                                    st.caption("⚠️ Rio identificado sem ponte nem travessia confirmadas no raio "
+                                              "consultado — modo de travessia não determinado, não presuma.")
+                        except Exception:
+                            logger.debug("[GEO-INTEL-EXPLICA] Falha ao exibir contexto completo (aditivo).", exc_info=True)
+
                         # Botões de exportação individual para a rota selecionada
                         _origem_fn = str(_orig).replace(' ', '_').replace('/', '_')
                         _destino_fn = str(_dest).replace(' ', '_').replace('/', '_')
