@@ -839,3 +839,47 @@ def test_analisar_rota_baia_guanabara_tem_atributos_massas_dagua():
     if baia is not None:
         assert baia.salgada in ("Sim", "Não", "Desconhecido", None)
         assert baia.encoberto is None  # atributo de drenagem, não de massas_dagua
+
+
+# ==============================================================================
+# Missão 2 / Rodada 6 — código de sub-bacia SNIRH (subBaciaCodigo), campo
+# real presente em snirh_rios.csv desde sempre mas nunca lido antes.
+# ==============================================================================
+
+def test_subbacia_codigo_do_rio_conhecido_e_sem_ambiguidade():
+    # Mesmo rio/caso não-ambíguo já usado para bacia_do_rio.
+    assert rc.subbacia_codigo_do_rio("Rio Solimões-Amazonas") == "10"
+    assert rc.subbacia_codigo_do_rio("rio solimoes-amazonas") == "10"  # normalização
+
+
+def test_subbacia_codigo_do_rio_homonimo_com_subbacias_distintas_fica_none():
+    # "Igarapé São Raimundo" existe em 3 registros no SNIRH, todos na mesma
+    # bacia (RIO AMAZONAS) mas com subBaciaCodigo DIFERENTE (10 e 15) —
+    # ambíguo o bastante para não escolher um dos dois arbitrariamente,
+    # mesmo que bacia_do_rio consiga resolver o nível 1 (bacia) sem problema.
+    assert rc.bacia_do_rio("Igarapé São Raimundo") == "RIO AMAZONAS"
+    assert rc.subbacia_codigo_do_rio("Igarapé São Raimundo") is None
+
+
+def test_subbacia_codigo_do_rio_desconhecido_e_vazio():
+    assert rc.subbacia_codigo_do_rio("Rio Que Nao Existe Em Nenhuma Base 123") is None
+    assert rc.subbacia_codigo_do_rio("") is None
+    assert rc.subbacia_codigo_do_rio(None) is None
+
+
+def test_subbacia_codigo_nunca_e_confundido_com_nome():
+    # Nunca deve parecer um nome de bacia — só dígitos (às vezes múltiplos,
+    # separados por vírgula quando há mais de um rio na rota).
+    cod = rc.subbacia_codigo_do_rio("Rio Solimões-Amazonas")
+    assert cod.isdigit()
+
+
+@pytestmark_dados
+def test_analisar_rota_sub_bacia_quando_presente_e_so_codigo_nunca_nome():
+    origem = destino = (-3.1190, -60.0217)
+    ctx = rc.analisar_rota(origem, destino, distancia_km=45.0, raio_km=10.0)
+    if ctx.sub_bacia is not None:
+        assert ctx.sub_bacia.startswith("Código(s) SNIRH: ")
+        # a parte depois do prefixo só tem dígitos e ", " como separador
+        resto = ctx.sub_bacia.replace("Código(s) SNIRH: ", "")
+        assert all(c.isdigit() or c in ", " for c in resto)

@@ -153,6 +153,50 @@ def _carregar_mapa_rio_bacia() -> dict:
     return {nome: next(iter(bacias)) for nome, bacias in candidatos.items() if len(bacias) == 1}
 
 
+@lru_cache(maxsize=1)
+def _carregar_mapa_rio_subbacia() -> dict:
+    """{nome_do_rio_normalizado: código_da_sub-bacia} a partir de
+    `subBaciaCodigo` em snirh_rios.csv (Rodada 6, Missão 2 — extração
+    máxima: campo presente na base desde sempre, nunca lido por nenhum
+    código até aqui).
+
+    IMPORTANTE — por que isto devolve um CÓDIGO e não um NOME: o SNIRH
+    numera 85 sub-bacias distintas, mas o `snirh_bacias.csv` vendorizado
+    neste repositório só cataloga as 9 bacias de NÍVEL 1 (ver
+    `_carregar_mapa_rio_bacia`) — não existe, em lugar nenhum deste
+    projeto, uma tabela oficial código→nome para as sub-bacias. Inventar um
+    nome a partir do código seria fabricação pura (§38 da missão). O código
+    em si é dado real e rastreável (permite ao usuário consultar a sub-bacia
+    exata no SNIRH), então é isso — e só isso — que este motor expõe.
+
+    Mesma política de exclusão de homônimos de `_carregar_mapa_rio_bacia`:
+    um nome de rio associado a mais de um código de sub-bacia distinto no
+    dado bruto fica de fora do mapa (nunca escolhe um arbitrariamente)."""
+    raiz = _raiz_repo()
+    caminho_rios = os.path.join(raiz, "snirh_rios.csv")
+    candidatos: dict = {}
+    try:
+        with open(caminho_rios, encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                nome_rio = _unorm(row.get("nome"))
+                cod_sub = _nome(row.get("subBaciaCodigo"))
+                if nome_rio and cod_sub:
+                    candidatos.setdefault(nome_rio, set()).add(cod_sub)
+    except Exception:
+        return {}
+    return {nome: next(iter(cods)) for nome, cods in candidatos.items() if len(cods) == 1}
+
+
+def subbacia_codigo_do_rio(nome_rio) -> str | None:
+    """Código oficial SNIRH da sub-bacia de um rio (ex.: "27"), ou None se
+    não houver correspondência exata/sem-ambiguidade (nunca inferido). Não
+    é um nome — ver docstring de `_carregar_mapa_rio_subbacia` sobre por
+    que este projeto não tem como resolver o nome da sub-bacia."""
+    if not nome_rio:
+        return None
+    return _carregar_mapa_rio_subbacia().get(_unorm(nome_rio))
+
+
 def bacia_do_rio(nome_rio) -> str | None:
     """Nome oficial da bacia hidrográfica (ANA/SNIRH) para um nome de rio,
     ou None se não houver correspondência exata (nunca inferido/inventado)."""
@@ -1120,7 +1164,14 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
 
     bacias = sorted({r.bacia for r in rios if r.bacia})
     bacia_principal = bacias[0] if bacias else None
-    sub_bacia = None  # Sem fonte oficial de sub-bacia por trecho na base atual — não inventado.
+
+    # Rodada 6 (Missão 2): código oficial SNIRH da sub-bacia (nunca um nome
+    # — ver docstring de subbacia_codigo_do_rio). "Não determinado" cobre
+    # tanto ausência de correspondência quanto ambiguidade entre rios
+    # homônimos; múltiplos rios com sub-bacias distintas mostram todos os
+    # códigos, não escolhe um arbitrariamente.
+    sub_bacia_codigos = sorted({c for c in (subbacia_codigo_do_rio(r.nome) for r in rios) if c})
+    sub_bacia = ("Código(s) SNIRH: " + ", ".join(sub_bacia_codigos)) if sub_bacia_codigos else None
 
     try:
         rodovias = _detectar_rodovias(pontos, repo, raio_ef)

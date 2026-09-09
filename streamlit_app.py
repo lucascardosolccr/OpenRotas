@@ -16136,7 +16136,8 @@ _GEO_INTEL_COLUNAS = ("Rios Cruzados", "Bacia Hidrografica", "Pontes no Cruzamen
                       "QT_RIOS", "QT_CORPOS_DAGUA", "NM_CORPOS_DAGUA", "QT_PONTES", "QT_TRAVESSIAS",
                       "QT_HIDROVIAS", "NM_HIDROVIAS", "QT_PORTOS_TERMINAIS",
                       "Rodovias Identificadas", "QT_RODOVIAS", "NM_RODOVIAS",
-                      "Ferrovias Proximas", "QT_FERROVIAS", "NM_FERROVIAS")
+                      "Ferrovias Proximas", "QT_FERROVIAS", "NM_FERROVIAS",
+                      "Sub Bacia Codigo SNIRH")
 _GEO_INTEL_LIMIAR_AUTOMATICO = 200  # nº de PARES origem/destino únicos; acima disso, sob demanda
 
 
@@ -16216,6 +16217,7 @@ def _enriquecer_geo_inteligencia_df(df, forcar=False, limiar_automatico=_GEO_INT
             _cols["Ferrovias Proximas"].append(", ".join(f.nome for f in _ctx.ferrovias[:3]))
             _cols["QT_FERROVIAS"].append(len(_ctx.ferrovias))
             _cols["NM_FERROVIAS"].append(", ".join(f.nome for f in _ctx.ferrovias))
+            _cols["Sub Bacia Codigo SNIRH"].append(_ctx.sub_bacia or "")
 
         df = df.copy()
         for _c in _GEO_INTEL_COLUNAS:
@@ -43414,6 +43416,8 @@ if _secao == _SECOES[0]:   # tab_individual
                             if _ctx_gi.rios_detectados:
                                 st.caption("🌊 Rios/córregos cruzados: " + ", ".join(
                                     r.nome + (f" (bacia {r.bacia})" if r.bacia else "") for r in _ctx_gi.rios_detectados))
+                            if _ctx_gi.sub_bacia:
+                                st.caption(f"🔖 Sub-bacia (código oficial SNIRH, sem nome catalogado nesta base): {_ctx_gi.sub_bacia}")
                             if _ctx_gi.pontes:
                                 st.caption("🌉 Pontes no cruzamento: " + ", ".join(p.nome for p in _ctx_gi.pontes))
                             if _ctx_gi.travessias:
