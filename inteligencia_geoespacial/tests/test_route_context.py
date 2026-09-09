@@ -1,5 +1,5 @@
 # inteligencia_geoespacial/tests/test_route_context.py
-"""Testes da Rodada 3 (integração hidrográfica) do GeoIntelligenceEngine."""
+"""Testes das Rodadas 3-5 (hidrografia, aquaviário, pontes) do GeoIntelligenceEngine."""
 import pytest
 
 from inteligencia_geoespacial import bases_locais as bl
@@ -197,6 +197,73 @@ def test_detectar_feicoes_deduplica_mantendo_menor_distancia(monkeypatch):
 
 
 # ==============================================================================
+# Rodada 5 — pontes NO cruzamento hidrográfico (§8 da missão). Utilidades puras.
+# ==============================================================================
+
+def _cruzamento(nome="Rio Fake", lat=0.0, lon=0.0, km=0.0):
+    return rc.CruzamentoHidrografico(
+        nome=nome, camada="drenagem", distancia_eixo_km=1.0, km_desde_origem=km,
+        km_ate_destino=None, navegavel=None, regime=None, bacia=None,
+        fonte="teste", confianca="alta", lat=lat, lon=lon)
+
+
+def test_detectar_pontes_ignora_cruzamento_sem_coordenada(monkeypatch):
+    chamado = {"n": 0}
+
+    def _fake(*a, **k):
+        chamado["n"] += 1
+        return []
+
+    monkeypatch.setattr(rc._bl, "mais_proximos", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    cz = rc.CruzamentoHidrografico(nome="Sem coordenada", camada="drenagem",
+                                    distancia_eixo_km=1.0, km_desde_origem=0.0,
+                                    km_ate_destino=None, navegavel=None, regime=None,
+                                    bacia=None, fonte="teste", confianca="alta",
+                                    lat=None, lon=None)
+    assert rc._detectar_pontes_nos_cruzamentos([cz], repo) == []
+    assert chamado["n"] == 0  # nunca consulta sem coordenada
+
+
+def test_detectar_pontes_sem_nome_usa_rotulo_derivado_do_rio(monkeypatch):
+    def _fake(camada, lon, lat, raio_km=30.0, limite=10, filtros=None):
+        return [{"nome": None, "distancia_km": 0.4}]
+
+    monkeypatch.setattr(rc._bl, "mais_proximos", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    cz = _cruzamento(nome="Rio Fake")
+    pontes = rc._detectar_pontes_nos_cruzamentos([cz], repo)
+    assert len(pontes) == 1
+    assert pontes[0].nome == "Ponte sobre Rio Fake"  # nunca inventa um nome próprio
+    assert pontes[0].tipo == "ponte"
+
+
+def test_detectar_pontes_com_nome_cadastrado_usa_o_nome_real(monkeypatch):
+    def _fake(camada, lon, lat, raio_km=30.0, limite=10, filtros=None):
+        return [{"nome": "Ponte Real do Cadastro", "distancia_km": 0.1}]
+
+    monkeypatch.setattr(rc._bl, "mais_proximos", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    pontes = rc._detectar_pontes_nos_cruzamentos([_cruzamento()], repo)
+    assert pontes[0].nome == "Ponte Real do Cadastro"
+
+
+def test_detectar_pontes_nenhuma_encontrada_no_raio(monkeypatch):
+    monkeypatch.setattr(rc._bl, "mais_proximos", lambda *a, **k: [])
+    repo = rc.GeoIntelligenceRepository()
+    assert rc._detectar_pontes_nos_cruzamentos([_cruzamento()], repo) == []
+
+
+def test_detectar_pontes_fail_open(monkeypatch):
+    def _explode(*a, **k):
+        raise RuntimeError("camada indisponível")
+
+    monkeypatch.setattr(rc._bl, "mais_proximos", _explode)
+    repo = rc.GeoIntelligenceRepository()
+    assert rc._detectar_pontes_nos_cruzamentos([_cruzamento()], repo) == []
+
+
+# ==============================================================================
 # Fim-a-fim com dados reais (mesmo ponto de referência já usado e validado em
 # test_validators.py::test_rio_mais_proximo_nomeado_manaus — reaproveita o
 # mesmo raio para permanecer consistente com um resultado já comprovado).
@@ -235,6 +302,28 @@ def test_analisar_rota_usa_repositorio_compartilhado_por_padrao():
     rc.analisar_rota((-3.1190, -60.0217), (-3.1190, -60.0217), raio_km=50.0, nivel=1)
     assert rc.repositorio_padrao() is repo_antes  # mesma instância, cache reaproveitado
     assert repo_antes.tamanho() > 0
+
+
+# ==============================================================================
+# Rodada 5 fim-a-fim: Ponte Rio-Niterói sobre a Baía de Guanabara/Canal do
+# Mangue — uma das pontes mais conhecidas do Brasil, boa prova de que a
+# associação cruzamento->ponte encontra dado real no ponto certo.
+# ==============================================================================
+
+@pytestmark_dados
+def test_analisar_rota_detecta_ponte_rio_niteroi_no_cruzamento():
+    # Coordenada da própria ponte (confirmada previamente contra
+    # bases_locais.mais_proximos('pontes', ...)) — origem=destino faz o
+    # corredor amostrado ficar exatamente sobre o cruzamento.
+    origem = destino = (-22.8702, -43.1642)
+    ctx = rc.analisar_rota(origem, destino, raio_km=5.0, nivel=1)
+    assert ctx.rios_detectados or ctx.corpos_dagua  # há cruzamento hidrográfico aqui
+    nomes_pontes = [p.nome for p in ctx.pontes]
+    assert any("Rio-Niterói" in n for n in nomes_pontes)
+    ponte = next(p for p in ctx.pontes if "Rio-Niterói" in p.nome)
+    assert ponte.tipo == "ponte"
+    assert ponte.distancia_eixo_km is not None and ponte.distancia_eixo_km <= 1.0
+    assert any("confirmado(s) por ponte" in parte for parte in [ctx.motivo_decisao])
 
 
 # ==============================================================================

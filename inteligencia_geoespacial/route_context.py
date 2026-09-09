@@ -7,6 +7,9 @@ Missão "Aprimoramento máximo da aba de Inteligência":
              hidrográfica oficial ANA/SNIRH).
   Rodada 4 — integração aquaviária (travessias/balsas reais do IBGE, hidrovias,
              portos/terminais/eclusas; índice de dependência aquaviária).
+  Rodada 5 — pontes NO cruzamento hidrográfico (§8 da missão): para cada rio/
+             corpo d'água detectado, verifica se há uma ponte cadastrada
+             naquele ponto — nunca varre pontes genéricas "perto da rota".
 
 Tudo consultando as camadas locais derivadas do IBGE (`bases_locais.py`) —
 sem GDAL, sem geopandas, sem rede.
@@ -28,6 +31,7 @@ Contrato principal:
     ctx.rios_detectados          # list[CruzamentoHidrografico]
     ctx.corpos_dagua             # list[CruzamentoHidrografico]
     ctx.bacia_hidrografica       # str | None (nunca inventado — só nome oficial ANA/SNIRH)
+    ctx.pontes                   # list[Feicao] — pontes reais encontradas NOS cruzamentos
     ctx.travessias               # list[Feicao] — balsas reais (IBGE BC250/BC100)
     ctx.hidrovias_proximas       # list[Feicao]
     ctx.portos_terminais         # list[Feicao] — atracadouros/terminais/portos/eclusas
@@ -40,7 +44,6 @@ de quem já tem as duas distâncias medidas pelo motor de rotas (este módulo
 não faz roteamento nem chamadas de rede) — ver `montar_alternativa_sem_balsa`,
 uma função pura de formatação para ser usada quando o pipeline principal
 integrar este motor (rodada de integração ao motor de rotas).
-`pontes` fica para a rodada de integração rodoviária/pontes.
 """
 
 from __future__ import annotations
@@ -274,11 +277,13 @@ class CruzamentoHidrografico:
     bacia: str | None                 # None = não determinado (nunca inventado)
     fonte: str
     confianca: str                    # "alta" | "media"
+    lat: float | None = None          # coordenada do ponto de amostra mais próximo do
+    lon: float | None = None          # cruzamento — usada para localizar pontes (Rodada 5) e mapas
 
 
 @dataclass
 class Feicao:
-    """Ponte/travessia/hidrovia/porto próximo a um cruzamento (Rodadas 4/5)."""
+    """Ponte/travessia/hidrovia/porto próximo a um cruzamento."""
     nome: str
     tipo: str
     distancia_eixo_km: float | None
@@ -403,6 +408,8 @@ def _detectar_cruzamentos_hidro(pontos: list, repo: GeoIntelligenceRepository,
                               else "IBGE BC250/BC100 (massas d'água)"),
                     "confianca": ("alta" if (dist is not None and dist <= max(0.5, raio_km * 0.15))
                                   else "media"),
+                    "lat": la,
+                    "lon": lo,
                 }
     return sorted(achados.values(), key=lambda x: (x["km_desde_origem"] or 0.0))
 
@@ -527,6 +534,53 @@ def montar_alternativa_sem_balsa(distancia_atual_km, distancia_sem_balsa_km) -> 
 
 
 # ==============================================================================
+# Detecção de pontes NO CRUZAMENTO (Rodada 5 — rodoviário/pontes, §8 da
+# missão). Deliberadamente não varre pontes ao longo de todo o corredor da
+# rota (isso responderia "que pontes existem perto da rota", uma pergunta
+# mais fraca) — busca especificamente ao redor de cada cruzamento
+# hidrográfico já confirmado (rios_detectados/corpos_dagua), respondendo a
+# pergunta certa: "há uma ponte NESTE cruzamento?".
+# ==============================================================================
+
+_RAIO_PONTE_KM = 3.0  # bridges are essentially AT the crossing; raio deliberadamente estreito
+
+
+def _detectar_pontes_nos_cruzamentos(cruzamentos: list, repo: GeoIntelligenceRepository,
+                                      raio_km: float = _RAIO_PONTE_KM) -> list:
+    """Para cada CruzamentoHidrografico com coordenada conhecida, procura a
+    ponte mais próxima dentro de `raio_km`. Pontes do IBGE BC250 raramente
+    têm nome próprio cadastrado — quando ausente, o rótulo composto "Ponte
+    sobre <rio>" descreve o que já foi identificado (o rio, por fonte
+    própria), NUNCA um nome de ponte inventado."""
+    pontes: dict = {}
+    for cz in cruzamentos:
+        if cz.lat is None or cz.lon is None:
+            continue
+        try:
+            itens = repo.consultar("pontes", cz.lat, cz.lon, raio_km=raio_km, limite=1)
+        except Exception:
+            itens = []
+        if not itens:
+            continue
+        it = itens[0]
+        try:
+            dist = round(float(it.get("distancia_km")), 2)
+        except Exception:
+            dist = None
+        nome_ponte = _nome(it.get("nome"))
+        rotulo = nome_ponte if nome_ponte else ("Ponte sobre %s" % cz.nome)
+        chave = (round(cz.lat, 4), round(cz.lon, 4))
+        atual = pontes.get(chave)
+        if atual is not None and dist is not None and atual.distancia_eixo_km is not None \
+                and dist >= atual.distancia_eixo_km:
+            continue
+        pontes[chave] = Feicao(nome=rotulo, tipo="ponte", distancia_eixo_km=dist,
+                                km_desde_origem=cz.km_desde_origem,
+                                fonte="IBGE BC250/BC100 (pontes)")
+    return sorted(pontes.values(), key=lambda f: (f.km_desde_origem or 0.0))
+
+
+# ==============================================================================
 # Entrada principal
 # ==============================================================================
 
@@ -608,6 +662,11 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
 
     dependencia = _indice_dependencia_aquaviaria(rios, travessias, hidrovias, portos)
 
+    try:
+        pontes = _detectar_pontes_nos_cruzamentos(rios + corpos, repo)
+    except Exception:
+        pontes = []
+
     fontes: list = []
     if rios:
         fontes.append("IBGE BC250/BC100 (drenagem)")
@@ -621,6 +680,8 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
         fontes.append("IBGE BC250/BC100 (hidrovias)")
     if portos:
         fontes.append("IBGE BC250/BC100 (infraestrutura portuária)")
+    if pontes:
+        fontes.append("IBGE BC250/BC100 (pontes)")
 
     avisos: list = []
     if any(r.bacia is None for r in rios):
@@ -633,6 +694,10 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
         avisos.append("Geometria real da rota não fornecida — cruzamentos estimados pela corda geodésica origem→destino.")
     if not travessias and dependencia == 0:
         avisos.append("Nenhuma evidência de travessia/infraestrutura aquaviária no raio consultado.")
+    if (rios or corpos) and not pontes and not travessias:
+        avisos.append(
+            "Cruzamento(s) hidrográfico(s) sem ponte OU travessia confirmada no raio consultado — "
+            "modo de travessia real não determinado (não presuma balsa nem ponte).")
 
     conf = 0
     if rios or corpos:
@@ -641,6 +706,8 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
         conf = min(100, conf + 10)
     if travessias:
         conf = min(100, conf + 15)  # travessia real do IBGE é evidência forte, corrobora o cruzamento
+    if pontes:
+        conf = min(100, conf + 10)  # ponte real também corrobora o cruzamento
     nivel_conf = "alta" if conf >= 70 else ("media" if conf >= 40 else "nao_determinada")
 
     motivo_partes: list = []
@@ -654,6 +721,10 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
                 len(corpos), ", ".join(c.nome for c in corpos[:2])))
     if bacia_principal:
         motivo_partes.append("Bacia hidrográfica: %s (ANA/SNIRH)." % bacia_principal)
+    if pontes:
+        motivo_partes.append(
+            "%d cruzamento(s) confirmado(s) por ponte (%s)." % (
+                len(pontes), ", ".join(p.nome for p in pontes[:2])))
     if travessias:
         motivo_partes.append(
             "Travessia(s) aquaviária(s) real(is) próxima(s): %s." % ", ".join(t.nome for t in travessias[:2]))
@@ -672,6 +743,7 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
         distancia_km=dist_total,
         rios_detectados=rios,
         corpos_dagua=corpos,
+        pontes=pontes,
         travessias=travessias,
         hidrovias_proximas=hidrovias,
         portos_terminais=portos,
