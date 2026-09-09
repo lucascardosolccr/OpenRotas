@@ -4424,8 +4424,25 @@ def _secao_inteligencia_geografica_html(df):
                     "sem confirmação, entre outras. Nenhuma anomalia é fabricada — cada uma é uma "
                     "checagem honesta sobre os dados já coletados para aquela rota.", "warning")
 
+        # [GEO-INTEL-BALSA-CROSS - Missão 3, Rodada 4, §32] Destaque dedicado para a
+        # cross-validação de balsa (Rodada 2) — a única categoria de anomalia que aponta
+        # diretamente para uma possível decisão mal informada (motor de roteamento ×
+        # análise geográfica independente discordando sobre travessia), então merece
+        # sua própria caixa em vez de ficar diluída na tabela genérica acima.
+        _aviso_balsa_html = ""
+        if _anom_col:
+            _n_trav_nao_reportada = int(df[_anom_col].astype(str).str.contains(
+                "travessia_nao_reportada_pelo_motor_de_rotas", na=False).sum())
+            if _n_trav_nao_reportada:
+                _aviso_balsa_html = _caixa_explicativa(
+                    "Travessia não reportada pelo motor de roteamento",
+                    f"Em {_n_trav_nao_reportada} rota(s), o motor de roteamento não sinalizou balsa, mas a "
+                    "análise geográfica independente (interseção real com a hidrografia IBGE) confirmou uma "
+                    "travessia no eixo do trajeto. A decisão dessas rotas pode estar baseada numa distância "
+                    "que ignora essa travessia — vale reexaminar caso a caso.", "warning")
+
         return (f'<div class="kpis">{_kh}</div>' + _bacias_html + _rodovias_html + _anomalias_html
-               + _tabela_html + _aviso_html + _aviso_anom_html
+               + _tabela_html + _aviso_html + _aviso_anom_html + _aviso_balsa_html
                + _caixa_explicativa(
                    "Sobre esta seção",
                    "Cada rota do estudo passa automaticamente pelo motor de contexto geográfico "
@@ -57098,6 +57115,25 @@ if _secao == _SECOES[15]:   # tab_route_intel
                                         _sev_txt = str(_row_orig.get("Anomalia Mais Severa") or "").strip()
                                         st.caption(f"🚩 {int(_qt_anom)} anomalia(s) geográfica(s) detectada(s)"
                                                   + (f" — mais severa: {_sev_txt}" if _sev_txt and _sev_txt not in ("—", "nan") else ""))
+                                    # [GEO-INTEL-BALSA-CROSS - Missão 3, Rodada 4, §32] Destaque dedicado e
+                                    # acionável para a cross-validação de balsa (Rodada 2): "Anomalia Mais
+                                    # Severa" só mostra UMA anomalia (a de maior severidade — pode não ser
+                                    # esta, se outra categoria "alta" também tiver disparado) e NM_ANOMALIAS
+                                    # guarda só o nome técnico da categoria, não uma explicação. Esta rota
+                                    # decide se usa balsa ou não; se os dois motores discordam sobre isso, o
+                                    # usuário precisa ver — nunca enterrado numa lista genérica.
+                                    _nm_anom_txt = str(_row_orig.get("NM_ANOMALIAS") or "")
+                                    if "travessia_nao_reportada_pelo_motor_de_rotas" in _nm_anom_txt:
+                                        st.warning("⚠️ **O motor de roteamento não sinalizou balsa nesta rota, "
+                                                   "mas a análise geográfica independente confirmou uma "
+                                                   "travessia real no eixo do trajeto.** A decisão pode estar "
+                                                   "baseada numa distância viária que ignora essa travessia — "
+                                                   "vale reexaminar.")
+                                    elif "balsa_sem_confirmacao_geografica" in _nm_anom_txt:
+                                        st.info("ℹ️ O motor de roteamento sinalizou balsa nesta rota, mas a "
+                                                "análise geográfica independente não encontrou rio, corpo "
+                                                "d'água ou travessia no raio consultado — pode ser limitação "
+                                                "do raio, não necessariamente um erro do roteador.")
                             except Exception:
                                 logger.debug("[GEO-INTEL-EXPLICA] Falha ao exibir contexto completo (aditivo).", exc_info=True)
 
