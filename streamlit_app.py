@@ -16003,7 +16003,9 @@ def _portao_de_exibicao(chave='df_processado'):
 # ==============================================================================
 
 _GEO_INTEL_COLUNAS = ("Rios Cruzados", "Bacia Hidrografica", "Pontes no Cruzamento",
-                      "Travessias Aquaviarias", "Dependencia Aquaviaria", "Confianca Geografica")
+                      "Travessias Aquaviarias", "Dependencia Aquaviaria", "Confianca Geografica",
+                      "QT_RIOS", "QT_CORPOS_DAGUA", "NM_CORPOS_DAGUA", "QT_PONTES", "QT_TRAVESSIAS",
+                      "QT_HIDROVIAS", "NM_HIDROVIAS", "QT_PORTOS_TERMINAIS")
 _GEO_INTEL_LIMIAR_AUTOMATICO = 200  # nº de PARES origem/destino únicos; acima disso, sob demanda
 
 
@@ -16041,7 +16043,7 @@ def _enriquecer_geo_inteligencia_df(df, forcar=False, limiar_automatico=_GEO_INT
 
         _col_dist = _col_existente(df, "Distancia", "Distância")
         _cache: dict = {}
-        _rios, _bacias, _pontes, _travs, _deps, _confs = [], [], [], [], [], []
+        _cols: dict = {c: [] for c in _GEO_INTEL_COLUNAS}
         for _, _row in df.iterrows():
             _lo = _num_seguro(_row.get(_col_lat_o))
             _oo = _num_seguro(_row.get(_col_lon_o))
@@ -16060,23 +16062,27 @@ def _enriquecer_geo_inteligencia_df(df, forcar=False, limiar_automatico=_GEO_INT
                         _ctx = None
                     _cache[_chave] = _ctx
             if _ctx is None:
-                _rios.append(""); _bacias.append(""); _pontes.append("")
-                _travs.append(""); _deps.append(None); _confs.append(None)
+                for _c in _GEO_INTEL_COLUNAS:
+                    _cols[_c].append(None if _c in ("Dependencia Aquaviaria", "Confianca Geografica") or _c.startswith("QT_") else "")
                 continue
-            _rios.append(", ".join(r.nome for r in _ctx.rios_detectados[:3]))
-            _bacias.append(_ctx.bacia_hidrografica or "")
-            _pontes.append(", ".join(p.nome for p in _ctx.pontes[:2]))
-            _travs.append(", ".join(t.nome for t in _ctx.travessias[:2]))
-            _deps.append(_ctx.dependencia_aquaviaria)
-            _confs.append(_ctx.confianca_geral)
+            _cols["Rios Cruzados"].append(", ".join(r.nome for r in _ctx.rios_detectados[:3]))
+            _cols["Bacia Hidrografica"].append(_ctx.bacia_hidrografica or "")
+            _cols["Pontes no Cruzamento"].append(", ".join(p.nome for p in _ctx.pontes[:2]))
+            _cols["Travessias Aquaviarias"].append(", ".join(t.nome for t in _ctx.travessias[:2]))
+            _cols["Dependencia Aquaviaria"].append(_ctx.dependencia_aquaviaria)
+            _cols["Confianca Geografica"].append(_ctx.confianca_geral)
+            _cols["QT_RIOS"].append(len(_ctx.rios_detectados))
+            _cols["QT_CORPOS_DAGUA"].append(len(_ctx.corpos_dagua))
+            _cols["NM_CORPOS_DAGUA"].append(", ".join(c.nome for c in _ctx.corpos_dagua[:3]))
+            _cols["QT_PONTES"].append(len(_ctx.pontes))
+            _cols["QT_TRAVESSIAS"].append(len(_ctx.travessias))
+            _cols["QT_HIDROVIAS"].append(len(_ctx.hidrovias_proximas))
+            _cols["NM_HIDROVIAS"].append(", ".join(h.nome for h in _ctx.hidrovias_proximas[:2]))
+            _cols["QT_PORTOS_TERMINAIS"].append(len(_ctx.portos_terminais))
 
         df = df.copy()
-        df["Rios Cruzados"] = _rios
-        df["Bacia Hidrografica"] = _bacias
-        df["Pontes no Cruzamento"] = _pontes
-        df["Travessias Aquaviarias"] = _travs
-        df["Dependencia Aquaviaria"] = _deps
-        df["Confianca Geografica"] = _confs
+        for _c in _GEO_INTEL_COLUNAS:
+            df[_c] = _cols[_c]
         st.session_state['_geo_intel_fp'] = _fp
         st.session_state.pop('geo_intel_pendente', None)
         return df, {"executado": True, "n_pares": len(_cache)}
