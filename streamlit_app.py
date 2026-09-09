@@ -56941,10 +56941,21 @@ if _secao == _SECOES[15]:   # tab_route_intel
                             + pd.to_numeric(_rotas_dens[_col_qtc_map], errors="coerce").fillna(0))
                         _fig_dens = _fig_mapa_tematico(_rotas_dens, "Densidade Hidrografica",
                                                         "Rios + corpos d'água", colorscale="Teal", cmax=None)
-                    if _fig_cplx is not None or _fig_dep is not None or _fig_dens is not None:
+                    # [MAIS-TEMATICOS - Rodada 7/Missão 3, §28] "Mapa temático hidroviário":
+                    # única camada já coletada (QT_HIDROVIAS) sem visualização nacional própria
+                    # — mesma lógica de densidade hidrográfica acima, sem teto natural (cmax=None).
+                    _fig_hidrov = None
+                    _col_qth_map = _col_existente(_rotas_proc, "QT_HIDROVIAS")
+                    if _col_qth_map:
+                        _rotas_hidrov = _rotas_proc.copy()
+                        _rotas_hidrov["Hidrovias Proximas"] = pd.to_numeric(
+                            _rotas_hidrov[_col_qth_map], errors="coerce").fillna(0)
+                        _fig_hidrov = _fig_mapa_tematico(_rotas_hidrov, "Hidrovias Proximas",
+                                                          "Hidrovias próximas", colorscale="Purples", cmax=None)
+                    if _fig_cplx is not None or _fig_dep is not None or _fig_dens is not None or _fig_hidrov is not None:
                         st.divider()
                         st.markdown("##### 🗺️ Mapas temáticos (§12): onde as rotas deste estudo concentram complexidade/dependência/hidrografia")
-                        _mt1, _mt2, _mt3 = st.columns(3)
+                        _mt1, _mt2, _mt3, _mt4 = st.columns(4)
                         with _mt1:
                             if _fig_cplx is not None:
                                 st.caption("Complexidade geográfica por rota (ponto médio origem↔destino)")
@@ -56963,6 +56974,12 @@ if _secao == _SECOES[15]:   # tab_route_intel
                                 st.plotly_chart(_fig_dens, use_container_width=True)
                             else:
                                 st.caption("Densidade hidrográfica: sem dados suficientes neste estudo ainda.")
+                        with _mt4:
+                            if _fig_hidrov is not None:
+                                st.caption("Hidrovias próximas por rota (nº de hidrovias no raio consultado)")
+                                st.plotly_chart(_fig_hidrov, use_container_width=True)
+                            else:
+                                st.caption("Hidrovias próximas: sem dados suficientes neste estudo ainda.")
 
                 with _abas_intel[2]:
                     st.subheader("Análise de Distribuição e Modal")
