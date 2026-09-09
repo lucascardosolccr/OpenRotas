@@ -101,6 +101,8 @@ def test_geo_intelligence_repository_cache_hit_evita_reconsulta(monkeypatch):
         return [{"nome": "Rio Fake", "distancia_km": 1.23, "navegavel": "Sim", "regime": "Perene"}]
 
     monkeypatch.setattr(rc._bl, "mais_proximos", _fake_mais_proximos)
+    monkeypatch.setattr(rc, "_consultar_rapido_camada_pequena", _fake_mais_proximos)
+    monkeypatch.setattr(rc, "_consultar_camada_pesada_cacheada", _fake_mais_proximos)
     repo = rc.GeoIntelligenceRepository()
     r1 = repo.consultar("drenagem", -3.11901234, -60.02171234, raio_km=5.0)
     r2 = repo.consultar("drenagem", -3.11901111, -60.02171111, raio_km=5.0)  # arredonda igual
@@ -116,6 +118,8 @@ def test_geo_intelligence_repository_fail_open(monkeypatch):
         raise RuntimeError("camada indisponível")
 
     monkeypatch.setattr(rc._bl, "mais_proximos", _explode)
+    monkeypatch.setattr(rc, "_consultar_rapido_camada_pequena", _explode)
+    monkeypatch.setattr(rc, "_consultar_camada_pesada_cacheada", _explode)
     repo = rc.GeoIntelligenceRepository()
     assert repo.consultar("drenagem", -3.0, -60.0, raio_km=5.0) == []
 
@@ -172,6 +176,7 @@ def test_detectar_feicoes_nome_ausente_vira_rotulo_explicito(monkeypatch):
         return [{"nome": None, "distancia_km": 3.0}]
 
     monkeypatch.setattr(rc._bl, "mais_proximos", _fake)
+    monkeypatch.setattr(rc, "_consultar_rapido_camada_pequena", _fake)
     repo = rc.GeoIntelligenceRepository()
     achados = rc._detectar_feicoes([(0.0, 0.0, 0.0)], repo, "eclusas", 10.0, "eclusa", "fonte-teste")
     assert len(achados) == 1
@@ -183,6 +188,7 @@ def test_detectar_feicoes_propaga_coordenada_real(monkeypatch):
         return [{"nome": "Porto X", "distancia_km": 1.0, "lat": -22.5, "lon": -43.2}]
 
     monkeypatch.setattr(rc._bl, "mais_proximos", _fake)
+    monkeypatch.setattr(rc, "_consultar_rapido_camada_pequena", _fake)
     repo = rc.GeoIntelligenceRepository()
     achados = rc._detectar_feicoes([(0.0, 0.0, 0.0)], repo, "complexos_portuarios", 10.0, "porto", "fonte-teste")
     assert achados[0].lat == -22.5 and achados[0].lon == -43.2
@@ -193,6 +199,7 @@ def test_detectar_feicoes_sem_coordenada_na_base_fica_none(monkeypatch):
         return [{"nome": "Porto Y", "distancia_km": 1.0}]  # sem 'lat'/'lon' na resposta
 
     monkeypatch.setattr(rc._bl, "mais_proximos", _fake)
+    monkeypatch.setattr(rc, "_consultar_rapido_camada_pequena", _fake)
     repo = rc.GeoIntelligenceRepository()
     achados = rc._detectar_feicoes([(0.0, 0.0, 0.0)], repo, "complexos_portuarios", 10.0, "porto", "fonte-teste")
     assert achados[0].lat is None and achados[0].lon is None
@@ -203,6 +210,7 @@ def test_detectar_pontes_propaga_coordenada_propria_da_ponte(monkeypatch):
         return [{"nome": "Ponte Z", "distancia_km": 0.2, "lat": -10.1, "lon": -50.2}]
 
     monkeypatch.setattr(rc._bl, "mais_proximos", _fake)
+    monkeypatch.setattr(rc, "_consultar_rapido_camada_pequena", _fake)
     repo = rc.GeoIntelligenceRepository()
     cz = _cruzamento(nome="Rio W", lat=-10.1001, lon=-50.2001)
     pontes = rc._detectar_pontes_nos_cruzamentos([cz], repo)
@@ -219,6 +227,7 @@ def test_detectar_feicoes_deduplica_mantendo_menor_distancia(monkeypatch):
         return respostas.pop(0)
 
     monkeypatch.setattr(rc._bl, "mais_proximos", _fake)
+    monkeypatch.setattr(rc, "_consultar_rapido_camada_pequena", _fake)
     repo = rc.GeoIntelligenceRepository()
     achados = rc._detectar_feicoes(
         [(0.0, 0.0, 0.0), (0.0, 0.1, 10.0)], repo, "complexos_portuarios", 10.0,
@@ -246,6 +255,7 @@ def test_detectar_pontes_ignora_cruzamento_sem_coordenada(monkeypatch):
         return []
 
     monkeypatch.setattr(rc._bl, "mais_proximos", _fake)
+    monkeypatch.setattr(rc, "_consultar_rapido_camada_pequena", _fake)
     repo = rc.GeoIntelligenceRepository()
     cz = rc.CruzamentoHidrografico(nome="Sem coordenada", camada="drenagem",
                                     distancia_eixo_km=1.0, km_desde_origem=0.0,
@@ -261,6 +271,7 @@ def test_detectar_pontes_sem_nome_usa_rotulo_derivado_do_rio(monkeypatch):
         return [{"nome": None, "distancia_km": 0.4}]
 
     monkeypatch.setattr(rc._bl, "mais_proximos", _fake)
+    monkeypatch.setattr(rc, "_consultar_rapido_camada_pequena", _fake)
     repo = rc.GeoIntelligenceRepository()
     cz = _cruzamento(nome="Rio Fake")
     pontes = rc._detectar_pontes_nos_cruzamentos([cz], repo)
@@ -274,6 +285,7 @@ def test_detectar_pontes_com_nome_cadastrado_usa_o_nome_real(monkeypatch):
         return [{"nome": "Ponte Real do Cadastro", "distancia_km": 0.1}]
 
     monkeypatch.setattr(rc._bl, "mais_proximos", _fake)
+    monkeypatch.setattr(rc, "_consultar_rapido_camada_pequena", _fake)
     repo = rc.GeoIntelligenceRepository()
     pontes = rc._detectar_pontes_nos_cruzamentos([_cruzamento()], repo)
     assert pontes[0].nome == "Ponte Real do Cadastro"
@@ -281,6 +293,7 @@ def test_detectar_pontes_com_nome_cadastrado_usa_o_nome_real(monkeypatch):
 
 def test_detectar_pontes_nenhuma_encontrada_no_raio(monkeypatch):
     monkeypatch.setattr(rc._bl, "mais_proximos", lambda *a, **k: [])
+    monkeypatch.setattr(rc, "_consultar_rapido_camada_pequena", lambda *a, **k: [])
     repo = rc.GeoIntelligenceRepository()
     assert rc._detectar_pontes_nos_cruzamentos([_cruzamento()], repo) == []
 
@@ -290,6 +303,7 @@ def test_detectar_pontes_fail_open(monkeypatch):
         raise RuntimeError("camada indisponível")
 
     monkeypatch.setattr(rc._bl, "mais_proximos", _explode)
+    monkeypatch.setattr(rc, "_consultar_rapido_camada_pequena", _explode)
     repo = rc.GeoIntelligenceRepository()
     assert rc._detectar_pontes_nos_cruzamentos([_cruzamento()], repo) == []
 
@@ -393,3 +407,117 @@ def test_analisar_rota_raio_explicito_e_sempre_respeitado_na_fase_aquaviaria():
     ctx_raio_largo = rc.analisar_rota(origem, destino, raio_km=50.0, nivel=1)
     assert len(ctx_raio_largo.travessias) >= len(ctx_raio_curto.travessias)
     assert len(ctx_raio_largo.portos_terminais) >= len(ctx_raio_curto.portos_terminais)
+
+
+# ==============================================================================
+# Rodada 14 — caminho rápido em memória para as camadas pequenas (Performance).
+# ==============================================================================
+
+def test_camadas_pequenas_sao_exatamente_as_seis_camadas_leves():
+    # Nunca inclui `drenagem`/`massas_dagua` (pesadas demais para memória).
+    assert set(rc._CAMADAS_PEQUENAS) == {
+        "pontes", "travessias", "hidrovias", "eclusas",
+        "atracadouros_terminal", "complexos_portuarios",
+    }
+    assert "drenagem" not in rc._CAMADAS_PEQUENAS
+    assert "massas_dagua" not in rc._CAMADAS_PEQUENAS
+
+
+@pytestmark_dados
+@pytest.mark.parametrize("camada", rc._CAMADAS_PEQUENAS)
+def test_caminho_rapido_bate_com_mais_proximos_para_cada_camada_pequena(camada):
+    # Mesmo resultado (mesma ordem, mesma distância) que a leitura em disco —
+    # só a fonte dos dados muda, nunca o critério de busca/ranking.
+    lon, lat, raio = -60.0217, -3.1190, 60.0
+    esperado = bl.mais_proximos(camada, lon, lat, raio_km=raio, limite=10)
+    obtido = rc._consultar_rapido_camada_pequena(camada, lon, lat, raio_km=raio, limite=10)
+    assert len(obtido) == len(esperado)
+    for e, o in zip(esperado, obtido):
+        assert o["nome"] == e["nome"]
+        assert abs(o["distancia_km"] - e["distancia_km"]) < 1e-6
+
+
+@pytestmark_dados
+def test_repositorio_usa_caminho_rapido_para_camada_pequena_sem_tocar_disco(monkeypatch):
+    def _explode(*a, **k):
+        raise AssertionError("não deveria reler o Parquet do disco para camada pequena")
+
+    monkeypatch.setattr(rc._bl, "mais_proximos", _explode)
+    repo = rc.GeoIntelligenceRepository()
+    resultado = repo.consultar("pontes", -3.1190, -60.0217, raio_km=60.0, limite=10)
+    assert isinstance(resultado, list)
+
+
+@pytestmark_dados
+def test_repositorio_continua_usando_disco_para_camada_pesada(monkeypatch):
+    def _explode(*a, **k):
+        raise AssertionError("camada pesada não deveria usar o caminho rápido em memória")
+
+    monkeypatch.setattr(rc, "_consultar_rapido_camada_pequena", _explode)
+    repo = rc.GeoIntelligenceRepository()
+    resultado = repo.consultar("drenagem", -3.1190, -60.0217, raio_km=5.0, limite=5)
+    assert isinstance(resultado, list)
+
+
+# ==============================================================================
+# Rodada 14 — cache de "janela ampla" das camadas pesadas (drenagem/massas_dagua).
+# ==============================================================================
+
+@pytestmark_dados
+@pytest.mark.parametrize("camada,lon,lat,raio", [
+    ("drenagem", -60.0217, -3.1190, 5.0),
+    ("drenagem", -60.0217, -3.1190, 12.0),
+    ("drenagem", -43.10, -22.895, 12.0),
+    ("massas_dagua", -60.55, -3.35, 60.0),  # raio explícito acima da janela padrão
+])
+def test_cache_camada_pesada_bate_com_mais_proximos(camada, lon, lat, raio):
+    # Mesmo resultado que a leitura direta em disco — a janela cacheada
+    # nunca pode truncar um raio pedido, nem para raios maiores que a
+    # janela padrão (12 km) da escalada automática.
+    rc._limpar_cache_camadas_pesadas()
+    esperado = bl.mais_proximos(camada, lon, lat, raio_km=raio, limite=10)
+    obtido = rc._consultar_camada_pesada_cacheada(camada, lon, lat, raio_km=raio, limite=10)
+    assert len(obtido) == len(esperado)
+    for e, o in zip(esperado, obtido):
+        assert o["nome"] == e["nome"]
+        assert abs(o["distancia_km"] - e["distancia_km"]) < 1e-6
+
+
+@pytestmark_dados
+def test_cache_camada_pesada_reaproveita_janela_entre_raios_crescentes():
+    # Padrão real da escalada automática de nível (§32): mesmo ponto,
+    # raios crescentes — não pode gerar uma nova leitura de disco a cada
+    # nível quando a janela já cacheada cobre o raio pedido.
+    rc._limpar_cache_camadas_pesadas()
+    lon, lat = -60.0217, -3.1190
+    rc._consultar_camada_pesada_cacheada("drenagem", lon, lat, raio_km=5.0, limite=10)
+    assert len(rc._cache_janela_pesada) == 1
+    rc._consultar_camada_pesada_cacheada("drenagem", lon, lat, raio_km=6.0, limite=10)
+    rc._consultar_camada_pesada_cacheada("drenagem", lon, lat, raio_km=8.0, limite=10)
+    rc._consultar_camada_pesada_cacheada("drenagem", lon, lat, raio_km=12.0, limite=10)
+    assert len(rc._cache_janela_pesada) == 1  # uma única leitura de disco serviu os 4 raios
+
+
+@pytestmark_dados
+def test_cache_camada_pesada_nao_serve_do_cache_quando_raio_pedido_excede_a_janela(monkeypatch):
+    chamadas = {"n": 0}
+    original = rc._bl._busca_com_filtro
+
+    def _contando(*a, **k):
+        chamadas["n"] += 1
+        return original(*a, **k)
+
+    rc._limpar_cache_camadas_pesadas()
+    monkeypatch.setattr(rc._bl, "_busca_com_filtro", _contando)
+    rc._consultar_camada_pesada_cacheada("drenagem", -60.0217, -3.1190, raio_km=5.0, limite=10)
+    assert chamadas["n"] == 1
+    # Raio muito maior que a janela cacheada -> tem que reler o disco (nunca trunca silenciosamente)
+    rc._consultar_camada_pesada_cacheada("drenagem", -60.0217, -3.1190, raio_km=100.0, limite=10)
+    assert chamadas["n"] == 2
+
+
+def test_limpar_cache_camadas_pesadas_esvazia_o_cache():
+    rc._cache_janela_pesada[("drenagem", -3.1, -60.0)] = (12.0, None)
+    assert len(rc._cache_janela_pesada) >= 1
+    rc._limpar_cache_camadas_pesadas()
+    assert len(rc._cache_janela_pesada) == 0

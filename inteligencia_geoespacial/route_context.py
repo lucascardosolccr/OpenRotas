@@ -144,6 +144,188 @@ def bacia_do_rio(nome_rio) -> str | None:
 
 
 # ==============================================================================
+# Rodada 14 — caminho rápido em memória para as camadas PEQUENAS (Performance).
+# ==============================================================================
+# `bases_locais.mais_proximos` sempre lê o Parquet do disco (com filtro de
+# bbox) a cada chamada — ótimo para as camadas PESADAS (`drenagem` 451MB,
+# `massas_dagua` 56MB: não cabe manter tudo em memória com segurança), mas
+# desperdiça o cache já pronto de `bases_locais.carregar_base` para as
+# camadas PEQUENAS (juntas, <1,2MB / <15 mil linhas — carregam em <0,5s e
+# cabem tranquilamente em memória pelo resto do processo).
+#
+# Medido (30 rotas sintéticas): sem este atalho, cada rota nova custa ~3s
+# (várias releituras de disco por análise, uma por camada pequena consultada
+# em cada nível adaptativo) — o que ameaça a promessa de "automático até 200
+# pares" (§ missão). Com o atalho, a mesma consulta usa o DataFrame já
+# residente em memória (carregado uma única vez por processo) e reaproveita
+# EXATAMENTE a mesma lógica de refinamento geométrico de
+# `bases_locais.mais_proximos` (`_dist_bbox_km`/`_distancia_geometria`/
+# `_haversine`, importadas de `bases_locais` — não duplicadas) para nunca
+# divergir do resultado de referência já testado.
+
+_CAMADAS_PEQUENAS = (
+    "pontes", "travessias", "hidrovias", "eclusas",
+    "atracadouros_terminal", "complexos_portuarios",
+)
+
+
+def _consultar_rapido_camada_pequena(camada: str, lon: float, lat: float, raio_km: float,
+                                      limite: int = 10, filtros: dict | None = None) -> list:
+    """Equivalente a `bases_locais.mais_proximos`, mas a partir do DataFrame
+    já em memória (`bases_locais.carregar_base`) — só para as camadas
+    pequenas listadas em `_CAMADAS_PEQUENAS`. Mesma saída (list[dict]),
+    mesmo critério de raio/ordenação/refinamento geométrico; só a fonte dos
+    dados (memória em vez de releitura do disco) muda."""
+    df = _bl.carregar_base(camada)
+    if df.empty:
+        return []
+
+    if filtros:
+        for c, v in filtros.items():
+            if c not in df.columns:
+                return []
+            df = df[df[c].astype(object).eq(v)]
+        if df.empty:
+            return []
+
+    dlat = raio_km / 110.574
+    cos_lat = max(0.0001, abs(math.cos(math.radians(lat))))
+    dlon = min(raio_km / (111.320 * cos_lat), 180.0)
+    df = df[(df.xmin <= lon + dlon) & (df.xmax >= lon - dlon) &
+            (df.ymin <= lat + dlat) & (df.ymax >= lat - dlat)]
+    if df.empty:
+        return []
+
+    df = df.copy()
+    df["distancia_km"] = _bl._haversine(lon, lat, df.lon.to_numpy(), df.lat.to_numpy())
+    df = df[df.distancia_km <= raio_km].sort_values("distancia_km")
+    if df.empty:
+        return []
+
+    pool = df.head(min(len(df), max(limite * 80, 512)))
+    calc = []
+    for _, r in pool.iterrows():
+        if r.tipo_geom == "PONTO":
+            calc.append((float(r.distancia_km), r))
+            continue
+        d_bbox = _bl._dist_bbox_km(lon, lat, r.xmin, r.ymin, r.xmax, r.ymax)
+        if len(calc) >= limite and d_bbox >= calc[limite - 1][0]:
+            continue
+        d = _bl._distancia_geometria(lon, lat, r.geometry_wkb)
+        calc.append((d if d is not None else float(r.distancia_km), r))
+    calc.sort(key=lambda t: t[0])
+    return [{**dict(r), "distancia_km": d} for d, r in calc[:limite]]
+
+
+# ==============================================================================
+# Rodada 14 — cache de "janela ampla" para as camadas PESADAS (Performance).
+# ==============================================================================
+# Perfilando `analisar_rota` (cProfile) depois do atalho das camadas pequenas
+# acima, o custo restante passou a ser quase todo (>95% do tempo) releituras
+# de `drenagem`/`massas_dagua` do disco: a escalada automática de nível
+# (§32) e a amostragem de vários pontos ao longo da rota consultam o MESMO
+# ponto (ou pontos muito próximos) várias vezes, cada uma com um raio um
+# pouco maior — e cada consulta relia o Parquet do zero, mesmo que uma
+# consulta anterior já tivesse coberto quase a mesma área.
+#
+# Como `drenagem` (451MB/2,18M linhas) e `massas_dagua` (56MB/64.850 linhas)
+# são grandes demais para manter inteiras em memória com segurança (mesma
+# decisão já tomada para o atalho acima — risco de orçamento de memória em
+# produção), este cache guarda, por ponto arredondado a 2 casas decimais
+# (~1km de grade), a leitura filtrada por bbox JÁ FEITA com uma folga (o
+# maior raio que a escalada automática pode pedir, mais uma margem de
+# segurança para a própria imprecisão do arredondamento do ponto) — e serve
+# todas as consultas seguintes com raio igual ou menor para aquele mesmo
+# ponto a partir dessa janela em memória, sem tocar o disco de novo. Um
+# `raio_km` explícito maior do que a janela cacheada NUNCA é servido do
+# cache (evita truncar silenciosamente um raio pedido explicitamente) —
+# nesse caso relê o disco com o raio realmente pedido (+ a mesma margem) e
+# substitui a janela cacheada para aquele ponto.
+
+_RAIO_SUPERCACHE_PADRAO_KM = 12.0  # cobre o maior raio da escalada automática (nível 6 — ver _RAIO_POR_NIVEL)
+# Grade de 1 casa decimal (~11 km): medido que o custo de reler o Parquet é
+# dominado por overhead fixo por chamada (escaneio de metadados/row-groups),
+# não pelo tamanho do raio pedido — então vale a pena usar uma grade mais
+# larga para que VÁRIOS pontos amostrados ao longo do mesmo trecho de rota
+# (tipicamente a poucos km uns dos outros) caiam na mesma célula e
+# reaproveitem a mesma leitura, mesmo custando uma janela de leitura maior.
+_PRECISAO_GRADE_PESADAS = 1
+_MARGEM_SEGURANCA_ARREDONDAMENTO_KM = 9.0  # folga > deslocamento máx. de arredondar o ponto a 1 casa (~7,85 km no pior caso no Brasil)
+_CACHE_PESADAS_MAX_ENTRADAS = 300
+
+_cache_janela_pesada: "OrderedDict[tuple, tuple]" = OrderedDict()
+
+
+def _limpar_cache_camadas_pesadas():
+    """Só para testes/isolamento entre execuções — em produção este cache
+    de processo não precisa ser limpo."""
+    _cache_janela_pesada.clear()
+
+
+def _consultar_camada_pesada_cacheada(camada: str, lon: float, lat: float, raio_km: float,
+                                       limite: int = 10, filtros: dict | None = None) -> list:
+    """Equivalente a `bases_locais.mais_proximos` para as camadas PESADAS,
+    mas reaproveitando (quando possível) uma leitura de disco já feita para
+    o mesmo ponto com um raio igual ou maior — ver explicação acima. Nunca
+    diverge do resultado de referência: usa as mesmas rotinas de
+    filtro/ranking/refinamento de `bases_locais` (importadas, não
+    duplicadas), só a origem do DataFrame filtrado por bbox muda (cache em
+    memória em vez de sempre reler o disco)."""
+    lat_r = round(float(lat), _PRECISAO_GRADE_PESADAS)
+    lon_r = round(float(lon), _PRECISAO_GRADE_PESADAS)
+    chave = (camada, lat_r, lon_r)
+
+    entrada = _cache_janela_pesada.get(chave)
+    if entrada is not None and entrada[0] >= raio_km + _MARGEM_SEGURANCA_ARREDONDAMENTO_KM:
+        _cache_janela_pesada.move_to_end(chave)
+        df = entrada[1]
+    else:
+        raio_leitura = max(raio_km, _RAIO_SUPERCACHE_PADRAO_KM) + _MARGEM_SEGURANCA_ARREDONDAMENTO_KM
+        # Sem projeção de colunas (todas as colunas): garante que qualquer
+        # `filtros` futuro sempre encontre a coluna necessária no DataFrame
+        # cacheado, sem precisar recalcular quais colunas "extra" incluir.
+        df = _bl._busca_com_filtro(camada, lon_r, lat_r, raio_leitura, colunas=None)
+        _cache_janela_pesada[chave] = (raio_leitura, df)
+        _cache_janela_pesada.move_to_end(chave)
+        if len(_cache_janela_pesada) > _CACHE_PESADAS_MAX_ENTRADAS:
+            _cache_janela_pesada.popitem(last=False)
+
+    if df.empty:
+        return []
+
+    if filtros:
+        for c, v in filtros.items():
+            if c not in df.columns:
+                return []
+            df = df[df[c].astype(object).eq(v)]
+        if df.empty:
+            return []
+
+    df = df.copy()
+    df["distancia_km"] = _bl._haversine(lon, lat, df.lon.to_numpy(), df.lat.to_numpy())
+    df = df[df.distancia_km <= raio_km].sort_values("distancia_km")
+    if df.empty:
+        return []
+
+    pool = df.head(min(len(df), max(limite * 80, 512)))
+    calc = []
+    for _, r in pool.iterrows():
+        if r.tipo_geom == "PONTO":
+            calc.append((float(r.distancia_km), r))
+            continue
+        d_bbox = _bl._dist_bbox_km(lon, lat, r.xmin, r.ymin, r.xmax, r.ymax)
+        if len(calc) >= limite and d_bbox >= calc[limite - 1][0]:
+            continue
+        d = _bl._distancia_geometria(lon, lat, r.geometry_wkb)
+        calc.append((d if d is not None else float(r.distancia_km), r))
+    calc.sort(key=lambda t: t[0])
+    return [{**dict(r), "distancia_km": d} for d, r in calc[:limite]]
+
+
+_CAMADAS_COM_CACHE_AMPLO = ("drenagem", "massas_dagua")
+
+
+# ==============================================================================
 # GeoIntelligenceRepository — cache compartilhado das consultas às camadas
 # locais IBGE (§20 da missão): evita reconsultar a mesma (camada, coordenada
 # arredondada, raio) mais de uma vez por processo. Mesmo padrão já usado e
@@ -178,9 +360,18 @@ class GeoIntelligenceRepository:
             return self._cache[chave]
 
         try:
-            resultado = _bl.mais_proximos(
-                camada, float(lon), float(lat), raio_km=float(raio_km),
-                limite=int(limite), filtros=filtros) or []
+            if camada in _CAMADAS_PEQUENAS:
+                resultado = _consultar_rapido_camada_pequena(
+                    camada, float(lon), float(lat), raio_km=float(raio_km),
+                    limite=int(limite), filtros=filtros) or []
+            elif camada in _CAMADAS_COM_CACHE_AMPLO:
+                resultado = _consultar_camada_pesada_cacheada(
+                    camada, float(lon), float(lat), raio_km=float(raio_km),
+                    limite=int(limite), filtros=filtros) or []
+            else:
+                resultado = _bl.mais_proximos(
+                    camada, float(lon), float(lat), raio_km=float(raio_km),
+                    limite=int(limite), filtros=filtros) or []
         except Exception:
             resultado = []
 
@@ -333,13 +524,27 @@ class ContextoGeograficoRota:
 # ==============================================================================
 # Níveis adaptativos (§32 da missão) — reaproveita sinais já existentes no
 # motor de rotas (razão V/R suspeita, balsa) em vez de inventar uma nova
-# heurística. Nesta rodada só o nível básico é usado por analisar_rota
-# (níveis 4+ ficam reservados para quando a camada aquaviária existir).
+# heurística.
+#
+# CALIBRAÇÃO (Rodada 14, com dois casos reais medidos, não uma escolha
+# arbitrária): a Ponte Rio-Niterói está a 3,44 km do ponto de referência do
+# centro do Rio de Janeiro usado nos testes das Rodadas 5/9 — com o raio
+# original do nível 1 (3,0 km) e a amostragem automática (sem geometria
+# real da rota, só a corda reta), esse cruzamento REAL ficava invisível
+# (confirmado rodando analisar_rota sem raio explícito antes desta
+# calibração: 0 rios, 0 pontes). Em Manaus o cruzamento mais próximo
+# (Igarapé Cachoeira Grande) já estava a 1,25 km, dentro de qualquer raio
+# razoável. Sem geometria real da rota, a corda reta pode passar alguns km
+# do traçado verdadeiro — o raio do nível 1 precisa absorver essa folga,
+# não só o erro de digitalização da base. Ajustado de 3,0 → 5,0 km, com a
+# amostragem também um pouco mais densa (passo 40 → 30 km) para rotas
+# curtas/médias sem geometria real. Níveis 2+ (rio/balsa já confirmados)
+# mantidos como estavam — já é razoável para quando há evidência real.
 # ==============================================================================
 
-_RAIO_POR_NIVEL = {1: 3.0, 2: 5.0, 3: 6.0, 4: 8.0, 5: 8.0, 6: 12.0}
-_PASSO_KM_POR_NIVEL = {1: 40.0, 2: 15.0, 3: 15.0, 4: 10.0, 5: 10.0, 6: 8.0}
-_N_PONTOS_MIN, _N_PONTOS_MAX = 3, 60
+_RAIO_POR_NIVEL = {1: 5.0, 2: 6.0, 3: 6.0, 4: 8.0, 5: 8.0, 6: 12.0}
+_PASSO_KM_POR_NIVEL = {1: 30.0, 2: 15.0, 3: 15.0, 4: 10.0, 5: 10.0, 6: 8.0}
+_N_PONTOS_MIN, _N_PONTOS_MAX = 4, 60
 
 
 def nivel_automatico(distancia_km: float | None, suspeita: bool = False) -> int:
