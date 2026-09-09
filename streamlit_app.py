@@ -6479,9 +6479,10 @@ def _mnil_dur(seg):
 
 
 def _mnil_kpi(lbl, val, sub="", cls=""):
+    _sub_html = f'<div class="sub">{sub}</div>' if sub else ""
     return (f'<div class="kpi {cls}"><div class="lbl">{lbl}</div>'
             f'<div class="val">{val}</div>'
-            f'{f"<div class=\"sub\">{sub}</div>" if sub else ""}</div>')
+            f'{_sub_html}</div>')
 
 def _render_kpi_header_lote(df, resumo=None, tempo_seg=None):
     """Header de KPIs do Lote (read-only). Retorna '' se não houver dados — nunca levanta."""
