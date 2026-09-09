@@ -77,12 +77,14 @@ try:
     from inteligencia_geoespacial import enrichment_engine as _geo_enricher
     from inteligencia_geoespacial import xai_formatter as _geo_xai
     from inteligencia_geoespacial import dados_bootstrap as _dados_bootstrap
+    from inteligencia_geoespacial import route_context as _geo_route_context
     _BASES_LOCAIS_IBGE = True
 except Exception:
     _bases_locais_ibge = None
     _geo_enricher = None
     _geo_xai = None
     _dados_bootstrap = None
+    _geo_route_context = None
     _BASES_LOCAIS_IBGE = False
 
 # ==============================================================================
@@ -15988,6 +15990,99 @@ def _portao_de_exibicao(chave='df_processado'):
         logger.error(f"[PORTÃO-EXIBIÇÃO] Falha: {_e}")
         return {"linhas_zero": -1, "recuperadas": 0, "irrecuperaveis": [], "ok": False,
                 "crash": f"{type(_e).__name__}: {_e}"}
+
+
+# ==============================================================================
+# [GEO-INTEL-AUTO] Motor de contexto geográfico (inteligencia_geoespacial.route_context)
+# aplicado automaticamente na FRONTEIRA DE EXIBIÇÃO — mesmo espírito do PORTÃO acima
+# (roda sempre que o df vai ser mostrado, não depende de qual caminho o produziu),
+# mas para uma preocupação diferente: anexar o contexto geográfico (rios, bacia,
+# pontes, travessias, dependência aquaviária) que hoje só existe atrás de um botão
+# manual nas abas "Rotas com Balsa"/"Geoespacial IBGE". Aditivo: só ACRESCENTA
+# colunas no final; nunca altera Distância/Vencedor/Score. Fail-open total.
+# ==============================================================================
+
+_GEO_INTEL_COLUNAS = ("Rios Cruzados", "Bacia Hidrografica", "Pontes no Cruzamento",
+                      "Travessias Aquaviarias", "Dependencia Aquaviaria", "Confianca Geografica")
+_GEO_INTEL_LIMIAR_AUTOMATICO = 200  # nº de PARES origem/destino únicos; acima disso, sob demanda
+
+
+def _enriquecer_geo_inteligencia_df(df, forcar=False, limiar_automatico=_GEO_INTEL_LIMIAR_AUTOMATICO):
+    """Roda `route_context.analisar_rota` para cada par origem/destino ÚNICO de
+    `df` e anexa colunas-resumo aditivas (`_GEO_INTEL_COLUNAS`). Automático até
+    `limiar_automatico` pares únicos (protege o tempo de estudos grandes,
+    conforme decidido); acima disso marca `st.session_state['geo_intel_pendente']`
+    para a UI oferecer um botão sob demanda em vez de travar o app. IDEMPOTENTE
+    por fingerprint (tamanho + amostra de coordenadas) — um rerun sem dados
+    novos não reprocessa. `forcar=True` ignora o limiar (usado pelo botão sob
+    demanda). Nunca lança exceção: qualquer falha devolve o df inalterado."""
+    if _geo_route_context is None or df is None:
+        return df, {"executado": False, "motivo": "modulo_indisponivel"}
+    try:
+        if df.empty:
+            return df, {"executado": False, "motivo": "df_vazio"}
+
+        _col_lat_o = _col_existente(df, "Lat Origem")
+        _col_lon_o = _col_existente(df, "Lon Origem")
+        _col_lat_d = _col_existente(df, "Lat Destino")
+        _col_lon_d = _col_existente(df, "Lon Destino")
+        if not all([_col_lat_o, _col_lon_o, _col_lat_d, _col_lon_d]):
+            return df, {"executado": False, "motivo": "sem_coordenadas"}
+
+        _fp = (len(df), str(df[[_col_lat_o, _col_lon_o, _col_lat_d, _col_lon_d]].head(5).values.tolist()))
+        _ja_feito = all(c in df.columns for c in _GEO_INTEL_COLUNAS)
+        if not forcar and _ja_feito and st.session_state.get('_geo_intel_fp') == _fp:
+            return df, {"executado": False, "motivo": "ja_feito"}
+
+        _pares_unicos = df[[_col_lat_o, _col_lon_o, _col_lat_d, _col_lon_d]].drop_duplicates().shape[0]
+        if not forcar and _pares_unicos > limiar_automatico:
+            st.session_state['geo_intel_pendente'] = {'n_pares': int(_pares_unicos), 'limiar': limiar_automatico}
+            return df, {"executado": False, "motivo": "acima_do_limiar", "n_pares": int(_pares_unicos)}
+
+        _col_dist = _col_existente(df, "Distancia", "Distância")
+        _cache: dict = {}
+        _rios, _bacias, _pontes, _travs, _deps, _confs = [], [], [], [], [], []
+        for _, _row in df.iterrows():
+            _lo = _num_seguro(_row.get(_col_lat_o))
+            _oo = _num_seguro(_row.get(_col_lon_o))
+            _ld = _num_seguro(_row.get(_col_lat_d))
+            _od = _num_seguro(_row.get(_col_lon_d))
+            _ctx = None
+            if _lo is not None and _oo is not None and _ld is not None and _od is not None:
+                _chave = (round(_lo, 4), round(_oo, 4), round(_ld, 4), round(_od, 4))
+                if _chave in _cache:
+                    _ctx = _cache[_chave]
+                else:
+                    _dist = _num_seguro(_row.get(_col_dist)) if _col_dist else None
+                    try:
+                        _ctx = _geo_route_context.analisar_rota((_lo, _oo), (_ld, _od), distancia_km=_dist)
+                    except Exception:
+                        _ctx = None
+                    _cache[_chave] = _ctx
+            if _ctx is None:
+                _rios.append(""); _bacias.append(""); _pontes.append("")
+                _travs.append(""); _deps.append(None); _confs.append(None)
+                continue
+            _rios.append(", ".join(r.nome for r in _ctx.rios_detectados[:3]))
+            _bacias.append(_ctx.bacia_hidrografica or "")
+            _pontes.append(", ".join(p.nome for p in _ctx.pontes[:2]))
+            _travs.append(", ".join(t.nome for t in _ctx.travessias[:2]))
+            _deps.append(_ctx.dependencia_aquaviaria)
+            _confs.append(_ctx.confianca_geral)
+
+        df = df.copy()
+        df["Rios Cruzados"] = _rios
+        df["Bacia Hidrografica"] = _bacias
+        df["Pontes no Cruzamento"] = _pontes
+        df["Travessias Aquaviarias"] = _travs
+        df["Dependencia Aquaviaria"] = _deps
+        df["Confianca Geografica"] = _confs
+        st.session_state['_geo_intel_fp'] = _fp
+        st.session_state.pop('geo_intel_pendente', None)
+        return df, {"executado": True, "n_pares": len(_cache)}
+    except Exception:
+        logger.error("[GEO-INTEL-AUTO] Falha ao enriquecer geograficamente (aditivo, df preservado).", exc_info=True)
+        return df, {"executado": False, "motivo": "excecao"}
 
 
 def _escrever_seguro(df, idx, col, valor):
@@ -43014,6 +43109,43 @@ if _secao == _SECOES[0]:   # tab_individual
                 elif _metodo_tela != "N/A":
                     st.success(f"✅ **Método utilizado:** ✓ {_metodo_tela}")
 
+                # [GEO-INTEL-AUTO] Contexto geográfico automático da rota (rios, bacia, pontes,
+                # travessias, dependência aquaviária) — aditivo. Sempre que a aplicação calcula
+                # uma rota, ela passa automaticamente por esta análise (sem exigir que o usuário
+                # entre na aba Inteligência). Reaproveita as mesmas coordenadas já resolvidas para
+                # a Caderneta de Rotas Douradas, sem nenhuma consulta de rede adicional.
+                try:
+                    _lat_o_gi = res_ind[19] if len(res_ind) > 22 else None
+                    _lon_o_gi = res_ind[20] if len(res_ind) > 22 else None
+                    _lat_d_gi = res_ind[21] if len(res_ind) > 22 else None
+                    _lon_d_gi = res_ind[22] if len(res_ind) > 22 else None
+                    if (_geo_route_context is not None and _lat_o_gi is not None and _lon_o_gi is not None
+                            and _lat_d_gi is not None and _lon_d_gi is not None):
+                        _dist_gi = res_ind[0] if isinstance(res_ind[0], (int, float)) else None
+                        _ctx_gi = _geo_route_context.analisar_rota(
+                            (float(_lat_o_gi), float(_lon_o_gi)), (float(_lat_d_gi), float(_lon_d_gi)),
+                            distancia_km=_dist_gi)
+                        st.session_state['ultima_rota_individual_geo'] = _ctx_gi
+                        with st.expander("🧠 Contexto Geográfico da Rota (rios, bacia, pontes, travessias)",
+                                         expanded=bool(_ctx_gi.rios_detectados or _ctx_gi.corpos_dagua)):
+                            st.markdown(f"**{_ctx_gi.motivo_decisao}**")
+                            if _ctx_gi.rios_detectados:
+                                st.caption("🌊 Rios/córregos cruzados: " + ", ".join(
+                                    r.nome + (f" (bacia {r.bacia})" if r.bacia else "") for r in _ctx_gi.rios_detectados))
+                            if _ctx_gi.pontes:
+                                st.caption("🌉 Pontes no cruzamento: " + ", ".join(p.nome for p in _ctx_gi.pontes))
+                            if _ctx_gi.travessias:
+                                st.caption("⛴️ Travessias aquaviárias próximas: " + ", ".join(t.nome for t in _ctx_gi.travessias))
+                            if _ctx_gi.hidrovias_proximas:
+                                st.caption("🚢 Hidrovia próxima: " + _ctx_gi.hidrovias_proximas[0].nome)
+                            if _ctx_gi.dependencia_aquaviaria is not None:
+                                st.caption(f"📊 Dependência aquaviária: {_ctx_gi.dependencia_aquaviaria}/100 · "
+                                          f"Confiança geográfica: {_ctx_gi.confianca_geral}/100 ({_ctx_gi.confianca_nivel})")
+                            for _av in _ctx_gi.avisos:
+                                st.caption(f"⚠️ {_av}")
+                except Exception:
+                    logger.debug("[GEO-INTEL-AUTO] Falha no contexto geográfico individual (aditivo).", exc_info=True)
+
                 # [IBGE-SINGLESHOT - 59ª geração / item #2] Identificação municipal oficial (IBGE) na
                 # TELA, origem E destino: Município + UF + Cód IBGE + Fonte da identificação + Confiança.
                 # Reaproveita a resolução da planilha (54ª) via _resolver_identidade_ibge — base IBGE em
@@ -45209,6 +45341,22 @@ if _secao == _SECOES[1]:   # tab_processamento
             if _rel_exib and _rel_exib.get('crash'):
                 st.error(f"🔴 **O PORTÃO FALHOU:** `{_rel_exib['crash']}`. **Isto é um bug — me reporte "
                          "esta mensagem inteira.** Os zeros NÃO foram corrigidos.")
+            # [GEO-INTEL-AUTO] Contexto geografico automatico (rios, bacia, pontes,
+            # travessias, dependencia aquaviaria) - aditivo, ver _enriquecer_geo_inteligencia_df.
+            try:
+                _df_geo, _geo_rel = _enriquecer_geo_inteligencia_df(st.session_state.get('df_processado'))
+                if _geo_rel.get('executado'):
+                    st.session_state['df_processado'] = _df_geo
+                    st.caption(f"🧠 Contexto geografico automatico: {_geo_rel['n_pares']} rota(s) unica(s) analisada(s) (rios, bacia, pontes, travessias).")
+                elif _geo_rel.get('motivo') == 'acima_do_limiar':
+                    _pend = st.session_state.get('geo_intel_pendente') or {}
+                    if st.button(f"🧠 Enriquecer geograficamente ({_pend.get('n_pares', '?')} rotas unicas)", key="geo_intel_forcar_lote2"):
+                        _df_geo2, _geo_rel2 = _enriquecer_geo_inteligencia_df(st.session_state.get('df_processado'), forcar=True)
+                        if _geo_rel2.get('executado'):
+                            st.session_state['df_processado'] = _df_geo2
+                            st.rerun()
+            except Exception:
+                logger.debug("[GEO-INTEL-AUTO] Painel de enriquecimento falhou (aditivo).", exc_info=True)
             renderizar_scorecard_qualidade(st.session_state['df_processado'])
             # [AUDIT-SUSPEITAS - 43ª geração] Auditoria automática de rotas suspeitas (razão V/R anômala)
             _susp_df, _susp_resumo = _auditar_rotas_suspeitas(st.session_state['df_processado'])
@@ -48552,6 +48700,22 @@ if _secao == _SECOES[2]:   # tab_alocacao
             # [ALOC-ENTERPRISE - 49ª geração] Paridade com o Processamento em Lote: o mesmo Scorecard de
             # qualidade e a mesma Auditoria Automática de Rotas Suspeitas (REUSO das funções existentes,
             # sem duplicar lógica). A planilha da Alocação já é enriquecida (mesmo _montar_dataframe_final).
+            # [GEO-INTEL-AUTO] Contexto geografico automatico (rios, bacia, pontes,
+            # travessias, dependencia aquaviaria) - aditivo, ver _enriquecer_geo_inteligencia_df.
+            try:
+                _df_geo, _geo_rel = _enriquecer_geo_inteligencia_df(st.session_state.get('df_processado'))
+                if _geo_rel.get('executado'):
+                    st.session_state['df_processado'] = _df_geo
+                    st.caption(f"🧠 Contexto geografico automatico: {_geo_rel['n_pares']} rota(s) unica(s) analisada(s) (rios, bacia, pontes, travessias).")
+                elif _geo_rel.get('motivo') == 'acima_do_limiar':
+                    _pend = st.session_state.get('geo_intel_pendente') or {}
+                    if st.button(f"🧠 Enriquecer geograficamente ({_pend.get('n_pares', '?')} rotas unicas)", key="geo_intel_forcar_aloc"):
+                        _df_geo2, _geo_rel2 = _enriquecer_geo_inteligencia_df(st.session_state.get('df_processado'), forcar=True)
+                        if _geo_rel2.get('executado'):
+                            st.session_state['df_processado'] = _df_geo2
+                            st.rerun()
+            except Exception:
+                logger.debug("[GEO-INTEL-AUTO] Painel de enriquecimento falhou (aditivo).", exc_info=True)
             renderizar_scorecard_qualidade(st.session_state['df_processado'])
             # [COBERTURA - 140ª geração] PLANEJAMENTO DE POLOS. As duas perguntas que o gestor de exames de
             # fato faz — "quantos candidatos estão longe demais?" e "onde abrir o próximo polo?" — e que a
