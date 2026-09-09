@@ -56357,7 +56357,7 @@ def _proj_analise(cache_key, df, max_linhas=300):
 # ==============================================================================
 if _secao == _SECOES[15]:   # tab_route_intel
     st.header("🧠 Centro de Inteligência da Rota")
-    st.caption("Consolidação de tudo que a aplicação sabe sobre esta rota: geografia, infraestrutura, hidrografia, decisão.")
+    st.caption("Dashboard analítico completo com visões detalhadas, geográficas e hídricas do lote.")
     
     try:
         _rotas_proc = st.session_state.get('df_processado')
@@ -56429,52 +56429,69 @@ if _secao == _SECOES[15]:   # tab_route_intel
 
             # Projeção robusta (aceita a nomenclatura real do df_processado). Se o filtro acima
             # zerou o recorte, _df_intel fica vazio e cai no aviso já existente logo abaixo.
-            _df_intel = _proj_analise("proj_intel", _rotas_proc, max_linhas=200)
+            # max_linhas=100000 (não 200): a refatoração do Centro de Inteligência em main
+            # passou a assumir o recorte completo, não uma amostra truncada.
+            _df_intel = _proj_analise("proj_intel", _rotas_proc, max_linhas=100000)
             if _df_intel is None or _df_intel.empty:
                 st.info("Não há linhas analisáveis nesta sessão. Rode um estudo primeiro.")
             else:
                 _col_ic = _col_existente(_rotas_proc, "Indice Confianca Rota", "Índice Confiança", "Score da Rota", "Score Final Global", "Score Final")
                 _col_fonte = _col_existente(_rotas_proc, "Fonte da Rota", "Fonte Rota", "Motor da Rota")
-                _cols_show = ["Origem", "UF", "Destino", "Distância (km)", "Vencedor", "Balsa", "Rio", "Bacia"]
-                _cols_show = [c for c in _cols_show if c in _df_intel.columns]
-                st.dataframe(_df_intel[_cols_show].head(20), use_container_width=True, hide_index=True)
 
-                # [INTEL-VIS - 452ª] Painel visual/analítico (ADRITIVO + defensivo): KPIs, distribuições e mapa
-                # O/D de todo o estudo — complementa a tabela e o inspetor de rota, sem alterar o fluxo atual.
-                try:
-                    _int_tot = len(_df_intel)
-                    _int_km = pd.to_numeric(_df_intel["Distância (km)"], errors="coerce")
-                    _int_balsa = int(_df_intel["Balsa"].sum()) if "Balsa" in _df_intel.columns else 0
-                    _int_rios = int(_df_intel["Rio"].astype(str).str.strip().replace(["", "—"], pd.NA).dropna().nunique()) if "Rio" in _df_intel.columns else 0
+                # Setup base data for calculations
+                _int_tot = len(_df_intel)
+                _int_km = pd.to_numeric(_df_intel["Distância (km)"], errors="coerce")
+                _km_mean = _int_km.mean()
+                _km_med = _int_km.median()
+                _km_sum = _int_km.sum()
+                _int_balsa = int(_df_intel["Balsa"].sum()) if "Balsa" in _df_intel.columns else 0
+                _pct_balsa = (_int_balsa / max(1, _int_tot)) * 100
+                _int_rios = int(_df_intel["Rio"].astype(str).str.strip().replace(["", "—", "None"], pd.NA).dropna().nunique()) if "Rio" in _df_intel.columns else 0
+                _int_bac = int(_df_intel["Bacia"].astype(str).str.strip().replace(["", "—", "None"], pd.NA).dropna().nunique()) if "Bacia" in _df_intel.columns else 0
+                _ufs_cobertas = _df_intel["UF"].astype(str).str.strip().replace(["", "—", "None"], pd.NA).dropna().nunique() if "UF" in _df_intel.columns else 0
 
-                    _ik1, _ik2, _ik3, _ik4 = st.columns(4)
-                    _ik1.metric("Rotas analisadas", _int_tot)
-                    _ik2.metric("Distância média", ("%.1f km" % float(_int_km.mean())) if _int_km.notna().any() else "—")
-                    _ik3.metric("Rotas com balsa", _int_balsa)
-                    _ik4.metric("Rios distintos", _int_rios)
+                _abas_intel = st.tabs(["🏠 Visão Geral", "🗺️ Mapa de Rotas", "📊 Distribuição", "💧 Hidrografia", "🔬 Inspetor de Rota", "📋 Tabela Analítica"])
 
-                    _ia1, _ia2 = st.columns(2)
-                    with _ia1:
+                with _abas_intel[0]:
+                    st.subheader("KPIs Globais")
+                    _k1, _k2, _k3, _k4 = st.columns(4)
+                    _k1.metric("Rotas Analisadas", f"{_int_tot:,}")
+                    _k2.metric("Distância Média", ("%.1f km" % float(_km_mean)) if _int_km.notna().any() else "—")
+                    _k3.metric("Distância Mediana", ("%.1f km" % float(_km_med)) if _int_km.notna().any() else "—")
+                    _k4.metric("Distância Total", ("%.0f km" % float(_km_sum)) if _int_km.notna().any() else "—")
+
+                    _k5, _k6, _k7, _k8 = st.columns(4)
+                    _k5.metric("Rotas com Balsa", f"{_int_balsa:,} ({_pct_balsa:.1f}%)")
+                    _k6.metric("Rios Cruzados", _int_rios)
+                    _k7.metric("Bacias Hidrográficas", _int_bac)
+                    _k8.metric("UFs Cobertas", _ufs_cobertas)
+
+                    st.divider()
+
+                    _g1, _g2 = st.columns(2)
+                    with _g1:
                         st.caption("Distribuição de distância (faixas, km)")
-                        _faixas = pd.cut(_int_km.dropna(), bins=[0, 50, 100, 200, 400, 800, float("inf")],
-                                         labels=["0–50", "50–100", "100–200", "200–400", "400–800", "800+"])
-                        st.bar_chart(_faixas.value_counts().sort_index())
-                    with _ia2:
+                        if _int_km.notna().any():
+                            _faixas = pd.cut(_int_km.dropna(), bins=[0, 50, 100, 200, 400, 800, float("inf")],
+                                             labels=["0–50", "50–100", "100–200", "200–400", "400–800", "800+"])
+                            _fc = _faixas.value_counts().sort_index().reset_index()
+                            _fc.columns = ["Faixa (km)", "Quantidade"]
+                            _fig_bar1 = px.bar(_fc, x="Faixa (km)", y="Quantidade", color="Quantidade", color_continuous_scale="Blues")
+                            _fig_bar1.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=300)
+                            st.plotly_chart(_fig_bar1, use_container_width=True)
+                        else:
+                            st.caption("Sem dados de distância.")
+                    with _g2:
                         st.caption("Rotas por UF (top 12)")
-                        _ufs = _df_intel["UF"].astype(str).str.strip().replace(["", "N/A", "—"], pd.NA).dropna()
-                        st.bar_chart(_ufs.value_counts().head(12)) if _ufs.nunique() else st.caption("Sem UF disponível.")
-
-                    _ib1, _ib2 = st.columns(2)
-                    with _ib1:
-                        st.caption("Rios mais frequentes")
-                        _rios = (_df_intel["Rio"].astype(str).str.strip().replace(["", "—"], pd.NA).dropna()
-                                 if "Rio" in _df_intel.columns else pd.Series(dtype=object))
-                        st.bar_chart(_rios.value_counts().head(10)) if _rios.nunique() else st.caption("Sem rios identificados.")
-                    with _ib2:
-                        st.caption("Bacias mais frequentes")
-                        _bac = (_df_intel["Bacia"].astype(str).str.strip().replace(["", "—"], pd.NA).dropna()
-                                if "Bacia" in _df_intel.columns else pd.Series(dtype=object))
-                        st.bar_chart(_bac.value_counts().head(10)) if _bac.nunique() else st.caption("Sem bacias identificadas.")
+                        _ufs = _df_intel["UF"].astype(str).str.strip().replace(["", "N/A", "—", "None"], pd.NA).dropna() if "UF" in _df_intel.columns else pd.Series(dtype=object)
+                        if _ufs.nunique():
+                            _ufc = _ufs.value_counts().head(12).reset_index()
+                            _ufc.columns = ["UF", "Quantidade"]
+                            _fig_bar2 = px.bar(_ufc, x="UF", y="Quantidade", color="Quantidade", color_continuous_scale="Teal")
+                            _fig_bar2.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=300)
+                            st.plotly_chart(_fig_bar2, use_container_width=True)
+                        else:
+                            st.caption("Sem UF disponível.")
 
                     # [MAIS-TEMATICOS - Rodada 12/Missão 2, §12] Rodovias/ferrovias mais
                     # frequentes no estudo — mesmo padrão de "explode + contagem" já usado
@@ -56482,6 +56499,7 @@ if _secao == _SECOES[15]:   # tab_route_intel
                     _col_nm_rod = _col_existente(_rotas_proc, "NM_RODOVIAS")
                     _col_nm_ferro = _col_existente(_rotas_proc, "NM_FERROVIAS")
                     if _col_nm_rod or _col_nm_ferro:
+                        st.divider()
                         _ic1, _ic2 = st.columns(2)
                         with _ic1:
                             st.caption("Rodovias mais frequentes")
@@ -56504,11 +56522,15 @@ if _secao == _SECOES[15]:   # tab_route_intel
                             else:
                                 st.caption("Coluna indisponível neste estudo.")
 
-                    st.divider()
-                    st.caption("🗺️ Mapa origem → destino do estudo")
+                with _abas_intel[1]:
+                    st.subheader("Mapa Origem → Destino")
+                    st.caption("Visão espacial de todos os deslocamentos. Arcos coloridos por distância (azul=curto, vermelho=longo).")
                     _fig_intel = _fig_pares_od(_df_intel)
                     if _fig_intel is not None:
+                        _fig_intel.update_layout(height=600)
                         st.plotly_chart(_fig_intel, use_container_width=True)
+                    else:
+                        st.info("Coordenadas insuficientes para plotar o mapa.")
 
                     # [GEO-MAPA-TEMATICO - Rodada 7/Missão 2] Mapas temáticos (§12 da missão):
                     # cada um responde uma pergunta específica sobre ONDE as rotas deste estudo
@@ -56554,132 +56576,220 @@ if _secao == _SECOES[15]:   # tab_route_intel
                                 st.plotly_chart(_fig_dens, use_container_width=True)
                             else:
                                 st.caption("Densidade hidrográfica: sem dados suficientes neste estudo ainda.")
-                except Exception:
-                    logger.debug("[ROUTE-INTEL-VIS] Análise visual isolada falhou (aditivo).", exc_info=True)
 
-                _labels = (_df_intel["Origem"].astype(str) + " → " + _df_intel["Destino"].astype(str)).tolist()
-                _opcoes = ["(nenhuma)"] + _labels
-                _sel = st.selectbox("🔍 Inspecionar rota", _opcoes, key="route_intel_sel")
-                if _sel != "(nenhuma)":
-                    _ix = _opcoes.index(_sel) - 1
-                    if 0 <= _ix < len(_df_intel):
-                        _row = _df_intel.iloc[_ix]
-                        _orig = str(_row.get("Origem", "—"))
-                        _uf = str(_row.get("UF", "—"))
-                        _dest = str(_row.get("Destino", "—"))
-                        _dist_km = _num_seguro(_row.get("Distância (km)"), 0.0) or 0.0
-                        _c1, _c2, _c3 = st.columns(3)
-                        _c1.metric("Origem", ("%s/%s" % (_orig, _uf)).replace("//", "/"))
-                        _c2.metric("Destino", _dest)
-                        _c3.metric("Distância", "%.1f km" % float(_dist_km))
+                with _abas_intel[2]:
+                    st.subheader("Análise de Distribuição e Modal")
+                    _db1, _db2 = st.columns(2)
+                    with _db1:
+                        st.caption("Status do Modal")
+                        if "Modo/Acesso" in _rotas_proc.columns:
+                            _modo_cnt = _rotas_proc["Modo/Acesso"].value_counts().reset_index()
+                            _modo_cnt.columns = ["Modo", "Quantidade"]
+                            _fig_pie = px.pie(_modo_cnt, names="Modo", values="Quantidade", hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
+                            st.plotly_chart(_fig_pie, use_container_width=True)
+                        elif "Balsa" in _df_intel.columns:
+                            _modo = _df_intel["Balsa"].apply(lambda x: "Rodoviário + Balsa" if x else "Rodoviário")
+                            _modo_cnt = _modo.value_counts().reset_index()
+                            _modo_cnt.columns = ["Modo", "Quantidade"]
+                            _fig_pie = px.pie(_modo_cnt, names="Modo", values="Quantidade", hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
+                            st.plotly_chart(_fig_pie, use_container_width=True)
+                    with _db2:
+                        st.caption("Confiança da Rota")
+                        if _col_ic:
+                            _ic_data = pd.to_numeric(_rotas_proc[_col_ic], errors="coerce").dropna()
+                            _faixas_ic = pd.cut(_ic_data, bins=[-1, 50, 80, 99, 100], labels=["Baixa (<50)", "Média (50-80)", "Alta (80-99)", "Perfeita (100)"])
+                            _fic = _faixas_ic.value_counts().sort_index().reset_index()
+                            _fic.columns = ["Faixa de Confiança", "Quantidade"]
+                            _fig_bar3 = px.bar(_fic, x="Faixa de Confiança", y="Quantidade", color="Faixa de Confiança", color_discrete_sequence=["#E74C3C", "#F39C12", "#3498DB", "#2ECC71"])
+                            st.plotly_chart(_fig_bar3, use_container_width=True)
+                        else:
+                            st.caption("Score não disponível.")
 
-                        _c4, _c5, _c6 = st.columns(3)
-                        _c4.metric("Vencedor", str(_row.get("Vencedor", "—")) or "—")
-                        _c5.metric("Balsa", "Sim" if _row.get("Balsa") else "Não")
-                        _c6.metric("Rio", str(_row.get("Rio", "—")) or "—")
+                with _abas_intel[3]:
+                    st.subheader("Inteligência Hidrográfica")
+                    _ib1, _ib2 = st.columns(2)
+                    with _ib1:
+                        st.caption("Top 15 Rios Cruzados")
+                        _rios = (_df_intel["Rio"].astype(str).str.strip().replace(["", "—", "None", "nan"], pd.NA).dropna()
+                                 if "Rio" in _df_intel.columns else pd.Series(dtype=object))
+                        if _rios.nunique():
+                            _rc = _rios.value_counts().head(15).reset_index()
+                            _rc.columns = ["Rio", "Travessias"]
+                            _fig_bar4 = px.bar(_rc, y="Rio", x="Travessias", orientation='h', color="Travessias", color_continuous_scale="Blues")
+                            _fig_bar4.update_layout(yaxis={'categoryorder':'total ascending'})
+                            st.plotly_chart(_fig_bar4, use_container_width=True)
+                        else:
+                            st.caption("Sem rios identificados.")
+                    with _ib2:
+                        st.caption("Top 15 Bacias Afetadas")
+                        _bac = (_df_intel["Bacia"].astype(str).str.strip().replace(["", "—", "None", "nan"], pd.NA).dropna()
+                                if "Bacia" in _df_intel.columns else pd.Series(dtype=object))
+                        if _bac.nunique():
+                            _bc = _bac.value_counts().head(15).reset_index()
+                            _bc.columns = ["Bacia", "Travessias"]
+                            _fig_bar5 = px.bar(_bc, y="Bacia", x="Travessias", orientation='h', color="Travessias", color_continuous_scale="Teal")
+                            _fig_bar5.update_layout(yaxis={'categoryorder':'total ascending'})
+                            st.plotly_chart(_fig_bar5, use_container_width=True)
+                        else:
+                            st.caption("Sem bacias identificadas.")
 
-                        _c7, _c8, _c9 = st.columns(3)
-                        _c7.metric("Bacia", str(_row.get("Bacia", "—")) or "—")
-                        _row_orig = _rotas_proc.iloc[_ix] if _ix < len(_rotas_proc) else None
-                        _ic_val = _val_linha(_row_orig, _col_ic, padrao="—") if (_row_orig is not None and _col_ic) else "—"
-                        _fonte_val = _val_linha(_row_orig, _col_fonte, padrao="—") if (_row_orig is not None and _col_fonte) else "—"
-                        _c8.metric("Índice Confiança", _ic_val if _ic_val == "—" else ("%.0f/100" % _num_seguro(_ic_val, 0.0)))
-                        _c9.metric("Fonte Rota", str(_fonte_val) or "—")
+                with _abas_intel[4]:
+                    st.subheader("Inspetor de Rota (Drill-down)")
+                    _labels = (_df_intel["Origem"].astype(str) + " → " + _df_intel["Destino"].astype(str)).tolist()
+                    _opcoes = ["(nenhuma)"] + _labels
+                    _sel = st.selectbox("🔍 Inspecionar rota isolada", _opcoes, key="route_intel_sel")
+                    if _sel != "(nenhuma)":
+                        _ix = _opcoes.index(_sel) - 1
+                        if 0 <= _ix < len(_df_intel):
+                            _row = _df_intel.iloc[_ix]
+                            _orig = str(_row.get("Origem", "—"))
+                            _uf = str(_row.get("UF", "—"))
+                            _dest = str(_row.get("Destino", "—"))
+                            _dist_km = _num_seguro(_row.get("Distância (km)"), 0.0) or 0.0
 
-                        # [GEO-INTEL-EXPLICA - Rodada 13] Contexto geográfico completo desta rota (motor da
-                        # Rodada 10, não a projeção legada usada acima): bacia real, pontes, travessias e
-                        # dependência aquaviária — e uma explicação em texto ("por que esta rota"), reaproveitando
-                        # exatamente o que já foi calculado em df_processado, sem nenhum recálculo aqui.
-                        try:
-                            if _row_orig is not None and _col_existente(_rotas_proc, "QT_RIOS"):
-                                st.divider()
-                                st.markdown("##### 🧠 Por que esta rota — contexto geográfico completo")
-                                _c10, _c11, _c12 = st.columns(3)
-                                _c10.metric("Bacia hidrográfica", str(_row_orig.get("Bacia Hidrografica") or "—"))
-                                _qt_p = _num_seguro(_row_orig.get("QT_PONTES"))
-                                _c11.metric("Pontes no cruzamento", int(_qt_p) if _qt_p is not None else "—")
-                                _qt_t = _num_seguro(_row_orig.get("QT_TRAVESSIAS"))
-                                _c12.metric("Travessias aquaviárias", int(_qt_t) if _qt_t is not None else "—")
-                                _c13, _c14, _c15 = st.columns(3)
-                                _dep_v = _num_seguro(_row_orig.get("Dependencia Aquaviaria"))
-                                _c13.metric("Dependência aquaviária", f"{_dep_v:.0f}/100" if _dep_v is not None else "—")
-                                _conf_v = _num_seguro(_row_orig.get("Confianca Geografica"))
-                                _c14.metric("Confiança geográfica", f"{_conf_v:.0f}/100" if _conf_v is not None else "—")
-                                _cplx_v = _num_seguro(_row_orig.get("Complexidade Geografica"))
-                                _c15.metric("Complexidade geográfica", f"{_cplx_v:.0f}/100" if _cplx_v is not None else "—")
-                                _pontes_txt = str(_row_orig.get("Pontes no Cruzamento") or "").strip()
-                                if _pontes_txt and _pontes_txt not in ("—", "nan"):
-                                    st.caption(f"🌉 Ponte(s): {_pontes_txt}")
-                                _trav_txt = str(_row_orig.get("Travessias Aquaviarias") or "").strip()
-                                if _trav_txt and _trav_txt not in ("—", "nan"):
-                                    st.caption(f"⛴️ Travessia(s): {_trav_txt}")
-                                _rod_txt = str(_row_orig.get("Rodovias Identificadas") or "").strip()
-                                if _rod_txt and _rod_txt not in ("—", "nan"):
-                                    st.caption(f"🛣️ Rodovia(s): {_rod_txt}")
-                                _ferro_txt = str(_row_orig.get("Ferrovias Proximas") or "").strip()
-                                if _ferro_txt and _ferro_txt not in ("—", "nan"):
-                                    st.caption(f"🚆 Ferrovia(s) próxima(s): {_ferro_txt}")
-                                if (_qt_p or 0) == 0 and (_qt_t or 0) == 0 and _num_seguro(_row_orig.get("QT_RIOS"), 0) > 0:
-                                    st.caption("⚠️ Rio identificado sem ponte nem travessia confirmadas no raio "
-                                              "consultado — modo de travessia não determinado, não presuma.")
-                                _qt_anom = _num_seguro(_row_orig.get("QT_ANOMALIAS"))
-                                if _qt_anom:
-                                    _sev_txt = str(_row_orig.get("Anomalia Mais Severa") or "").strip()
-                                    st.caption(f"🚩 {int(_qt_anom)} anomalia(s) geográfica(s) detectada(s)"
-                                              + (f" — mais severa: {_sev_txt}" if _sev_txt and _sev_txt not in ("—", "nan") else ""))
-                        except Exception:
-                            logger.debug("[GEO-INTEL-EXPLICA] Falha ao exibir contexto completo (aditivo).", exc_info=True)
+                            st.markdown(f"### Dossiê: {_orig} → {_dest}")
 
-                        # Botões de exportação individual para a rota selecionada
-                        _origem_fn = str(_orig).replace(' ', '_').replace('/', '_')
-                        _destino_fn = str(_dest).replace(' ', '_').replace('/', '_')
-                        _base_fn = f"rota_intel_{_origem_fn}_{_uf}_{_destino_fn}"
-                        _df_single = pd.DataFrame([_row])
-                        _df_single = _df_single.loc[:, ~_df_single.columns.duplicated()]
+                            _cc1, _cc2 = st.columns([2, 1])
+                            with _cc1:
+                                _c1, _c2, _c3 = st.columns(3)
+                                _c1.metric("Origem", ("%s/%s" % (_orig, _uf)).replace("//", "/"))
+                                _c2.metric("Destino", _dest)
+                                _c3.metric("Distância", "%.1f km" % float(_dist_km))
 
-                        _col_exp1, _col_exp2, _col_exp3, _col_exp4, _col_exp5, _col_exp6 = st.columns(6)
-                        with _col_exp1:
+                                _c4, _c5, _c6 = st.columns(3)
+                                _c4.metric("Vencedor", str(_row.get("Vencedor", "—")) or "—")
+                                _c5.metric("Balsa", "Sim" if _row.get("Balsa") else "Não")
+                                _c6.metric("Rio", str(_row.get("Rio", "—")) or "—")
+
+                                _c7, _c8, _c9 = st.columns(3)
+                                _c7.metric("Bacia", str(_row.get("Bacia", "—")) or "—")
+                                _row_orig = _rotas_proc.iloc[_ix] if _ix < len(_rotas_proc) else None
+                                _ic_val = _val_linha(_row_orig, _col_ic, padrao="—") if (_row_orig is not None and _col_ic) else "—"
+                                _fonte_val = _val_linha(_row_orig, _col_fonte, padrao="—") if (_row_orig is not None and _col_fonte) else "—"
+                                _c8.metric("Índice Confiança", _ic_val if _ic_val == "—" else ("%.0f/100" % _num_seguro(_ic_val, 0.0)))
+                                _c9.metric("Fonte Rota", str(_fonte_val) or "—")
+                            with _cc2:
+                                if _ic_val != "—":
+                                    _v = _num_seguro(_ic_val, 0.0)
+                                    _fig_g = go.Figure(go.Indicator(
+                                        mode = "gauge+number",
+                                        value = _v,
+                                        domain = {'x': [0, 1], 'y': [0, 1]},
+                                        title = {'text': "Confiança"},
+                                        gauge = {
+                                            'axis': {'range': [None, 100]},
+                                            'bar': {'color': "#3B82F6"},
+                                            'steps' : [
+                                                {'range': [0, 50], 'color': "#FADBD8"},
+                                                {'range': [50, 80], 'color': "#FCF3CF"},
+                                                {'range': [80, 100], 'color': "#D5F5E3"}],
+                                        }))
+                                    _fig_g.update_layout(height=200, margin=dict(l=10, r=10, t=30, b=10))
+                                    st.plotly_chart(_fig_g, use_container_width=True)
+
+                            # [GEO-INTEL-EXPLICA - Rodada 13] Contexto geográfico completo desta rota (motor da
+                            # Rodada 10, não a projeção legada usada acima): bacia real, pontes, travessias e
+                            # dependência aquaviária — e uma explicação em texto ("por que esta rota"), reaproveitando
+                            # exatamente o que já foi calculado em df_processado, sem nenhum recálculo aqui.
                             try:
-                                _html = _geo_html_locais(_df_single)
-                                st.download_button("🌐 HTML", data=str(_html).encode('utf-8'), file_name=f"{_base_fn}.html", mime="text/html", use_container_width=True)
+                                if _row_orig is not None and _col_existente(_rotas_proc, "QT_RIOS"):
+                                    st.divider()
+                                    st.markdown("##### 🧠 Por que esta rota — contexto geográfico completo")
+                                    _c10, _c11, _c12 = st.columns(3)
+                                    _c10.metric("Bacia hidrográfica", str(_row_orig.get("Bacia Hidrografica") or "—"))
+                                    _qt_p = _num_seguro(_row_orig.get("QT_PONTES"))
+                                    _c11.metric("Pontes no cruzamento", int(_qt_p) if _qt_p is not None else "—")
+                                    _qt_t = _num_seguro(_row_orig.get("QT_TRAVESSIAS"))
+                                    _c12.metric("Travessias aquaviárias", int(_qt_t) if _qt_t is not None else "—")
+                                    _c13, _c14, _c15 = st.columns(3)
+                                    _dep_v = _num_seguro(_row_orig.get("Dependencia Aquaviaria"))
+                                    _c13.metric("Dependência aquaviária", f"{_dep_v:.0f}/100" if _dep_v is not None else "—")
+                                    _conf_v = _num_seguro(_row_orig.get("Confianca Geografica"))
+                                    _c14.metric("Confiança geográfica", f"{_conf_v:.0f}/100" if _conf_v is not None else "—")
+                                    _cplx_v = _num_seguro(_row_orig.get("Complexidade Geografica"))
+                                    _c15.metric("Complexidade geográfica", f"{_cplx_v:.0f}/100" if _cplx_v is not None else "—")
+                                    _pontes_txt = str(_row_orig.get("Pontes no Cruzamento") or "").strip()
+                                    if _pontes_txt and _pontes_txt not in ("—", "nan"):
+                                        st.caption(f"🌉 Ponte(s): {_pontes_txt}")
+                                    _trav_txt = str(_row_orig.get("Travessias Aquaviarias") or "").strip()
+                                    if _trav_txt and _trav_txt not in ("—", "nan"):
+                                        st.caption(f"⛴️ Travessia(s): {_trav_txt}")
+                                    _rod_txt = str(_row_orig.get("Rodovias Identificadas") or "").strip()
+                                    if _rod_txt and _rod_txt not in ("—", "nan"):
+                                        st.caption(f"🛣️ Rodovia(s): {_rod_txt}")
+                                    _ferro_txt = str(_row_orig.get("Ferrovias Proximas") or "").strip()
+                                    if _ferro_txt and _ferro_txt not in ("—", "nan"):
+                                        st.caption(f"🚆 Ferrovia(s) próxima(s): {_ferro_txt}")
+                                    if (_qt_p or 0) == 0 and (_qt_t or 0) == 0 and _num_seguro(_row_orig.get("QT_RIOS"), 0) > 0:
+                                        st.caption("⚠️ Rio identificado sem ponte nem travessia confirmadas no raio "
+                                                  "consultado — modo de travessia não determinado, não presuma.")
+                                    _qt_anom = _num_seguro(_row_orig.get("QT_ANOMALIAS"))
+                                    if _qt_anom:
+                                        _sev_txt = str(_row_orig.get("Anomalia Mais Severa") or "").strip()
+                                        st.caption(f"🚩 {int(_qt_anom)} anomalia(s) geográfica(s) detectada(s)"
+                                                  + (f" — mais severa: {_sev_txt}" if _sev_txt and _sev_txt not in ("—", "nan") else ""))
                             except Exception:
-                                logger.debug("[ROUTE-INTEL] Export HTML isolado falhou.")
-                        with _col_exp2:
-                            try:
-                                _geojson = _df_para_geojson(_df_single)
-                                st.download_button("🌐 GeoJSON", data=str(_geojson).encode('utf-8'), file_name=f"{_base_fn}.geojson", mime="application/geo+json", use_container_width=True)
-                            except Exception:
-                                logger.debug("[ROUTE-INTEL] Export GeoJSON isolado falhou.")
-                        with _col_exp3:
-                            try:
-                                _kml = _df_para_kml(_df_single)
-                                st.download_button("🗺️ KML", data=str(_kml).encode('utf-8'), file_name=f"{_base_fn}.kml", mime="application/vnd.google-earth.kml+xml", use_container_width=True)
-                            except Exception:
-                                logger.debug("[ROUTE-INTEL] Export KML isolado falhou.")
-                        with _col_exp4:
-                            try:
-                                _gpx = _df_para_gpx(_df_single)
-                                st.download_button("📍 GPX", data=str(_gpx).encode('utf-8'), file_name=f"{_base_fn}.gpx", mime="application/gpx+xml", use_container_width=True)
-                            except Exception:
-                                logger.debug("[ROUTE-INTEL] Export GPX isolado falhou.")
-                        with _col_exp5:
-                            try:
-                                import io
-                                _xlsx_buf = io.BytesIO()
-                                with pd.ExcelWriter(_xlsx_buf, engine='xlsxwriter') as _writer:
-                                    _df_single.to_excel(_writer, index=False, sheet_name='Rota')
-                                st.download_button("📊 XLSX", data=_xlsx_buf.getvalue(), file_name=f"{_base_fn}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-                            except Exception:
-                                logger.debug("[ROUTE-INTEL] Export XLSX isolado falhou.")
-                        with _col_exp6:
-                            try:
-                                _csv = _df_single.to_csv(index=False).encode('utf-8-sig')
-                                st.download_button("📄 CSV", data=_csv, file_name=f"{_base_fn}.csv", mime="text/csv", use_container_width=True)
-                            except Exception:
-                                logger.debug("[ROUTE-INTEL] Export CSV isolado falhou.")
+                                logger.debug("[GEO-INTEL-EXPLICA] Falha ao exibir contexto completo (aditivo).", exc_info=True)
+
+                            st.caption("💾 Exportar Rota Isolada")
+                            _origem_fn = str(_orig).replace(' ', '_').replace('/', '_')
+                            _destino_fn = str(_dest).replace(' ', '_').replace('/', '_')
+                            _base_fn = f"rota_intel_{_origem_fn}_{_uf}_{_destino_fn}"
+                            _df_single = pd.DataFrame([_row])
+                            _df_single = _df_single.loc[:, ~_df_single.columns.duplicated()]
+
+                            _col_exp1, _col_exp2, _col_exp3, _col_exp4, _col_exp5, _col_exp6 = st.columns(6)
+                            with _col_exp1:
+                                try:
+                                    _html = _geo_html_locais(_df_single)
+                                    st.download_button("🌐 HTML", data=str(_html).encode('utf-8'), file_name=f"{_base_fn}.html", mime="text/html", use_container_width=True)
+                                except Exception:
+                                    pass
+                            with _col_exp2:
+                                try:
+                                    _geojson = _df_para_geojson(_df_single)
+                                    st.download_button("🌐 GeoJSON", data=str(_geojson).encode('utf-8'), file_name=f"{_base_fn}.geojson", mime="application/geo+json", use_container_width=True)
+                                except Exception:
+                                    pass
+                            with _col_exp3:
+                                try:
+                                    _kml = _df_para_kml(_df_single)
+                                    st.download_button("🗺️ KML", data=str(_kml).encode('utf-8'), file_name=f"{_base_fn}.kml", mime="application/vnd.google-earth.kml+xml", use_container_width=True)
+                                except Exception:
+                                    pass
+                            with _col_exp4:
+                                try:
+                                    _gpx = _df_para_gpx(_df_single)
+                                    st.download_button("📍 GPX", data=str(_gpx).encode('utf-8'), file_name=f"{_base_fn}.gpx", mime="application/gpx+xml", use_container_width=True)
+                                except Exception:
+                                    pass
+                            with _col_exp5:
+                                try:
+                                    import io
+                                    _xlsx_buf = io.BytesIO()
+                                    with pd.ExcelWriter(_xlsx_buf, engine='xlsxwriter') as _writer:
+                                        _df_single.to_excel(_writer, index=False, sheet_name='Rota')
+                                    st.download_button("📊 XLSX", data=_xlsx_buf.getvalue(), file_name=f"{_base_fn}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+                                except Exception:
+                                    pass
+                            with _col_exp6:
+                                try:
+                                    _csv = _df_single.to_csv(index=False).encode('utf-8-sig')
+                                    st.download_button("📄 CSV", data=_csv, file_name=f"{_base_fn}.csv", mime="text/csv", use_container_width=True)
+                                except Exception:
+                                    pass
+
+                with _abas_intel[5]:
+                    st.subheader("Tabela Analítica Consolidada")
+                    _cols_show = ["Origem", "UF", "Destino", "Distância (km)", "Vencedor", "Balsa", "Rio", "Bacia"]
+                    _cols_show = [c for c in _cols_show if c in _df_intel.columns]
+                    st.dataframe(_df_intel[_cols_show], use_container_width=True, hide_index=True)
+                    _botoes_exportacao_geo("centro_intel", _df_intel[_cols_show], sheet_name="Intel")
+
     except Exception:
         logger.error("[ROUTE-INTEL] Falha ao renderizar centro de inteligência (isolada).", exc_info=True)
         st.warning("Não foi possível montar o Centro de Inteligência da Rota. As demais seções seguem normais.")
+
 
 
 # ==============================================================================
