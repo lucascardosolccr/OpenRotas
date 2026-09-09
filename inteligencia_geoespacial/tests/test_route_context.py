@@ -413,14 +413,16 @@ def test_analisar_rota_raio_explicito_e_sempre_respeitado_na_fase_aquaviaria():
 # Rodada 14 — caminho rápido em memória para as camadas pequenas (Performance).
 # ==============================================================================
 
-def test_camadas_pequenas_sao_exatamente_as_seis_camadas_leves():
-    # Nunca inclui `drenagem`/`massas_dagua` (pesadas demais para memória).
+def test_camadas_pequenas_sao_exatamente_as_sete_camadas_leves():
+    # Nunca inclui `drenagem`/`massas_dagua`/`rodovias` (pesadas demais para
+    # memória — `rodovias` usa o cache de janela ampla, ver Rodada 3/Missão 2).
     assert set(rc._CAMADAS_PEQUENAS) == {
         "pontes", "travessias", "hidrovias", "eclusas",
-        "atracadouros_terminal", "complexos_portuarios",
+        "atracadouros_terminal", "complexos_portuarios", "ferrovias",
     }
     assert "drenagem" not in rc._CAMADAS_PEQUENAS
     assert "massas_dagua" not in rc._CAMADAS_PEQUENAS
+    assert "rodovias" not in rc._CAMADAS_PEQUENAS
 
 
 @pytestmark_dados
@@ -641,3 +643,84 @@ def test_analisar_rota_sem_rodovia_gera_aviso_honesto():
     ctx = rc.analisar_rota(origem, destino, distancia_km=0.0, raio_km=0.05)
     if not ctx.rodovias:
         assert any("rodovia" in a.lower() for a in ctx.avisos)
+
+
+# ==============================================================================
+# Missão 2 / Rodada 4 — integração ferroviária (trechos ferroviários
+# próximos à rota, camada `ferrovias` do BC250/BC100).
+# ==============================================================================
+
+def test_ferrovias_esta_no_caminho_rapido_camadas_pequenas():
+    assert "ferrovias" in rc._CAMADAS_PEQUENAS
+    assert "ferrovias" not in rc._CAMADAS_COM_CACHE_AMPLO
+
+
+def test_detectar_ferrovias_usa_codigo_do_trecho_quando_sem_nome(monkeypatch):
+    def _fake(camada, lon, lat, raio_km=30.0, limite=10, filtros=None):
+        return [{"nome": None, "codtrechof": "EF-462", "distancia_km": 1.5}]
+
+    monkeypatch.setattr(rc, "_consultar_rapido_camada_pequena", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    ferrovias = rc._detectar_ferrovias([(0.0, 0.0, 0.0)], repo, 10.0)
+    assert len(ferrovias) == 1
+    assert ferrovias[0].nome == "EF-462"  # nunca inventa nome próprio, usa o código real
+
+
+def test_detectar_ferrovias_sem_nome_nem_codigo_usa_rotulo_explicito(monkeypatch):
+    def _fake(camada, lon, lat, raio_km=30.0, limite=10, filtros=None):
+        return [{"nome": None, "codtrechof": None, "distancia_km": 0.8}]
+
+    monkeypatch.setattr(rc, "_consultar_rapido_camada_pequena", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    ferrovias = rc._detectar_ferrovias([(0.0, 0.0, 0.0)], repo, 10.0)
+    assert ferrovias[0].nome == "<ferrovia sem nome>"
+
+
+def test_detectar_ferrovias_dedup_mantem_menor_distancia(monkeypatch):
+    respostas = [
+        [{"nome": "Estrada de Ferro X", "distancia_km": 5.0}],
+        [{"nome": "estrada de ferro x", "distancia_km": 1.1}],
+    ]
+
+    def _fake(camada, lon, lat, raio_km=30.0, limite=10, filtros=None):
+        return respostas.pop(0)
+
+    monkeypatch.setattr(rc, "_consultar_rapido_camada_pequena", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    ferrovias = rc._detectar_ferrovias(
+        [(0.0, 0.0, 0.0), (0.0, 0.1, 10.0)], repo, 10.0)
+    assert len(ferrovias) == 1
+    assert ferrovias[0].distancia_eixo_km == 1.1
+
+
+def test_detectar_ferrovias_extrai_atributos_reais_sem_inventar(monkeypatch):
+    def _fake(camada, lon, lat, raio_km=30.0, limite=10, filtros=None):
+        return [{
+            "nome": "Estrada de Ferro Vitória a Minas", "distancia_km": 2.0,
+            "tipotrecho": "Trecho para trem", "bitola": "Métrica",
+            "eletrifica": "Não", "nrlinhas": "Simples",
+            "jurisdicao": "Federal", "administra": "Concessionada",
+            "concession": "Vale", "lat": -19.9, "lon": -43.1,
+        }]
+
+    monkeypatch.setattr(rc, "_consultar_rapido_camada_pequena", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    ferrovias = rc._detectar_ferrovias([(0.0, 0.0, 0.0)], repo, 10.0)
+    f = ferrovias[0]
+    assert f.nome == "Estrada de Ferro Vitória a Minas"
+    assert f.bitola == "Métrica"
+    assert f.eletrificada == "Não"
+    assert f.concessionaria == "Vale"
+    assert f.lat == -19.9 and f.lon == -43.1
+
+
+@pytestmark_dados
+def test_analisar_rota_identifica_estrada_de_ferro_vitoria_a_minas():
+    # EFVM é uma ferrovia real e conhecida entre Minas Gerais e o Espírito
+    # Santo — boa prova de dado real, não artefato de teste.
+    origem, destino = (-19.55, -40.30), (-19.95, -40.30)
+    ctx = rc.analisar_rota(origem, destino, distancia_km=45.0, raio_km=8.0)
+    nomes = [f.nome for f in ctx.ferrovias]
+    assert any("Vitória" in n or "Vitoria" in n for n in nomes)
+    for f in ctx.ferrovias:
+        assert f.fonte == "IBGE BC250/BC100 (ferrovias)"

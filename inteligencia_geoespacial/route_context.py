@@ -183,7 +183,7 @@ def bacia_do_rio(nome_rio) -> str | None:
 
 _CAMADAS_PEQUENAS = (
     "pontes", "travessias", "hidrovias", "eclusas",
-    "atracadouros_terminal", "complexos_portuarios",
+    "atracadouros_terminal", "complexos_portuarios", "ferrovias",
 )
 
 
@@ -537,6 +537,30 @@ class Rodovia:
 
 
 @dataclass
+class Ferrovia:
+    """Rodada 4 (Missão 2 — extração máxima): trecho ferroviário oficial
+    (IBGE BC250/BC100) próximo à rota. Ao contrário de `rodovias`, aqui
+    `nome` É populado na maior parte dos registros (ex.: "Estrada de Ferro
+    Vitória a Minas") — usado como identificador primário; quando ausente,
+    cai para o código do trecho (`codtrechof`, ex.: "EF-462") antes de um
+    rótulo genérico, nunca um nome próprio inventado. A camada inclui trens
+    de carga/passageiros E metrô/aeromóvel — `tipo_trecho` distingue."""
+    nome: str
+    km_desde_origem: float | None
+    distancia_eixo_km: float | None
+    tipo_trecho: str | None                 # "Trecho para trem" | "Trecho para metrô" | "Trecho para aeromóvel" | ...
+    bitola: str | None                      # "Métrica" | "Larga" | "Mista métrica  larga" | "Desconhecida"
+    eletrificada: str | None                # "Sim" | "Não" | "Desconhecido" (valor bruto da base)
+    nr_linhas: str | None                   # "Simples" | "Dupla" | "Múltipla" | "Desconhecido"
+    jurisdicao: str | None
+    administra: str | None
+    concessionaria: str | None              # None quando a base não registra concessão
+    fonte: str = "IBGE BC250/BC100 (ferrovias)"
+    lat: float | None = None
+    lon: float | None = None
+
+
+@dataclass
 class AlternativaRodoviaria:
     """Comparação com uma rota sem travessia (Rodada 4/13)."""
     distancia_km: float | None
@@ -558,6 +582,7 @@ class ContextoGeograficoRota:
     hidrovias_proximas: list = field(default_factory=list)      # Feicao
     portos_terminais: list = field(default_factory=list)        # Feicao
     rodovias: list = field(default_factory=list)                 # Rodovia — Missão 2/Rodada 3
+    ferrovias: list = field(default_factory=list)                 # Ferrovia — Missão 2/Rodada 4
 
     bacia_hidrografica: str | None = None
     sub_bacia: str | None = None
@@ -818,6 +843,61 @@ def _detectar_rodovias(pontos: list, repo: GeoIntelligenceRepository, raio_km: f
     return sorted(achados.values(), key=lambda r: (r.km_desde_origem or 0.0))
 
 
+# ==============================================================================
+# Detecção ferroviária (Rodada 4, Missão 2 — extração máxima). Ao contrário
+# de `rodovias`, a camada `ferrovias` tem `nome` populado na maioria dos
+# 889 trechos (operadora/linha, ex.: "Estrada de Ferro Vitória a Minas") —
+# usado como chave de dedup primária, com o código do trecho (`codtrechof`)
+# como identificador de reserva quando falta nome. Camada pequena (<2MB) —
+# usa o caminho rápido em memória (`_CAMADAS_PEQUENAS`), não o cache de
+# janela ampla das camadas pesadas.
+# ==============================================================================
+
+def _detectar_ferrovias(pontos: list, repo: GeoIntelligenceRepository, raio_km: float,
+                         limite_por_ponto: int = 5) -> list:
+    """Trechos ferroviários próximos ao trajeto, deduplicados por nome (ou
+    código do trecho quando sem nome) normalizado, mantendo a menor
+    distância ao eixo. Atributos (bitola, eletrificação, nº de linhas,
+    jurisdição/concessão) propagados tal como cadastrados."""
+    achados: dict = {}
+    for la, lo, km_o in pontos:
+        try:
+            itens = repo.consultar("ferrovias", la, lo, raio_km=raio_km, limite=limite_por_ponto)
+        except Exception:
+            itens = []
+        for it in itens:
+            nome = _nome(it.get("nome")) or _nome(it.get("codtrechof")) or "<ferrovia sem nome>"
+            chave = _unorm(nome)
+            try:
+                dist = round(float(it.get("distancia_km")), 2)
+            except Exception:
+                dist = None
+            atual = achados.get(chave)
+            if atual is not None and dist is not None and atual.distancia_eixo_km is not None \
+                    and dist >= atual.distancia_eixo_km:
+                continue
+            try:
+                _flat, _flon = float(it.get("lat")), float(it.get("lon"))
+            except Exception:
+                _flat, _flon = None, None
+
+            concessao = _nome(it.get("concession"))
+            achados[chave] = Ferrovia(
+                nome=nome,
+                km_desde_origem=round(km_o, 1),
+                distancia_eixo_km=dist,
+                tipo_trecho=_nome(it.get("tipotrecho")) or None,
+                bitola=_nome(it.get("bitola")) or None,
+                eletrificada=_nome(it.get("eletrifica")) or None,
+                nr_linhas=_nome(it.get("nrlinhas")) or None,
+                jurisdicao=_nome(it.get("jurisdicao")) or None,
+                administra=_nome(it.get("administra")) or None,
+                concessionaria=concessao if concessao and concessao.strip().lower() not in ("não", "nao") else None,
+                lat=_flat, lon=_flon,
+            )
+    return sorted(achados.values(), key=lambda f: (f.km_desde_origem or 0.0))
+
+
 def _indice_dependencia_aquaviaria(rios: list, travessias: list, hidrovias: list,
                                     portos: list) -> int:
     """0-100: quanto a rota parece depender de infraestrutura aquaviária,
@@ -972,6 +1052,11 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
     except Exception:
         rodovias = []
 
+    try:
+        ferrovias = _detectar_ferrovias(pontos, repo, raio_ef)
+    except Exception:
+        ferrovias = []
+
     # Nível adaptativo (§32): rio detectado -> nível 3 (aquaviário mais denso);
     # se o primeiro passe já achar uma balsa real, nível 4 e raio maior para
     # hidrovias/portos (costumam ficar mais afastados do eixo estrito do rio
@@ -1025,6 +1110,8 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
         fontes.append("IBGE BC250/BC100 (pontes)")
     if rodovias:
         fontes.append("IBGE BC250/BC100 (rodovias)")
+    if ferrovias:
+        fontes.append("IBGE BC250/BC100 (ferrovias)")
 
     avisos: list = []
     if any(r.bacia is None for r in rios):
@@ -1084,6 +1171,10 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
         motivo_partes.append(
             "%d instalação(ões) portuária(s)/aquaviária(s) próxima(s) (%s)." % (
                 len(portos), ", ".join(p.nome for p in portos[:2])))
+    if ferrovias:
+        motivo_partes.append(
+            "%d trecho(s) ferroviário(s) próximo(s) (%s)." % (
+                len(ferrovias), ", ".join(f.nome for f in ferrovias[:2])))
     if not motivo_partes:
         motivo_partes.append("Nenhuma evidência hidrográfica ou aquaviária relevante encontrada no trajeto amostrado.")
 
@@ -1098,6 +1189,7 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
         hidrovias_proximas=hidrovias,
         portos_terminais=portos,
         rodovias=rodovias,
+        ferrovias=ferrovias,
         bacia_hidrografica=bacia_principal,
         sub_bacia=sub_bacia,
         dependencia_aquaviaria=dependencia,
