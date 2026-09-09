@@ -4232,6 +4232,105 @@ def _fig_fontes_rota_report(df):
         return None
 
 
+def _secao_inteligencia_geografica_html(df):
+    """[GEO-INTEL-HTML] Seção "Inteligência Geográfica" do relatório (§28 da missão de
+    reengenharia da aba de Inteligência): visão geral (rotas com rio/ponte/travessia
+    confirmados, bacias mais frequentes, dependência aquaviária e confiança médias) + tabela
+    das rotas com maior complexidade hidrográfica/aquaviária. PURA leitura do que o motor de
+    contexto geográfico (route_context.py) já computou em df_processado na Rodada 10 — não
+    recalcula nada aqui. Retorna '' (seção não aparece) se o df ainda não foi enriquecido."""
+    import html as _he2
+    try:
+        if df is None or len(df) == 0 or not _col_existente(df, "QT_RIOS"):
+            return ""
+        _n = len(df)
+        _qt_rios = pd.to_numeric(df.get("QT_RIOS"), errors="coerce").fillna(0)
+        _qt_corpos = pd.to_numeric(df.get("QT_CORPOS_DAGUA"), errors="coerce").fillna(0)
+        _qt_pontes = pd.to_numeric(df.get("QT_PONTES"), errors="coerce").fillna(0)
+        _qt_trav = pd.to_numeric(df.get("QT_TRAVESSIAS"), errors="coerce").fillna(0)
+        _dep = pd.to_numeric(df.get("Dependencia Aquaviaria"), errors="coerce")
+        _conf = pd.to_numeric(df.get("Confianca Geografica"), errors="coerce")
+
+        _n_com_rio = int((_qt_rios > 0).sum())
+        _n_com_ponte = int((_qt_pontes > 0).sum())
+        _n_com_trav = int((_qt_trav > 0).sum())
+        _n_sem_confirmacao = int(((_qt_rios > 0) & (_qt_pontes == 0) & (_qt_trav == 0)).sum())
+
+        _kpis = [
+            ("Rotas com rio/córrego identificado", f"{_n_com_rio:,} de {_n:,} ({(_n_com_rio / _n * 100):.0f}%)"),
+            ("Rotas com ponte confirmada no cruzamento", f"{_n_com_ponte:,}"),
+            ("Rotas com travessia aquaviária real", f"{_n_com_trav:,}"),
+            ("Cruzamentos sem ponte NEM travessia confirmada", f"{_n_sem_confirmacao:,}"),
+        ]
+        if _dep is not None and _dep.notna().any():
+            _kpis.append(("Dependência aquaviária média", f"{_dep.mean():.0f}/100"))
+        if _conf is not None and _conf.notna().any():
+            _kpis.append(("Confiança geográfica média", f"{_conf.mean():.0f}/100"))
+        _kh = "".join(f'<div class="kpi"><div class="kpi-v">{_he2.escape(str(v))}</div>'
+                      f'<div class="kpi-l">{_he2.escape(l)}</div></div>' for l, v in _kpis)
+
+        _bacias_html = ""
+        _bacia_col = _col_existente(df, "Bacia Hidrografica")
+        if _bacia_col:
+            _bc = df[_bacia_col].astype(str).str.strip()
+            _bc = _bc[~_bc.isin(["", "nan", "None"])]
+            if not _bc.empty:
+                _top_b = _bc.value_counts().head(8)
+                _rows_b = "".join(f"<tr><td>{_he2.escape(str(k))}</td><td class='r'>{int(v)}</td></tr>"
+                                  for k, v in _top_b.items())
+                _bacias_html = ("<h4>Bacias hidrográficas mais frequentes</h4>"
+                               f"<table><thead><tr><th>Bacia</th><th class='r'>Rotas</th></tr></thead>"
+                               f"<tbody>{_rows_b}</tbody></table>")
+
+        _tabela_html = ""
+        try:
+            _col_o = _col_existente(df, "Origem", "Municipio Origem")
+            _col_d = _col_existente(df, "Destino", "Municipio Destino")
+            _col_rios = _col_existente(df, "Rios Cruzados")
+            _col_pontes = _col_existente(df, "Pontes no Cruzamento")
+            _col_trav = _col_existente(df, "Travessias Aquaviarias")
+            if _col_o and _col_d:
+                _score = _qt_rios + _qt_corpos + _qt_pontes * 2 + _qt_trav * 2
+                _idx_top = _score[_score > 0].sort_values(ascending=False).head(15).index
+                if len(_idx_top):
+                    _linhas = []
+                    for _i in _idx_top:
+                        _r = df.loc[_i]
+                        _linhas.append(
+                            f"<tr><td>{_he2.escape(str(_r.get(_col_o, '—')))}</td>"
+                            f"<td>{_he2.escape(str(_r.get(_col_d, '—')))}</td>"
+                            f"<td>{_he2.escape(str(_r.get(_col_rios, '—')) if _col_rios else '—')}</td>"
+                            f"<td>{_he2.escape(str(_r.get(_col_pontes, '—')) if _col_pontes else '—')}</td>"
+                            f"<td>{_he2.escape(str(_r.get(_col_trav, '—')) if _col_trav else '—')}</td></tr>")
+                    _tabela_html = ("<h4>Rotas com maior complexidade hidrográfica/aquaviária</h4>"
+                                    "<table><thead><tr><th>Origem</th><th>Destino</th><th>Rios</th>"
+                                    "<th>Pontes</th><th>Travessias</th></tr></thead>"
+                                    f"<tbody>{''.join(_linhas)}</tbody></table>")
+        except Exception:
+            pass
+
+        _aviso_html = ""
+        if _n_sem_confirmacao:
+            _aviso_html = _caixa_explicativa(
+                "Cruzamentos sem confirmação",
+                f"{_n_sem_confirmacao} rota(s) cruzam um rio/córrego identificado mas não tiveram nem "
+                "ponte nem travessia confirmadas no raio consultado. Isso NÃO significa que a travessia "
+                "não existe — significa que a base local (IBGE BC250/BC100) não teve evidência suficiente "
+                "no raio analisado. Nunca presuma balsa nem ponte nesses casos.", "warning")
+
+        return (f'<div class="kpis">{_kh}</div>' + _bacias_html + _tabela_html + _aviso_html
+               + _caixa_explicativa(
+                   "Sobre esta seção",
+                   "Cada rota do estudo passa automaticamente pelo motor de contexto geográfico "
+                   "(inteligencia_geoespacial/route_context.py), que consulta as camadas oficiais do IBGE "
+                   "(BC250/BC100) e da ANA/SNIRH — sem GDAL, sem rede — para identificar rios, corpos "
+                   "d'água, bacia hidrográfica, pontes e travessias reais próximas ao trajeto. Nomes e "
+                   "bacias nunca são inventados: quando a base não tem correspondência exata, a célula "
+                   "fica vazia e o motivo aparece como aviso explícito.", "info"))
+    except Exception:
+        return ""
+
+
 def _gerar_relatorio_html(df, titulo="Relatório do Estudo", data_str=""):
     """[RELATORIO-HTML-PRO - 184ª geração] Relatório HTML AUTOCONTIDO (offline) de nível profissional/BI:
     capa, NAVEGAÇÃO LATERAL (sumário), cartões executivos e seções analíticas ricas — Resumo, Distribuição de
@@ -4349,6 +4448,15 @@ def _gerar_relatorio_html(df, titulo="Relatório do Estudo", data_str=""):
                              "geodésica é a linha reta corrigida, usada só quando nenhum motor encontrou rota "
                              "(tipicamente acesso fluvial/isolado). Saber a proporção evita tratar como exata "
                              "uma distância que é aproximada.", "info")))
+        # [GEO-INTEL-HTML] Inteligência Geográfica (§28 da missão): rios, bacias, pontes,
+        # travessias e dependência aquaviária que o motor de contexto geográfico identificou
+        # automaticamente em cada rota (Rodada 10). Só aparece se o df já foi enriquecido.
+        try:
+            _geo_html_sec = _secao_inteligencia_geografica_html(df)
+            if _geo_html_sec:
+                _sec.append(("inteligencia_geografica", "🧠 Inteligência Geográfica", _geo_html_sec))
+        except Exception:
+            pass
 
         if 'UF Origem' in df.columns and _dist is not None:
             _g = df.assign(_d=_dist).groupby('UF Origem').agg(Rotas=('_d', 'size'), Media=('_d', 'mean')).reset_index().sort_values('Rotas', ascending=False)
