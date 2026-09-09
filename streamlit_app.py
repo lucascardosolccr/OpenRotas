@@ -56431,6 +56431,34 @@ if _secao == _SECOES[15]:   # tab_route_intel
                                 if "Bacia" in _df_intel.columns else pd.Series(dtype=object))
                         st.bar_chart(_bac.value_counts().head(10)) if _bac.nunique() else st.caption("Sem bacias identificadas.")
 
+                    # [MAIS-TEMATICOS - Rodada 12/Missão 2, §12] Rodovias/ferrovias mais
+                    # frequentes no estudo — mesmo padrão de "explode + contagem" já usado
+                    # na seção HTML (Rodada 3), agora também na tela ao vivo.
+                    _col_nm_rod = _col_existente(_rotas_proc, "NM_RODOVIAS")
+                    _col_nm_ferro = _col_existente(_rotas_proc, "NM_FERROVIAS")
+                    if _col_nm_rod or _col_nm_ferro:
+                        _ic1, _ic2 = st.columns(2)
+                        with _ic1:
+                            st.caption("Rodovias mais frequentes")
+                            if _col_nm_rod:
+                                _rod_serie = _rotas_proc[_col_nm_rod].dropna().astype(str)
+                                _rod_serie = _rod_serie[_rod_serie != ""]
+                                _rod_exp = _rod_serie.str.split(", ").explode().str.strip()
+                                _rod_exp = _rod_exp[_rod_exp != ""]
+                                st.bar_chart(_rod_exp.value_counts().head(10)) if not _rod_exp.empty else st.caption("Sem rodovias identificadas.")
+                            else:
+                                st.caption("Coluna indisponível neste estudo.")
+                        with _ic2:
+                            st.caption("Ferrovias mais frequentes")
+                            if _col_nm_ferro:
+                                _ferro_serie = _rotas_proc[_col_nm_ferro].dropna().astype(str)
+                                _ferro_serie = _ferro_serie[_ferro_serie != ""]
+                                _ferro_exp = _ferro_serie.str.split(", ").explode().str.strip()
+                                _ferro_exp = _ferro_exp[_ferro_exp != ""]
+                                st.bar_chart(_ferro_exp.value_counts().head(10)) if not _ferro_exp.empty else st.caption("Sem ferrovias identificadas.")
+                            else:
+                                st.caption("Coluna indisponível neste estudo.")
+
                     st.divider()
                     st.caption("🗺️ Mapa origem → destino do estudo")
                     _fig_intel = _fig_pares_od(_df_intel)
@@ -56445,22 +56473,42 @@ if _secao == _SECOES[15]:   # tab_route_intel
                                                     "Complexidade geográfica", colorscale="YlOrRd")
                     _fig_dep = _fig_mapa_tematico(_rotas_proc, "Dependencia Aquaviaria",
                                                    "Dependência aquaviária", colorscale="Blues")
-                    if _fig_cplx is not None or _fig_dep is not None:
+                    # [MAIS-TEMATICOS - Rodada 12/Missão 2] "Mapa de densidade hidrográfica"
+                    # (§12 da missão): soma QT_RIOS + QT_CORPOS_DAGUA por rota — sem teto
+                    # natural (0-100 não faz sentido aqui), por isso cmax=None (escala
+                    # automática pelo maior valor real do recorte, nunca um teto inventado).
+                    _fig_dens = None
+                    _col_qtr_map = _col_existente(_rotas_proc, "QT_RIOS")
+                    _col_qtc_map = _col_existente(_rotas_proc, "QT_CORPOS_DAGUA")
+                    if _col_qtr_map and _col_qtc_map:
+                        _rotas_dens = _rotas_proc.copy()
+                        _rotas_dens["Densidade Hidrografica"] = (
+                            pd.to_numeric(_rotas_dens[_col_qtr_map], errors="coerce").fillna(0)
+                            + pd.to_numeric(_rotas_dens[_col_qtc_map], errors="coerce").fillna(0))
+                        _fig_dens = _fig_mapa_tematico(_rotas_dens, "Densidade Hidrografica",
+                                                        "Rios + corpos d'água", colorscale="Teal", cmax=None)
+                    if _fig_cplx is not None or _fig_dep is not None or _fig_dens is not None:
                         st.divider()
-                        st.markdown("##### 🗺️ Mapas temáticos (§12): onde as rotas deste estudo concentram complexidade/dependência")
-                        _mt1, _mt2 = st.columns(2)
+                        st.markdown("##### 🗺️ Mapas temáticos (§12): onde as rotas deste estudo concentram complexidade/dependência/hidrografia")
+                        _mt1, _mt2, _mt3 = st.columns(3)
                         with _mt1:
                             if _fig_cplx is not None:
-                                st.caption("Complexidade geográfica por rota (posição = ponto médio origem↔destino)")
+                                st.caption("Complexidade geográfica por rota (ponto médio origem↔destino)")
                                 st.plotly_chart(_fig_cplx, use_container_width=True)
                             else:
                                 st.caption("Complexidade geográfica: sem dados suficientes neste estudo ainda.")
                         with _mt2:
                             if _fig_dep is not None:
-                                st.caption("Dependência aquaviária por rota (posição = ponto médio origem↔destino)")
+                                st.caption("Dependência aquaviária por rota (ponto médio origem↔destino)")
                                 st.plotly_chart(_fig_dep, use_container_width=True)
                             else:
                                 st.caption("Dependência aquaviária: sem dados suficientes neste estudo ainda.")
+                        with _mt3:
+                            if _fig_dens is not None:
+                                st.caption("Densidade hidrográfica (rios + corpos d'água) por rota")
+                                st.plotly_chart(_fig_dens, use_container_width=True)
+                            else:
+                                st.caption("Densidade hidrográfica: sem dados suficientes neste estudo ainda.")
                 except Exception:
                     logger.debug("[ROUTE-INTEL-VIS] Análise visual isolada falhou (aditivo).", exc_info=True)
 
@@ -57516,7 +57564,8 @@ def _fig_pares_od(df, altura=560):
         return None
 
 
-def _fig_mapa_tematico(df, col_valor, titulo_legenda, colorscale="YlOrRd", altura=560):
+def _fig_mapa_tematico(df, col_valor, titulo_legenda, colorscale="YlOrRd", altura=560,
+                        cmin=0, cmax=100):
     """[GEO-MAPA-TEMATICO - Rodada 7/Missão 2] Mapa temático nacional (§12 da
     missão): cada rota do estudo vira um ponto no meio do caminho (média
     origem/destino), colorido pelo valor de `col_valor` (ex.: Complexidade
@@ -57526,7 +57575,13 @@ def _fig_mapa_tematico(df, col_valor, titulo_legenda, colorscale="YlOrRd", altur
     sessão, não a um agregado nacional fabricado a partir de nada — usa
     exatamente os valores já calculados por `route_context.analisar_rota`
     para essas rotas, nunca estima/interpola pontos sem dado. Retorna None
-    (nunca lança) se a coluna não existir ou não houver valores válidos."""
+    (nunca lança) se a coluna não existir ou não houver valores válidos.
+
+    `cmin`/`cmax`: fixos em 0-100 por padrão (índices já normalizados nessa
+    escala). Para métricas de contagem sem teto natural (ex.: densidade de
+    cruzamentos hidrográficos, Rodada 12), passe `cmax=None` para a escala
+    de cor se ajustar automaticamente ao maior valor real do recorte — nunca
+    inventa um teto arbitrário para uma métrica que não tem um natural."""
     try:
         if df is None or len(df) == 0 or col_valor not in df.columns:
             return None
@@ -57542,9 +57597,10 @@ def _fig_mapa_tematico(df, col_valor, titulo_legenda, colorscale="YlOrRd", altur
         }).dropna(subset=["lat", "lon", "valor"])
         if _dfp.empty:
             return None
+        _cmax_ef = cmax if cmax is not None else max(1.0, float(_dfp["valor"].max()))
         _fig = go.Figure(_GO_SCATTER_MAPA(
             lat=_dfp["lat"], lon=_dfp["lon"], mode="markers",
-            marker=dict(size=12, color=_dfp["valor"], colorscale=colorscale, cmin=0, cmax=100,
+            marker=dict(size=12, color=_dfp["valor"], colorscale=colorscale, cmin=cmin, cmax=_cmax_ef,
                         showscale=True, colorbar=dict(title=titulo_legenda)),
             text=_dfp["origem"] + " → " + _dfp["destino"] + "<br>" + titulo_legenda + ": " + _dfp["valor"].astype(str),
             hoverinfo="text"))
