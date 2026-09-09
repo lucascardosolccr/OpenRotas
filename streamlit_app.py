@@ -56319,7 +56319,71 @@ if _secao == _SECOES[15]:   # tab_route_intel
         if _rotas_proc is None or _rotas_proc.empty:
             st.info("Rode um estudo (aba **⚙️ Estudo em Lote** ou **🎯 Locais de Aplicação**) para visualizar o Centro de Inteligência das rotas.")
         else:
-            # Projeção robusta (aceita a nomenclatura real do df_processado).
+            # [FILTROS-INTELIGENTES - Rodada 10/Missão 2, §31] Filtra o recorte ANTES de
+            # projetar/exibir — tabela, KPIs, gráficos e mapas abaixo já refletem o filtro
+            # escolhido. Usa só colunas que já existem em df_processado (nenhuma consulta nova).
+            with st.expander("🔍 Filtros inteligentes", expanded=False):
+                _fc1, _fc2, _fc3, _fc4 = st.columns(4)
+                with _fc1:
+                    _filtro_rio = st.checkbox("Só rotas com rio/córrego", key="filtro_rio_intel")
+                    _filtro_balsa = st.checkbox("Só rotas com balsa/travessia", key="filtro_balsa_intel")
+                with _fc2:
+                    _filtro_ponte = st.checkbox("Só rotas com ponte confirmada", key="filtro_ponte_intel")
+                    _filtro_sem_ponte = st.checkbox("Só cruzamento SEM ponte/travessia", key="filtro_sem_ponte_intel")
+                with _fc3:
+                    _filtro_rodovia = st.checkbox("Só rotas com rodovia identificada", key="filtro_rodovia_intel")
+                    _filtro_anomalia = st.checkbox("Só rotas com anomalia", key="filtro_anomalia_intel")
+                with _fc4:
+                    _uf_col_f = _col_existente(_rotas_proc, "UF", "UF_Sintetica_Origem")
+                    _bacia_col_f = _col_existente(_rotas_proc, "Bacia Hidrografica", "Bacia")
+                    _ufs_disp = sorted(_rotas_proc[_uf_col_f].dropna().astype(str).unique()) if _uf_col_f else []
+                    _uf_sel_f = st.multiselect("UF", _ufs_disp, key="filtro_uf_intel")
+                    _bacias_disp = (sorted(b for b in _rotas_proc[_bacia_col_f].dropna().astype(str).unique() if b)
+                                    if _bacia_col_f else [])
+                    _bacia_sel_f = st.multiselect("Bacia hidrográfica", _bacias_disp, key="filtro_bacia_intel")
+
+                try:
+                    _mask_f = pd.Series(True, index=_rotas_proc.index)
+                    _col_qt_rios_f = _col_existente(_rotas_proc, "QT_RIOS")
+                    _col_qt_pontes_f = _col_existente(_rotas_proc, "QT_PONTES")
+                    _col_qt_trav_f = _col_existente(_rotas_proc, "QT_TRAVESSIAS")
+                    _col_qt_rod_f = _col_existente(_rotas_proc, "QT_RODOVIAS")
+                    _col_qt_anom_f = _col_existente(_rotas_proc, "QT_ANOMALIAS")
+                    if _filtro_rio and _col_qt_rios_f:
+                        _mask_f &= pd.to_numeric(_rotas_proc[_col_qt_rios_f], errors="coerce").fillna(0) > 0
+                    if _filtro_balsa:
+                        _col_balsa_f = _col_existente(_rotas_proc, "Balsa")
+                        if _col_balsa_f:
+                            _mask_f &= _rotas_proc[_col_balsa_f].astype(bool)
+                        elif _col_qt_trav_f:
+                            _mask_f &= pd.to_numeric(_rotas_proc[_col_qt_trav_f], errors="coerce").fillna(0) > 0
+                    if _filtro_ponte and _col_qt_pontes_f:
+                        _mask_f &= pd.to_numeric(_rotas_proc[_col_qt_pontes_f], errors="coerce").fillna(0) > 0
+                    if _filtro_sem_ponte and _col_qt_rios_f:
+                        _qtr_f = pd.to_numeric(_rotas_proc[_col_qt_rios_f], errors="coerce").fillna(0)
+                        _qtp_f = (pd.to_numeric(_rotas_proc[_col_qt_pontes_f], errors="coerce").fillna(0)
+                                  if _col_qt_pontes_f else pd.Series(0, index=_rotas_proc.index))
+                        _qtt_f = (pd.to_numeric(_rotas_proc[_col_qt_trav_f], errors="coerce").fillna(0)
+                                  if _col_qt_trav_f else pd.Series(0, index=_rotas_proc.index))
+                        _mask_f &= (_qtr_f > 0) & (_qtp_f == 0) & (_qtt_f == 0)
+                    if _filtro_rodovia and _col_qt_rod_f:
+                        _mask_f &= pd.to_numeric(_rotas_proc[_col_qt_rod_f], errors="coerce").fillna(0) > 0
+                    if _filtro_anomalia and _col_qt_anom_f:
+                        _mask_f &= pd.to_numeric(_rotas_proc[_col_qt_anom_f], errors="coerce").fillna(0) > 0
+                    if _uf_sel_f and _uf_col_f:
+                        _mask_f &= _rotas_proc[_uf_col_f].astype(str).isin(_uf_sel_f)
+                    if _bacia_sel_f and _bacia_col_f:
+                        _mask_f &= _rotas_proc[_bacia_col_f].astype(str).isin(_bacia_sel_f)
+
+                    _n_antes_filtro = len(_rotas_proc)
+                    _rotas_proc = _rotas_proc[_mask_f]
+                    if len(_rotas_proc) != _n_antes_filtro:
+                        st.caption(f"✅ Filtro ativo: {len(_rotas_proc)} de {_n_antes_filtro} rotas.")
+                except Exception:
+                    logger.debug("[FILTROS-INTELIGENTES] Falha ao aplicar filtros (aditivo, sem filtro aplicado).", exc_info=True)
+
+            # Projeção robusta (aceita a nomenclatura real do df_processado). Se o filtro acima
+            # zerou o recorte, _df_intel fica vazio e cai no aviso já existente logo abaixo.
             _df_intel = _proj_analise("proj_intel", _rotas_proc, max_linhas=200)
             if _df_intel is None or _df_intel.empty:
                 st.info("Não há linhas analisáveis nesta sessão. Rode um estudo primeiro.")
