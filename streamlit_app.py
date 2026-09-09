@@ -19670,8 +19670,12 @@ def _resumo_geo_comparador(linhas):
 # Núcleo PURO e testável da decisão "quem tem a menor rota viária". Extraído de
 # _comparar_alocacoes SEM alterar seu comportamento: com limiar_rel=0.0 (o padrão)
 # a saída é BYTE-A-BYTE idêntica à lógica legada (|Δ|<limiar_abs → Empate; Δ>0 →
-# Aplicação; senão Referência), verificado por 200 mil pares aleatórios na suíte
-# test_comparador_V446.py. O ganho é triplo, e todo ADITIVO:
+# Aplicação; senão Referência). [FIX-DOC - Missão 3/Rodada 3] Este comentário
+# afirmava "verificado por 200 mil pares aleatórios na suíte test_comparador_V446.py"
+# — esse arquivo nunca existiu no repositório (confirmado via `git log --all` sobre
+# o caminho). A suíte real, re-executável, está em test_comparador_correcao.py (raiz
+# do repo) — inclui o fuzz de 5.000 pares que a alegação antiga só descrevia. O
+# ganho desta função é triplo, e todo ADITIVO:
 #   • Item 11 (vitória invertida): um INVARIANTE embutido garante que o vencedor
 #     JAMAIS contradiz o sinal de Δ — a app nunca perde uma rota que é comprovada-
 #     mente menor, nem a referência é creditada quando a app é menor. Se algum dia
