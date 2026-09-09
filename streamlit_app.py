@@ -32806,6 +32806,18 @@ def _mapa_leaflet_contexto_geografico(ctx, lat_o, lon_o, lat_d, lon_d, nome_orig
                 _extra += f"Navegável: {_nav}. "
             if _bacia:
                 _extra += f"Bacia: {_bacia}."
+            _tipo_ponte = getattr(it, "tipo_ponte", None)
+            _ext_m = getattr(it, "extensao_m", None)
+            if _tipo_ponte:
+                _extra += f"Tipo: {_tipo_ponte}. "
+            if _ext_m:
+                _extra += f"Extensão: {_ext_m:.0f}m. "
+            _bitola = getattr(it, "bitola", None)
+            if _bitola:
+                _extra += f"Bitola: {_bitola}. "
+            _jurisdicao = getattr(it, "jurisdicao", None)
+            if _jurisdicao:
+                _extra += f"Jurisdição: {_jurisdicao}. "
             _nome_it = getattr(it, "nome", None) or getattr(it, "sigla", None)
             _pop = _popup(_nome_it, tipo_rotulo, getattr(it, "distancia_eixo_km", None),
                           getattr(it, "km_desde_origem", None), it.fonte, _extra)

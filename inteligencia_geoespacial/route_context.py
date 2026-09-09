@@ -50,7 +50,7 @@ Contrato principal:
     ctx.rios_detectados          # list[CruzamentoHidrografico]
     ctx.corpos_dagua             # list[CruzamentoHidrografico]
     ctx.bacia_hidrografica       # str | None (nunca inventado — só nome oficial ANA/SNIRH)
-    ctx.pontes                   # list[Feicao] — pontes reais encontradas NOS cruzamentos
+    ctx.pontes                   # list[Ponte] — pontes reais encontradas NOS cruzamentos
     ctx.travessias               # list[Feicao] — balsas reais (IBGE BC250/BC100)
     ctx.hidrovias_proximas       # list[Feicao]
     ctx.portos_terminais         # list[Feicao] — atracadouros/terminais/portos/eclusas
@@ -496,6 +496,13 @@ class CruzamentoHidrografico:
     confianca: str                    # "alta" | "media"
     lat: float | None = None          # coordenada do ponto de amostra mais próximo do
     lon: float | None = None          # cruzamento — usada para localizar pontes (Rodada 5) e mapas
+    # Rodada 5 (Missão 2): atributos por tipo de camada — só um dos dois
+    # grupos é relevante por vez (drenagem usa `encoberto`; massas_dagua usa
+    # `artificial`/`salgada`/`dominialidade`), o outro fica None.
+    encoberto: str | None = None      # drenagem: "Sim"/"Não" — trecho canalizado/coberto
+    artificial: str | None = None     # massas_dagua: "Sim"/"Não" — reservatório/lago artificial
+    salgada: str | None = None        # massas_dagua: "Sim"/"Não"
+    dominialidade: str | None = None  # massas_dagua: "Federal"/"Estadual/Distrital"/"Municipal"/...
 
 
 @dataclass
@@ -508,6 +515,12 @@ class Feicao:
     fonte: str
     lat: float | None = None    # coordenada real da feição (para mapas — Rodada 9)
     lon: float | None = None
+    # Rodada 5 (Missão 2): atributos extras específicos da camada de origem
+    # (ex.: tipotransp/tipocomple/portosempa para complexos_portuarios) — só
+    # preenchido quando o chamador de `_detectar_feicoes` pede via
+    # `campos_extra`; vazio por padrão para não afetar as camadas que não
+    # precisam disso (travessias/hidrovias/eclusas/atracadouros_terminal).
+    atributos: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -556,6 +569,32 @@ class Ferrovia:
     administra: str | None
     concessionaria: str | None              # None quando a base não registra concessão
     fonte: str = "IBGE BC250/BC100 (ferrovias)"
+    lat: float | None = None
+    lon: float | None = None
+
+
+@dataclass
+class Ponte:
+    """Rodada 5 (Missão 2 — extração máxima): ponte real localizada NO
+    cruzamento hidrográfico (mesma detecção da Rodada 5 original), agora com
+    atributos adicionais da base BC250/BC100 além do nome.
+
+    NOTA DELIBERADA sobre campos excluídos: a base também tem `vaolivreho`
+    (vão livre horizontal), `vaovertica` (vão livre vertical) e `cargasupor`
+    (carga suportada) — inspecionados diretamente e descartados aqui porque
+    onde presentes (~2% das ~14.812 pontes) o ÚNICO valor não-nulo
+    encontrado é 0.0 para os três — um sentinela de "não medido", não uma
+    medição real de vão/carga zero. Mostrar "vão livre: 0m" seria fabricar
+    uma informação que a base não tem de verdade (§38 da missão: nunca
+    invente dado para preencher um campo)."""
+    nome: str
+    distancia_eixo_km: float | None
+    km_desde_origem: float | None
+    tipo_ponte: str | None                  # "Fixa" | "Móvel" | "Pênsil" | "Estaiada" | "Desconhecido"
+    tipo_pavimento: str | None
+    extensao_m: float | None                # ausente na maioria dos registros (~88%) — None quando não cadastrado
+    largura_m: float | None                 # idem
+    fonte: str = "IBGE BC250/BC100 (pontes)"
     lat: float | None = None
     lon: float | None = None
 
@@ -695,6 +734,10 @@ def _detectar_cruzamentos_hidro(pontos: list, repo: GeoIntelligenceRepository,
                                   else "media"),
                     "lat": la,
                     "lon": lo,
+                    "encoberto": (_nome(it.get("encoberto")) or None) if camada == "drenagem" else None,
+                    "artificial": (_nome(it.get("artificial")) or None) if camada == "massas_dagua" else None,
+                    "salgada": (_nome(it.get("salgada")) or None) if camada == "massas_dagua" else None,
+                    "dominialidade": (_nome(it.get("dominialid")) or None) if camada == "massas_dagua" else None,
                 }
     return sorted(achados.values(), key=lambda x: (x["km_desde_origem"] or 0.0))
 
@@ -722,15 +765,29 @@ _CAMADAS_INFRA_AQUA = (
     ("eclusas", "eclusa"),
 )
 
+# Rodada 5 (Missão 2): atributos reais adicionais por camada, hoje coletados
+# pela base mas não usados em lugar nenhum do pipeline (achado da auditoria) —
+# ver _detectar_feicoes(campos_extra=...).
+_CAMPOS_EXTRA_POR_CAMADA = {
+    "complexos_portuarios": ("tipotransp", "tipocomple", "portosempa", "jurisdicao"),
+}
+
 
 def _detectar_feicoes(pontos: list, repo: GeoIntelligenceRepository, camada: str,
                        raio_km: float, tipo_rotulo: str, fonte: str,
-                       filtros: dict | None = None, limite: int = 5) -> list:
+                       filtros: dict | None = None, limite: int = 5,
+                       campos_extra: tuple = ()) -> list:
     """Generaliza a deduplicação de `_detectar_cruzamentos_hidro` para
     qualquer camada de feições pontuais/lineares (travessias, hidrovias,
     portos, eclusas), devolvendo `Feicao` já ordenadas pela posição no
     trajeto. Nome ausente na base vira rótulo explícito, nunca None solto
-    (mesma convenção já usada em enrichment_engine.py)."""
+    (mesma convenção já usada em enrichment_engine.py).
+
+    `campos_extra` (Rodada 5, Missão 2): nomes de colunas adicionais da
+    camada de origem a propagar em `Feicao.atributos` (só as presentes e
+    não-vazias) — usado para atributos específicos de uma única camada
+    (ex.: tipotransp/tipocomple para complexos_portuarios) sem precisar
+    de um dataclass dedicado para cada uma."""
     achados: dict = {}
     for la, lo, km_o in pontos:
         try:
@@ -752,9 +809,14 @@ def _detectar_feicoes(pontos: list, repo: GeoIntelligenceRepository, camada: str
                 _flat, _flon = float(it.get("lat")), float(it.get("lon"))
             except Exception:
                 _flat, _flon = None, None
+            _extras = {}
+            for _campo in campos_extra:
+                _v = _nome(it.get(_campo))
+                if _v:
+                    _extras[_campo] = _v
             achados[chave] = Feicao(nome=nome, tipo=tipo_rotulo, distancia_eixo_km=dist,
                                      km_desde_origem=round(km_o, 1), fonte=fonte,
-                                     lat=_flat, lon=_flon)
+                                     lat=_flat, lon=_flon, atributos=_extras)
     return sorted(achados.values(), key=lambda f: (f.km_desde_origem or 0.0))
 
 
@@ -771,7 +833,8 @@ def _detectar_aquaviario(pontos: list, repo: GeoIntelligenceRepository, raio_km:
     portos: list = []
     for camada, rotulo in _CAMADAS_INFRA_AQUA:
         portos.extend(_detectar_feicoes(
-            pontos, repo, camada, raio_km, rotulo, "IBGE BC250/BC100 (%s)" % camada))
+            pontos, repo, camada, raio_km, rotulo, "IBGE BC250/BC100 (%s)" % camada,
+            campos_extra=_CAMPOS_EXTRA_POR_CAMADA.get(camada, ())))
     portos.sort(key=lambda f: (f.km_desde_origem or 0.0))
     return travessias, hidrovias, portos
 
@@ -990,9 +1053,21 @@ def _detectar_pontes_nos_cruzamentos(cruzamentos: list, repo: GeoIntelligenceRep
             _plat, _plon = float(it.get("lat")), float(it.get("lon"))
         except Exception:
             _plat, _plon = cz.lat, cz.lon  # sem coordenada própria -> usa o cruzamento como aproximação
-        pontes[chave] = Feicao(nome=rotulo, tipo="ponte", distancia_eixo_km=dist,
-                                km_desde_origem=cz.km_desde_origem,
-                                fonte="IBGE BC250/BC100 (pontes)", lat=_plat, lon=_plon)
+
+        def _numf(v):
+            try:
+                f = float(v)
+                return f if f > 0 else None  # 0.0 nesses campos é sentinela de "não medido", não um valor real
+            except Exception:
+                return None
+
+        pontes[chave] = Ponte(
+            nome=rotulo, distancia_eixo_km=dist, km_desde_origem=cz.km_desde_origem,
+            tipo_ponte=_nome(it.get("tipoponte")) or None,
+            tipo_pavimento=_nome(it.get("tipopavime")) or None,
+            extensao_m=_numf(it.get("extensao")),
+            largura_m=_numf(it.get("largura")),
+            lat=_plat, lon=_plon)
     return sorted(pontes.values(), key=lambda f: (f.km_desde_origem or 0.0))
 
 

@@ -277,7 +277,7 @@ def test_detectar_pontes_sem_nome_usa_rotulo_derivado_do_rio(monkeypatch):
     pontes = rc._detectar_pontes_nos_cruzamentos([cz], repo)
     assert len(pontes) == 1
     assert pontes[0].nome == "Ponte sobre Rio Fake"  # nunca inventa um nome próprio
-    assert pontes[0].tipo == "ponte"
+    assert isinstance(pontes[0], rc.Ponte)
 
 
 def test_detectar_pontes_com_nome_cadastrado_usa_o_nome_real(monkeypatch):
@@ -366,7 +366,7 @@ def test_analisar_rota_detecta_ponte_rio_niteroi_no_cruzamento():
     nomes_pontes = [p.nome for p in ctx.pontes]
     assert any("Rio-Niterói" in n for n in nomes_pontes)
     ponte = next(p for p in ctx.pontes if "Rio-Niterói" in p.nome)
-    assert ponte.tipo == "ponte"
+    assert isinstance(ponte, rc.Ponte)
     assert ponte.distancia_eixo_km is not None and ponte.distancia_eixo_km <= 1.0
     assert any("confirmado(s) por ponte" in parte for parte in [ctx.motivo_decisao])
 
@@ -724,3 +724,118 @@ def test_analisar_rota_identifica_estrada_de_ferro_vitoria_a_minas():
     assert any("Vitória" in n or "Vitoria" in n for n in nomes)
     for f in ctx.ferrovias:
         assert f.fonte == "IBGE BC250/BC100 (ferrovias)"
+
+
+# ==============================================================================
+# Missão 2 / Rodada 5 — enriquecimento de atributos já coletados mas não
+# usados (pontes, massas d'água/drenagem, complexos portuários).
+# ==============================================================================
+
+def test_detectar_pontes_extrai_atributos_reais(monkeypatch):
+    def _fake(camada, lon, lat, raio_km=30.0, limite=10, filtros=None):
+        return [{
+            "nome": "Ponte Teste", "distancia_km": 0.3,
+            "tipoponte": "Estaiada", "tipopavime": "Asfalto",
+            "extensao": 850.0, "largura": 12.0,
+        }]
+
+    monkeypatch.setattr(rc, "_consultar_rapido_camada_pequena", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    pontes = rc._detectar_pontes_nos_cruzamentos([_cruzamento()], repo)
+    p = pontes[0]
+    assert p.tipo_ponte == "Estaiada"
+    assert p.tipo_pavimento == "Asfalto"
+    assert p.extensao_m == 850.0
+    assert p.largura_m == 12.0
+
+
+def test_detectar_pontes_nunca_fabrica_vao_livre_a_partir_de_zero_sentinela(monkeypatch):
+    # vaolivreho/vaovertica/cargasupor não fazem parte do dataclass Ponte
+    # (achado da auditoria: onde presentes na base real, o único valor
+    # observado é 0.0 — sentinela de "não medido", não uma medição real).
+    # extensao/largura=0.0 pela mesma razão devem virar None, não "0m".
+    def _fake(camada, lon, lat, raio_km=30.0, limite=10, filtros=None):
+        return [{"nome": "Ponte Zero", "distancia_km": 0.1, "extensao": 0.0, "largura": 0.0}]
+
+    monkeypatch.setattr(rc, "_consultar_rapido_camada_pequena", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    ponte = rc._detectar_pontes_nos_cruzamentos([_cruzamento()], repo)[0]
+    assert not hasattr(ponte, "vao_livre_horizontal_m")
+    assert not hasattr(ponte, "carga_suportada")
+    assert ponte.extensao_m is None
+    assert ponte.largura_m is None
+
+
+def test_cruzamento_hidrografico_drenagem_ganha_encoberto(monkeypatch):
+    def _fake(camada, lon, lat, raio_km=30.0, limite=5, filtros=None):
+        if camada == "drenagem":
+            return [{"nome": "Rio X", "distancia_km": 1.0, "encoberto": "Sim"}]
+        return []
+
+    monkeypatch.setattr(rc, "_consultar_camada_pesada_cacheada", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    achados = rc._detectar_cruzamentos_hidro([(0.0, 0.0, 0.0)], repo, 10.0, 10.0)
+    rio = achados[0]
+    assert rio["encoberto"] == "Sim"
+    assert rio["artificial"] is None  # campo de massas_dagua não se aplica a drenagem
+
+
+def test_cruzamento_hidrografico_massas_dagua_ganha_artificial_salgada_dominialidade(monkeypatch):
+    def _fake(camada, lon, lat, raio_km=30.0, limite=5, filtros=None):
+        if camada == "massas_dagua":
+            return [{"nome": "Lagoa Y", "distancia_km": 0.5, "artificial": "Sim",
+                      "salgada": "Não", "dominialid": "Estadual/Distrital"}]
+        return []
+
+    monkeypatch.setattr(rc, "_consultar_camada_pesada_cacheada", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    achados = rc._detectar_cruzamentos_hidro([(0.0, 0.0, 0.0)], repo, 10.0, 10.0)
+    lagoa = achados[0]
+    assert lagoa["artificial"] == "Sim"
+    assert lagoa["salgada"] == "Não"
+    assert lagoa["dominialidade"] == "Estadual/Distrital"
+    assert lagoa["encoberto"] is None  # campo de drenagem não se aplica a massas_dagua
+
+
+def test_detectar_feicoes_sem_campos_extra_atributos_fica_vazio(monkeypatch):
+    def _fake(camada, lon, lat, raio_km=30.0, limite=10, filtros=None):
+        return [{"nome": "Travessia X", "distancia_km": 1.0, "tipotransp": "Carga"}]
+
+    monkeypatch.setattr(rc, "_consultar_rapido_camada_pequena", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    achados = rc._detectar_feicoes([(0.0, 0.0, 0.0)], repo, "travessias", 10.0, "travessia", "fonte-teste")
+    assert achados[0].atributos == {}  # sem campos_extra pedido -> nunca propaga nada extra
+
+
+def test_detectar_feicoes_com_campos_extra_propaga_apenas_o_pedido(monkeypatch):
+    def _fake(camada, lon, lat, raio_km=30.0, limite=10, filtros=None):
+        return [{"nome": "Porto X", "distancia_km": 1.0, "tipotransp": "Misto",
+                  "tipocomple": "Porto organizado", "campo_nao_pedido": "ignorar"}]
+
+    monkeypatch.setattr(rc, "_consultar_rapido_camada_pequena", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    achados = rc._detectar_feicoes(
+        [(0.0, 0.0, 0.0)], repo, "complexos_portuarios", 10.0, "complexo portuário", "fonte-teste",
+        campos_extra=("tipotransp", "tipocomple"))
+    assert achados[0].atributos == {"tipotransp": "Misto", "tipocomple": "Porto organizado"}
+    assert "campo_nao_pedido" not in achados[0].atributos
+
+
+@pytestmark_dados
+def test_analisar_rota_ponte_rio_niteroi_com_atributos_reais():
+    origem = destino = (-22.8702, -43.1642)
+    ctx = rc.analisar_rota(origem, destino, distancia_km=0.0, raio_km=6.0)
+    ponte = next((p for p in ctx.pontes if "Rio-Niterói" in p.nome), None)
+    assert ponte is not None
+    assert isinstance(ponte, rc.Ponte)
+    assert ponte.fonte == "IBGE BC250/BC100 (pontes)"
+
+
+@pytestmark_dados
+def test_analisar_rota_baia_guanabara_tem_atributos_massas_dagua():
+    origem = destino = (-22.8702, -43.1642)
+    ctx = rc.analisar_rota(origem, destino, distancia_km=0.0, raio_km=8.0)
+    baia = next((c for c in ctx.corpos_dagua if "Guanabara" in c.nome), None)
+    if baia is not None:
+        assert baia.salgada in ("Sim", "Não", "Desconhecido", None)
+        assert baia.encoberto is None  # atributo de drenagem, não de massas_dagua
