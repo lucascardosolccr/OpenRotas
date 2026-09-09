@@ -540,3 +540,104 @@ def test_cache_camada_pesada_respeita_orcamento_de_memoria_via_limite_de_entrada
     for i in range(rc._CACHE_PESADAS_MAX_ENTRADAS + 50):
         rc._consultar_camada_pesada_cacheada("drenagem", -60.0, -3.0 - i * 0.2, raio_km=5.0, limite=5)
     assert len(rc._cache_janela_pesada) == rc._CACHE_PESADAS_MAX_ENTRADAS
+
+
+# ==============================================================================
+# Missão 2 / Rodada 3 — integração rodoviária (rodovias oficiais BR/UF
+# identificadas ao longo da rota, camada `rodovias` do BC250/BC100).
+# ==============================================================================
+
+def test_detectar_rodovias_descarta_trechos_sem_sigla(monkeypatch):
+    def _fake(camada, lon, lat, raio_km=30.0, limite=10, filtros=None):
+        return [{"sigla": None, "distancia_km": 0.2}, {"sigla": "", "distancia_km": 0.1}]
+
+    monkeypatch.setattr(rc, "_consultar_camada_pesada_cacheada", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    rodovias = rc._detectar_rodovias([(0.0, 0.0, 0.0)], repo, 10.0)
+    assert rodovias == []  # sem sigla -> não fabrica "rodovia sem nome"
+
+
+def test_detectar_rodovias_dedup_mantem_menor_distancia(monkeypatch):
+    respostas = [
+        [{"sigla": "BR-364", "distancia_km": 5.0, "jurisdicao": "Federal"}],
+        [{"sigla": "br-364", "distancia_km": 1.2, "jurisdicao": "Federal"}],  # mesma rodovia, caixa diferente
+    ]
+
+    def _fake(camada, lon, lat, raio_km=30.0, limite=10, filtros=None):
+        return respostas.pop(0)
+
+    monkeypatch.setattr(rc, "_consultar_camada_pesada_cacheada", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    rodovias = rc._detectar_rodovias(
+        [(0.0, 0.0, 0.0), (0.0, 0.1, 10.0)], repo, 10.0)
+    assert len(rodovias) == 1
+    assert rodovias[0].distancia_eixo_km == 1.2
+
+
+def test_detectar_rodovias_extrai_atributos_reais_sem_inventar(monkeypatch):
+    def _fake(camada, lon, lat, raio_km=30.0, limite=10, filtros=None):
+        return [{
+            "sigla": "BR-101", "distancia_km": 0.5, "jurisdicao": "Federal",
+            "administra": "Concessionada", "concession": "CCR RioSP",
+            "revestimen": "Pavimentado", "tipopavime": "Asfalto",
+            "nrpistas": 2.0, "nrfaixas": 4.0, "limitevelo": None,
+            "lat": -22.9, "lon": -43.1,
+        }]
+
+    monkeypatch.setattr(rc, "_consultar_camada_pesada_cacheada", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    rodovias = rc._detectar_rodovias([(0.0, 0.0, 0.0)], repo, 10.0)
+    assert len(rodovias) == 1
+    r = rodovias[0]
+    assert r.sigla == "BR-101"
+    assert r.jurisdicao == "Federal"
+    assert r.concessionaria == "CCR RioSP"
+    assert r.nr_pistas == 2 and r.nr_faixas == 4
+    assert r.limite_velocidade_kmh is None  # nunca inventa quando a base não tem
+    assert r.lat == -22.9 and r.lon == -43.1
+
+
+def test_detectar_rodovias_concessao_nao_vira_none_nao_string_literal():
+    # A base grava "Não" quando não há concessão — isso vira None (ausência
+    # real), não uma string "Não" solta, para não confundir "tem concessão
+    # chamada Não" com "não tem concessão".
+    def _fake(camada, lon, lat, raio_km=30.0, limite=10, filtros=None):
+        return [{"sigla": "MT-170", "distancia_km": 0.3, "concession": "Não"}]
+
+    import inteligencia_geoespacial.route_context as rc_mod
+    orig = rc_mod._consultar_camada_pesada_cacheada
+    rc_mod._consultar_camada_pesada_cacheada = _fake
+    try:
+        repo = rc.GeoIntelligenceRepository()
+        rodovias = rc._detectar_rodovias([(0.0, 0.0, 0.0)], repo, 10.0)
+        assert rodovias[0].concessionaria is None
+    finally:
+        rc_mod._consultar_camada_pesada_cacheada = orig
+
+
+def test_rodovias_esta_no_cache_de_janela_ampla():
+    assert "rodovias" in rc._CAMADAS_COM_CACHE_AMPLO
+
+
+@pytestmark_dados
+def test_analisar_rota_identifica_br116_entre_sp_e_rj():
+    # BR-116 (Via Dutra/Rio-Santos) é a ligação rodoviária federal conhecida
+    # entre São Paulo e Rio de Janeiro — boa prova de que a detecção usa
+    # dado real, não um artefato de teste.
+    origem, destino = (-23.55, -46.63), (-22.90, -43.20)
+    ctx = rc.analisar_rota(origem, destino, distancia_km=430.0, raio_km=10.0)
+    siglas = [r.sigla for r in ctx.rodovias]
+    assert any("BR-116" in s for s in siglas)
+    for r in ctx.rodovias:
+        assert r.fonte == "IBGE BC250/BC100 (rodovias)"
+    assert any("Rodovia" in m for m in [ctx.motivo_decisao])
+
+
+@pytestmark_dados
+def test_analisar_rota_sem_rodovia_gera_aviso_honesto():
+    # Ponto isolado sem nenhuma rodovia com sigla oficial por perto (raio
+    # bem estreito) -> aviso explícito, nunca lista vazia silenciosa.
+    origem = destino = (-3.1190, -60.0217)
+    ctx = rc.analisar_rota(origem, destino, distancia_km=0.0, raio_km=0.05)
+    if not ctx.rodovias:
+        assert any("rodovia" in a.lower() for a in ctx.avisos)

@@ -4250,17 +4250,20 @@ def _secao_inteligencia_geografica_html(df):
         _qt_trav = pd.to_numeric(df.get("QT_TRAVESSIAS"), errors="coerce").fillna(0)
         _dep = pd.to_numeric(df.get("Dependencia Aquaviaria"), errors="coerce")
         _conf = pd.to_numeric(df.get("Confianca Geografica"), errors="coerce")
+        _qt_rod = pd.to_numeric(df.get("QT_RODOVIAS"), errors="coerce").fillna(0)
 
         _n_com_rio = int((_qt_rios > 0).sum())
         _n_com_ponte = int((_qt_pontes > 0).sum())
         _n_com_trav = int((_qt_trav > 0).sum())
         _n_sem_confirmacao = int(((_qt_rios > 0) & (_qt_pontes == 0) & (_qt_trav == 0)).sum())
+        _n_com_rod = int((_qt_rod > 0).sum())
 
         _kpis = [
             ("Rotas com rio/córrego identificado", f"{_n_com_rio:,} de {_n:,} ({(_n_com_rio / _n * 100):.0f}%)"),
             ("Rotas com ponte confirmada no cruzamento", f"{_n_com_ponte:,}"),
             ("Rotas com travessia aquaviária real", f"{_n_com_trav:,}"),
             ("Cruzamentos sem ponte NEM travessia confirmada", f"{_n_sem_confirmacao:,}"),
+            ("Rotas com rodovia oficial identificada", f"{_n_com_rod:,} de {_n:,} ({(_n_com_rod / _n * 100):.0f}%)"),
         ]
         if _dep is not None and _dep.notna().any():
             _kpis.append(("Dependência aquaviária média", f"{_dep.mean():.0f}/100"))
@@ -4281,6 +4284,21 @@ def _secao_inteligencia_geografica_html(df):
                 _bacias_html = ("<h4>Bacias hidrográficas mais frequentes</h4>"
                                f"<table><thead><tr><th>Bacia</th><th class='r'>Rotas</th></tr></thead>"
                                f"<tbody>{_rows_b}</tbody></table>")
+
+        _rodovias_html = ""
+        _rod_col = _col_existente(df, "NM_RODOVIAS")
+        if _rod_col:
+            _rc = df[_rod_col].dropna().astype(str).str.strip()
+            _rc = _rc[~_rc.isin(["", "nan", "None"])]
+            if not _rc.empty:
+                _top_r = _rc.str.split(", ").explode().str.strip()
+                _top_r = _top_r[_top_r != ""].value_counts().head(10)
+                if not _top_r.empty:
+                    _rows_r = "".join(f"<tr><td>{_he2.escape(str(k))}</td><td class='r'>{int(v)}</td></tr>"
+                                      for k, v in _top_r.items())
+                    _rodovias_html = ("<h4>Rodovias mais frequentes no estudo</h4>"
+                                     f"<table><thead><tr><th>Rodovia</th><th class='r'>Rotas</th></tr></thead>"
+                                     f"<tbody>{_rows_r}</tbody></table>")
 
         _tabela_html = ""
         try:
@@ -4318,7 +4336,7 @@ def _secao_inteligencia_geografica_html(df):
                 "não existe — significa que a base local (IBGE BC250/BC100) não teve evidência suficiente "
                 "no raio analisado. Nunca presuma balsa nem ponte nesses casos.", "warning")
 
-        return (f'<div class="kpis">{_kh}</div>' + _bacias_html + _tabela_html + _aviso_html
+        return (f'<div class="kpis">{_kh}</div>' + _bacias_html + _rodovias_html + _tabela_html + _aviso_html
                + _caixa_explicativa(
                    "Sobre esta seção",
                    "Cada rota do estudo passa automaticamente pelo motor de contexto geográfico "
@@ -16113,7 +16131,8 @@ def _portao_de_exibicao(chave='df_processado'):
 _GEO_INTEL_COLUNAS = ("Rios Cruzados", "Bacia Hidrografica", "Pontes no Cruzamento",
                       "Travessias Aquaviarias", "Dependencia Aquaviaria", "Confianca Geografica",
                       "QT_RIOS", "QT_CORPOS_DAGUA", "NM_CORPOS_DAGUA", "QT_PONTES", "QT_TRAVESSIAS",
-                      "QT_HIDROVIAS", "NM_HIDROVIAS", "QT_PORTOS_TERMINAIS")
+                      "QT_HIDROVIAS", "NM_HIDROVIAS", "QT_PORTOS_TERMINAIS",
+                      "Rodovias Identificadas", "QT_RODOVIAS", "NM_RODOVIAS")
 _GEO_INTEL_LIMIAR_AUTOMATICO = 200  # nº de PARES origem/destino únicos; acima disso, sob demanda
 
 
@@ -16187,6 +16206,9 @@ def _enriquecer_geo_inteligencia_df(df, forcar=False, limiar_automatico=_GEO_INT
             _cols["QT_HIDROVIAS"].append(len(_ctx.hidrovias_proximas))
             _cols["NM_HIDROVIAS"].append(", ".join(h.nome for h in _ctx.hidrovias_proximas[:2]))
             _cols["QT_PORTOS_TERMINAIS"].append(len(_ctx.portos_terminais))
+            _cols["Rodovias Identificadas"].append(", ".join(r.sigla for r in _ctx.rodovias[:5]))
+            _cols["QT_RODOVIAS"].append(len(_ctx.rodovias))
+            _cols["NM_RODOVIAS"].append(", ".join(r.sigla for r in _ctx.rodovias))
 
         df = df.copy()
         for _c in _GEO_INTEL_COLUNAS:
@@ -32777,7 +32799,8 @@ def _mapa_leaflet_contexto_geografico(ctx, lat_o, lon_o, lat_d, lon_d, nome_orig
                 _extra += f"Navegável: {_nav}. "
             if _bacia:
                 _extra += f"Bacia: {_bacia}."
-            _pop = _popup(it.nome, tipo_rotulo, getattr(it, "distancia_eixo_km", None),
+            _nome_it = getattr(it, "nome", None) or getattr(it, "sigla", None)
+            _pop = _popup(_nome_it, tipo_rotulo, getattr(it, "distancia_eixo_km", None),
                           getattr(it, "km_desde_origem", None), it.fonte, _extra)
             marcadores.append("L.circleMarker([%.6f,%.6f],{radius:8,color:'%s',fillColor:'%s',"
                               "fillOpacity:0.85,weight:2}).bindPopup(`%s`)" % (_lat, _lon, icone_cor, icone_cor, _pop))
@@ -32789,12 +32812,14 @@ def _mapa_leaflet_contexto_geografico(ctx, lat_o, lon_o, lat_d, lon_d, nome_orig
     _js_trav = _camada_js("camadaTravessias", ctx.travessias if ctx else [], "#f97316", "Travessia (balsa)")
     _js_hidro = _camada_js("camadaHidrovias", ctx.hidrovias_proximas if ctx else [], "#1d4ed8", "Hidrovia")
     _js_portos = _camada_js("camadaPortos", ctx.portos_terminais if ctx else [], "#7c3aed", "Porto/terminal")
+    _js_rod = _camada_js("camadaRodovias", ctx.rodovias if ctx else [], "#059669", "Rodovia")
 
     _n_rios = len((ctx.rios_detectados if ctx else []) + (ctx.corpos_dagua if ctx else []))
     _n_pontes = len(ctx.pontes if ctx else [])
     _n_trav = len(ctx.travessias if ctx else [])
     _n_hidro = len(ctx.hidrovias_proximas if ctx else [])
     _n_portos = len(ctx.portos_terminais if ctx else [])
+    _n_rod = len(ctx.rodovias if ctx else [])
 
     html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -32828,14 +32853,16 @@ L.marker(pts[pts.length-1]).addTo(map).bindPopup('<b>Destino:</b><br>{_nd}');
 {_js_trav}
 {_js_hidro}
 {_js_portos}
+{_js_rod}
 camadaRios.addTo(map); camadaPontes.addTo(map); camadaTravessias.addTo(map);
-camadaHidrovias.addTo(map); camadaPortos.addTo(map);
+camadaHidrovias.addTo(map); camadaPortos.addTo(map); camadaRodovias.addTo(map);
 L.control.layers(null,{{
   '🌊 Rios/corpos d\\'água ({_n_rios})': camadaRios,
   '🌉 Pontes ({_n_pontes})': camadaPontes,
   '⛴️ Travessias ({_n_trav})': camadaTravessias,
   '🚢 Hidrovias ({_n_hidro})': camadaHidrovias,
   '⚓ Portos/terminais ({_n_portos})': camadaPortos,
+  '🛣️ Rodovias ({_n_rod})': camadaRodovias,
 }},{{collapsed:false}}).addTo(map);
 map.fitBounds(linha.getBounds(),{{padding:[60,60]}});
 </script></body></html>"""
@@ -43354,6 +43381,9 @@ if _secao == _SECOES[0]:   # tab_individual
                         with st.expander("🧠 Contexto Geográfico da Rota (rios, bacia, pontes, travessias)",
                                          expanded=bool(_ctx_gi.rios_detectados or _ctx_gi.corpos_dagua)):
                             st.markdown(f"**{_ctx_gi.motivo_decisao}**")
+                            if _ctx_gi.rodovias:
+                                st.caption("🛣️ Rodovias identificadas: " + ", ".join(
+                                    r.sigla for r in _ctx_gi.rodovias))
                             if _ctx_gi.rios_detectados:
                                 st.caption("🌊 Rios/córregos cruzados: " + ", ".join(
                                     r.nome + (f" (bacia {r.bacia})" if r.bacia else "") for r in _ctx_gi.rios_detectados))
@@ -43373,7 +43403,8 @@ if _secao == _SECOES[0]:   # tab_individual
                             # uma feição com coordenada conhecida (nunca um mapa vazio).
                             _tem_feicoes_mapa = any([
                                 _ctx_gi.rios_detectados, _ctx_gi.corpos_dagua, _ctx_gi.pontes,
-                                _ctx_gi.travessias, _ctx_gi.hidrovias_proximas, _ctx_gi.portos_terminais])
+                                _ctx_gi.travessias, _ctx_gi.hidrovias_proximas, _ctx_gi.portos_terminais,
+                                _ctx_gi.rodovias])
                             if _tem_feicoes_mapa:
                                 try:
                                     _mapa_geo_uri = _mapa_leaflet_contexto_geografico(
@@ -56333,6 +56364,9 @@ if _secao == _SECOES[15]:   # tab_route_intel
                                 _trav_txt = str(_row_orig.get("Travessias Aquaviarias") or "").strip()
                                 if _trav_txt and _trav_txt not in ("—", "nan"):
                                     st.caption(f"⛴️ Travessia(s): {_trav_txt}")
+                                _rod_txt = str(_row_orig.get("Rodovias Identificadas") or "").strip()
+                                if _rod_txt and _rod_txt not in ("—", "nan"):
+                                    st.caption(f"🛣️ Rodovia(s): {_rod_txt}")
                                 if (_qt_p or 0) == 0 and (_qt_t or 0) == 0 and _num_seguro(_row_orig.get("QT_RIOS"), 0) > 0:
                                     st.caption("⚠️ Rio identificado sem ponte nem travessia confirmadas no raio "
                                               "consultado — modo de travessia não determinado, não presuma.")

@@ -348,7 +348,7 @@ def _consultar_camada_pesada_cacheada(camada: str, lon: float, lat: float, raio_
     return [{**dict(r), "distancia_km": d} for d, r in calc[:limite]]
 
 
-_CAMADAS_COM_CACHE_AMPLO = ("drenagem", "massas_dagua")
+_CAMADAS_COM_CACHE_AMPLO = ("drenagem", "massas_dagua", "rodovias")
 
 
 # ==============================================================================
@@ -511,6 +511,32 @@ class Feicao:
 
 
 @dataclass
+class Rodovia:
+    """Rodada 3 (Missão 2 — extração máxima): trecho rodoviário oficial
+    (IBGE BC250/BC100) identificado ao longo da rota, pela SIGLA (BR-xxx,
+    UF-xxx) — nunca por 'nome', que na camada `rodovias` é sempre nulo
+    (confirmado por inspeção direta do Parquet). Trechos sem sigla cadastrada
+    (ruas locais, becos, servidões — a camada cobre TODO o viário, não só
+    rodovias numeradas) são deliberadamente descartados: mostrar "rodovia
+    sem nome" para uma rua qualquer seria uma forma de fabricar relevância
+    que a rota não tem."""
+    sigla: str                              # ex.: "BR-364", "BR-364/MT-170" (composto, como na base)
+    km_desde_origem: float | None
+    distancia_eixo_km: float | None
+    jurisdicao: str | None                  # "Federal" | "Estadual/Distrital" | "Municipal" | ... (valor bruto da base)
+    administra: str | None
+    concessionaria: str | None              # None quando a base não registra concessão (não é "Não" fabricado)
+    revestimento: str | None
+    tipo_pavimento: str | None
+    nr_pistas: int | None
+    nr_faixas: int | None
+    limite_velocidade_kmh: int | None       # quase sempre ausente na base (não inventado quando falta)
+    fonte: str = "IBGE BC250/BC100 (rodovias)"
+    lat: float | None = None
+    lon: float | None = None
+
+
+@dataclass
 class AlternativaRodoviaria:
     """Comparação com uma rota sem travessia (Rodada 4/13)."""
     distancia_km: float | None
@@ -531,6 +557,7 @@ class ContextoGeograficoRota:
     travessias: list = field(default_factory=list)              # Feicao — balsas reais (IBGE)
     hidrovias_proximas: list = field(default_factory=list)      # Feicao
     portos_terminais: list = field(default_factory=list)        # Feicao
+    rodovias: list = field(default_factory=list)                 # Rodovia — Missão 2/Rodada 3
 
     bacia_hidrografica: str | None = None
     sub_bacia: str | None = None
@@ -724,6 +751,73 @@ def _detectar_aquaviario(pontos: list, repo: GeoIntelligenceRepository, raio_km:
     return travessias, hidrovias, portos
 
 
+# ==============================================================================
+# Detecção rodoviária (Rodada 3, Missão 2 — extração máxima de APIs/datasets):
+# quais rodovias oficiais (BR/UF) a rota efetivamente percorre. A camada
+# `rodovias` do BC250/BC100 cobre TODO o viário nacional (287 mil trechos —
+# de autoestradas a becos e servidões), não só rodovias numeradas; a coluna
+# `nome` está sempre vazia na base (confirmado por inspeção direta), então a
+# identificação usa `sigla` (ex.: "BR-364") — presente em ~30% dos trechos,
+# exatamente os que correspondem a rodovias oficialmente sinalizadas.
+# Trechos sem sigla são descartados: não fabricamos relevância rodoviária
+# para uma rua local só porque a rota passa perto dela.
+# ==============================================================================
+
+def _detectar_rodovias(pontos: list, repo: GeoIntelligenceRepository, raio_km: float,
+                        limite_por_ponto: int = 8) -> list:
+    """Rodovias oficiais (sigla BR-xxx/UF-xxx) próximas ao trajeto, deduplicadas
+    por sigla normalizada (mantém a menor distância ao eixo). Atributos reais
+    da base (jurisdição, administração, concessão, revestimento, pavimento,
+    pistas/faixas, limite de velocidade) são propagados tal como cadastrados —
+    nunca inferidos quando ausentes."""
+    achados: dict = {}
+    for la, lo, km_o in pontos:
+        try:
+            itens = repo.consultar("rodovias", la, lo, raio_km=raio_km, limite=limite_por_ponto)
+        except Exception:
+            itens = []
+        for it in itens:
+            sigla = _nome(it.get("sigla"))
+            if not sigla:
+                continue  # trecho sem sigla oficial — não é uma "rodovia identificada"
+            chave = _unorm(sigla)
+            try:
+                dist = round(float(it.get("distancia_km")), 2)
+            except Exception:
+                dist = None
+            atual = achados.get(chave)
+            if atual is not None and dist is not None and atual.distancia_eixo_km is not None \
+                    and dist >= atual.distancia_eixo_km:
+                continue
+            try:
+                _flat, _flon = float(it.get("lat")), float(it.get("lon"))
+            except Exception:
+                _flat, _flon = None, None
+
+            def _num(v):
+                try:
+                    return int(float(v))
+                except Exception:
+                    return None
+
+            concessao = _nome(it.get("concession"))
+            achados[chave] = Rodovia(
+                sigla=sigla,
+                km_desde_origem=round(km_o, 1),
+                distancia_eixo_km=dist,
+                jurisdicao=_nome(it.get("jurisdicao")) or None,
+                administra=_nome(it.get("administra")) or None,
+                concessionaria=concessao if concessao and concessao.strip().lower() not in ("não", "nao") else None,
+                revestimento=_nome(it.get("revestimen")) or None,
+                tipo_pavimento=_nome(it.get("tipopavime")) or None,
+                nr_pistas=_num(it.get("nrpistas")),
+                nr_faixas=_num(it.get("nrfaixas")),
+                limite_velocidade_kmh=_num(it.get("limitevelo")),
+                lat=_flat, lon=_flon,
+            )
+    return sorted(achados.values(), key=lambda r: (r.km_desde_origem or 0.0))
+
+
 def _indice_dependencia_aquaviaria(rios: list, travessias: list, hidrovias: list,
                                     portos: list) -> int:
     """0-100: quanto a rota parece depender de infraestrutura aquaviária,
@@ -873,6 +967,11 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
     bacia_principal = bacias[0] if bacias else None
     sub_bacia = None  # Sem fonte oficial de sub-bacia por trecho na base atual — não inventado.
 
+    try:
+        rodovias = _detectar_rodovias(pontos, repo, raio_ef)
+    except Exception:
+        rodovias = []
+
     # Nível adaptativo (§32): rio detectado -> nível 3 (aquaviário mais denso);
     # se o primeiro passe já achar uma balsa real, nível 4 e raio maior para
     # hidrovias/portos (costumam ficar mais afastados do eixo estrito do rio
@@ -924,6 +1023,8 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
         fontes.append("IBGE BC250/BC100 (infraestrutura portuária)")
     if pontes:
         fontes.append("IBGE BC250/BC100 (pontes)")
+    if rodovias:
+        fontes.append("IBGE BC250/BC100 (rodovias)")
 
     avisos: list = []
     if any(r.bacia is None for r in rios):
@@ -940,6 +1041,10 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
         avisos.append(
             "Cruzamento(s) hidrográfico(s) sem ponte OU travessia confirmada no raio consultado — "
             "modo de travessia real não determinado (não presuma balsa nem ponte).")
+    if not rodovias:
+        avisos.append(
+            "Nenhuma rodovia com sigla oficial (BR-xxx/UF-xxx) identificada no raio consultado — "
+            "pode ser via municipal sem sigla cadastrada, ou raio insuficiente.")
 
     conf = 0
     if rios or corpos:
@@ -953,6 +1058,9 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
     nivel_conf = "alta" if conf >= 70 else ("media" if conf >= 40 else "nao_determinada")
 
     motivo_partes: list = []
+    if rodovias:
+        motivo_partes.append(
+            "Rodovia(s) identificada(s): %s." % ", ".join(r.sigla for r in rodovias[:5]))
     if rios:
         motivo_partes.append(
             "Rota cruza %d rio(s)/córrego(s) nomeado(s) (%s)." % (
@@ -989,6 +1097,7 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
         travessias=travessias,
         hidrovias_proximas=hidrovias,
         portos_terminais=portos,
+        rodovias=rodovias,
         bacia_hidrografica=bacia_principal,
         sub_bacia=sub_bacia,
         dependencia_aquaviaria=dependencia,
