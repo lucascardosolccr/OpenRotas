@@ -940,3 +940,76 @@ def test_analisar_rota_preenche_complexidade_geografica_com_dado_real():
     ctx = rc.analisar_rota((-23.55, -46.63), (-22.90, -43.20), distancia_km=430.0, raio_km=10.0)
     assert ctx.complexidade_geografica is not None
     assert 0 <= ctx.complexidade_geografica <= 100
+
+
+# ==============================================================================
+# Missão 2 / Rodada 9 — detecção de anomalias geoespaciais estruturadas
+# (§25-26 da missão), formalizando sinais que já existiam como texto solto.
+# ==============================================================================
+
+def test_dentro_do_brasil_ponto_valido():
+    assert rc._dentro_do_brasil(-15.78, -47.93) is True  # Brasília
+
+
+def test_dentro_do_brasil_ponto_fora():
+    assert rc._dentro_do_brasil(40.7, -74.0) is False  # Nova York
+
+
+def test_dentro_do_brasil_entrada_invalida_nao_afirma_anomalia():
+    assert rc._dentro_do_brasil("x", "y") is True  # sem certeza -> não afirma
+
+
+def test_detectar_anomalias_coordenada_fora_do_brasil():
+    anomalias = rc._detectar_anomalias(40.7, -74.0, 40.8, -74.1, 5.0, 5.0, [], [], [], [], None)
+    categorias = {a.categoria for a in anomalias}
+    assert "coordenada_origem_fora_do_brasil" in categorias
+    assert "coordenada_destino_fora_do_brasil" in categorias
+
+
+def test_detectar_anomalias_distancia_menor_que_linha_reta():
+    anomalias = rc._detectar_anomalias(-23.55, -46.63, -22.90, -43.20, 50.0, 360.0, [], [], [], [], None)
+    achado = next(a for a in anomalias if a.categoria == "distancia_menor_que_linha_reta")
+    assert achado.severidade == "alta"
+
+
+def test_detectar_anomalias_distancia_maior_que_linha_reta_nao_e_anomalia():
+    # Rota real quase sempre é mais longa que a linha reta — isso é normal,
+    # nunca deve virar anomalia.
+    anomalias = rc._detectar_anomalias(-23.55, -46.63, -22.90, -43.20, 450.0, 360.0, [], [], [], [], None)
+    assert not any(a.categoria == "distancia_menor_que_linha_reta" for a in anomalias)
+
+
+def test_detectar_anomalias_cruzamento_sem_confirmacao():
+    rio = rc.CruzamentoHidrografico(nome="Rio A", camada="drenagem", distancia_eixo_km=1.0,
+                                     km_desde_origem=0.0, km_ate_destino=None, navegavel=None,
+                                     regime=None, bacia="BACIA X", fonte="teste", confianca="alta")
+    anomalias = rc._detectar_anomalias(0.0, 0.0, 0.0, 0.0, 10.0, 10.0, [rio], [], [], [], "BACIA X")
+    assert any(a.categoria == "cruzamento_hidrografico_sem_confirmacao" for a in anomalias)
+
+
+def test_detectar_anomalias_travessia_sem_corpo_dagua():
+    trav = rc.Feicao(nome="Travessia X", tipo="travessia (balsa)", distancia_eixo_km=1.0,
+                      km_desde_origem=0.0, fonte="teste")
+    anomalias = rc._detectar_anomalias(0.0, 0.0, 0.0, 0.0, 10.0, 10.0, [], [], [], [trav], None)
+    assert any(a.categoria == "travessia_sem_corpo_dagua_no_raio" for a in anomalias)
+
+
+def test_detectar_anomalias_rota_limpa_sem_evidencias_fica_vazia():
+    # Sem rios, sem travessias, sem coordenadas fora do Brasil, sem distância
+    # impossível -> nenhuma anomalia (nunca fabrica um alerta sem motivo real).
+    anomalias = rc._detectar_anomalias(-15.78, -47.93, -15.80, -47.90, 5.0, 4.0, [], [], [], [], None)
+    assert anomalias == []
+
+
+def test_detectar_anomalias_nunca_lanca_com_none():
+    # fail-open: entradas ausentes/None não devem derrubar a função.
+    anomalias = rc._detectar_anomalias(0.0, 0.0, 0.0, 0.0, None, None, [], [], [], [], None)
+    assert isinstance(anomalias, list)
+
+
+@pytestmark_dados
+def test_analisar_rota_preenche_anomalias_com_dado_real():
+    ctx = rc.analisar_rota((-23.55, -46.63), (-22.90, -43.20), distancia_km=50.0, raio_km=10.0)
+    assert isinstance(ctx.anomalias, list)
+    assert all(isinstance(a, rc.Anomalia) for a in ctx.anomalias)
+    assert any(a.categoria == "distancia_menor_que_linha_reta" for a in ctx.anomalias)

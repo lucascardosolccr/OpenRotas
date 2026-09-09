@@ -668,6 +668,21 @@ class Ponte:
 
 
 @dataclass
+class Anomalia:
+    """Rodada 9 (Missão 2 — extração máxima §25-26): alerta estruturado e
+    categorizado sobre a análise geográfica desta rota — formaliza sinais
+    que já existiam como texto solto em `ContextoGeograficoRota.avisos`
+    (mantidos, por compatibilidade) em algo filtrável/agregável (categoria +
+    severidade), como a missão pede para a "camada de anomalias". Nunca
+    fabrica uma anomalia: cada categoria é uma checagem honesta sobre os
+    próprios dados já coletados por `analisar_rota`, documentada caso a
+    caso em `_detectar_anomalias`."""
+    categoria: str        # slug estável, ex.: "distancia_menor_que_linha_reta"
+    severidade: str        # "alta" | "media" | "baixa"
+    descricao: str
+
+
+@dataclass
 class AlternativaRodoviaria:
     """Comparação com uma rota sem travessia (Rodada 4/13)."""
     distancia_km: float | None
@@ -703,6 +718,7 @@ class ContextoGeograficoRota:
     fontes_concordam: list = field(default_factory=list)
     motivo_decisao: str = ""
     avisos: list = field(default_factory=list)
+    anomalias: list = field(default_factory=list)          # Anomalia — Missão 2/Rodada 9
     nivel_analise: int = 1
 
 
@@ -1177,6 +1193,75 @@ def _detectar_pontes_nos_cruzamentos(cruzamentos: list, repo: GeoIntelligenceRep
 
 
 # ==============================================================================
+# Detecção de anomalias (Rodada 9, Missão 2 — extração máxima §25-26): sinais
+# honestos sobre a própria análise já apurada por analisar_rota — nunca uma
+# checagem nova que exija dado fora do que já foi coletado.
+# ==============================================================================
+
+_LAT_MIN_BR, _LAT_MAX_BR = -34.0, 6.0   # caixa geográfica aproximada do Brasil
+_LON_MIN_BR, _LON_MAX_BR = -75.0, -28.0  # (folga proposital — não é validação territorial oficial)
+
+
+def _dentro_do_brasil(lat, lon) -> bool:
+    try:
+        return _LAT_MIN_BR <= float(lat) <= _LAT_MAX_BR and _LON_MIN_BR <= float(lon) <= _LON_MAX_BR
+    except Exception:
+        return True  # sem certeza -> não afirma anomalia
+
+
+def _detectar_anomalias(lat_o: float, lon_o: float, lat_d: float, lon_d: float,
+                         dist_total_km, dist_geodesica_km, rios: list, corpos: list,
+                         pontes: list, travessias: list, bacia_principal) -> list:
+    """Anomalias estruturadas (§25/§26 da missão) a partir do que
+    `analisar_rota` já apurou para esta rota — nunca uma inferência nova
+    além do que os próprios dados coletados sustentam. Sobrepõe-se em
+    parte a `avisos` (texto solto, mantido por compatibilidade) mas em
+    formato categorizado/filtrável, como a missão pede para a "camada de
+    anomalias" (§26: cada alerta deve poder ser localizado/agregado)."""
+    anomalias: list = []
+
+    if not _dentro_do_brasil(lat_o, lon_o):
+        anomalias.append(Anomalia(
+            categoria="coordenada_origem_fora_do_brasil", severidade="media",
+            descricao="Coordenada de origem (%.4f, %.4f) fora da caixa geográfica aproximada do "
+                       "Brasil — possível erro de geocodificação." % (lat_o, lon_o)))
+    if not _dentro_do_brasil(lat_d, lon_d):
+        anomalias.append(Anomalia(
+            categoria="coordenada_destino_fora_do_brasil", severidade="media",
+            descricao="Coordenada de destino (%.4f, %.4f) fora da caixa geográfica aproximada do "
+                       "Brasil — possível erro de geocodificação." % (lat_d, lon_d)))
+
+    if dist_total_km is not None and dist_geodesica_km is not None and dist_total_km < dist_geodesica_km - 0.5:
+        anomalias.append(Anomalia(
+            categoria="distancia_menor_que_linha_reta", severidade="alta",
+            descricao="Distância informada (%.1f km) é menor que a distância geodésica em linha "
+                       "reta entre origem e destino (%.1f km) — fisicamente impossível para uma "
+                       "rota real; a distância pode estar incorreta." % (dist_total_km, dist_geodesica_km)))
+
+    if (rios or corpos) and not pontes and not travessias:
+        nomes = ", ".join(r.nome for r in (rios + corpos)[:2])
+        anomalias.append(Anomalia(
+            categoria="cruzamento_hidrografico_sem_confirmacao", severidade="media",
+            descricao="Rota cruza %s sem ponte nem travessia confirmada no raio consultado — "
+                       "modo de travessia real não determinado." % nomes))
+
+    if travessias and not rios and not corpos:
+        anomalias.append(Anomalia(
+            categoria="travessia_sem_corpo_dagua_no_raio", severidade="baixa",
+            descricao="Travessia aquaviária identificada, mas nenhum rio/corpo d'água foi "
+                       "detectado no mesmo raio de análise — o corpo d'água correspondente pode "
+                       "estar fora do raio consultado nesta camada."))
+
+    if rios and bacia_principal is None:
+        anomalias.append(Anomalia(
+            categoria="bacia_nao_determinada", severidade="baixa",
+            descricao="Bacia hidrográfica não determinada para os rios identificados (nome sem "
+                       "correspondência exata na base ANA/SNIRH)."))
+
+    return anomalias
+
+
+# ==============================================================================
 # Entrada principal
 # ==============================================================================
 
@@ -1199,12 +1284,14 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
 
     repo = repo or repositorio_padrao()
 
+    try:
+        dist_geodesica = _haversine_km(lat_o, lon_o, lat_d, lon_d)
+    except Exception:
+        dist_geodesica = None
+
     dist_total = distancia_km
     if dist_total is None:
-        try:
-            dist_total = _haversine_km(lat_o, lon_o, lat_d, lon_d)
-        except Exception:
-            dist_total = None
+        dist_total = dist_geodesica
 
     nivel_ef = int(nivel) if nivel is not None else nivel_automatico(dist_total, suspeita=suspeita)
     raio_ef = float(raio_km) if raio_km is not None else _raio_para_nivel(nivel_ef)
@@ -1323,6 +1410,12 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
             "Nenhuma rodovia com sigla oficial (BR-xxx/UF-xxx) identificada no raio consultado — "
             "pode ser via municipal sem sigla cadastrada, ou raio insuficiente.")
 
+    try:
+        anomalias = _detectar_anomalias(lat_o, lon_o, lat_d, lon_d, dist_total, dist_geodesica,
+                                         rios, corpos, pontes, travessias, bacia_principal)
+    except Exception:
+        anomalias = []
+
     conf = 0
     if rios or corpos:
         conf = 70 if any(r.confianca == "alta" for r in (rios + corpos)) else 50
@@ -1389,5 +1482,6 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
         fontes_concordam=fontes,
         motivo_decisao=" ".join(motivo_partes),
         avisos=avisos,
+        anomalias=anomalias,
         nivel_analise=nivel_aqua,
     )

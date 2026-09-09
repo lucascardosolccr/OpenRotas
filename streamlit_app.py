@@ -16152,7 +16152,8 @@ _GEO_INTEL_COLUNAS = ("Rios Cruzados", "Bacia Hidrografica", "Pontes no Cruzamen
                       "QT_HIDROVIAS", "NM_HIDROVIAS", "QT_PORTOS_TERMINAIS",
                       "Rodovias Identificadas", "QT_RODOVIAS", "NM_RODOVIAS",
                       "Ferrovias Proximas", "QT_FERROVIAS", "NM_FERROVIAS",
-                      "Sub Bacia Codigo SNIRH", "Complexidade Geografica")
+                      "Sub Bacia Codigo SNIRH", "Complexidade Geografica",
+                      "QT_ANOMALIAS", "NM_ANOMALIAS", "Anomalia Mais Severa")
 _GEO_INTEL_LIMIAR_AUTOMATICO = 200  # nº de PARES origem/destino únicos; acima disso, sob demanda
 
 
@@ -16234,6 +16235,11 @@ def _enriquecer_geo_inteligencia_df(df, forcar=False, limiar_automatico=_GEO_INT
             _cols["NM_FERROVIAS"].append(", ".join(f.nome for f in _ctx.ferrovias))
             _cols["Sub Bacia Codigo SNIRH"].append(_ctx.sub_bacia or "")
             _cols["Complexidade Geografica"].append(_ctx.complexidade_geografica)
+            _cols["QT_ANOMALIAS"].append(len(_ctx.anomalias))
+            _cols["NM_ANOMALIAS"].append(", ".join(a.categoria for a in _ctx.anomalias))
+            _ordem_severidade = {"alta": 0, "media": 1, "baixa": 2}
+            _mais_severa = min(_ctx.anomalias, key=lambda a: _ordem_severidade.get(a.severidade, 9), default=None)
+            _cols["Anomalia Mais Severa"].append(_mais_severa.descricao if _mais_severa else "")
 
         df = df.copy()
         for _c in _GEO_INTEL_COLUNAS:
@@ -43446,6 +43452,15 @@ if _secao == _SECOES[0]:   # tab_individual
                                           f"Confiança geográfica: {_ctx_gi.confianca_geral}/100 ({_ctx_gi.confianca_nivel})")
                             for _av in _ctx_gi.avisos:
                                 st.caption(f"⚠️ {_av}")
+                            if _ctx_gi.anomalias:
+                                # [ANOMALIAS - Rodada 9/Missão 2] §25-26 da missão: alertas
+                                # categorizados/filtráveis (não só texto solto) — cada um mostra
+                                # categoria + severidade, nunca uma anomalia fabricada sem motivo.
+                                _icone_sev = {"alta": "🔴", "media": "🟠", "baixa": "🟡"}
+                                with st.expander(f"🚩 {len(_ctx_gi.anomalias)} anomalia(s) detectada(s)", expanded=False):
+                                    for _an in _ctx_gi.anomalias:
+                                        st.caption(f"{_icone_sev.get(_an.severidade, '•')} **{_an.categoria}** "
+                                                  f"({_an.severidade}): {_an.descricao}")
                             # [GEO-MAPA - Rodada 9] Mapa com camadas ativáveis (rios, pontes,
                             # travessias, hidrovias, portos) — só desenhado se houver ao menos
                             # uma feição com coordenada conhecida (nunca um mapa vazio).
@@ -56450,6 +56465,11 @@ if _secao == _SECOES[15]:   # tab_route_intel
                                 if (_qt_p or 0) == 0 and (_qt_t or 0) == 0 and _num_seguro(_row_orig.get("QT_RIOS"), 0) > 0:
                                     st.caption("⚠️ Rio identificado sem ponte nem travessia confirmadas no raio "
                                               "consultado — modo de travessia não determinado, não presuma.")
+                                _qt_anom = _num_seguro(_row_orig.get("QT_ANOMALIAS"))
+                                if _qt_anom:
+                                    _sev_txt = str(_row_orig.get("Anomalia Mais Severa") or "").strip()
+                                    st.caption(f"🚩 {int(_qt_anom)} anomalia(s) geográfica(s) detectada(s)"
+                                              + (f" — mais severa: {_sev_txt}" if _sev_txt and _sev_txt not in ("—", "nan") else ""))
                         except Exception:
                             logger.debug("[GEO-INTEL-EXPLICA] Falha ao exibir contexto completo (aditivo).", exc_info=True)
 
