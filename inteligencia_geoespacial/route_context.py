@@ -30,6 +30,26 @@ aditivas e com gate de zero regressão (validar/decidir/pytest a cada uma):
               byte-idêntico ao baseline da Rodada 1 (zero regressão
               confirmada em todas as rodadas).
 
+Missão 2 "Extração máxima de APIs, datasets e fontes" — auditoria completa
+de todas as fontes já integradas (26+ fontes reais catalogadas em
+`sources_inventory.py`) seguida de extração do que cada fonte já continha
+mas nenhum código lia:
+  Rodada 3 (M2) — integração rodoviária: rodovias oficiais (sigla BR-xxx/
+              UF-xxx) identificadas ao longo da rota, camada `rodovias`
+              (287 mil trechos) nunca consultada antes por este motor.
+  Rodada 4 (M2) — integração ferroviária: trechos ferroviários próximos,
+              camada `ferrovias` (889 trechos, nunca consultada antes).
+  Rodada 5 (M2) — enriquece pontes (tipo/pavimento/extensão/largura —
+              vão livre e carga suportada deliberadamente descartados,
+              ver docstring de `Ponte`), massas d'água/drenagem
+              (artificial/salgada/dominialidade/encoberto) e complexos
+              portuários (tipotransp/tipocomple/portosempa).
+  Rodada 6 (M2) — código de sub-bacia SNIRH (`subbacia_codigo_do_rio`) —
+              nunca um nome (a base vendorizada não tem catálogo de nomes
+              de sub-bacia — ver docstring da função).
+  Rodada 7 (M2) — índice de complexidade geográfica (campo do contrato
+              nunca calculado até aqui) + mapas temáticos no app.
+
 Tudo consultando as camadas locais derivadas do IBGE (`bases_locais.py`) —
 sem GDAL, sem geopandas, sem rede.
 
@@ -54,7 +74,11 @@ Contrato principal:
     ctx.travessias               # list[Feicao] — balsas reais (IBGE BC250/BC100)
     ctx.hidrovias_proximas       # list[Feicao]
     ctx.portos_terminais         # list[Feicao] — atracadouros/terminais/portos/eclusas
+    ctx.rodovias                 # list[Rodovia] — rodovias oficiais (sigla) percorridas (Missão 2)
+    ctx.ferrovias                # list[Ferrovia] — trechos ferroviários próximos (Missão 2)
+    ctx.sub_bacia                # str | None — "Código(s) SNIRH: N" (nunca um nome, ver Rodada 6/M2)
     ctx.dependencia_aquaviaria   # 0-100
+    ctx.complexidade_geografica  # 0-100 (Missão 2, Rodada 7)
     ctx.confianca_geral          # 0-100
     ctx.avisos                   # incerteza explícita, nunca fabricação
 
