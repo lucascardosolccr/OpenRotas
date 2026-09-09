@@ -5394,6 +5394,52 @@ def _gerar_relatorio_comparacao_html(stats, aud, titulo="Relatório da Comparaç
         _fig_w.update_layout(height=320, margin=dict(l=40, r=20, t=16, b=40), template="plotly_white",
                              yaxis_title="% dos municípios")
         _sec.append(("vitorias", "Distribuição de Vitórias", _emb(_fig_w)))
+        # [GEO-INTEL-COMPARADOR - fix integração] Contexto geográfico (rios, bacia, pontes, travessias,
+        # rodovias, ferrovias, anomalias) que o motor de rotas já identificou para o lado da APLICAÇÃO
+        # em cada município comparado — mesma leitura que a aba "Inteligência Geográfica" do Centro de
+        # Inteligência já mostra para o estudo isolado, agora cruzada com a comparação. A referência
+        # externa não tem esse dado; por isso a seção só fala do lado da aplicação, nunca inventa o
+        # equivalente para a referência.
+        try:
+            if linhas:
+                _geo_cmp_html = _resumo_geo_comparador(linhas)
+                if _geo_cmp_html.get("tem_dado"):
+                    _kg = _geo_cmp_html["kpis"]
+                    _geo_kpis_html = [
+                        ("Municípios com contexto geográfico calculado",
+                         f"{_kg['com_contexto_geografico']} de {_kg['total_comparados']}"),
+                        ("Com rio/córrego cruzado", _kg["com_rio"]),
+                        ("Com ponte confirmada", _kg["com_ponte"]),
+                        ("Com travessia aquaviária (balsa)", _kg["com_travessia"]),
+                        ("Com rodovia identificada", _kg["com_rodovia"]),
+                    ]
+                    if _kg.get("com_anomalia"):
+                        _geo_kpis_html.append(("Com anomalia geográfica detectada", _kg["com_anomalia"]))
+                    _rows_geo = "".join(
+                        "<tr>" + "".join(f"<td>{_he.escape(str(_r.get(_c, '')))}</td>" for _c in
+                                         ["Origem", "UF", "Destino Aplicação", "Rio(s)/Córrego(s) Cruzado(s)",
+                                          "Bacia Hidrográfica", "Ponte(s) no Cruzamento",
+                                          "Travessia(s) Aquaviária(s) — Balsa"]) + "</tr>"
+                        for _r in _geo_cmp_html["linhas"][:200])
+                    _sec.append(("inteligencia_geografica_cmp", "🧠 Contexto Geográfico da Aplicação",
+                                 _kcards(_geo_kpis_html) +
+                                 '<p class="lead">Rios, pontes, travessias e rodovias que o motor de contexto '
+                                 'geográfico identificou no deslocamento escolhido pela <b>aplicação</b> em cada '
+                                 'município comparado — a base de referência externa não fornece esse dado, então '
+                                 'a leitura é só do nosso lado.</p>'
+                                 f'<table><thead><tr><th>Origem</th><th>UF</th><th>Destino (Aplicação)</th>'
+                                 f'<th>Rio/Córrego</th><th>Bacia</th><th>Ponte</th><th>Travessia (Balsa)</th>'
+                                 f'</tr></thead><tbody>{_rows_geo}</tbody></table>' +
+                                 (f'<p class="muted">Mostrando 200 de {len(_geo_cmp_html["linhas"])} '
+                                  'município(s) com contexto geográfico.</p>'
+                                  if len(_geo_cmp_html["linhas"]) > 200 else '') +
+                                 _caixa_explicativa(
+                                     "Por que isso importa",
+                                     "Uma divergência onde a referência escolheu um destino mais perto em linha "
+                                     "reta, mas a aplicação tem rio/balsa confirmado no seu deslocamento, pode "
+                                     "ser uma diferença metodológica — não um erro da aplicação.", "info")))
+        except Exception:
+            logger.error("[GEO-INTEL-COMPARADOR] Falha ao montar seção de inteligência geográfica no HTML", exc_info=True)
         # [BI-COMPARADOR-REPORT - 258ª geração] Coerência tela↔export: traz ao relatório os dois gráficos que a
         # tela ganhou na 257ª — comparação de planos (híbrido) e divergente por estado — computados das mesmas
         # linhas conciliadas pelas mesmas funções puras da tela. Defensivo: sem dados → seção não aparece.
@@ -14839,6 +14885,35 @@ _MAPA_COLUNAS_EXAME = {
     '3º Polo': '3º Local de Prova (Alternativa)',
     '2º Polo - Era MELHOR em N criterios': '⚠️ Critérios em que o 2º Local era MELHOR',
     'Por Que o Vencedor Venceu (criterio a criterio)': 'Por Que o Vencedor Venceu (critério a critério)',
+    # [GEO-INTEL-EXAME - fix integração] Contexto geográfico do deslocamento (route_context.py,
+    # anexado por `_enriquecer_geo_inteligencia_df` — ver _GEO_INTEL_COLUNAS). Sem esta tradução as
+    # colunas saíam na planilha com o nome técnico interno (ex.: "QT_RIOS"); com ela, ficam legíveis
+    # para quem planeja o exame, do mesmo jeito que as demais colunas deste mapa.
+    'Rios Cruzados': 'Rio(s)/Córrego(s) Cruzado(s) no Deslocamento',
+    'Bacia Hidrografica': 'Bacia Hidrográfica',
+    'Pontes no Cruzamento': 'Ponte(s) no Cruzamento Hidrográfico',
+    'Travessias Aquaviarias': 'Travessia(s) Aquaviária(s) (Balsa)',
+    'Dependencia Aquaviaria': 'Índice de Dependência Aquaviária (0-100)',
+    'Confianca Geografica': 'Confiança do Contexto Geográfico (0-100)',
+    'QT_RIOS': 'Nº de Rios/Córregos Cruzados',
+    'QT_CORPOS_DAGUA': "Nº de Corpos d'Água Cruzados",
+    'NM_CORPOS_DAGUA': "Corpo(s) d'Água Identificado(s)",
+    'QT_PONTES': 'Nº de Pontes no Cruzamento',
+    'QT_TRAVESSIAS': 'Nº de Travessias Aquaviárias',
+    'QT_HIDROVIAS': 'Nº de Hidrovias Próximas',
+    'NM_HIDROVIAS': 'Hidrovia(s) Próxima(s)',
+    'QT_PORTOS_TERMINAIS': 'Nº de Portos/Terminais Próximos',
+    'Rodovias Identificadas': 'Rodovia(s) Identificada(s)',
+    'QT_RODOVIAS': 'Nº de Rodovias Identificadas',
+    'NM_RODOVIAS': 'Rodovia(s) — Sigla',
+    'Ferrovias Proximas': 'Ferrovia(s) Próxima(s)',
+    'QT_FERROVIAS': 'Nº de Ferrovias Próximas',
+    'NM_FERROVIAS': 'Ferrovia(s) — Nome',
+    'Sub Bacia Codigo SNIRH': 'Código SNIRH da Sub-Bacia',
+    'Complexidade Geografica': 'Índice de Complexidade Geográfica (0-100)',
+    'QT_ANOMALIAS': 'Nº de Anomalias Geográficas Detectadas',
+    'NM_ANOMALIAS': 'Anomalia(s) Geográfica(s) Detectada(s)',
+    'Anomalia Mais Severa': 'Anomalia Mais Severa Detectada',
 }
 
 
@@ -17190,6 +17265,30 @@ _GUIA_ABAS_CMP = {
                    "limitação real do seu método.",
         "alertas": [],
     },
+    "Inteligencia Geografica": {
+        "titulo": "🧠 CONTEXTO GEOGRÁFICO DO DESLOCAMENTO (APLICAÇÃO)",
+        "o_que_e": "Para cada município conciliado, o que o motor de contexto geográfico "
+                   "(inteligencia_geoespacial/route_context.py) identificou no deslocamento escolhido pela "
+                   "APLICAÇÃO: rio/córrego cruzado, bacia hidrográfica, ponte, travessia por balsa, rodovia "
+                   "e ferrovia no eixo, e qualquer anomalia geográfica detectada. A base de referência "
+                   "externa não fornece esse dado — por isso as colunas aqui descrevem só o lado da "
+                   "aplicação, igual às demais colunas 'APP · ' da aba Comparacao.",
+        "perguntas": ["Por que a aplicação escolheu um destino mais distante em alguns municípios?",
+                      "As divergências entre os dois estudos se concentram em rotas com rio/balsa?"],
+        "como_ler": [
+            "Uma célula vazia significa que o motor não encontrou aquele elemento no raio consultado desta "
+            "rota — **nunca** que o elemento não existe (raio insuficiente, geometria estimada por corda "
+            "geodésica quando a rota real não foi informada, etc. — ver avisos do próprio estudo).",
+            "Cruze esta aba com 'Comparacao': um município onde a referência escolheu um destino mais "
+            "próximo em linha reta, mas a aplicação tem balsa/rio confirmado no seu, pode ser uma escolha "
+            "logística correta da aplicação, não um erro.",
+        ],
+        "decisao": "Se as maiores divergências (referência mais perto) se concentram em municípios com rio "
+                   "ou travessia identificados, a diferença pode ser metodológica (a referência ignorando "
+                   "um obstáculo real), não um erro da aplicação.",
+        "alertas": ["🟡 Dado aditivo do próprio estudo da aplicação — nunca inferido a partir da base de "
+                    "referência, que não tem essa informação."],
+    },
     "Nao Conciliados": {
         "titulo": "⛔ O QUE FICOU DE FORA",
         "o_que_e": "Registros da sua planilha de referência que **NÃO puderam ser casados** com o estudo da "
@@ -19469,10 +19568,92 @@ def _conciliar_comparativo(df_app, df_ref, mapa, limiar_fuzzy=90, limiar_empate_
                           ("Justificativa Hub", "Justificativa da Escolha"),
                           ("Custo Efetivo Hub (km-eq)", "Custo Efetivo (km-eq)"),
                           ("Lat/Lon Origem", "Coordenadas da Origem"),
-                          ("Lat/Lon Destino", "Coordenadas do Polo")):
+                          ("Lat/Lon Destino", "Coordenadas do Polo"),
+                          # [GEO-INTEL-COMPARADOR - fix integração] Contexto geográfico do deslocamento
+                          # da APLICAÇÃO (route_context.py, via _enriquecer_geo_inteligencia_df — a
+                          # referência externa não tem esse dado, então só o lado da app é anexado, como
+                          # todos os campos "APP · " deste bloco). Mesmo raciocínio de "Balsa Aplicacao"
+                          # /"Sinuosidade Aplicacao" acima, agora cobrindo hidrologia/travessia/viário.
+                          ("Rios Cruzados", "Rio(s)/Córrego(s) Cruzado(s)"),
+                          ("Bacia Hidrografica", "Bacia Hidrográfica"),
+                          ("Pontes no Cruzamento", "Ponte(s) no Cruzamento"),
+                          ("Travessias Aquaviarias", "Travessia(s) Aquaviária(s)"),
+                          ("Dependencia Aquaviaria", "Dependência Aquaviária (0-100)"),
+                          ("Confianca Geografica", "Confiança Geográfica (0-100)"),
+                          ("Rodovias Identificadas", "Rodovia(s) Identificada(s)"),
+                          ("Ferrovias Proximas", "Ferrovia(s) Próxima(s)"),
+                          ("Complexidade Geografica", "Complexidade Geográfica (0-100)"),
+                          ("Anomalia Mais Severa", "Anomalia Geográfica Mais Severa")):
             if _ak in a and a.get(_ak) not in (None, ""):
                 linhas[-1][f"APP · {_rot}"] = a.get(_ak)
     return linhas, aud
+
+
+# [GEO-INTEL-COMPARADOR - fix integração] Rótulos "APP · X" ↔ nome de exibição usados na aba
+# "Inteligência Geográfica" do Comparador (xlsx e HTML) — mesmos campos anexados por
+# _conciliar_comparativo logo acima, listados aqui uma única vez para os dois consumidores não
+# divergirem entre si.
+_GEO_COMPARADOR_CAMPOS = [
+    ("APP · Rio(s)/Córrego(s) Cruzado(s)", "Rio(s)/Córrego(s) Cruzado(s)"),
+    ("APP · Bacia Hidrográfica", "Bacia Hidrográfica"),
+    ("APP · Ponte(s) no Cruzamento", "Ponte(s) no Cruzamento"),
+    ("APP · Travessia(s) Aquaviária(s)", "Travessia(s) Aquaviária(s) — Balsa"),
+    ("APP · Dependência Aquaviária (0-100)", "Dependência Aquaviária (0-100)"),
+    ("APP · Confiança Geográfica (0-100)", "Confiança Geográfica (0-100)"),
+    ("APP · Rodovia(s) Identificada(s)", "Rodovia(s) Identificada(s)"),
+    ("APP · Ferrovia(s) Próxima(s)", "Ferrovia(s) Próxima(s)"),
+    ("APP · Complexidade Geográfica (0-100)", "Complexidade Geográfica (0-100)"),
+    ("APP · Anomalia Geográfica Mais Severa", "Anomalia Geográfica Mais Severa"),
+]
+
+
+def _resumo_geo_comparador(linhas):
+    """[GEO-INTEL-COMPARADOR - fix integração] Recorte + KPIs do contexto geográfico (rios, bacia,
+    pontes, travessias, rodovias, ferrovias, anomalias) que _conciliar_comparativo já anexou a cada
+    linha comparada (campos "APP · ...", só do lado da aplicação — a referência externa não tem
+    esse dado). Usado pela aba "Inteligência Geográfica" do xlsx e pelo bloco correspondente do HTML
+    do Comparador, para os dois nunca divergirem. Município sem NENHUM campo geográfico preenchido
+    (estudo não enriquecido, ou raio sem achado) fica de fora do recorte — nunca uma linha fabricada
+    com "—" em tudo. PURO; nunca lança."""
+    try:
+        if not linhas:
+            return {"linhas": [], "kpis": {}, "tem_dado": False}
+        _linhas_out = []
+        _n_rio = _n_ponte = _n_trav = _n_rod = _n_ferro = _n_anom = 0
+        for _l in linhas:
+            _row = {"Origem": _l.get("Origem"), "UF": _l.get("UF"),
+                    "Destino Aplicação": _l.get("Destino Aplicacao")}
+            _tem_algo = False
+            for _k_src, _k_dst in _GEO_COMPARADOR_CAMPOS:
+                _v = _l.get(_k_src)
+                if _v not in (None, ""):
+                    _row[_k_dst] = _v
+                    _tem_algo = True
+            if not _tem_algo:
+                continue
+            _linhas_out.append(_row)
+            if _row.get("Rio(s)/Córrego(s) Cruzado(s)"):
+                _n_rio += 1
+            if _row.get("Ponte(s) no Cruzamento"):
+                _n_ponte += 1
+            if _row.get("Travessia(s) Aquaviária(s) — Balsa"):
+                _n_trav += 1
+            if _row.get("Rodovia(s) Identificada(s)"):
+                _n_rod += 1
+            if _row.get("Ferrovia(s) Próxima(s)"):
+                _n_ferro += 1
+            if _row.get("Anomalia Geográfica Mais Severa"):
+                _n_anom += 1
+        _kpis = {
+            "total_comparados": len(linhas),
+            "com_contexto_geografico": len(_linhas_out),
+            "com_rio": _n_rio, "com_ponte": _n_ponte, "com_travessia": _n_trav,
+            "com_rodovia": _n_rod, "com_ferrovia": _n_ferro, "com_anomalia": _n_anom,
+        }
+        return {"linhas": _linhas_out, "kpis": _kpis, "tem_dado": bool(_linhas_out)}
+    except Exception:
+        logger.error("[GEO-INTEL-COMPARADOR] Falha ao montar resumo geográfico do comparador", exc_info=True)
+        return {"linhas": [], "kpis": {}, "tem_dado": False}
 
 
 # ==============================================================================
@@ -27393,7 +27574,7 @@ def _montar_xlsx_comparacao(linhas, stats, aud, relatorio, diagnostico_div=None)
             # As abas de DADOS ficam LIMPAS — cabeçalho na linha 1, autofiltro, painel congelado.
             _todas_abas = ["Comparacao", "Resumo Brasil", "Por UF", "Por Faixa", "Distribuicao", "Pareto",
                            "Vitorias do Concorrente", "Plano Hibrido", "Perfil dos Dois Estudos",
-                           "Padrao Geografico", "Nao Conciliados"]
+                           "Padrao Geografico", "Inteligencia Geografica", "Nao Conciliados"]
             _linhas_guia = []
             for _ab in _todas_abas:
                 _linhas_guia.extend(_texto_guia_da_aba(_ab))
@@ -27471,6 +27652,19 @@ def _montar_xlsx_comparacao(linhas, stats, aud, relatorio, diagnostico_div=None)
                 _gg_x = _di_x.get("geografia") or {}
                 _escrever_aba_com_guia(_w, pd.DataFrame(_gg_x.get("por_regiao") or [{"—": "—"}]),
                                        "Padrao Geografico")
+            # [GEO-INTEL-COMPARADOR - fix integração] Hidrologia/travessia/rodovia/ferrovia do lado da
+            # aplicação, município a município — mesmo dado que já aparece disperso nas colunas "APP · "
+            # da aba Comparacao, aqui recortado e com KPIs próprios para não exigir garimpar 24 abas.
+            try:
+                _geo_cmp = _resumo_geo_comparador(linhas)
+                _escrever_aba_com_guia(
+                    _w, pd.DataFrame(_geo_cmp["linhas"] or
+                                     [{"—": "Nenhum município comparado tem contexto geográfico "
+                                            "calculado ainda — rode a aba Locais de Aplicação e "
+                                            "aguarde o enriquecimento automático antes de comparar."}]),
+                    "Inteligencia Geografica")
+            except Exception:
+                logger.error("[GEO-INTEL-COMPARADOR] Falha ao anexar aba de inteligência geográfica", exc_info=True)
             _escrever_aba_com_guia(_w, pd.DataFrame(aud.get("nao_conciliados") or
                                                     [{"origem_ref": "—", "motivo": "Nenhum"}]),
                                    "Nao Conciliados")
@@ -45343,6 +45537,18 @@ if _secao == _SECOES[1]:   # tab_processamento
                     # perdem; a planilha (.xlsx) passa a ser gerada de forma DESACOPLADA (FASE 3b), eliminando o
                     # risco de OOM/timeout na finalização travar a entrega. A finalização vai DIRETO à exibição.
                     st.session_state['df_processado'] = df_final
+                    # [GEO-INTEL-ANTECIPADO - fix integração] Mesmo raciocínio da Alocação: enriquece
+                    # geograficamente (rios, bacia, pontes, travessias, rodovias, ferrovias, anomalias)
+                    # ANTES da FASE 3b (que roda numa passada DESACOPLADA via st.rerun() logo abaixo e
+                    # relê `df_processado` do zero) montar a planilha do lote — senão a planilha nunca
+                    # carregava essas colunas. Chamada idempotente (fingerprint) — não reprocessa à toa.
+                    try:
+                        _df_geo0_lote, _geo_rel0_lote = _enriquecer_geo_inteligencia_df(df_final)
+                        if _geo_rel0_lote.get('executado'):
+                            df_final = _df_geo0_lote
+                            st.session_state['df_processado'] = df_final
+                    except Exception:
+                        logger.debug("[GEO-INTEL-ANTECIPADO] Enriquecimento pré-planilha (lote) falhou (aditivo).", exc_info=True)
                     st.session_state['lote_tempo_total'] = tempo_lote_segundos
                     _exibir_auditoria_coordenadas(df_final)  # [Melhoria4-EXCEL 453ª · M1] aviso não-bloqueante
                     st.session_state['lote_preaquecido_final'] = _preaq
@@ -48423,6 +48629,21 @@ if _secao == _SECOES[2]:   # tab_alocacao
                 # planilha é 100% SOB DEMANDA (FASE 3b, só no clique), o que elimina de vez o risco de OOM na
                 # finalização: a construção pesada do .xlsx nunca roda automaticamente.
                 st.session_state['df_processado'] = df_final_alo
+                # [GEO-INTEL-ANTECIPADO - fix integração] Enriquece geograficamente (rios, bacia,
+                # pontes, travessias, rodovias, ferrovias, anomalias) ANTES da FASE 3b montar a
+                # planilha/HTML — não depois. A FASE 3b roda numa passada DESACOPLADA (st.rerun()
+                # logo abaixo) e relê `df_processado` do zero; se o enriquecimento só acontecesse no
+                # painel mais abaixo (como antes), a planilha e o HTML exportados nunca carregavam
+                # essas colunas, porque eram montados numa passada anterior a esse painel. Mesma
+                # chamada (idempotente por fingerprint) que já roda mais abaixo — chamar aqui também
+                # não reprocessa duas vezes, só garante que o resultado já exista a tempo.
+                try:
+                    _df_geo0, _geo_rel0 = _enriquecer_geo_inteligencia_df(df_final_alo)
+                    if _geo_rel0.get('executado'):
+                        df_final_alo = _df_geo0
+                        st.session_state['df_processado'] = df_final_alo
+                except Exception:
+                    logger.debug("[GEO-INTEL-ANTECIPADO] Enriquecimento pré-planilha falhou (aditivo).", exc_info=True)
                 st.session_state['alo_tempo_total'] = tempo_alo_segundos
                 st.session_state['alo_linhas'] = len(df_final_alo)
                 _exibir_auditoria_coordenadas(df_final_alo)  # [Melhoria4-EXCEL 453ª · M1] aviso não-bloqueante
