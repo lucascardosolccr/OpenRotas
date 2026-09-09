@@ -58,6 +58,22 @@ _MAPA_LAYOUT_CHAVE = "map" if hasattr(go, "Scattermap") else "mapbox"
 _PX_SCATTER_MAPA = getattr(px, "scatter_map", None) or px.scatter_mapbox
 _MAPA_STYLE_KW = "map_style" if hasattr(px, "scatter_map") else "mapbox_style"
 _MAPA_LAYERS_KW = "map_layers" if hasattr(px, "scatter_map") else "mapbox_layers"
+
+
+def _linha_mapa_kw(width=2, color="blue", dash=None):
+    """[PLOTLY-COMPAT - fix produção] `go.Scattermap.line` (Plotly >=7) só aceita
+    `color`/`width` — ao contrário de `go.Scattermapbox.line`, que também aceita
+    `dash`. Passar `dash` direto quebra com ValueError em produção (confirmado
+    nos logs do Streamlit Cloud: 'Invalid property specified for object of type
+    plotly.graph_objs.scattermap.Line: dash'). Aqui o traço tracejado só é pedido
+    quando a classe em uso realmente suporta (Scattermapbox); em Scattermap a
+    linha fica sólida — degradação visual aceitável, nunca uma exceção."""
+    kw = dict(width=width, color=color)
+    if dash and _MAPA_LAYOUT_CHAVE == "mapbox":
+        kw["dash"] = dash
+    return kw
+
+
 from unidecode import unidecode
 from rapidfuzz import process, fuzz
 from diskcache import Cache
@@ -4245,6 +4261,29 @@ def _fig_fontes_rota_report(df):
         return _fig
     except Exception:
         return None
+
+
+def _col_existente(df, *candidatos):
+    """Primeira coluna presente no DataFrame dentre os candidatos (ou None).
+    [ORDEM-DE-CARGA - fix produção] Movida para cá (era definida só perto da
+    linha 56138, no cluster de helpers 'ABA-ROBUSTA') porque `streamlit_app.py`
+    roda como script top-a-baixo: código que a chama de dentro de uma função
+    definida MUITO ANTES nesse arquivo (ex.: `_secao_inteligencia_geografica_html`
+    aqui, `_enriquecer_geo_inteligencia_df` mais abaixo) só resolve o nome no
+    NAMESPACE GLOBAL no momento em que a função É CHAMADA — e essas chamadas
+    acontecem bem antes da definição original ser executada, gerando
+    `NameError: name '_col_existente' is not defined` em produção (confirmado
+    nos logs do Streamlit Cloud: a auto-enriquecimento geográfica de TODO
+    estudo falhava silenciosamente por causa disso). A definição permanece
+    removida do cluster original, só usada de lá em diante."""
+    try:
+        _cols = set(getattr(df, "columns", []))
+    except Exception:
+        return None
+    for _c in candidatos:
+        if _c in _cols:
+            return _c
+    return None
 
 
 def _secao_inteligencia_geografica_html(df):
@@ -56134,19 +56173,11 @@ if _secao == _SECOES[13]:   # tab_sobre_desenvolvedor
 # resolvem colunas por sinonímia, formatam números com segurança, derivam
 # rótulos (rio/bacia) via grafo fluvial local e produzem uma projeção canônica
 # defensiva. 100% sem rede e fail-open.
+# (`_col_existente` foi movida para perto do topo do arquivo — ver comentário
+# "ORDEM-DE-CARGA" junto à sua definição — porque era chamada de dentro de
+# funções executadas bem antes desta linha rodar, causando NameError em
+# produção; segue usada por todo este cluster normalmente.)
 # ==============================================================================
-def _col_existente(df, *candidatos):
-    """Primeira coluna presente no DataFrame dentre os candidatos (ou None)."""
-    try:
-        _cols = set(getattr(df, "columns", []))
-    except Exception:
-        return None
-    for _c in candidatos:
-        if _c in _cols:
-            return _c
-    return None
-
-
 def _val_linha(row, *candidatos, padrao="—"):
     """Primeiro valor não-nulo de uma linha (Series/dict) dentre os candidatos."""
     for _c in candidatos:
@@ -56348,6 +56379,112 @@ def _proj_analise(cache_key, df, max_linhas=300):
             return _df_rotas_para_analise(df, max_linhas=max_linhas)
         except Exception:
             return None
+
+
+def _fig_pares_od(df, altura=560):
+    """[ABA-ROBUSTA] Figura Plotly origem→destino a partir da df canônica
+    (colunas 'Lat Origem'/'Lon Origem'/'Lat Destino'/'Lon Destino'). Nunca levanta.
+    [ORDEM-DE-CARGA - fix produção] Movida para cá (era definida só perto da
+    linha 57709, junto da SEÇÃO 19 "Rotas sem Balsa") porque a SEÇÃO 15 abaixo
+    já a chama, e `streamlit_app.py` roda como script top-a-baixo: o nome só
+    existe no namespace global depois que o `def` correspondente executa —
+    chamá-la antes disso gera `NameError: name '_fig_pares_od' is not defined`
+    em produção (confirmado nos logs do Streamlit Cloud, aba Centro de
+    Inteligência → Mapa de Rotas). Mesmo bug de ordem que `_col_existente`."""
+    try:
+        if df is None or len(df) == 0:
+            return None
+        _pts = []
+        for _, _r in df.iterrows():
+            _lo = _num_seguro(_r.get('Lat Origem'))
+            _oo = _num_seguro(_r.get('Lon Origem'))
+            _ld = _num_seguro(_r.get('Lat Destino'))
+            _od = _num_seguro(_r.get('Lon Destino'))
+            if _lo is None or _oo is None or _ld is None or _od is None:
+                continue
+            _pts.append((_lo, _oo, _ld, _od,
+                         str(_r.get('Origem', '—')), str(_r.get('Destino', '—')),
+                         (_num_seguro(_r.get('Distância (km)'), 0.0) or 0.0)))
+        if not _pts:
+            return None
+        _dfp = pd.DataFrame(_pts, columns=['lio', 'lno', 'lid', 'lnd', 'orig', 'dst', 'km'])
+        _fig = go.Figure()
+        _fig.add_trace(_GO_SCATTER_MAPA(
+            lat=_dfp['lio'], lon=_dfp['lno'], mode='markers',
+            marker=dict(size=10, color='blue'), name='Origem', text=_dfp['orig'],
+            hoverinfo='text',
+            hovertext=_dfp['orig'] + ' → ' + _dfp['dst'] + '<br>km: ' + _dfp['km'].astype(str)))
+        _fig.add_trace(_GO_SCATTER_MAPA(
+            lat=_dfp['lid'], lon=_dfp['lnd'], mode='markers',
+            marker=dict(size=10, color='red'), name='Destino', text=_dfp['dst'],
+            hoverinfo='text',
+            hovertext=_dfp['orig'] + ' → ' + _dfp['dst'] + '<br>km: ' + _dfp['km'].astype(str)))
+        for _, _r in _dfp.iterrows():
+            _fig.add_trace(_GO_SCATTER_MAPA(
+                lat=[_r['lio'], _r['lid']], lon=[_r['lno'], _r['lnd']],
+                mode='lines', line=_linha_mapa_kw(color='blue', dash='dash'),
+                showlegend=False, hoverinfo='skip'))
+        _fig.update_layout(
+            **{_MAPA_LAYOUT_CHAVE: dict(style="carto-darkmatter", center=dict(lat=-15, lon=-55), zoom=3.5)},
+            height=altura, margin={"r": 0, "t": 40, "l": 0, "b": 0}, showlegend=True)
+        return _fig
+    except Exception:
+        return None
+
+
+def _fig_mapa_tematico(df, col_valor, titulo_legenda, colorscale="YlOrRd", altura=560,
+                        cmin=0, cmax=100):
+    """[GEO-MAPA-TEMATICO - Rodada 7/Missão 2] Mapa temático nacional (§12 da
+    missão): cada rota do estudo vira um ponto no meio do caminho (média
+    origem/destino), colorido pelo valor de `col_valor` (ex.: Complexidade
+    Geografica, Dependencia Aquaviaria) — responde "onde no país as rotas
+    deste estudo são mais complexas/mais dependentes de travessia?" (§13:
+    cada mapa deve responder uma pergunta). Escopado ao estudo carregado na
+    sessão, não a um agregado nacional fabricado a partir de nada — usa
+    exatamente os valores já calculados por `route_context.analisar_rota`
+    para essas rotas, nunca estima/interpola pontos sem dado. Retorna None
+    (nunca lança) se a coluna não existir ou não houver valores válidos.
+
+    `cmin`/`cmax`: fixos em 0-100 por padrão (índices já normalizados nessa
+    escala). Para métricas de contagem sem teto natural (ex.: densidade de
+    cruzamentos hidrográficos, Rodada 12), passe `cmax=None` para a escala
+    de cor se ajustar automaticamente ao maior valor real do recorte — nunca
+    inventa um teto arbitrário para uma métrica que não tem um natural.
+
+    [ORDEM-DE-CARGA - fix produção] Movida para cá (era definida só perto da
+    linha 57760, depois da SEÇÃO 19) pelo mesmo motivo de `_fig_pares_od`
+    logo acima: a SEÇÃO 15 já a chama, e um script top-a-baixo precisa da
+    definição já executada antes da chamada — confirmado em produção via
+    `NameError: name '_fig_mapa_tematico' is not defined` na aba Centro de
+    Inteligência → Mapa de Rotas."""
+    try:
+        if df is None or len(df) == 0 or col_valor not in df.columns:
+            return None
+        _lo = pd.to_numeric(df.get("Lat Origem"), errors="coerce")
+        _oo = pd.to_numeric(df.get("Lon Origem"), errors="coerce")
+        _ld = pd.to_numeric(df.get("Lat Destino"), errors="coerce")
+        _od = pd.to_numeric(df.get("Lon Destino"), errors="coerce")
+        _val = pd.to_numeric(df.get(col_valor), errors="coerce")
+        _dfp = pd.DataFrame({
+            "lat": (_lo + _ld) / 2.0, "lon": (_oo + _od) / 2.0, "valor": _val,
+            "origem": df.get("Origem", pd.Series(dtype=object)).astype(str),
+            "destino": df.get("Destino", pd.Series(dtype=object)).astype(str),
+        }).dropna(subset=["lat", "lon", "valor"])
+        if _dfp.empty:
+            return None
+        _cmax_ef = cmax if cmax is not None else max(1.0, float(_dfp["valor"].max()))
+        _fig = go.Figure(_GO_SCATTER_MAPA(
+            lat=_dfp["lat"], lon=_dfp["lon"], mode="markers",
+            marker=dict(size=12, color=_dfp["valor"], colorscale=colorscale, cmin=cmin, cmax=_cmax_ef,
+                        showscale=True, colorbar=dict(title=titulo_legenda)),
+            text=_dfp["origem"] + " → " + _dfp["destino"] + "<br>" + titulo_legenda + ": " + _dfp["valor"].astype(str),
+            hoverinfo="text"))
+        _fig.update_layout(
+            **{_MAPA_LAYOUT_CHAVE: dict(style="carto-darkmatter", center=dict(lat=-15, lon=-55), zoom=3.5)},
+            height=altura, margin={"r": 0, "t": 40, "l": 0, "b": 0})
+        return _fig
+    except Exception:
+        return None
 
 
 # ==============================================================================
@@ -57531,7 +57668,7 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
                                     lat=[row['lat_origem'], row['lat_destino']],
                                     lon=[row['lon_origem'], row['lon_destino']],
                                     mode='lines',
-                                    line=dict(width=2, color='blue', dash='dash'),
+                                    line=_linha_mapa_kw(color='blue', dash='dash'),
                                     showlegend=False,
                                     hoverinfo='skip'
                                 ))
@@ -57673,98 +57810,6 @@ if _secao == _SECOES[19]:   # tab_land_routes
     except Exception:
         logger.error("[LAND-ROUTES] Falha ao renderizar rotas sem balsa (isolada).", exc_info=True)
         st.warning("Não foi possível montar a central de rotas sem balsa. As demais seções seguem normais.")
-
-
-def _fig_pares_od(df, altura=560):
-    """[ABA-ROBUSTA] Figura Plotly origem→destino a partir da df canônica
-    (colunas 'Lat Origem'/'Lon Origem'/'Lat Destino'/'Lon Destino'). Nunca levanta."""
-    try:
-        if df is None or len(df) == 0:
-            return None
-        _pts = []
-        for _, _r in df.iterrows():
-            _lo = _num_seguro(_r.get('Lat Origem'))
-            _oo = _num_seguro(_r.get('Lon Origem'))
-            _ld = _num_seguro(_r.get('Lat Destino'))
-            _od = _num_seguro(_r.get('Lon Destino'))
-            if _lo is None or _oo is None or _ld is None or _od is None:
-                continue
-            _pts.append((_lo, _oo, _ld, _od,
-                         str(_r.get('Origem', '—')), str(_r.get('Destino', '—')),
-                         (_num_seguro(_r.get('Distância (km)'), 0.0) or 0.0)))
-        if not _pts:
-            return None
-        _dfp = pd.DataFrame(_pts, columns=['lio', 'lno', 'lid', 'lnd', 'orig', 'dst', 'km'])
-        _fig = go.Figure()
-        _fig.add_trace(_GO_SCATTER_MAPA(
-            lat=_dfp['lio'], lon=_dfp['lno'], mode='markers',
-            marker=dict(size=10, color='blue'), name='Origem', text=_dfp['orig'],
-            hoverinfo='text',
-            hovertext=_dfp['orig'] + ' → ' + _dfp['dst'] + '<br>km: ' + _dfp['km'].astype(str)))
-        _fig.add_trace(_GO_SCATTER_MAPA(
-            lat=_dfp['lid'], lon=_dfp['lnd'], mode='markers',
-            marker=dict(size=10, color='red'), name='Destino', text=_dfp['dst'],
-            hoverinfo='text',
-            hovertext=_dfp['orig'] + ' → ' + _dfp['dst'] + '<br>km: ' + _dfp['km'].astype(str)))
-        for _, _r in _dfp.iterrows():
-            _fig.add_trace(_GO_SCATTER_MAPA(
-                lat=[_r['lio'], _r['lid']], lon=[_r['lno'], _r['lnd']],
-                mode='lines', line=dict(width=2, color='blue', dash='dash'),
-                showlegend=False, hoverinfo='skip'))
-        _fig.update_layout(
-            **{_MAPA_LAYOUT_CHAVE: dict(style="carto-darkmatter", center=dict(lat=-15, lon=-55), zoom=3.5)},
-            height=altura, margin={"r": 0, "t": 40, "l": 0, "b": 0}, showlegend=True)
-        return _fig
-    except Exception:
-        return None
-
-
-def _fig_mapa_tematico(df, col_valor, titulo_legenda, colorscale="YlOrRd", altura=560,
-                        cmin=0, cmax=100):
-    """[GEO-MAPA-TEMATICO - Rodada 7/Missão 2] Mapa temático nacional (§12 da
-    missão): cada rota do estudo vira um ponto no meio do caminho (média
-    origem/destino), colorido pelo valor de `col_valor` (ex.: Complexidade
-    Geografica, Dependencia Aquaviaria) — responde "onde no país as rotas
-    deste estudo são mais complexas/mais dependentes de travessia?" (§13:
-    cada mapa deve responder uma pergunta). Escopado ao estudo carregado na
-    sessão, não a um agregado nacional fabricado a partir de nada — usa
-    exatamente os valores já calculados por `route_context.analisar_rota`
-    para essas rotas, nunca estima/interpola pontos sem dado. Retorna None
-    (nunca lança) se a coluna não existir ou não houver valores válidos.
-
-    `cmin`/`cmax`: fixos em 0-100 por padrão (índices já normalizados nessa
-    escala). Para métricas de contagem sem teto natural (ex.: densidade de
-    cruzamentos hidrográficos, Rodada 12), passe `cmax=None` para a escala
-    de cor se ajustar automaticamente ao maior valor real do recorte — nunca
-    inventa um teto arbitrário para uma métrica que não tem um natural."""
-    try:
-        if df is None or len(df) == 0 or col_valor not in df.columns:
-            return None
-        _lo = pd.to_numeric(df.get("Lat Origem"), errors="coerce")
-        _oo = pd.to_numeric(df.get("Lon Origem"), errors="coerce")
-        _ld = pd.to_numeric(df.get("Lat Destino"), errors="coerce")
-        _od = pd.to_numeric(df.get("Lon Destino"), errors="coerce")
-        _val = pd.to_numeric(df.get(col_valor), errors="coerce")
-        _dfp = pd.DataFrame({
-            "lat": (_lo + _ld) / 2.0, "lon": (_oo + _od) / 2.0, "valor": _val,
-            "origem": df.get("Origem", pd.Series(dtype=object)).astype(str),
-            "destino": df.get("Destino", pd.Series(dtype=object)).astype(str),
-        }).dropna(subset=["lat", "lon", "valor"])
-        if _dfp.empty:
-            return None
-        _cmax_ef = cmax if cmax is not None else max(1.0, float(_dfp["valor"].max()))
-        _fig = go.Figure(_GO_SCATTER_MAPA(
-            lat=_dfp["lat"], lon=_dfp["lon"], mode="markers",
-            marker=dict(size=12, color=_dfp["valor"], colorscale=colorscale, cmin=cmin, cmax=_cmax_ef,
-                        showscale=True, colorbar=dict(title=titulo_legenda)),
-            text=_dfp["origem"] + " → " + _dfp["destino"] + "<br>" + titulo_legenda + ": " + _dfp["valor"].astype(str),
-            hoverinfo="text"))
-        _fig.update_layout(
-            **{_MAPA_LAYOUT_CHAVE: dict(style="carto-darkmatter", center=dict(lat=-15, lon=-55), zoom=3.5)},
-            height=altura, margin={"r": 0, "t": 40, "l": 0, "b": 0})
-        return _fig
-    except Exception:
-        return None
 
 
 # ==============================================================================
