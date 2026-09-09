@@ -4267,6 +4267,7 @@ def _secao_inteligencia_geografica_html(df):
         _conf = pd.to_numeric(df.get("Confianca Geografica"), errors="coerce")
         _qt_rod = pd.to_numeric(df.get("QT_RODOVIAS"), errors="coerce").fillna(0)
         _qt_ferro = pd.to_numeric(df.get("QT_FERROVIAS"), errors="coerce").fillna(0)
+        _qt_anom = pd.to_numeric(df.get("QT_ANOMALIAS"), errors="coerce").fillna(0)
 
         _n_com_rio = int((_qt_rios > 0).sum())
         _n_com_ponte = int((_qt_pontes > 0).sum())
@@ -4274,6 +4275,7 @@ def _secao_inteligencia_geografica_html(df):
         _n_sem_confirmacao = int(((_qt_rios > 0) & (_qt_pontes == 0) & (_qt_trav == 0)).sum())
         _n_com_rod = int((_qt_rod > 0).sum())
         _n_com_ferro = int((_qt_ferro > 0).sum())
+        _n_com_anom = int((_qt_anom > 0).sum())
 
         _kpis = [
             ("Rotas com rio/córrego identificado", f"{_n_com_rio:,} de {_n:,} ({(_n_com_rio / _n * 100):.0f}%)"),
@@ -4282,6 +4284,7 @@ def _secao_inteligencia_geografica_html(df):
             ("Cruzamentos sem ponte NEM travessia confirmada", f"{_n_sem_confirmacao:,}"),
             ("Rotas com rodovia oficial identificada", f"{_n_com_rod:,} de {_n:,} ({(_n_com_rod / _n * 100):.0f}%)"),
             ("Rotas com ferrovia próxima", f"{_n_com_ferro:,}"),
+            ("Rotas com anomalia geográfica detectada", f"{_n_com_anom:,} de {_n:,} ({(_n_com_anom / _n * 100):.0f}%)"),
         ]
         if _dep is not None and _dep.notna().any():
             _kpis.append(("Dependência aquaviária média", f"{_dep.mean():.0f}/100"))
@@ -4317,6 +4320,21 @@ def _secao_inteligencia_geografica_html(df):
                     _rodovias_html = ("<h4>Rodovias mais frequentes no estudo</h4>"
                                      f"<table><thead><tr><th>Rodovia</th><th class='r'>Rotas</th></tr></thead>"
                                      f"<tbody>{_rows_r}</tbody></table>")
+
+        _anomalias_html = ""
+        _anom_col = _col_existente(df, "NM_ANOMALIAS")
+        if _anom_col:
+            _ac = df[_anom_col].dropna().astype(str).str.strip()
+            _ac = _ac[~_ac.isin(["", "nan", "None"])]
+            if not _ac.empty:
+                _top_a = _ac.str.split(", ").explode().str.strip()
+                _top_a = _top_a[_top_a != ""].value_counts().head(10)
+                if not _top_a.empty:
+                    _rows_a = "".join(f"<tr><td>{_he2.escape(str(k))}</td><td class='r'>{int(v)}</td></tr>"
+                                      for k, v in _top_a.items())
+                    _anomalias_html = ("<h4>Anomalias geográficas mais frequentes</h4>"
+                                      f"<table><thead><tr><th>Categoria</th><th class='r'>Rotas</th></tr></thead>"
+                                      f"<tbody>{_rows_a}</tbody></table>")
 
         _tabela_html = ""
         try:
@@ -4354,7 +4372,21 @@ def _secao_inteligencia_geografica_html(df):
                 "não existe — significa que a base local (IBGE BC250/BC100) não teve evidência suficiente "
                 "no raio analisado. Nunca presuma balsa nem ponte nesses casos.", "warning")
 
-        return (f'<div class="kpis">{_kh}</div>' + _bacias_html + _rodovias_html + _tabela_html + _aviso_html
+        _aviso_anom_html = ""
+        _sev_col = _col_existente(df, "Anomalia Mais Severa")
+        if _sev_col:
+            _n_severa = int(df[_sev_col].astype(str).str.strip().replace(["", "nan", "None"], pd.NA).notna().sum())
+            if _n_severa:
+                _aviso_anom_html = _caixa_explicativa(
+                    "Anomalias geográficas detectadas",
+                    f"{_n_severa} rota(s) apresentam ao menos uma anomalia estruturada (categoria + "
+                    "severidade — ver route_context.Anomalia, §25-26 da missão): coordenada fora do "
+                    "Brasil, distância menor que a linha reta origem-destino, cruzamento hidrográfico "
+                    "sem confirmação, entre outras. Nenhuma anomalia é fabricada — cada uma é uma "
+                    "checagem honesta sobre os dados já coletados para aquela rota.", "warning")
+
+        return (f'<div class="kpis">{_kh}</div>' + _bacias_html + _rodovias_html + _anomalias_html
+               + _tabela_html + _aviso_html + _aviso_anom_html
                + _caixa_explicativa(
                    "Sobre esta seção",
                    "Cada rota do estudo passa automaticamente pelo motor de contexto geográfico "
