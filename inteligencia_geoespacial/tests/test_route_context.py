@@ -1131,3 +1131,83 @@ def test_analisar_rota_propaga_rodovias_e_ferrovias_para_deteccao_de_anomalias()
     # Nenhuma asserção sobre haver ou não infraestrutura não-operacional nesta
     # rota específica (dado real, pode mudar) -- só que a chamada não quebra
     # e retorna o tipo esperado mesmo com rodovias/ferrovias reais propagadas.
+
+
+# ==============================================================================
+# Missão 3 / Rodada 2 — cross-validação entre o flag de balsa do MOTOR DE
+# ROTEAMENTO (parâmetro `balsa_reportada_motor`, informado de fora) e a
+# travessia detectada de forma INDEPENDENTE por este módulo (interseção
+# espacial real com a hidrografia IBGE). É o cenário central do módulo:
+# pegar o que a API de roteamento não informou (§14 da missão).
+# ==============================================================================
+
+def _travessia(nome="Travessia X"):
+    return rc.Feicao(nome=nome, tipo="travessia (balsa)", distancia_eixo_km=1.0,
+                      km_desde_origem=0.0, fonte="teste")
+
+
+def test_detectar_anomalias_motor_nao_reportou_balsa_mas_geo_intel_achou_travessia():
+    anomalias = rc._detectar_anomalias(0.0, 0.0, 0.0, 0.0, 10.0, 10.0, [], [], [], [_travessia()], None,
+                                        balsa_reportada_motor=False)
+    achado = next(a for a in anomalias if a.categoria == "travessia_nao_reportada_pelo_motor_de_rotas")
+    assert achado.severidade == "alta"
+    assert "Travessia X" in achado.descricao
+
+
+def test_detectar_anomalias_motor_reportou_balsa_sem_nenhuma_confirmacao_geografica():
+    anomalias = rc._detectar_anomalias(0.0, 0.0, 0.0, 0.0, 10.0, 10.0, [], [], [], [], None,
+                                        balsa_reportada_motor=True)
+    achado = next(a for a in anomalias if a.categoria == "balsa_sem_confirmacao_geografica")
+    assert achado.severidade == "media"
+
+
+def test_detectar_anomalias_motor_e_geo_intel_concordam_nao_gera_anomalia_de_cruzamento():
+    # Motor reportou balsa (True) E a análise geográfica confirma (há travessia
+    # real) -- os dois lados concordam, não é uma anomalia de cruzamento.
+    anomalias = rc._detectar_anomalias(0.0, 0.0, 0.0, 0.0, 10.0, 10.0, [], [], [], [_travessia()], None,
+                                        balsa_reportada_motor=True)
+    assert not any(a.categoria in ("travessia_nao_reportada_pelo_motor_de_rotas",
+                                   "balsa_sem_confirmacao_geografica") for a in anomalias)
+
+
+def test_detectar_anomalias_sem_dado_do_motor_nao_gera_anomalia_de_cruzamento():
+    # balsa_reportada_motor=None (chamador não informou, o padrão de todo
+    # chamador pré-existente) -- nunca fabrica um "não" que o motor de
+    # roteamento não disse. Mesmo com travessia real detectada, sem dado do
+    # motor para comparar não há cruzamento a fazer.
+    anomalias = rc._detectar_anomalias(0.0, 0.0, 0.0, 0.0, 10.0, 10.0, [], [], [], [_travessia()], None)
+    assert not any(a.categoria in ("travessia_nao_reportada_pelo_motor_de_rotas",
+                                   "balsa_sem_confirmacao_geografica") for a in anomalias)
+
+
+def test_detectar_anomalias_motor_reportou_balsa_mas_ha_rio_proximo_nao_gera_anomalia():
+    # Motor reportou balsa e não há travessia mapeada, mas HÁ rio/corpo
+    # d'água na área -- não é uma discordância forte (pode só ser uma camada
+    # de travessias incompleta, não um erro do roteador), então não dispara
+    # a categoria "sem nenhuma confirmação geográfica".
+    rio = rc.CruzamentoHidrografico(nome="Rio Y", camada="drenagem", distancia_eixo_km=1.0,
+                                     km_desde_origem=0.0, km_ate_destino=None, navegavel=None,
+                                     regime=None, bacia=None, fonte="teste", confianca="media")
+    anomalias = rc._detectar_anomalias(0.0, 0.0, 0.0, 0.0, 10.0, 10.0, [rio], [], [], [], None,
+                                        balsa_reportada_motor=True)
+    assert not any(a.categoria == "balsa_sem_confirmacao_geografica" for a in anomalias)
+
+
+def test_analisar_rota_aceita_balsa_reportada_motor_sem_lancar():
+    # Fail-open: parâmetro novo não pode quebrar a chamada mesmo com
+    # coordenadas inválidas ou qualquer outro caminho de erro.
+    ctx = rc.analisar_rota((0.0, 0.0), (0.0, 0.0), balsa_reportada_motor=True)
+    assert isinstance(ctx.anomalias, list)
+
+
+@pytestmark_dados
+def test_analisar_rota_propaga_balsa_reportada_motor_para_deteccao_de_anomalias():
+    # Prova de integração ponta a ponta com dado real: BR-116 SP<->RJ (sem
+    # travessia conhecida) + balsa_reportada_motor=True deve gerar a
+    # anomalia de discordância (o motor "reportou" balsa que a análise
+    # geográfica real não sustenta nesse eixo).
+    ctx = rc.analisar_rota((-23.55, -46.63), (-22.90, -43.20), distancia_km=430.0, raio_km=10.0,
+                           balsa_reportada_motor=True)
+    assert isinstance(ctx.anomalias, list)
+    if not ctx.rios_detectados and not ctx.corpos_dagua and not ctx.travessias:
+        assert any(a.categoria == "balsa_sem_confirmacao_geografica" for a in ctx.anomalias)
