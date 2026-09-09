@@ -1022,6 +1022,43 @@ def _indice_dependencia_aquaviaria(rios: list, travessias: list, hidrovias: list
     return max(0, min(100, pontos_))
 
 
+def _indice_complexidade_geografica(rios: list, corpos: list, pontes: list, travessias: list,
+                                     hidrovias: list, portos: list, rodovias: list, ferrovias: list,
+                                     dependencia_aquaviaria: int) -> int:
+    """0-100 (Rodada 7, Missão 2 — extração máxima): o campo
+    `complexidade_geografica` existia no contrato desde a Rodada 3 original
+    mas nunca foi calculado em lugar nenhum — a missão pede explicitamente
+    um "Mapa de complexidade das rotas" (§12), que precisa de um número
+    real para colorir.
+
+    Heurística composta e documentada (mesmo espírito de
+    `_indice_dependencia_aquaviaria`/`confianca_geral` — nunca apresentada
+    como medição objetiva, é uma pontuação por evidências reais já
+    detectadas, nunca um valor novo inventado):
+      - até 30 pts: quantidade de cruzamentos hidrográficos (rios+corpos),
+        8 pts cada, satura em 30 (a partir de ~4 cruzamentos já é "muita
+        hidrografia" para fins de rota).
+      - até 30 pts: dependência aquaviária já calculada (peso 0,3 — reforça
+        sem duplicar o mesmo sinal).
+      - até 20 pts: mais de uma rodovia oficial identificada (rota
+        multi-trecho tende a ser logisticamente mais complexa que uma rota
+        numa única BR), 10 pts por rodovia extra além da primeira.
+      - 10 pts: algum cruzamento ferroviário próximo (obstáculo/interseção
+        adicional).
+      - 15 pts: cruzamento hidrográfico SEM ponte nem travessia confirmada
+        (incerteza sobre como a rota de fato atravessa — isso é, em si,
+        uma forma de complexidade: falta de confirmação)."""
+    pontos_ = 0
+    pontos_ += min(30, len(rios + corpos) * 8)
+    pontos_ += min(30, int((dependencia_aquaviaria or 0) * 0.3))
+    pontos_ += min(20, max(0, len(rodovias) - 1) * 10)
+    if ferrovias:
+        pontos_ += 10
+    if (rios or corpos) and not pontes and not travessias:
+        pontos_ += 15
+    return max(0, min(100, pontos_))
+
+
 def montar_alternativa_sem_balsa(distancia_atual_km, distancia_sem_balsa_km) -> AlternativaRodoviaria | None:
     """Formata a comparação "rota atual (com travessia) vs. alternativa sem
     balsa" pedida na missão (§13). Função PURA — não roteia nada e não faz
@@ -1219,6 +1256,9 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
     except Exception:
         pontes = []
 
+    complexidade = _indice_complexidade_geografica(
+        rios, corpos, pontes, travessias, hidrovias, portos, rodovias, ferrovias, dependencia)
+
     fontes: list = []
     if rios:
         fontes.append("IBGE BC250/BC100 (drenagem)")
@@ -1319,6 +1359,7 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
         bacia_hidrografica=bacia_principal,
         sub_bacia=sub_bacia,
         dependencia_aquaviaria=dependencia,
+        complexidade_geografica=complexidade,
         confianca_geral=conf,
         confianca_nivel=nivel_conf,
         fontes_concordam=fontes,

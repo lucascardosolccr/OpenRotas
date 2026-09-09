@@ -43,6 +43,21 @@ from typing import NamedTuple, List
 import altair as alt
 import plotly.express as px
 import plotly.graph_objects as go
+
+# [PLOTLY-COMPAT - Rodada 7/Missão 2] Plotly >=6.2 usa Scattermapbox/
+# scatter_mapbox + parâmetros "mapbox*"; Plotly >=7 renomeou tudo para
+# Scattermap/scatter_map + "map*" (a família *mapbox foi descontinuada).
+# requirements.txt só fixa `plotly>=6.2.0` sem teto — resolvido neste
+# ambiente para 7.0.0, onde Scattermapbox/scatter_mapbox não existem mais
+# (achado ao testar o mapa temático novo da Rodada 7: várias figuras de
+# mapa já existentes no app dependiam da API antiga e silenciosamente
+# devolviam None/figura vazia por causa de try/except amplos ao redor).
+# Resolvido uma vez aqui, reutilizado por toda função de mapa do arquivo.
+_GO_SCATTER_MAPA = getattr(go, "Scattermap", None) or go.Scattermapbox
+_MAPA_LAYOUT_CHAVE = "map" if hasattr(go, "Scattermap") else "mapbox"
+_PX_SCATTER_MAPA = getattr(px, "scatter_map", None) or px.scatter_mapbox
+_MAPA_STYLE_KW = "map_style" if hasattr(px, "scatter_map") else "mapbox_style"
+_MAPA_LAYERS_KW = "map_layers" if hasattr(px, "scatter_map") else "mapbox_layers"
 from unidecode import unidecode
 from rapidfuzz import process, fuzz
 from diskcache import Cache
@@ -16137,7 +16152,7 @@ _GEO_INTEL_COLUNAS = ("Rios Cruzados", "Bacia Hidrografica", "Pontes no Cruzamen
                       "QT_HIDROVIAS", "NM_HIDROVIAS", "QT_PORTOS_TERMINAIS",
                       "Rodovias Identificadas", "QT_RODOVIAS", "NM_RODOVIAS",
                       "Ferrovias Proximas", "QT_FERROVIAS", "NM_FERROVIAS",
-                      "Sub Bacia Codigo SNIRH")
+                      "Sub Bacia Codigo SNIRH", "Complexidade Geografica")
 _GEO_INTEL_LIMIAR_AUTOMATICO = 200  # nº de PARES origem/destino únicos; acima disso, sob demanda
 
 
@@ -16195,7 +16210,7 @@ def _enriquecer_geo_inteligencia_df(df, forcar=False, limiar_automatico=_GEO_INT
                     _cache[_chave] = _ctx
             if _ctx is None:
                 for _c in _GEO_INTEL_COLUNAS:
-                    _cols[_c].append(None if _c in ("Dependencia Aquaviaria", "Confianca Geografica") or _c.startswith("QT_") else "")
+                    _cols[_c].append(None if _c in ("Dependencia Aquaviaria", "Confianca Geografica", "Complexidade Geografica") or _c.startswith("QT_") else "")
                 continue
             _cols["Rios Cruzados"].append(", ".join(r.nome for r in _ctx.rios_detectados[:3]))
             _cols["Bacia Hidrografica"].append(_ctx.bacia_hidrografica or "")
@@ -16218,6 +16233,7 @@ def _enriquecer_geo_inteligencia_df(df, forcar=False, limiar_automatico=_GEO_INT
             _cols["QT_FERROVIAS"].append(len(_ctx.ferrovias))
             _cols["NM_FERROVIAS"].append(", ".join(f.nome for f in _ctx.ferrovias))
             _cols["Sub Bacia Codigo SNIRH"].append(_ctx.sub_bacia or "")
+            _cols["Complexidade Geografica"].append(_ctx.complexidade_geografica)
 
         df = df.copy()
         for _c in _GEO_INTEL_COLUNAS:
@@ -43426,6 +43442,7 @@ if _secao == _SECOES[0]:   # tab_individual
                                 st.caption("🚢 Hidrovia próxima: " + _ctx_gi.hidrovias_proximas[0].nome)
                             if _ctx_gi.dependencia_aquaviaria is not None:
                                 st.caption(f"📊 Dependência aquaviária: {_ctx_gi.dependencia_aquaviaria}/100 · "
+                                          f"Complexidade geográfica: {_ctx_gi.complexidade_geografica}/100 · "
                                           f"Confiança geográfica: {_ctx_gi.confianca_geral}/100 ({_ctx_gi.confianca_nivel})")
                             for _av in _ctx_gi.avisos:
                                 st.caption(f"⚠️ {_av}")
@@ -52750,15 +52767,16 @@ if _secao == _SECOES[4]:   # tab_analytics
                     if map_style_selection == "OpenStreetMap Clássico": estilo_mapbox = "open-street-map"
                     if map_style_selection == "Satélite (Esri Imagens)": estilo_mapbox = "white-bg"
                     
-                    fig = px.scatter_mapbox(
+                    fig = _PX_SCATTER_MAPA(
                         df_agg, lat='Lat_Media', lon='Lon_Media', size='Qtd_Rotas', color='Qtd_Rotas', color_continuous_scale=px.colors.sequential.Blues,
-                        size_max=45, zoom=3.5, mapbox_style=estilo_mapbox, hover_name='Municipio Destino',
+                        size_max=45, zoom=3.5, hover_name='Municipio Destino',
                         hover_data={'Lat_Media': False, 'Lon_Media': False, 'UF_Sintetica_Origem': True, 'Regiao_Sintetica_Origem': True, 'Qtd_Rotas': True, 'Participacao_Nacional_%': ':.2f', 'Dist_Media': ':.1f', 'Tempo_Medio': ':.1f', 'Score_Medio': False},
-                        title="Densidade Operacional da Seleção Ativa"
+                        title="Densidade Operacional da Seleção Ativa",
+                        **{_MAPA_STYLE_KW: estilo_mapbox}
                     )
-                    
-                    if map_style_selection == "Satélite (Esri Imagens)": 
-                        fig.update_layout(mapbox_layers=[{"below": 'traces', "sourcetype": "raster", "sourceattribution": "Esri World Imagery", "source": ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"]}])
+
+                    if map_style_selection == "Satélite (Esri Imagens)":
+                        fig.update_layout(**{_MAPA_LAYERS_KW: [{"below": 'traces', "sourcetype": "raster", "sourceattribution": "Esri World Imagery", "source": ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"]}]})
                         
                     fig.update_layout(margin={"r":0,"t":40,"l":0,"b":0}, height=600)
                     st.plotly_chart(fig, use_container_width=True)
@@ -53295,11 +53313,12 @@ if _secao == _SECOES[6]:   # tab_classificacao
             df_mapa_clas = df_agg_class.dropna(subset=['Lat_Media', 'Lon_Media'])
             df_mapa_clas = df_mapa_clas[(df_mapa_clas['Lat_Media'] != 0.0) & (df_mapa_clas['Lon_Media'] != 0.0)]
             if not df_mapa_clas.empty:
-                fig_mapa_clas = px.scatter_mapbox(
+                fig_mapa_clas = _PX_SCATTER_MAPA(
                     df_mapa_clas, lat='Lat_Media', lon='Lon_Media', size=col_metrica, color='Rótulo', color_discrete_map=map_colors,
-                    size_max=35, zoom=3.5, mapbox_style="carto-darkmatter", hover_name='Municipio Origem',
+                    size_max=35, zoom=3.5, hover_name='Municipio Origem',
                     hover_data={'Lat_Media': False, 'Lon_Media': False, 'UF_Sintetica_Origem': True, col_metrica: True, 'Percentual (%)': True, 'Rótulo': False},
-                    title="Mapeamento Temático Pós-Classificação"
+                    title="Mapeamento Temático Pós-Classificação",
+                    **{_MAPA_STYLE_KW: "carto-darkmatter"}
                 )
                 fig_mapa_clas.update_layout(margin={"r":0,"t":40,"l":0,"b":0}, height=550)
                 st.plotly_chart(fig_mapa_clas, use_container_width=True)
@@ -56338,6 +56357,31 @@ if _secao == _SECOES[15]:   # tab_route_intel
                     _fig_intel = _fig_pares_od(_df_intel)
                     if _fig_intel is not None:
                         st.plotly_chart(_fig_intel, use_container_width=True)
+
+                    # [GEO-MAPA-TEMATICO - Rodada 7/Missão 2] Mapas temáticos (§12 da missão):
+                    # cada um responde uma pergunta específica sobre ONDE as rotas deste estudo
+                    # concentram complexidade/dependência — não um agregado nacional fabricado,
+                    # só os valores já calculados por route_context.analisar_rota nesta sessão.
+                    _fig_cplx = _fig_mapa_tematico(_rotas_proc, "Complexidade Geografica",
+                                                    "Complexidade geográfica", colorscale="YlOrRd")
+                    _fig_dep = _fig_mapa_tematico(_rotas_proc, "Dependencia Aquaviaria",
+                                                   "Dependência aquaviária", colorscale="Blues")
+                    if _fig_cplx is not None or _fig_dep is not None:
+                        st.divider()
+                        st.markdown("##### 🗺️ Mapas temáticos (§12): onde as rotas deste estudo concentram complexidade/dependência")
+                        _mt1, _mt2 = st.columns(2)
+                        with _mt1:
+                            if _fig_cplx is not None:
+                                st.caption("Complexidade geográfica por rota (posição = ponto médio origem↔destino)")
+                                st.plotly_chart(_fig_cplx, use_container_width=True)
+                            else:
+                                st.caption("Complexidade geográfica: sem dados suficientes neste estudo ainda.")
+                        with _mt2:
+                            if _fig_dep is not None:
+                                st.caption("Dependência aquaviária por rota (posição = ponto médio origem↔destino)")
+                                st.plotly_chart(_fig_dep, use_container_width=True)
+                            else:
+                                st.caption("Dependência aquaviária: sem dados suficientes neste estudo ainda.")
                 except Exception:
                     logger.debug("[ROUTE-INTEL-VIS] Análise visual isolada falhou (aditivo).", exc_info=True)
 
@@ -56384,11 +56428,13 @@ if _secao == _SECOES[15]:   # tab_route_intel
                                 _c11.metric("Pontes no cruzamento", int(_qt_p) if _qt_p is not None else "—")
                                 _qt_t = _num_seguro(_row_orig.get("QT_TRAVESSIAS"))
                                 _c12.metric("Travessias aquaviárias", int(_qt_t) if _qt_t is not None else "—")
-                                _c13, _c14 = st.columns(2)
+                                _c13, _c14, _c15 = st.columns(3)
                                 _dep_v = _num_seguro(_row_orig.get("Dependencia Aquaviaria"))
                                 _c13.metric("Dependência aquaviária", f"{_dep_v:.0f}/100" if _dep_v is not None else "—")
                                 _conf_v = _num_seguro(_row_orig.get("Confianca Geografica"))
                                 _c14.metric("Confiança geográfica", f"{_conf_v:.0f}/100" if _conf_v is not None else "—")
+                                _cplx_v = _num_seguro(_row_orig.get("Complexidade Geografica"))
+                                _c15.metric("Complexidade geográfica", f"{_cplx_v:.0f}/100" if _cplx_v is not None else "—")
                                 _pontes_txt = str(_row_orig.get("Pontes no Cruzamento") or "").strip()
                                 if _pontes_txt and _pontes_txt not in ("—", "nan"):
                                     st.caption(f"🌉 Ponte(s): {_pontes_txt}")
@@ -56776,14 +56822,15 @@ if _secao == _SECOES[17]:   # tab_hidrografia
                 _map_df = _map_df.dropna(subset=['latitude', 'longitude'])
                 
                 if not _map_df.empty:
-                    fig = px.scatter_mapbox(
-                        _map_df, lat='latitude', lon='longitude', 
+                    fig = _PX_SCATTER_MAPA(
+                        _map_df, lat='latitude', lon='longitude',
                         color='tipo',
                         hover_name='nome_display',
                         hover_data=['bacia', 'uf'] if 'bacia' in _map_df.columns and 'uf' in _map_df.columns else ['tipo'],
-                        zoom=3.5, mapbox_style="carto-darkmatter",
+                        zoom=3.5,
                         height=600, size_max=10,
-                        color_discrete_map={'Rio': '#3498db', 'Estação': '#e74c3c'}
+                        color_discrete_map={'Rio': '#3498db', 'Estação': '#e74c3c'},
+                        **{_MAPA_STYLE_KW: "carto-darkmatter"}
                     )
                     fig.update_layout(margin={"r":0,"t":40,"l":0,"b":0}, height=600)
                     st.plotly_chart(fig, use_container_width=True)
@@ -57121,7 +57168,7 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
                             fig = go.Figure()
                             
                             # Origens
-                            fig.add_trace(go.Scattermapbox(
+                            fig.add_trace(_GO_SCATTER_MAPA(
                                 lat=_map_df['lat_origem'],
                                 lon=_map_df['lon_origem'],
                                 mode='markers',
@@ -57131,9 +57178,9 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
                                 hoverinfo='text',
                                 hovertext=_map_df['origem'] + ' → ' + _map_df['destino'] + '<br>Rio: ' + _map_df['rio_nome'].fillna('—') + '<br>Distância: ' + _map_df['dist_km'].astype(str) + ' km'
                             ))
-                            
+
                             # Destinos
-                            fig.add_trace(go.Scattermapbox(
+                            fig.add_trace(_GO_SCATTER_MAPA(
                                 lat=_map_df['lat_destino'],
                                 lon=_map_df['lon_destino'],
                                 mode='markers',
@@ -57143,10 +57190,10 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
                                 hoverinfo='text',
                                 hovertext=_map_df['origem'] + ' → ' + _map_df['destino'] + '<br>Rio: ' + _map_df['rio_nome'].fillna('—') + '<br>Distância: ' + _map_df['dist_km'].astype(str) + ' km'
                             ))
-                            
+
                             # Linhas de travessia
                             for _, row in _map_df.iterrows():
-                                fig.add_trace(go.Scattermapbox(
+                                fig.add_trace(_GO_SCATTER_MAPA(
                                     lat=[row['lat_origem'], row['lat_destino']],
                                     lon=[row['lon_origem'], row['lon_destino']],
                                     mode='lines',
@@ -57154,13 +57201,13 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
                                     showlegend=False,
                                     hoverinfo='skip'
                                 ))
-                            
+
                             fig.update_layout(
-                                mapbox=dict(
+                                **{_MAPA_LAYOUT_CHAVE: dict(
                                     style="carto-darkmatter",
                                     center=dict(lat=-15, lon=-55),
                                     zoom=3.5
-                                ),
+                                )},
                                 height=600,
                                 margin={"r":0,"t":40,"l":0,"b":0},
                                 showlegend=True
@@ -57315,24 +57362,64 @@ def _fig_pares_od(df, altura=560):
             return None
         _dfp = pd.DataFrame(_pts, columns=['lio', 'lno', 'lid', 'lnd', 'orig', 'dst', 'km'])
         _fig = go.Figure()
-        _fig.add_trace(go.Scattermapbox(
+        _fig.add_trace(_GO_SCATTER_MAPA(
             lat=_dfp['lio'], lon=_dfp['lno'], mode='markers',
             marker=dict(size=10, color='blue'), name='Origem', text=_dfp['orig'],
             hoverinfo='text',
             hovertext=_dfp['orig'] + ' → ' + _dfp['dst'] + '<br>km: ' + _dfp['km'].astype(str)))
-        _fig.add_trace(go.Scattermapbox(
+        _fig.add_trace(_GO_SCATTER_MAPA(
             lat=_dfp['lid'], lon=_dfp['lnd'], mode='markers',
             marker=dict(size=10, color='red'), name='Destino', text=_dfp['dst'],
             hoverinfo='text',
             hovertext=_dfp['orig'] + ' → ' + _dfp['dst'] + '<br>km: ' + _dfp['km'].astype(str)))
         for _, _r in _dfp.iterrows():
-            _fig.add_trace(go.Scattermapbox(
+            _fig.add_trace(_GO_SCATTER_MAPA(
                 lat=[_r['lio'], _r['lid']], lon=[_r['lno'], _r['lnd']],
                 mode='lines', line=dict(width=2, color='blue', dash='dash'),
                 showlegend=False, hoverinfo='skip'))
         _fig.update_layout(
-            mapbox=dict(style="carto-darkmatter", center=dict(lat=-15, lon=-55), zoom=3.5),
+            **{_MAPA_LAYOUT_CHAVE: dict(style="carto-darkmatter", center=dict(lat=-15, lon=-55), zoom=3.5)},
             height=altura, margin={"r": 0, "t": 40, "l": 0, "b": 0}, showlegend=True)
+        return _fig
+    except Exception:
+        return None
+
+
+def _fig_mapa_tematico(df, col_valor, titulo_legenda, colorscale="YlOrRd", altura=560):
+    """[GEO-MAPA-TEMATICO - Rodada 7/Missão 2] Mapa temático nacional (§12 da
+    missão): cada rota do estudo vira um ponto no meio do caminho (média
+    origem/destino), colorido pelo valor de `col_valor` (ex.: Complexidade
+    Geografica, Dependencia Aquaviaria) — responde "onde no país as rotas
+    deste estudo são mais complexas/mais dependentes de travessia?" (§13:
+    cada mapa deve responder uma pergunta). Escopado ao estudo carregado na
+    sessão, não a um agregado nacional fabricado a partir de nada — usa
+    exatamente os valores já calculados por `route_context.analisar_rota`
+    para essas rotas, nunca estima/interpola pontos sem dado. Retorna None
+    (nunca lança) se a coluna não existir ou não houver valores válidos."""
+    try:
+        if df is None or len(df) == 0 or col_valor not in df.columns:
+            return None
+        _lo = pd.to_numeric(df.get("Lat Origem"), errors="coerce")
+        _oo = pd.to_numeric(df.get("Lon Origem"), errors="coerce")
+        _ld = pd.to_numeric(df.get("Lat Destino"), errors="coerce")
+        _od = pd.to_numeric(df.get("Lon Destino"), errors="coerce")
+        _val = pd.to_numeric(df.get(col_valor), errors="coerce")
+        _dfp = pd.DataFrame({
+            "lat": (_lo + _ld) / 2.0, "lon": (_oo + _od) / 2.0, "valor": _val,
+            "origem": df.get("Origem", pd.Series(dtype=object)).astype(str),
+            "destino": df.get("Destino", pd.Series(dtype=object)).astype(str),
+        }).dropna(subset=["lat", "lon", "valor"])
+        if _dfp.empty:
+            return None
+        _fig = go.Figure(_GO_SCATTER_MAPA(
+            lat=_dfp["lat"], lon=_dfp["lon"], mode="markers",
+            marker=dict(size=12, color=_dfp["valor"], colorscale=colorscale, cmin=0, cmax=100,
+                        showscale=True, colorbar=dict(title=titulo_legenda)),
+            text=_dfp["origem"] + " → " + _dfp["destino"] + "<br>" + titulo_legenda + ": " + _dfp["valor"].astype(str),
+            hoverinfo="text"))
+        _fig.update_layout(
+            **{_MAPA_LAYOUT_CHAVE: dict(style="carto-darkmatter", center=dict(lat=-15, lon=-55), zoom=3.5)},
+            height=altura, margin={"r": 0, "t": 40, "l": 0, "b": 0})
         return _fig
     except Exception:
         return None

@@ -883,3 +883,60 @@ def test_analisar_rota_sub_bacia_quando_presente_e_so_codigo_nunca_nome():
         # a parte depois do prefixo só tem dígitos e ", " como separador
         resto = ctx.sub_bacia.replace("Código(s) SNIRH: ", "")
         assert all(c.isdigit() or c in ", " for c in resto)
+
+
+# ==============================================================================
+# Missão 2 / Rodada 7 — índice de complexidade geográfica (campo existia no
+# contrato desde a Rodada 3 mas nunca era calculado).
+# ==============================================================================
+
+def test_indice_complexidade_rota_simples_sem_evidencias_e_zero():
+    assert rc._indice_complexidade_geografica([], [], [], [], [], [], [], [], 0) == 0
+
+
+def test_indice_complexidade_cresce_com_cruzamentos_hidrograficos():
+    rio = rc.CruzamentoHidrografico(nome="Rio A", camada="drenagem", distancia_eixo_km=1.0,
+                                     km_desde_origem=0.0, km_ate_destino=None, navegavel=None,
+                                     regime=None, bacia=None, fonte="teste", confianca="alta")
+    sem_rio = rc._indice_complexidade_geografica([], [], [], [], [], [], [], [], 0)
+    com_rio = rc._indice_complexidade_geografica([rio], [], [], [], [], [], [], [], 0)
+    assert com_rio > sem_rio
+
+
+def test_indice_complexidade_penaliza_cruzamento_sem_confirmacao():
+    rio = rc.CruzamentoHidrografico(nome="Rio A", camada="drenagem", distancia_eixo_km=1.0,
+                                     km_desde_origem=0.0, km_ate_destino=None, navegavel=None,
+                                     regime=None, bacia=None, fonte="teste", confianca="alta")
+    ponte = rc.Ponte(nome="Ponte A", distancia_eixo_km=0.5, km_desde_origem=0.0,
+                      tipo_ponte=None, tipo_pavimento=None, extensao_m=None, largura_m=None)
+    sem_confirmacao = rc._indice_complexidade_geografica([rio], [], [], [], [], [], [], [], 0)
+    com_confirmacao = rc._indice_complexidade_geografica([rio], [], [ponte], [], [], [], [], [], 0)
+    assert sem_confirmacao > com_confirmacao
+
+
+def test_indice_complexidade_multiplas_rodovias_pesa_mais_que_uma_so():
+    r1 = rc.Rodovia(sigla="BR-1", km_desde_origem=0.0, distancia_eixo_km=0.5,
+                     jurisdicao=None, administra=None, concessionaria=None, revestimento=None,
+                     tipo_pavimento=None, nr_pistas=None, nr_faixas=None, limite_velocidade_kmh=None)
+    r2 = rc.Rodovia(sigla="BR-2", km_desde_origem=5.0, distancia_eixo_km=0.5,
+                     jurisdicao=None, administra=None, concessionaria=None, revestimento=None,
+                     tipo_pavimento=None, nr_pistas=None, nr_faixas=None, limite_velocidade_kmh=None)
+    uma = rc._indice_complexidade_geografica([], [], [], [], [], [], [r1], [], 0)
+    duas = rc._indice_complexidade_geografica([], [], [], [], [], [], [r1, r2], [], 0)
+    assert duas > uma
+
+
+def test_indice_complexidade_nunca_excede_100():
+    muitos_rios = [rc.CruzamentoHidrografico(
+        nome=f"Rio {i}", camada="drenagem", distancia_eixo_km=0.1, km_desde_origem=float(i),
+        km_ate_destino=None, navegavel="Sim", regime=None, bacia=None, fonte="teste",
+        confianca="alta") for i in range(20)]
+    c = rc._indice_complexidade_geografica(muitos_rios, [], [], [], [], [], [], [], 100)
+    assert 0 <= c <= 100
+
+
+@pytestmark_dados
+def test_analisar_rota_preenche_complexidade_geografica_com_dado_real():
+    ctx = rc.analisar_rota((-23.55, -46.63), (-22.90, -43.20), distancia_km=430.0, raio_km=10.0)
+    assert ctx.complexidade_geografica is not None
+    assert 0 <= ctx.complexidade_geografica <= 100
