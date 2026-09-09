@@ -612,6 +612,8 @@ class Rodovia:
     nr_pistas: int | None
     nr_faixas: int | None
     limite_velocidade_kmh: int | None       # quase sempre ausente na base (não inventado quando falta)
+    trafego: str | None = None              # Rodada 15/M2: "Permanente" | "Periódico" | "Temporário" | "Desconhecido" — 0% nulo na base
+    situacao_fisica: str | None = None      # Rodada 15/M2: "Construída" | "Abandonada" | "Destruída" | "Em construção" | "Planejada" | ...
     fonte: str = "IBGE BC250/BC100 (rodovias)"
     lat: float | None = None
     lon: float | None = None
@@ -636,6 +638,8 @@ class Ferrovia:
     jurisdicao: str | None
     administra: str | None
     concessionaria: str | None              # None quando a base não registra concessão
+    posicao_relativa: str | None = None     # Rodada 15/M2: "Superfície" | "Subterrânea" | "Desconhecida"
+    situacao_fisica: str | None = None      # Rodada 15/M2: "Construída" | "Abandonada" | "Destruída" | ...
     fonte: str = "IBGE BC250/BC100 (ferrovias)"
     lat: float | None = None
     lon: float | None = None
@@ -985,6 +989,8 @@ def _detectar_rodovias(pontos: list, repo: GeoIntelligenceRepository, raio_km: f
                 nr_pistas=_num(it.get("nrpistas")),
                 nr_faixas=_num(it.get("nrfaixas")),
                 limite_velocidade_kmh=_num(it.get("limitevelo")),
+                trafego=_nome(it.get("trafego")) or None,
+                situacao_fisica=_nome(it.get("situacaofi")) or None,
                 lat=_flat, lon=_flon,
             )
     return sorted(achados.values(), key=lambda r: (r.km_desde_origem or 0.0))
@@ -1040,6 +1046,8 @@ def _detectar_ferrovias(pontos: list, repo: GeoIntelligenceRepository, raio_km: 
                 jurisdicao=_nome(it.get("jurisdicao")) or None,
                 administra=_nome(it.get("administra")) or None,
                 concessionaria=concessao if concessao and concessao.strip().lower() not in ("não", "nao") else None,
+                posicao_relativa=_nome(it.get("posicaorel")) or None,
+                situacao_fisica=_nome(it.get("situacaofi")) or None,
                 lat=_flat, lon=_flon,
             )
     return sorted(achados.values(), key=lambda f: (f.km_desde_origem or 0.0))
@@ -1209,9 +1217,18 @@ def _dentro_do_brasil(lat, lon) -> bool:
         return True  # sem certeza -> não afirma anomalia
 
 
+# Valores reais observados em `situacaofi` (rodovias/ferrovias BC250/BC100) que
+# indicam infraestrutura que a base já cadastra como não operacional hoje —
+# confirmado por inspeção direta dos dois Parquets (Rodada 15/M2). "Desconhecida"
+# e "Não aplicável" ficam de fora deliberadamente: não são evidência de que a
+# via não existe, só de que a situação não foi apurada/não se aplica.
+_SITUACOES_FISICAS_NAO_OPERACIONAIS = {"Abandonada", "Destruída", "Planejada", "Em construção"}
+
+
 def _detectar_anomalias(lat_o: float, lon_o: float, lat_d: float, lon_d: float,
                          dist_total_km, dist_geodesica_km, rios: list, corpos: list,
-                         pontes: list, travessias: list, bacia_principal) -> list:
+                         pontes: list, travessias: list, bacia_principal,
+                         rodovias: list | None = None, ferrovias: list | None = None) -> list:
     """Anomalias estruturadas (§25/§26 da missão) a partir do que
     `analisar_rota` já apurou para esta rota — nunca uma inferência nova
     além do que os próprios dados coletados sustentam. Sobrepõe-se em
@@ -1257,6 +1274,24 @@ def _detectar_anomalias(lat_o: float, lon_o: float, lat_d: float, lon_d: float,
             categoria="bacia_nao_determinada", severidade="baixa",
             descricao="Bacia hidrográfica não determinada para os rios identificados (nome sem "
                        "correspondência exata na base ANA/SNIRH)."))
+
+    # Rodada 15 (Missão 2, §37): infraestrutura viária/ferroviária que o
+    # próprio IBGE cadastra como não operacional no eixo da rota — a rota
+    # depende de algo que, segundo a base oficial, não está de fato em uso.
+    for r in (rodovias or []):
+        if r.situacao_fisica in _SITUACOES_FISICAS_NAO_OPERACIONAIS:
+            anomalias.append(Anomalia(
+                categoria="infraestrutura_nao_operacional", severidade="alta",
+                descricao="Rodovia %s no eixo da rota está cadastrada com situação física "
+                          "\"%s\" na base IBGE — pode não estar disponível para tráfego real." %
+                          (r.sigla or "sem sigla cadastrada", r.situacao_fisica)))
+    for f in (ferrovias or []):
+        if f.situacao_fisica in _SITUACOES_FISICAS_NAO_OPERACIONAIS:
+            anomalias.append(Anomalia(
+                categoria="infraestrutura_nao_operacional", severidade="media",
+                descricao="Ferrovia %s no eixo da rota está cadastrada com situação física "
+                          "\"%s\" na base IBGE — pode não estar disponível para operação real." %
+                          (f.nome or "sem identificação", f.situacao_fisica)))
 
     return anomalias
 
@@ -1412,7 +1447,8 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
 
     try:
         anomalias = _detectar_anomalias(lat_o, lon_o, lat_d, lon_d, dist_total, dist_geodesica,
-                                         rios, corpos, pontes, travessias, bacia_principal)
+                                         rios, corpos, pontes, travessias, bacia_principal,
+                                         rodovias, ferrovias)
     except Exception:
         anomalias = []
 

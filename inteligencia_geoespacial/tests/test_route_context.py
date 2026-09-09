@@ -599,6 +599,29 @@ def test_detectar_rodovias_extrai_atributos_reais_sem_inventar(monkeypatch):
     assert r.lat == -22.9 and r.lon == -43.1
 
 
+def test_detectar_rodovias_extrai_trafego_e_situacao_fisica_sem_inventar(monkeypatch):
+    def _fake(camada, lon, lat, raio_km=30.0, limite=10, filtros=None):
+        return [{"sigla": "BR-101", "distancia_km": 0.5, "trafego": "Permanente",
+                  "situacaofi": "Construída"}]
+
+    monkeypatch.setattr(rc, "_consultar_camada_pesada_cacheada", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    r = rc._detectar_rodovias([(0.0, 0.0, 0.0)], repo, 10.0)[0]
+    assert r.trafego == "Permanente"
+    assert r.situacao_fisica == "Construída"
+
+
+def test_detectar_rodovias_sem_trafego_nem_situacao_fica_none(monkeypatch):
+    def _fake(camada, lon, lat, raio_km=30.0, limite=10, filtros=None):
+        return [{"sigla": "BR-101", "distancia_km": 0.5}]
+
+    monkeypatch.setattr(rc, "_consultar_camada_pesada_cacheada", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    r = rc._detectar_rodovias([(0.0, 0.0, 0.0)], repo, 10.0)[0]
+    assert r.trafego is None
+    assert r.situacao_fisica is None
+
+
 def test_detectar_rodovias_concessao_nao_vira_none_nao_string_literal():
     # A base grava "Não" quando não há concessão — isso vira None (ausência
     # real), não uma string "Não" solta, para não confundir "tem concessão
@@ -712,6 +735,29 @@ def test_detectar_ferrovias_extrai_atributos_reais_sem_inventar(monkeypatch):
     assert f.eletrificada == "Não"
     assert f.concessionaria == "Vale"
     assert f.lat == -19.9 and f.lon == -43.1
+
+
+def test_detectar_ferrovias_extrai_posicao_relativa_e_situacao_fisica(monkeypatch):
+    def _fake(camada, lon, lat, raio_km=30.0, limite=10, filtros=None):
+        return [{"nome": "Linha X", "distancia_km": 1.0, "posicaorel": "Subterrânea",
+                  "situacaofi": "Abandonada"}]
+
+    monkeypatch.setattr(rc, "_consultar_rapido_camada_pequena", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    f = rc._detectar_ferrovias([(0.0, 0.0, 0.0)], repo, 10.0)[0]
+    assert f.posicao_relativa == "Subterrânea"
+    assert f.situacao_fisica == "Abandonada"
+
+
+def test_detectar_ferrovias_sem_posicao_nem_situacao_fica_none(monkeypatch):
+    def _fake(camada, lon, lat, raio_km=30.0, limite=10, filtros=None):
+        return [{"nome": "Linha X", "distancia_km": 1.0}]
+
+    monkeypatch.setattr(rc, "_consultar_rapido_camada_pequena", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    f = rc._detectar_ferrovias([(0.0, 0.0, 0.0)], repo, 10.0)[0]
+    assert f.posicao_relativa is None
+    assert f.situacao_fisica is None
 
 
 @pytestmark_dados
@@ -1013,3 +1059,75 @@ def test_analisar_rota_preenche_anomalias_com_dado_real():
     assert isinstance(ctx.anomalias, list)
     assert all(isinstance(a, rc.Anomalia) for a in ctx.anomalias)
     assert any(a.categoria == "distancia_menor_que_linha_reta" for a in ctx.anomalias)
+
+
+# ==============================================================================
+# Missão 2 / Rodada 15 — atributos rodoviários/ferroviários adicionais
+# (trafego/situacao_fisica em Rodovia; posicao_relativa/situacao_fisica em
+# Ferrovia) e a nova categoria de anomalia derivada deles: infraestrutura que
+# a própria base IBGE já cadastra como não operacional no eixo da rota.
+# ==============================================================================
+
+def _rodovia(sigla="BR-1", situacao_fisica=None):
+    return rc.Rodovia(sigla=sigla, km_desde_origem=0.0, distancia_eixo_km=0.5,
+                       jurisdicao=None, administra=None, concessionaria=None,
+                       revestimento=None, tipo_pavimento=None, nr_pistas=None, nr_faixas=None,
+                       limite_velocidade_kmh=None, situacao_fisica=situacao_fisica)
+
+
+def _ferrovia(nome="Linha X", situacao_fisica=None):
+    return rc.Ferrovia(nome=nome, km_desde_origem=0.0, distancia_eixo_km=0.5,
+                        tipo_trecho=None, bitola=None, eletrificada=None, nr_linhas=None,
+                        jurisdicao=None, administra=None, concessionaria=None,
+                        situacao_fisica=situacao_fisica)
+
+
+def test_detectar_anomalias_rodovia_abandonada_gera_anomalia_alta():
+    anomalias = rc._detectar_anomalias(0.0, 0.0, 0.0, 0.0, 10.0, 10.0, [], [], [], [], None,
+                                        [_rodovia(situacao_fisica="Abandonada")], [])
+    achado = next(a for a in anomalias if a.categoria == "infraestrutura_nao_operacional")
+    assert achado.severidade == "alta"
+    assert "BR-1" in achado.descricao and "Abandonada" in achado.descricao
+
+
+def test_detectar_anomalias_ferrovia_planejada_gera_anomalia_media():
+    anomalias = rc._detectar_anomalias(0.0, 0.0, 0.0, 0.0, 10.0, 10.0, [], [], [], [], None,
+                                        [], [_ferrovia(situacao_fisica="Planejada")])
+    achado = next(a for a in anomalias if a.categoria == "infraestrutura_nao_operacional")
+    assert achado.severidade == "media"
+    assert "Linha X" in achado.descricao and "Planejada" in achado.descricao
+
+
+def test_detectar_anomalias_rodovia_construida_nao_gera_anomalia():
+    anomalias = rc._detectar_anomalias(0.0, 0.0, 0.0, 0.0, 10.0, 10.0, [], [], [], [], None,
+                                        [_rodovia(situacao_fisica="Construída")], [])
+    assert not any(a.categoria == "infraestrutura_nao_operacional" for a in anomalias)
+
+
+def test_detectar_anomalias_situacao_desconhecida_nao_gera_anomalia():
+    # "Desconhecida" não é evidência de que a via não existe, só de que a
+    # situação não foi apurada -- não pode virar alerta (nunca inferir além
+    # do que o dado realmente sustenta).
+    anomalias = rc._detectar_anomalias(0.0, 0.0, 0.0, 0.0, 10.0, 10.0, [], [], [], [], None,
+                                        [_rodovia(situacao_fisica="Desconhecida")],
+                                        [_ferrovia(situacao_fisica=None)])
+    assert not any(a.categoria == "infraestrutura_nao_operacional" for a in anomalias)
+
+
+def test_detectar_anomalias_sem_rodovias_ferrovias_nao_lanca():
+    # Compatibilidade com chamadores antigos que não passam os dois últimos
+    # parâmetros (ambos opcionais, default None).
+    anomalias = rc._detectar_anomalias(0.0, 0.0, 0.0, 0.0, 10.0, 10.0, [], [], [], [], None)
+    assert isinstance(anomalias, list)
+
+
+@pytestmark_dados
+def test_analisar_rota_propaga_rodovias_e_ferrovias_para_deteccao_de_anomalias():
+    # Prova de integração ponta a ponta: analisar_rota já passa rodovias e
+    # ferrovias reais para _detectar_anomalias (não fica preso ao valor
+    # default None do parâmetro opcional).
+    ctx = rc.analisar_rota((-23.55, -46.63), (-22.90, -43.20), distancia_km=430.0, raio_km=10.0)
+    assert isinstance(ctx.anomalias, list)
+    # Nenhuma asserção sobre haver ou não infraestrutura não-operacional nesta
+    # rota específica (dado real, pode mudar) -- só que a chamada não quebra
+    # e retorna o tipo esperado mesmo com rodovias/ferrovias reais propagadas.

@@ -32874,6 +32874,19 @@ def _mapa_leaflet_contexto_geografico(ctx, lat_o, lon_o, lat_d, lon_d, nome_orig
             _jurisdicao = getattr(it, "jurisdicao", None)
             if _jurisdicao:
                 _extra += f"Jurisdição: {_jurisdicao}. "
+            _trafego = getattr(it, "trafego", None)
+            if _trafego:
+                _extra += f"Tráfego: {_trafego}. "
+            _pos_rel = getattr(it, "posicao_relativa", None)
+            if _pos_rel:
+                _extra += f"Posição: {_pos_rel}. "
+            _sit_fisica = getattr(it, "situacao_fisica", None)
+            if _sit_fisica:
+                _sits_alerta = getattr(_geo_route_context, "_SITUACOES_FISICAS_NAO_OPERACIONAIS", set())
+                if _sit_fisica in _sits_alerta:
+                    _extra += f"⚠️ Situação física: {_sit_fisica}. "
+                else:
+                    _extra += f"Situação física: {_sit_fisica}. "
             _nome_it = getattr(it, "nome", None) or getattr(it, "sigla", None)
             _pop = _popup(_nome_it, tipo_rotulo, getattr(it, "distancia_eixo_km", None),
                           getattr(it, "km_desde_origem", None), it.fonte, _extra)
