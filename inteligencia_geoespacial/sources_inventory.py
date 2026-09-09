@@ -1,1489 +1,733 @@
 """
-Comprehensive inventory of 40+ Brazilian official data sources.
+Catálogo REAL das fontes de dados e APIs efetivamente usadas pelo OpenRotas.
 
-This module populates the SourcesRegistry with pre-registered entries for all major
-Brazilian government agencies' geospatial and infrastructure data sources.
+Rodada 2 da missão "Extração máxima de APIs, datasets e fontes": este módulo
+substitui uma versão anterior que registrava 40+ fontes com metadados
+FABRICADOS (contagens de registros inventadas, `api_endpoint` para agências
+— ANTAQ/DNIT/ANTT/DER — que a aplicação nunca chama, datas de "último teste"
+e tempos de resposta que nunca foram medidos). Essa versão nunca era
+carregada em runtime (`populate_sources()` não tinha nenhum chamador) — era
+documentação morta e, pior, incorreta.
 
-Each source includes metadata about format, coverage, update frequency, license, and quality.
+Esta reescrita segue uma auditoria real do código (grep de `requests.`/
+`httpx`/`urllib` em todo o repositório, leitura de `manifest.json`, inspeção
+de schema dos Parquet via `pyarrow`, contagem de linhas/colunas dos CSVs
+locais) — cada entrada abaixo é rastreável a um arquivo:função específico.
+Cada fonte declara `modo_acesso`:
+  "api_rest_ao_vivo"     — a aplicação faz uma chamada HTTP de verdade hoje.
+  "arquivo_local"        — dado já baixado/derivado, lido do disco.
+  "download_sob_demanda" — arquivo grande baixado uma vez sob clique do
+                            usuário (GitHub Release), depois lido do disco.
+  "informativo_apenas"   — aparece na UI (link, texto, comando de exemplo)
+                            mas NUNCA é de fato consultado pelo código.
+
+Achado importante da auditoria (ver `uso_no_motor` de cada entrada): ANTAQ,
+DNIT, ANTT e os DERs estaduais NÃO têm integração própria nesta aplicação.
+Os dados que a UI antiga atribuía a essas agências são, na verdade, colunas
+(`jurisdicao`, `administra`, `concession` etc.) dentro do BC250/BC100 do
+IBGE (que É a fonte real desses trechos rodoviários/hidroviários). Por isso
+elas não aparecem como fontes próprias aqui — o registro não fabrica uma
+integração que não existe.
 """
 
+import json
 from datetime import datetime
+
 from inteligencia_geoespacial.fontes_registry import SourceRegistry, SourcesRegistry, SourceStatus
 
 
 def populate_sources() -> SourcesRegistry:
-    """
-    Populate and return a SourcesRegistry with 40+ Brazilian official data sources.
-
-    Returns:
-        SourcesRegistry: Registry containing all registered sources
-    """
+    """Popula e devolve um SourcesRegistry com as fontes REAIS identificadas
+    na auditoria da Rodada 1/2 (missão "extração máxima"). Nenhuma fonte
+    aqui é fabricada: todo `registros_totais` vem de manifest.json ou de
+    contagem direta do arquivo; todo `api_endpoint` corresponde a uma
+    chamada HTTP real no código (ou é `None`)."""
     registry = SourcesRegistry()
 
     # =====================================================================
-    # 1. ANTAQ (Agência Nacional de Transportes Aquaviários) - 5 sources
+    # BASE CARTOGRÁFICA CONTÍNUA DO IBGE (BC250/BC100) — 12 camadas locais
+    # derivadas, lidas via inteligencia_geoespacial/bases_locais.py.
+    # Fonte original: geoftp.ibge.gov.br (baixada e processada OFFLINE por
+    # construir_bases_locais_ibge.py — não é uma chamada de rede em runtime).
+    # =====================================================================
+
+    _camadas_ibge = [
+        ("pontes", 14812, "rodoviario",
+         "route_context._detectar_pontes_nos_cruzamentos (pontes NO cruzamento hidrográfico); "
+         "validators.CoordinateValidator (digest tipoponte)",
+         "tipo_geom, geometry_wkb, lon, lat, xmin/ymin/xmax/ymax, fonte_base, fonte_uf, nome, "
+         "matconstr, operaciona, situacaofi, largura, extensao, nrfaixas, nrpistas, posicaopis, "
+         "tipopavime, tipoponte, vaolivreho, vaovertica, cargasupor"),
+        ("travessias", 4046, "aquaviario",
+         "route_context._detectar_aquaviario (travessias/balsas reais na rota); "
+         "enrichment_engine (tipoembarc)",
+         "...+ nome, tipotraves, tipouso, tipoembarc"),
+        ("hidrovias", 179, "aquaviario",
+         "route_context._detectar_aquaviario (hidrovias próximas ao corredor)",
+         "...+ nome, operaciona, situacaofi, regime, extensaotr, caladomaxs"),
+        ("atracadouros_terminal", 172, "aquaviario",
+         "route_context._detectar_aquaviario (terminais/atracadouros próximos)",
+         "...+ nome, tipoatraca, administra, matconstr, operaciona, situacaofi, aptidaoope"),
+        ("complexos_portuarios", 171, "aquaviario",
+         "route_context._detectar_aquaviario (portos próximos, índice de dependência aquaviária)",
+         "...+ nome, modaluso, administra, jurisdicao, concession, operaciona, situacaofi, "
+         "tipotransp, tipocomple, portosempa"),
+        ("eclusas", 22, "aquaviario",
+         "route_context._detectar_aquaviario",
+         "...+ nome, desnivel, largura, extensao, calado, matconstr, operaciona, situacaofi"),
+        ("sinalizacao", 388, "aquaviario",
+         "Não consultada pelo route_context.py hoje — só exposta na aba manual 'Geoespacial IBGE'",
+         "...+ nome, tiposinal, operaciona, situacaofi"),
+        ("rodovias", 287136, "rodoviario",
+         "Não consultada pelo route_context.py hoje — só exposta na aba manual 'Geoespacial IBGE' "
+         "(287 mil trechos, camada pesada/bootstrap, ver AUDIT-ROD-01)",
+         "...+ tipovia, jurisdicao, administra, concession, revestimen, operaciona, situacaofi, "
+         "canteirodi, nrpistas, nrfaixas, trafego, tipopavime, sigla, acostament, codtrechor, "
+         "limitevelo, emperimetr, nome"),
+        ("ferrovias", 889, "ferroviario",
+         "Não consultada pelo route_context.py hoje — só exposta na aba manual 'Geoespacial IBGE'",
+         "...+ nome, codtrechof, posicaorel, tipotrecho, bitola, eletrifica, nrlinhas, jurisdicao, "
+         "administra, concession, operaciona, situacaofi"),
+        ("massas_dagua", 64850, "hidrografia",
+         "route_context._detectar_cruzamentos_hidro (corpos d'água atravessados pela rota)",
+         "...+ nome, tipomassad, regime, salgada, dominialid, artificial, possuitrec"),
+        ("drenagem", 2181288, "hidrografia",
+         "route_context._detectar_cruzamentos_hidro (rios atravessados pela rota — camada pesada, "
+         "451MB, cache de janela ampla desde a Rodada 14)",
+         "...+ nome, tipotrecho, navegavel, larguramed, regime, encoberto"),
+        ("municipios", 5571, "territorial",
+         "bases_locais.municipio_do_ponto (point-in-polygon, validação geográfica)",
+         "...+ nome, geocodigo, anoderefer"),
+    ]
+    for _camada, _n, _cat, _uso, _campos in _camadas_ibge:
+        registry.register(SourceRegistry(
+            id=f"ibge_bc250_{_camada}",
+            nome=f"IBGE BC250/BC100 — camada '{_camada}'",
+            orgao="IBGE",
+            categoria=_cat,
+            dataset_url="https://geoftp.ibge.gov.br/cartas_e_mapas/bases_cartograficas_continuas/bc250/",
+            api_endpoint=None,
+            api_docs_url="https://www.ibge.gov.br/geociencias/cartas-e-mapas/bases-cartograficas-continuas.html",
+            formato="Parquet (geometria WKB, EPSG:4326)",
+            tipo_geometria="Point/LineString/Polygon (varia por camada)",
+            sistema_coordenadas="EPSG:4326",
+            cobertura_geografica="Brasil (BC250 nacional + BC100 para AC/AL/BA/ES/GO-DF/RS/RR/SE)",
+            registros_totais=_n,
+            data_atualizacao=datetime(2025, 3, 3),  # versão do shapefile fonte (bc_250_shapefiles_2026_03_03 é o build, dado é v2025)
+            periodicidade="Ad-hoc (nova versão IBGE, reprocessada manualmente por construir_bases_locais_ibge.py)",
+            qualidade={"completude": 1.0, "acuracia": 0.95},
+            licenca="Domínio público (dados oficiais IBGE)",
+            atribuicao_obrigatoria="IBGE — Base Cartográfica Contínua",
+            restricoes="Nenhuma",
+            campos_disponiveis=[c.strip() for c in _campos.replace("...+ ", "").split(",")],
+            status=SourceStatus.ATIVO,
+            data_ultimo_teste=None,  # arquivo local — não há "chamada" para medir tempo de resposta
+            tempo_resposta_ms=None,
+            proxima_validacao=datetime(2026, 12, 1),
+            notas="Baixada e processada OFFLINE (build-time) por construir_bases_locais_ibge.py — "
+                  "não é uma chamada de rede em runtime. manifest.json em data/brasil/ibge/derivadas/ "
+                  "tem o registro oficial de quando foi gerada.",
+            responsavel_validacao=None,
+            modo_acesso="arquivo_local",
+            uso_no_motor=_uso,
+        ))
+
+    # =====================================================================
+    # ANA / SNIRH — hidrografia (rios e bacias vendorizados; estações sob demanda)
     # =====================================================================
 
     registry.register(SourceRegistry(
-        id="antaq_hidrovias_geojson",
-        nome="ANTAQ - Hidrovias Navegáveis",
-        orgao="ANTAQ",
-        categoria="transporte_aquaviario",
-        dataset_url="https://www.gov.br/antaq/pt-br/acesso-a-informacao/dados-abertos",
-        api_endpoint="https://dados.gov.br/api/v3/datasets/hidrovias",
-        api_docs_url="https://www.gov.br/antaq/pt-br/acesso-a-informacao/dados-abertos",
-        formato="GeoJSON",
-        tipo_geometria="LineString",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=45,
-        data_atualizacao=datetime(2025, 8, 1),
-        periodicidade="Anual",
-        qualidade={"completude": 0.98, "acuracia": 0.95, "atualidade": 0.90},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="ANTAQ",
-        restricoes="Nenhuma",
-        campos_disponiveis=["nome", "codigo", "classe", "regiao", "comprimento_km", "profundidade"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 1),
-        tempo_resposta_ms=450,
-        proxima_validacao=datetime(2026, 12, 1),
-        notas="Dados completos de hidrovias navegáveis brasileiras. Inclui rios, canais e vias aquáticas principais.",
-        responsavel_validacao="ANTAQ"
-    ))
-
-    registry.register(SourceRegistry(
-        id="antaq_portos_shapefile",
-        nome="ANTAQ - Portos e Instalações",
-        orgao="ANTAQ",
-        categoria="transporte_aquaviario",
-        dataset_url="https://dados.gov.br/dataset/portos-instalacoes-antaq",
-        api_endpoint="https://wms.antaq.gov.br/mapserver",
-        api_docs_url="https://www.antaq.gov.br/",
-        formato="Shapefile",
-        tipo_geometria="Point",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=156,
-        data_atualizacao=datetime(2025, 7, 15),
-        periodicidade="Trimestral",
-        qualidade={"completude": 0.95, "acuracia": 0.94, "atualidade": 0.88},
-        licenca="OGL",
-        atribuicao_obrigatoria="ANTAQ",
-        restricoes="Nenhuma",
-        campos_disponiveis=["nome_porto", "categoria", "regiao", "latitude", "longitude", "operador", "produtos"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 1),
-        tempo_resposta_ms=600,
-        proxima_validacao=datetime(2026, 12, 1),
-        notas="Catálogo de portos, terminais especializados e instalações portuárias brasileiras. Inclui coordenadas e operadores.",
-        responsavel_validacao="ANTAQ"
-    ))
-
-    registry.register(SourceRegistry(
-        id="antaq_terminais_csv",
-        nome="ANTAQ - Terminais de Carga",
-        orgao="ANTAQ",
-        categoria="transporte_aquaviario",
-        dataset_url="https://dados.gov.br/dataset/terminais-carga-antaq",
+        id="ana_snirh_rios_csv",
+        nome="ANA/SNIRH — Catálogo de Rios (snirh_rios.csv)",
+        orgao="ANA (Agência Nacional de Águas)",
+        categoria="hidrografia",
+        dataset_url="https://www.snirh.gov.br/hidroweb/",
         api_endpoint=None,
-        api_docs_url="https://www.gov.br/antaq/pt-br/acesso-a-informacao",
+        api_docs_url="https://www.snirh.gov.br/",
         formato="CSV",
-        tipo_geometria="Point",
-        sistema_coordenadas="EPSG:4326",
+        tipo_geometria=None,
+        sistema_coordenadas=None,
         cobertura_geografica="Brasil",
-        registros_totais=287,
-        data_atualizacao=datetime(2025, 6, 30),
-        periodicidade="Semestral",
-        qualidade={"completude": 0.92, "acuracia": 0.90, "atualidade": 0.85},
-        licenca="CC0",
-        atribuicao_obrigatoria="Nenhuma",
+        registros_totais=14136,
+        data_atualizacao=None,
+        periodicidade="Desconhecida (extrato estático vendorizado)",
+        qualidade={"completude": 0.9},
+        licenca="Domínio público (dados oficiais ANA)",
+        atribuicao_obrigatoria="ANA/SNIRH",
         restricoes="Nenhuma",
-        campos_disponiveis=["nome", "municipio", "estado", "tipo_terminal", "capacidade_toneladas", "produtos_movimentados"],
+        campos_disponiveis=["_links", "baciaCodigo", "dataAlt", "dataIns", "importado",
+                             "importadoRepetido", "jurisdicao", "nome", "registroID", "removido",
+                             "respAlt", "subBaciaCodigo", "temporario"],
         status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 8, 15),
+        data_ultimo_teste=None,
         tempo_resposta_ms=None,
-        proxima_validacao=datetime(2026, 12, 15),
-        notas="Catálogo de terminais de carga fluvial, marítimo e lacustre. Inclui capacidade operacional.",
-        responsavel_validacao="ANTAQ"
+        proxima_validacao=datetime(2026, 12, 1),
+        notas="Lido localmente via pandas. Usa apenas 'nome' e 'baciaCodigo' hoje "
+              "(route_context._carregar_mapa_rio_bacia) — as outras 11 colunas, incluindo "
+              "'subBaciaCodigo', não são lidas por nenhum código (ver Rodada 6/AUDIT-SUBBACIA-01).",
+        responsavel_validacao=None,
+        modo_acesso="arquivo_local",
+        uso_no_motor="route_context._carregar_mapa_rio_bacia (join nome→bacia, exclui rios "
+                     "homônimos ambíguos por design); UI da aba Hidrografia (tabela)",
     ))
 
     registry.register(SourceRegistry(
-        id="antaq_travessias_ferries",
-        nome="ANTAQ - Travessias (Balsas/Ferries)",
-        orgao="ANTAQ",
-        categoria="transporte_aquaviario",
-        dataset_url="https://dados.gov.br/dataset/travessias-balsas",
-        api_endpoint="https://api.antaq.gov.br/travessias",
-        api_docs_url="https://www.antaq.gov.br/api-docs",
-        formato="REST/JSON",
-        tipo_geometria="Point",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=103,
-        data_atualizacao=datetime(2025, 8, 10),
-        periodicidade="Mensal",
-        qualidade={"completude": 0.97, "acuracia": 0.96, "atualidade": 0.92},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="ANTAQ",
-        restricoes="Nenhuma",
-        campos_disponiveis=["nome", "rio", "origem", "destino", "latitude", "longitude", "capacidade_passageiros", "tarifa"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 5),
-        tempo_resposta_ms=350,
-        proxima_validacao=datetime(2026, 12, 5),
-        notas="Travessias regulares de balsas, ferries e passagens fluviais. Inclui pontos de embarque/desembarque.",
-        responsavel_validacao="ANTAQ"
-    ))
-
-    registry.register(SourceRegistry(
-        id="antaq_infraestrutura_hidroviaria",
-        nome="ANTAQ - Infraestrutura Hidroviária",
-        orgao="ANTAQ",
-        categoria="transporte_aquaviario",
-        dataset_url="https://dados.gov.br/dataset/infraestrutura-hidroviaria",
-        api_endpoint="https://wfs.antaq.gov.br/wfs",
-        api_docs_url="https://www.antaq.gov.br/wfs-docs",
-        formato="WFS",
-        tipo_geometria="Polygon",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=234,
-        data_atualizacao=datetime(2025, 7, 20),
-        periodicidade="Trimestral",
-        qualidade={"completude": 0.93, "acuracia": 0.92, "atualidade": 0.87},
-        licenca="OGL",
-        atribuicao_obrigatoria="ANTAQ",
-        restricoes="Nenhuma",
-        campos_disponiveis=["tipo_infraestrutura", "localacao", "municipio", "regiao", "status_operacional", "area_km2"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 8, 28),
-        tempo_resposta_ms=520,
-        proxima_validacao=datetime(2026, 12, 28),
-        notas="Infraestrutura hidroviária incluindo eclusas, ecluses, barragens com navegação. Polígonos de áreas de atuação.",
-        responsavel_validacao="ANTAQ"
-    ))
-
-    # =====================================================================
-    # 2. ANA (Agência Nacional de Águas e Saneamento Básico) - 6 sources
-    # =====================================================================
-
-    registry.register(SourceRegistry(
-        id="ana_rios_14k_geojson",
-        nome="ANA - Rede Hidrográfica (14k+ rios)",
-        orgao="ANA",
+        id="ana_snirh_bacias_csv",
+        nome="ANA/SNIRH — Catálogo de Bacias (snirh_bacias.csv)",
+        orgao="ANA (Agência Nacional de Águas)",
         categoria="hidrografia",
-        dataset_url="https://hidroweb.ana.gov.br/",
-        api_endpoint="https://hidroweb.ana.gov.br/api/v1/rios",
-        api_docs_url="https://hidroweb.ana.gov.br/api-docs",
-        formato="REST/JSON",
+        dataset_url="https://www.snirh.gov.br/hidroweb/",
+        api_endpoint=None,
+        api_docs_url="https://www.snirh.gov.br/",
+        formato="CSV",
+        tipo_geometria=None,
+        sistema_coordenadas=None,
+        cobertura_geografica="Brasil",
+        registros_totais=9,
+        data_atualizacao=None,
+        periodicidade="Desconhecida (extrato estático vendorizado)",
+        qualidade={"completude": 1.0},
+        licenca="Domínio público (dados oficiais ANA)",
+        atribuicao_obrigatoria="ANA/SNIRH",
+        restricoes="Nenhuma",
+        campos_disponiveis=["_links", "codigoNome", "dataAlt", "dataIns", "importado",
+                             "importadoRepetido", "nome", "registroID", "removido", "respAlt",
+                             "temporario"],
+        status=SourceStatus.ATIVO,
+        data_ultimo_teste=None,
+        tempo_resposta_ms=None,
+        proxima_validacao=datetime(2026, 12, 1),
+        notas="9 bacias hidrográficas oficiais (nível nacional). Usa apenas 'registroID' e 'nome'.",
+        responsavel_validacao=None,
+        modo_acesso="arquivo_local",
+        uso_no_motor="route_context._carregar_mapa_rio_bacia (código da bacia → nome oficial)",
+    ))
+
+    registry.register(SourceRegistry(
+        id="ana_snirh_estacoes_csv",
+        nome="ANA/SNIRH — Catálogo de Estações Hidrológicas (snirh_estacaos.csv)",
+        orgao="ANA (Agência Nacional de Águas)",
+        categoria="hidrografia",
+        dataset_url="https://github.com/lucascardosolccr/openrotas-dados/releases/download/dados-geoespaciais-v1/snirh_estacaos.csv",
+        api_endpoint=None,
+        api_docs_url="https://www.snirh.gov.br/",
+        formato="CSV (~91 MB)",
+        tipo_geometria=None,
+        sistema_coordenadas=None,
+        cobertura_geografica="Brasil",
+        registros_totais=None,  # não verificável sem baixar; nunca fabricar uma contagem
+        data_atualizacao=None,
+        periodicidade="Desconhecida (extrato estático vendorizado)",
+        qualidade={},
+        licenca="Domínio público (dados oficiais ANA)",
+        atribuicao_obrigatoria="ANA/SNIRH",
+        restricoes="Nenhuma",
+        campos_disponiveis=["codigo", "nome", "rio", "bacia", "uf", "lat/latitude",
+                             "lon/longitude", "tipo"],
+        status=SourceStatus.ATIVO,
+        data_ultimo_teste=None,
+        tempo_resposta_ms=None,
+        proxima_validacao=datetime(2026, 12, 1),
+        notas="Grande demais para o repositório principal (limite de 100MB do GitHub) — baixado "
+              "sob demanda pelo botão 'Baixar catálogo completo de estações' na aba Hidrografia. "
+              "Sem o download, a UI usa um pequeno dataset de fallback claramente rotulado como tal.",
+        responsavel_validacao=None,
+        modo_acesso="download_sob_demanda",
+        uso_no_motor="Aba Hidrografia — tabela de estações (streamlit_app.py:_carregar_estacoes_com_fallback)",
+    ))
+
+    # =====================================================================
+    # Grafo fluvial pré-computado (Rodada anterior: rios navegáveis, ANA
+    # Ottocodificada + IBGE BC250 + Natural Earth, mesclados offline)
+    # =====================================================================
+
+    registry.register(SourceRegistry(
+        id="grafo_fluvial_nacional",
+        nome="Grafo de roteamento fluvial nacional (hidrografia_nacional.pkl.gz)",
+        orgao="ANA + IBGE + Natural Earth (mesclado offline)",
+        categoria="hidrografia",
+        dataset_url="https://github.com/lucascardosolccr/Hidrografia",
+        api_endpoint=None,
+        api_docs_url=None,
+        formato="Pickle comprimido (grafo esparso)",
+        tipo_geometria="Graph (nós = coordenadas, arestas = trechos navegáveis)",
+        sistema_coordenadas="EPSG:4326",
+        cobertura_geografica="Brasil",
+        registros_totais=1467729,  # nós; 1.724.845 arestas, 9.569 nomes de rio
+        data_atualizacao=None,
+        periodicidade="Ad-hoc (rebuild manual via script externo não incluído neste repositório)",
+        qualidade={},
+        licenca="Domínio público (derivado de dados oficiais)",
+        atribuicao_obrigatoria="ANA (Base Hidrográfica Ottocodificada) + IBGE BC250 + Natural Earth",
+        restricoes="Nenhuma",
+        campos_disponiveis=["coords (nós)", "e (arestas)", "w (pesos)", "en (índice de nomes por "
+                             "aresta)", "names (9.569 nomes de rio)"],
+        status=SourceStatus.ATIVO,
+        data_ultimo_teste=None,
+        tempo_resposta_ms=None,
+        proxima_validacao=datetime(2026, 12, 1),
+        notas="Construído por um script externo (construir_grafo_hidrografia_nacional.py, não "
+              "presente neste repositório) a partir de 3 fontes distintas. Há um fallback de "
+              "download remoto (_URL_GRAFO_FLUVIAL) nunca configurado em produção.",
+        responsavel_validacao=None,
+        modo_acesso="arquivo_local",
+        uso_no_motor="streamlit_app._carregar_grafo_fluvial — estimativa de distância fluvial sob demanda",
+    ))
+
+    registry.register(SourceRegistry(
+        id="natural_earth_rivers",
+        nome="Natural Earth — Rivers & Lake Centerlines (10m/110m)",
+        orgao="Natural Earth (domínio público, naturalearthdata.com)",
+        categoria="hidrografia",
+        dataset_url="https://www.naturalearthdata.com/downloads/10m-physical-vectors/10m-rivers-lake-centerlines/",
+        api_endpoint=None,
+        api_docs_url="https://www.naturalearthdata.com/",
+        formato="Shapefile",
         tipo_geometria="LineString",
         sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=14800,
-        data_atualizacao=datetime(2025, 8, 15),
-        periodicidade="Anual",
-        qualidade={"completude": 0.96, "acuracia": 0.93, "atualidade": 0.89},
-        licenca="CC0",
-        atribuicao_obrigatoria="Nenhuma",
+        cobertura_geografica="Global (usado apenas o recorte Brasil)",
+        registros_totais=2129,
+        data_atualizacao=None,
+        periodicidade="Estática (dataset público versionado por release do Natural Earth)",
+        qualidade={},
+        licenca="Domínio público (CC0/Public Domain, Natural Earth)",
+        atribuicao_obrigatoria="Nenhuma (mas creditado por boa prática)",
         restricoes="Nenhuma",
-        campos_disponiveis=["nome_rio", "codigo_rio", "regiao_hidrografica", "bacia_principal", "sub_bacia", "area_km2", "extensao_km"],
+        campos_disponiveis=["nome do rio", "geometria (LineString)"],
         status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 3),
-        tempo_resposta_ms=280,
-        proxima_validacao=datetime(2026, 11, 3),
-        notas="Rede hidrográfica brasileira com 14.800+ rios catalogados. Dados via HidroWeb API com cobertura completa.",
-        responsavel_validacao="ANA"
-    ))
-
-    registry.register(SourceRegistry(
-        id="ana_bacias_hidrografica",
-        nome="ANA - Bacias Hidrográficas",
-        orgao="ANA",
-        categoria="hidrografia",
-        dataset_url="https://snirh.gov.br/portal/",
-        api_endpoint="https://hidroweb.ana.gov.br/api/v1/bacias",
-        api_docs_url="https://snirh.gov.br/api-docs",
-        formato="REST/JSON",
-        tipo_geometria="Polygon",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=56,
-        data_atualizacao=datetime(2025, 8, 1),
-        periodicidade="Anual",
-        qualidade={"completude": 0.99, "acuracia": 0.97, "atualidade": 0.95},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="ANA/SNIRH",
-        restricoes="Nenhuma",
-        campos_disponiveis=["nome_bacia", "codigo_bacia", "area_total_km2", "populacao", "municipios_afetados", "geometria"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 4),
-        tempo_resposta_ms=400,
-        proxima_validacao=datetime(2026, 12, 4),
-        notas="56 bacias hidrográficas principais do Brasil. Inclui área total, população afetada e polígonos de cobertura.",
-        responsavel_validacao="ANA"
-    ))
-
-    registry.register(SourceRegistry(
-        id="ana_estacoes_40k",
-        nome="ANA - Estações Hidrometereológicas (40k+)",
-        orgao="ANA",
-        categoria="hidrografia",
-        dataset_url="https://hidroweb.ana.gov.br/",
-        api_endpoint="https://hidroweb.ana.gov.br/api/v1/estacoes",
-        api_docs_url="https://hidroweb.ana.gov.br/api-docs",
-        formato="REST/JSON",
-        tipo_geometria="Point",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=40123,
-        data_atualizacao=datetime(2025, 8, 5),
-        periodicidade="Diária",
-        qualidade={"completude": 0.94, "acuracia": 0.91, "atualidade": 0.98},
-        licenca="CC0",
-        atribuicao_obrigatoria="Nenhuma",
-        restricoes="Nenhuma",
-        campos_disponiveis=["nome_estacao", "codigo", "tipo", "bacia", "rio", "latitude", "longitude", "operador"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 5),
-        tempo_resposta_ms=250,
-        proxima_validacao=datetime(2026, 9, 12),
-        notas="40.123 estações de monitoramento hidrológico e meteorológico. Inclui dados em tempo real de algumas estações.",
-        responsavel_validacao="ANA"
-    ))
-
-    registry.register(SourceRegistry(
-        id="ana_telemeltricas_cotas",
-        nome="ANA - Telemétricas & Cotas Fluviométricas",
-        orgao="ANA",
-        categoria="hidrografia",
-        dataset_url="https://hidroweb.ana.gov.br/",
-        api_endpoint="https://hidroweb.ana.gov.br/api/v1/cotas-vazoes",
-        api_docs_url="https://hidroweb.ana.gov.br/api-docs",
-        formato="REST/JSON",
-        tipo_geometria="Point",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=8934,
-        data_atualizacao=datetime(2025, 8, 4),
-        periodicidade="Horária",
-        qualidade={"completude": 0.92, "acuracia": 0.94, "atualidade": 0.99},
-        licenca="CC0",
-        atribuicao_obrigatoria="Nenhuma",
-        restricoes="Nenhuma",
-        campos_disponiveis=["estacao_id", "timestamp", "cota_m", "vazao_m3s", "qualidade_dado"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 5),
-        tempo_resposta_ms=180,
-        proxima_validacao=datetime(2026, 9, 12),
-        notas="Dados de cotas (nível) e vazões de rios em tempo real. Mais de 8.900 séries temporais.",
-        responsavel_validacao="ANA"
-    ))
-
-    registry.register(SourceRegistry(
-        id="ana_wms_wfs_snirh",
-        nome="ANA - WMS/WFS (SNIRH Geospatial Services)",
-        orgao="ANA",
-        categoria="hidrografia",
-        dataset_url="https://snirh.gov.br/portal/",
-        api_endpoint="https://wms.snirh.gov.br/wms",
-        api_docs_url="https://snirh.gov.br/wms-docs",
-        formato="WMS/WFS",
-        tipo_geometria="MultiType",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=None,
-        data_atualizacao=datetime(2025, 8, 1),
-        periodicidade="Contínuo",
-        qualidade={"completude": 0.95, "acuracia": 0.93, "atualidade": 0.90},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="ANA/SNIRH",
-        restricoes="Nenhuma",
-        campos_disponiveis=["layers", "styles", "srs", "crs"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 3),
-        tempo_resposta_ms=520,
-        proxima_validacao=datetime(2026, 12, 3),
-        notas="Serviços OGC WMS e WFS para visualização e consulta de dados hidrográficos. Taxa de requisições: 100 req/min.",
-        responsavel_validacao="ANA"
-    ))
-
-    # =====================================================================
-    # 3. IBGE (Instituto Brasileiro de Geografia e Estatística) - 7 sources
-    # =====================================================================
-
-    registry.register(SourceRegistry(
-        id="ibge_bc250_shapefile",
-        nome="IBGE - Base Cartográfica BC250",
-        orgao="IBGE",
-        categoria="territorial",
-        dataset_url="https://geoftp.ibge.gov.br/organizacao_do_territorio/malhas_territoriais/",
-        api_endpoint=None,
-        api_docs_url="https://www.ibge.gov.br/geociencias/",
-        formato="Shapefile",
-        tipo_geometria="MultiType",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=None,
-        data_atualizacao=datetime(2025, 5, 1),
-        periodicidade="Anual",
-        qualidade={"completude": 0.99, "acuracia": 0.98, "atualidade": 0.92},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="IBGE",
-        restricoes="Nenhuma",
-        campos_disponiveis=["nome", "tipo", "codigo_ibge", "area_km2", "geometria"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 8, 20),
+        data_ultimo_teste=None,
         tempo_resposta_ms=None,
-        proxima_validacao=datetime(2026, 11, 20),
-        notas="Base cartográfica brasileira na escala 1:250.000. Download via FTP geoftp.ibge.gov.br.",
-        responsavel_validacao="IBGE"
-    ))
-
-    registry.register(SourceRegistry(
-        id="ibge_bc100_geopackage",
-        nome="IBGE - Base Cartográfica BC100",
-        orgao="IBGE",
-        categoria="territorial",
-        dataset_url="https://geoftp.ibge.gov.br/organizacao_do_territorio/malhas_territoriais/",
-        api_endpoint=None,
-        api_docs_url="https://www.ibge.gov.br/geociencias/",
-        formato="GeoPackage",
-        tipo_geometria="MultiType",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=None,
-        data_atualizacao=datetime(2025, 6, 1),
-        periodicidade="Anual",
-        qualidade={"completude": 0.99, "acuracia": 0.99, "atualidade": 0.93},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="IBGE",
-        restricoes="Nenhuma",
-        campos_disponiveis=["nome", "codigo", "tipo", "area_km2"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 8, 25),
-        tempo_resposta_ms=None,
-        proxima_validacao=datetime(2026, 11, 25),
-        notas="Base cartográfica brasileira na escala 1:100.000 em formato GeoPackage. Mais detalhado que BC250.",
-        responsavel_validacao="IBGE"
-    ))
-
-    registry.register(SourceRegistry(
-        id="ibge_malhas_municipais_2025",
-        nome="IBGE - Malhas Municipais 2025",
-        orgao="IBGE",
-        categoria="territorial",
-        dataset_url="https://geoftp.ibge.gov.br/organizacao_do_territorio/malhas_territoriais/malhas_municipais/",
-        api_endpoint="https://servicodados.ibge.gov.br/api/v1/municipios",
-        api_docs_url="https://servicodados.ibge.gov.br/api/docs",
-        formato="Shapefile",
-        tipo_geometria="Polygon",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=5570,
-        data_atualizacao=datetime(2025, 6, 15),
-        periodicidade="Anual",
-        qualidade={"completude": 1.0, "acuracia": 0.99, "atualidade": 0.95},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="IBGE",
-        restricoes="Nenhuma",
-        campos_disponiveis=["nome_municipio", "codigo_ibge", "uf", "regiao", "area_km2", "populacao_2020"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 1),
-        tempo_resposta_ms=400,
         proxima_validacao=datetime(2026, 12, 1),
-        notas="Limites municipais de todas as 5.570 cidades brasileiras. Atualizado para divisões 2025.",
-        responsavel_validacao="IBGE"
+        notas="Não é lido diretamente em runtime pelo streamlit_app.py — foi o insumo de build do "
+              "grafo fluvial nacional (mesclagem offline, 'merge 433ª'). Os shapefiles brutos "
+              "(ne_rivers/, ne_rivers_10m/) permanecem no repositório mas nenhum código os referencia "
+              "diretamente hoje.",
+        responsavel_validacao=None,
+        modo_acesso="arquivo_local",
+        uso_no_motor="Insumo de build do grafo fluvial (ver 'grafo_fluvial_nacional') — não lido em runtime",
     ))
 
+    # =====================================================================
+    # Motores de roteamento (chamadas HTTP reais)
+    # =====================================================================
+
+    _motores = [
+        ("osrm_publico", "OSRM (instância pública project-osrm.org)", "OSRM / OpenStreetMap",
+         "http://router.project-osrm.org", True,
+         "distance, duration, geometry (polyline), legs[].steps[].maneuver.type (detecção de balsa), "
+         "waypoints[].location/.distance (snap)",
+         "streamlit_app.API_OSRM_Routing (routing), API_OSRM_Table (matriz), nearest-snap",
+         "Chave configurável via secrets OSRM_URL; sessão dedicada com fallback de TLS."),
+        ("osrm_fossgis", "OSRM (instância independente FOSSGIS)", "FOSSGIS e.V. / OpenStreetMap",
+         "https://routing.openstreetmap.de/routed-car", True,
+         "mesma forma do OSRM primário — usado para roteamento por consenso",
+         "streamlit_app.API_OSRM_FOSSGIS_Routing",
+         "Throttled a ≤1 req/s (FILA_OSRM2)."),
+        ("google_routes_oficial", "Google Routes API v2 (computeRoutes, oficial)", "Google",
+         "https://routes.googleapis.com/directions/v2:computeRoutes", True,
+         "distanceMeters, duration, polyline.encodedPolyline (field mask restrito a esses 3 campos)",
+         "streamlit_app.API_Google_Directions_Oficial",
+         "Exige GOOGLE_MAPS_API_KEY (secrets) — desativado silenciosamente sem chave. "
+         "travelAdvisory (pedágio/balsa) e alternativas NÃO são pedidos no field mask."),
+        ("graphhopper", "GraphHopper Directions API", "GraphHopper GmbH",
+         "https://graphhopper.com/api/1", True,
+         "paths[].distance/.time/.points.coordinates, .details.road_environment (balsa)",
+         "streamlit_app.API_GraphHopper_Routing",
+         "Exige GRAPHHOPPER_API_KEY (secrets) salvo se URL self-hosted."),
+        ("openrouteservice", "OpenRouteService (ORS) Directions API", "HeiGIT / openrouteservice.org",
+         "https://api.openrouteservice.org/v2/directions/driving-car", True,
+         "features[0].properties.summary.distance/.duration, .geometry.coordinates",
+         "streamlit_app.API_ORS_Routing",
+         "Exige ORS_API_KEY (secrets) — desativado sem chave."),
+        ("valhalla", "Valhalla routing engine (instância pública FOSSGIS por padrão)", "Valhalla / FOSSGIS",
+         "https://valhalla1.openstreetmap.de", True,
+         "distância/tempo/shape do JSON de rota Valhalla (driving e multimodal)",
+         "streamlit_app.API_Valhalla_Routing, API_Valhalla_Multimodal_Routing",
+         "Throttled a ≤1 req/s (FILA_VALHALLA); URL configurável via secrets VALHALLA_URL."),
+    ]
+    for _id, _nome, _orgao, _url, _ativo, _campos, _uso, _nota in _motores:
+        registry.register(SourceRegistry(
+            id=_id, nome=_nome, orgao=_orgao, categoria="roteamento",
+            dataset_url=_url, api_endpoint=_url, api_docs_url=None,
+            formato="REST/JSON", tipo_geometria="LineString (polyline codificada)",
+            sistema_coordenadas="EPSG:4326", cobertura_geografica="Global (rede OpenStreetMap ou proprietária)",
+            registros_totais=None, data_atualizacao=None, periodicidade="Contínua (serviço ao vivo)",
+            qualidade={}, licenca="Depende do provedor (ver termos de uso de cada serviço)",
+            atribuicao_obrigatoria="Depende do provedor", restricoes="Sujeito a rate-limit/uso justo",
+            campos_disponiveis=[c.strip() for c in _campos.split(",")],
+            status=SourceStatus.ATIVO if _ativo else SourceStatus.EM_TESTE,
+            data_ultimo_teste=None, tempo_resposta_ms=None, proxima_validacao=datetime(2026, 12, 1),
+            notas=_nota, responsavel_validacao=None,
+            modo_acesso="api_rest_ao_vivo", uso_no_motor=_uso,
+        ))
+
     registry.register(SourceRegistry(
-        id="ibge_localidades_rest_api",
-        nome="IBGE - Localidades (REST API)",
+        id="google_maps_scrape_rotas",
+        nome="Google Maps — scraping não-oficial de rotas (fallback)",
+        orgao="Google (acesso não-oficial)",
+        categoria="roteamento",
+        dataset_url="https://www.google.com/maps/preview/directions",
+        api_endpoint="https://www.google.com/maps/preview/directions",
+        api_docs_url=None,
+        formato="HTML/JS (extração por regex, não é JSON estruturado)",
+        tipo_geometria=None,
+        sistema_coordenadas=None,
+        cobertura_geografica="Global",
+        registros_totais=None,
+        data_atualizacao=None,
+        periodicidade="Contínua (mas frágil)",
+        qualidade={},
+        licenca="N/A — endpoint não-público, sujeito a bloqueio sem aviso",
+        atribuicao_obrigatoria="N/A",
+        restricoes="Uso não-oficial, adjacente aos Termos de Serviço do Google; auto-limitado por "
+                    "circuit breaker no próprio código",
+        campos_disponiveis=["distância e duração extraídas por regex do corpo da resposta"],
+        status=SourceStatus.EM_TESTE,
+        data_ultimo_teste=None,
+        tempo_resposta_ms=None,
+        proxima_validacao=datetime(2026, 12, 1),
+        notas="Técnica de scraping com rotação de User-Agent e 'priming' de sessão para cookies de "
+              "consentimento. O próprio código já documenta a fragilidade e implementa um circuit "
+              "breaker (_google_pode_chamar) que degrada para OSRM quando bloqueado.",
+        responsavel_validacao=None,
+        modo_acesso="api_rest_ao_vivo",
+        uso_no_motor="streamlit_app._chamar_motor_cb (fallback quando a API oficial do Google não "
+                     "está configurada)",
+    ))
+
+    # =====================================================================
+    # Geocodificação e CEP
+    # =====================================================================
+
+    _geocoders = [
+        ("tomtom_geocode", "TomTom Search/Geocode API", "TomTom",
+         "https://api.tomtom.com/search/2/geocode", True,
+         "results[].position.lat/lon, .address.municipality/countrySubdivision/neighbourhood/"
+         "subdivision/streetName/streetNumber/postalCode",
+         "streamlit_app.API_TomTom", "Exige TOMTOM_API_KEY (secrets)."),
+        ("arcgis_geocode", "Esri ArcGIS World Geocoding Service (forward + reverse)", "Esri",
+         "https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer", False,
+         "candidates[].location.x/y, .attributes.City/RegionAbbr/Neighborhood/StName/Address/"
+         "AddNum/Postal (forward); address.Address/Neighborhood/City/RegionAbbr/Postal (reverse)",
+         "streamlit_app.API_ArcGIS, executar_reverse_geocoding_multimotor, "
+         "obter_coordenada_centroide_supremo",
+         "Sem chave (serviço gratuito público). O campo 'score' de confiança do próprio ArcGIS "
+         "não é lido — o app usa um score_base fixo de 30."),
+        ("nominatim", "Nominatim (OpenStreetMap, instância pública demo)", "OSM Foundation",
+         "https://nominatim.openstreetmap.org", False,
+         "lat/lon, address.city/town/state/neighbourhood/suburb/road/house_number/postcode",
+         "streamlit_app.API_Nominatim, executar_reverse_geocoding_multimotor, cascata_postal_tripla",
+         "Throttled a ≤1 req/s (FILA_NOMINATIM) — política de uso justo da instância pública."),
+        ("photon", "Photon (Komoot, geocodificador baseado em OSM)", "Komoot",
+         "https://photon.komoot.io/api/", False,
+         "features[].geometry.coordinates, .properties.city/state/district/street/housenumber/postcode",
+         "streamlit_app.API_Photon", "Sem chave."),
+    ]
+    for _id, _nome, _orgao, _url, _keyed, _campos, _uso, _nota in _geocoders:
+        registry.register(SourceRegistry(
+            id=_id, nome=_nome, orgao=_orgao, categoria="geocodificacao",
+            dataset_url=_url, api_endpoint=_url, api_docs_url=None,
+            formato="REST/JSON", tipo_geometria="Point", sistema_coordenadas="EPSG:4326",
+            cobertura_geografica="Global (uso restrito ao Brasil via filtro de país)",
+            registros_totais=None, data_atualizacao=None, periodicidade="Contínua (serviço ao vivo)",
+            qualidade={}, licenca="Depende do provedor", atribuicao_obrigatoria="Depende do provedor",
+            restricoes="Rate-limit" + (" + chave de API" if _keyed else ""),
+            campos_disponiveis=[c.strip() for c in _campos.split(",")],
+            status=SourceStatus.ATIVO, data_ultimo_teste=None, tempo_resposta_ms=None,
+            proxima_validacao=datetime(2026, 12, 1), notas=_nota, responsavel_validacao=None,
+            modo_acesso="api_rest_ao_vivo", uso_no_motor=_uso,
+        ))
+
+    registry.register(SourceRegistry(
+        id="google_maps_scrape_geocode",
+        nome="Google Maps — scraping não-oficial de geocodificação (opt-in)",
+        orgao="Google (acesso não-oficial)",
+        categoria="geocodificacao",
+        dataset_url="https://www.google.com/maps/search/",
+        api_endpoint="https://www.google.com/maps/search/",
+        api_docs_url=None,
+        formato="HTML/JS (extração por regex)",
+        tipo_geometria=None, sistema_coordenadas=None, cobertura_geografica="Global",
+        registros_totais=None, data_atualizacao=None, periodicidade="Contínua (mas frágil)",
+        qualidade={}, licenca="N/A", atribuicao_obrigatoria="N/A",
+        restricoes="Uso não-oficial; opt-in explícito do usuário (usar_google_geocode)",
+        campos_disponiveis=["lat/lon extraídos por regex (sem componentes de endereço)"],
+        status=SourceStatus.EM_TESTE, data_ultimo_teste=None, tempo_resposta_ms=None,
+        proxima_validacao=datetime(2026, 12, 1),
+        notas="Mesmo circuit breaker da versão de rotas (item 'google_maps_scrape_rotas').",
+        responsavel_validacao=None, modo_acesso="api_rest_ao_vivo",
+        uso_no_motor="streamlit_app.API_Google_Geocode (opt-in via flag de sessão)",
+    ))
+
+    _ceps = [
+        ("brasilapi_cep", "BrasilAPI — CEP v2", "Comunidade (BrasilAPI, mantido por voluntários)",
+         "https://brasilapi.com.br/api/cep/v2", "city, street, neighborhood, state, "
+         "location.coordinates.latitude/longitude"),
+        ("viacep", "ViaCEP", "Comunidade (ViaCEP)",
+         "https://viacep.com.br/ws", "logradouro, bairro, localidade, uf"),
+        ("opencep", "OpenCEP", "Comunidade (OpenCEP)",
+         "https://opencep.com/v1", "logradouro, bairro, localidade, uf (mesmo formato do ViaCEP)"),
+    ]
+    for _id, _nome, _orgao, _url, _campos in _ceps:
+        registry.register(SourceRegistry(
+            id=_id, nome=_nome, orgao=_orgao, categoria="cep",
+            dataset_url=_url, api_endpoint=_url, api_docs_url=None,
+            formato="REST/JSON", tipo_geometria=None, sistema_coordenadas=None,
+            cobertura_geografica="Brasil", registros_totais=None, data_atualizacao=None,
+            periodicidade="Contínua (serviço ao vivo)", qualidade={},
+            licenca="Comunidade / sem SLA formal", atribuicao_obrigatoria="Nenhuma",
+            restricoes="Sem chave, mas sem garantia de disponibilidade (mantido por voluntários)",
+            campos_disponiveis=[c.strip() for c in _campos.split(",")],
+            status=SourceStatus.ATIVO, data_ultimo_teste=None, tempo_resposta_ms=None,
+            proxima_validacao=datetime(2026, 12, 1),
+            notas="Um de 3 provedores em cascata (cascata_postal_tripla) — usados em ordem até um responder.",
+            responsavel_validacao=None, modo_acesso="api_rest_ao_vivo",
+            uso_no_motor="streamlit_app.cascata_postal_tripla",
+        ))
+
+    # =====================================================================
+    # IBGE — APIs REST ao vivo (distintas do BC250/BC100, que é arquivo local)
+    # =====================================================================
+
+    registry.register(SourceRegistry(
+        id="ibge_localidades_api",
+        nome="IBGE — API de Localidades (estados/municípios/distritos)",
         orgao="IBGE",
         categoria="territorial",
         dataset_url="https://servicodados.ibge.gov.br/api/v1/localidades",
         api_endpoint="https://servicodados.ibge.gov.br/api/v1/localidades",
-        api_docs_url="https://servicodados.ibge.gov.br/api/docs",
+        api_docs_url="https://servicodados.ibge.gov.br/api/docs/localidades",
         formato="REST/JSON",
-        tipo_geometria="Point",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=5570,
-        data_atualizacao=datetime(2025, 7, 1),
-        periodicidade="Mensal",
-        qualidade={"completude": 0.95, "acuracia": 0.94, "atualidade": 0.91},
-        licenca="CC0",
-        atribuicao_obrigatoria="Nenhuma",
-        restricoes="Nenhuma",
-        campos_disponiveis=["id", "nome", "microrregiao", "mesorregiao", "municipio", "estado"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 5),
-        tempo_resposta_ms=280,
-        proxima_validacao=datetime(2026, 10, 5),
-        notas="API REST de localidades brasileiras. Sem autenticação necessária. Taxa: 60 req/min por IP.",
-        responsavel_validacao="IBGE"
-    ))
-
-    registry.register(SourceRegistry(
-        id="ibge_distritos_shapefile",
-        nome="IBGE - Distritos Administrativos",
-        orgao="IBGE",
-        categoria="territorial",
-        dataset_url="https://geoftp.ibge.gov.br/organizacao_do_territorio/malhas_territoriais/",
-        api_endpoint=None,
-        api_docs_url="https://www.ibge.gov.br/geociencias/",
-        formato="Shapefile",
-        tipo_geometria="Polygon",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=5570,
-        data_atualizacao=datetime(2025, 6, 1),
-        periodicidade="Anual",
-        qualidade={"completude": 0.98, "acuracia": 0.97, "atualidade": 0.93},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="IBGE",
-        restricoes="Nenhuma",
-        campos_disponiveis=["nome_distrito", "municipio", "area_km2", "populacao"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 8, 28),
-        tempo_resposta_ms=None,
-        proxima_validacao=datetime(2026, 11, 28),
-        notas="Limites de distritos administrativos. Nem todos os municípios possuem distritos.",
-        responsavel_validacao="IBGE"
-    ))
-
-    registry.register(SourceRegistry(
-        id="ibge_regioes_e_biomas",
-        nome="IBGE - Regiões Geográficas & Biomas",
-        orgao="IBGE",
-        categoria="territorial",
-        dataset_url="https://geoftp.ibge.gov.br/organizacao_do_territorio/",
-        api_endpoint="https://servicodados.ibge.gov.br/api/v1/regioes",
-        api_docs_url="https://servicodados.ibge.gov.br/api/docs",
-        formato="REST/JSON",
-        tipo_geometria="Polygon",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=27,
-        data_atualizacao=datetime(2025, 5, 15),
-        periodicidade="Anual",
-        qualidade={"completude": 1.0, "acuracia": 0.99, "atualidade": 0.99},
-        licenca="CC0",
-        atribuicao_obrigatoria="Nenhuma",
-        restricoes="Nenhuma",
-        campos_disponiveis=["id", "nome", "sigla", "regiao", "area_km2"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 3),
-        tempo_resposta_ms=220,
-        proxima_validacao=datetime(2026, 12, 3),
-        notas="5 regiões geográficas + 27 unidades da federação. Inclui dados de biomas (Amazônia, Cerrado, Caatinga, etc).",
-        responsavel_validacao="IBGE"
-    ))
-
-    # =====================================================================
-    # 3b. IBGE - Camadas derivadas locais (construir_bases_locais_ibge.py)
-    #     Parquet em data/brasil/ibge/derivadas/, consumidas por
-    #     inteligencia_geoespacial/bases_locais.py. Origem: BC250 v2025 + BC100 UFs.
-    # =====================================================================
-
-    registry.register(SourceRegistry(
-        id="ibge_der_pontes",
-        nome="IBGE Derivadas - Pontes (BC250+BC100)",
-        orgao="IBGE",
-        categoria="infraestrutura",
-        dataset_url="https://geoftp.ibge.gov.br/cartas_e_mapas/bases_cartograficas_continuas/",
-        api_endpoint=None,
-        api_docs_url="https://www.ibge.gov.br/geociencias/",
-        formato="Parquet",
-        tipo_geometria="MultiType",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=14812,
-        data_atualizacao=datetime(2026, 9, 7),
-        periodicidade="Continua (build local)",
-        qualidade={"completude": 0.98, "acuracia": 0.98, "atualidade": 0.95},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="IBGE",
-        restricoes="Nenhuma",
-        campos_disponiveis=["nome", "tipo_geom", "geometry_wkb", "lon", "lat", "matconstr", "operaciona", "tipoponte", "fonte_base", "fonte_uf", "fonte_versao"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 7),
-        tempo_resposta_ms=None,
-        proxima_validacao=datetime(2027, 3, 7),
-        notas="Camada derivada local de tra_ponte_p/l (BC250 v2025 + BC100 AC/AL/ES/GO/RS/SE/RR). CRS EPSG:4326, WKB big-endian.",
-        responsavel_validacao="IBGE"
-    ))
-
-    registry.register(SourceRegistry(
-        id="ibge_der_travessias",
-        nome="IBGE Derivadas - Travessias e Balsas (BC250+BC100)",
-        orgao="IBGE",
-        categoria="infraestrutura",
-        dataset_url="https://geoftp.ibge.gov.br/cartas_e_mapas/bases_cartograficas_continuas/",
-        api_endpoint=None,
-        api_docs_url="https://www.ibge.gov.br/geociencias/",
-        formato="Parquet",
-        tipo_geometria="MultiType",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=4046,
-        data_atualizacao=datetime(2026, 9, 7),
-        periodicidade="Continua (build local)",
-        qualidade={"completude": 0.97, "acuracia": 0.98, "atualidade": 0.95},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="IBGE",
-        restricoes="Nenhuma",
-        campos_disponiveis=["nome", "tipo_geom", "geometry_wkb", "lon", "lat", "tipotraves", "tipouso", "fonte_base", "fonte_uf"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 7),
-        tempo_resposta_ms=None,
-        proxima_validacao=datetime(2027, 3, 7),
-        notas="Travessias (Balsa, Vau, Bote transportador) de tra_travessia_p/l. Usar com filtro tipotraves='Balsa'.",
-        responsavel_validacao="IBGE"
-    ))
-
-    registry.register(SourceRegistry(
-        id="ibge_der_hidrovias",
-        nome="IBGE Derivadas - Hidrovias Navegáveis (BC250+BC100)",
-        orgao="IBGE",
-        categoria="hidrografia",
-        dataset_url="https://geoftp.ibge.gov.br/cartas_e_mapas/bases_cartograficas_continuas/",
-        api_endpoint=None,
-        api_docs_url="https://www.ibge.gov.br/geociencias/",
-        formato="Parquet",
-        tipo_geometria="LineString",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=179,
-        data_atualizacao=datetime(2026, 9, 7),
-        periodicidade="Continua (build local)",
-        qualidade={"completude": 0.95, "acuracia": 0.97, "atualidade": 0.94},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="IBGE",
-        restricoes="Nenhuma",
-        campos_disponiveis=["nome", "geometry_wkb", "lon", "lat", "regime", "caladomaxs", "extensaotr", "fonte_base", "fonte_uf"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 7),
-        tempo_resposta_ms=None,
-        proxima_validacao=datetime(2027, 3, 7),
-        notas="Trechos de hidrovias de hdv_trecho_hidroviario_l (Hidrovia do Amazonas, São Francisco, Tietê-Paraná, etc).",
-        responsavel_validacao="IBGE"
-    ))
-
-    registry.register(SourceRegistry(
-        id="ibge_der_atracadouros_terminal",
-        nome="IBGE Derivadas - Atracadouros e Terminais (BC250+BC100)",
-        orgao="IBGE",
-        categoria="hidrografia",
-        dataset_url="https://geoftp.ibge.gov.br/cartas_e_mapas/bases_cartograficas_continuas/",
-        api_endpoint=None,
-        api_docs_url="https://www.ibge.gov.br/geociencias/",
-        formato="Parquet",
-        tipo_geometria="MultiType",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=172,
-        data_atualizacao=datetime(2026, 9, 7),
-        periodicidade="Continua (build local)",
-        qualidade={"completude": 0.95, "acuracia": 0.98, "atualidade": 0.93},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="IBGE",
-        restricoes="Nenhuma",
-        campos_disponiveis=["nome", "geometry_wkb", "lon", "lat", "tipoatraca", "administra", "aptidaoope", "fonte_base", "fonte_uf"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 7),
-        tempo_resposta_ms=None,
-        proxima_validacao=datetime(2027, 3, 7),
-        notas="hdv_atracadouro_terminal_p/l - atracadouros e terminais de navegação interior.",
-        responsavel_validacao="IBGE"
-    ))
-
-    registry.register(SourceRegistry(
-        id="ibge_der_complexos_portuarios",
-        nome="IBGE Derivadas - Complexos Portuários (BC250+BC100)",
-        orgao="IBGE",
-        categoria="hidrografia",
-        dataset_url="https://geoftp.ibge.gov.br/cartas_e_mapas/bases_cartograficas_continuas/",
-        api_endpoint=None,
-        api_docs_url="https://www.ibge.gov.br/geociencias/",
-        formato="Parquet",
-        tipo_geometria="Point",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=171,
-        data_atualizacao=datetime(2026, 9, 7),
-        periodicidade="Continua (build local)",
-        qualidade={"completude": 0.96, "acuracia": 0.98, "atualidade": 0.94},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="IBGE",
-        restricoes="Nenhuma",
-        campos_disponiveis=["nome", "geometry_wkb", "lon", "lat", "modaluso", "administra", "concession", "operaciona", "fonte_base", "fonte_uf"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 7),
-        tempo_resposta_ms=None,
-        proxima_validacao=datetime(2027, 3, 7),
-        notas="hdv_complexo_portuario_p - portos organizados e instalações portuárias.",
-        responsavel_validacao="IBGE"
-    ))
-
-    registry.register(SourceRegistry(
-        id="ibge_der_eclusas",
-        nome="IBGE Derivadas - Eclusas (BC250+BC100)",
-        orgao="IBGE",
-        categoria="hidrografia",
-        dataset_url="https://geoftp.ibge.gov.br/cartas_e_mapas/bases_cartograficas_continuas/",
-        api_endpoint=None,
-        api_docs_url="https://www.ibge.gov.br/geociencias/",
-        formato="Parquet",
-        tipo_geometria="Point",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=22,
-        data_atualizacao=datetime(2026, 9, 7),
-        periodicidade="Continua (build local)",
-        qualidade={"completude": 0.94, "acuracia": 0.98, "atualidade": 0.94},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="IBGE",
-        restricoes="Nenhuma",
-        campos_disponiveis=["nome", "geometry_wkb", "lon", "lat", "desnivel", "largura", "calado", "fonte_base", "fonte_uf"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 7),
-        tempo_resposta_ms=None,
-        proxima_validacao=datetime(2027, 3, 7),
-        notas="hdv_eclusa_p - Eclusa de Lajeado, Sobradinho, Tucuruí, Fandango, Canal de São Gonçalo, etc.",
-        responsavel_validacao="IBGE"
-    ))
-
-    registry.register(SourceRegistry(
-        id="ibge_der_sinalizacao",
-        nome="IBGE Derivadas - Sinalização de Navegação (BC250+BC100)",
-        orgao="IBGE",
-        categoria="hidrografia",
-        dataset_url="https://geoftp.ibge.gov.br/cartas_e_mapas/bases_cartograficas_continuas/",
-        api_endpoint=None,
-        api_docs_url="https://www.ibge.gov.br/geociencias/",
-        formato="Parquet",
-        tipo_geometria="Point",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=388,
-        data_atualizacao=datetime(2026, 9, 7),
-        periodicidade="Continua (build local)",
-        qualidade={"completude": 0.93, "acuracia": 0.98, "atualidade": 0.93},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="IBGE",
-        restricoes="Nenhuma",
-        campos_disponiveis=["nome", "geometry_wkb", "lon", "lat", "tiposinal", "operaciona", "fonte_base", "fonte_uf"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 7),
-        tempo_resposta_ms=None,
-        proxima_validacao=datetime(2027, 3, 7),
-        notas="hdv_sinalizacao_p - balizamento e sinalização náutica das hidrovias.",
-        responsavel_validacao="IBGE"
-    ))
-
-    registry.register(SourceRegistry(
-        id="ibge_der_rodovias",
-        nome="IBGE Derivadas - Rede Rodoviária (BC250+BC100)",
-        orgao="IBGE",
-        categoria="vias",
-        dataset_url="https://geoftp.ibge.gov.br/cartas_e_mapas/bases_cartograficas_continuas/",
-        api_endpoint=None,
-        api_docs_url="https://www.ibge.gov.br/geociencias/",
-        formato="Parquet",
-        tipo_geometria="LineString",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=287136,
-        data_atualizacao=datetime(2026, 9, 7),
-        periodicidade="Continua (build local)",
-        qualidade={"completude": 0.98, "acuracia": 0.98, "atualidade": 0.95},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="IBGE",
-        restricoes="Nenhuma",
-        campos_disponiveis=["nome", "geometry_wkb", "lon", "lat", "tipovia", "jurisdicao", "revestimen", "nrpistas", "nrfaixas", "sigla", "fonte_base", "fonte_uf"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 7),
-        tempo_resposta_ms=None,
-        proxima_validacao=datetime(2027, 3, 7),
-        notas="rod_trecho_rodoviario_l - malha rodoviária federais/estaduais/municipais. Camada pesada: consultar via bases_locais.mais_proximos.",
-        responsavel_validacao="IBGE"
-    ))
-
-    registry.register(SourceRegistry(
-        id="ibge_der_ferrovias",
-        nome="IBGE Derivadas - Rede Ferroviária (BC250+BC100)",
-        orgao="IBGE",
-        categoria="vias",
-        dataset_url="https://geoftp.ibge.gov.br/cartas_e_mapas/bases_cartograficas_continuas/",
-        api_endpoint=None,
-        api_docs_url="https://www.ibge.gov.br/geociencias/",
-        formato="Parquet",
-        tipo_geometria="LineString",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=889,
-        data_atualizacao=datetime(2026, 9, 7),
-        periodicidade="Continua (build local)",
-        qualidade={"completude": 0.96, "acuracia": 0.98, "atualidade": 0.94},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="IBGE",
-        restricoes="Nenhuma",
-        campos_disponiveis=["nome", "geometry_wkb", "lon", "lat", "bitola", "eletrifica", "nrlinhas", "administra", "concession", "fonte_base", "fonte_uf"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 7),
-        tempo_resposta_ms=None,
-        proxima_validacao=datetime(2027, 3, 7),
-        notas="fer_trecho_ferroviario_l - malha ferroviária com bitola, eletrificação e concessionária.",
-        responsavel_validacao="IBGE"
-    ))
-
-    registry.register(SourceRegistry(
-        id="ibge_der_massas_dagua",
-        nome="IBGE Derivadas - Massas d'Água (BC250+BC100)",
-        orgao="IBGE",
-        categoria="hidrografia",
-        dataset_url="https://geoftp.ibge.gov.br/cartas_e_mapas/bases_cartograficas_continuas/",
-        api_endpoint=None,
-        api_docs_url="https://www.ibge.gov.br/geociencias/",
-        formato="Parquet",
-        tipo_geometria="Polygon",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=64850,
-        data_atualizacao=datetime(2026, 9, 7),
-        periodicidade="Continua (build local)",
-        qualidade={"completude": 0.97, "acuracia": 0.98, "atualidade": 0.94},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="IBGE",
-        restricoes="Nenhuma",
-        campos_disponiveis=["nome", "geometry_wkb", "lon", "lat", "tipomassad", "regime", "salgada", "artificial", "fonte_base", "fonte_uf"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 7),
-        tempo_resposta_ms=None,
-        proxima_validacao=datetime(2027, 3, 7),
-        notas="hid_massa_dagua_a - lagos, lagoas, represas e reservatórios.",
-        responsavel_validacao="IBGE"
-    ))
-
-    registry.register(SourceRegistry(
-        id="ibge_der_drenagem",
-        nome="IBGE Derivadas - Trechos de Drenagem (BC250+BC100)",
-        orgao="IBGE",
-        categoria="hidrografia",
-        dataset_url="https://geoftp.ibge.gov.br/cartas_e_mapas/bases_cartograficas_continuas/",
-        api_endpoint=None,
-        api_docs_url="https://www.ibge.gov.br/geociencias/",
-        formato="Parquet",
-        tipo_geometria="LineString",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=2181288,
-        data_atualizacao=datetime(2026, 9, 7),
-        periodicidade="Continua (build local)",
-        qualidade={"completude": 0.97, "acuracia": 0.98, "atualidade": 0.94},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="IBGE",
-        restricoes="Nenhuma",
-        campos_disponiveis=["nome", "geometry_wkb", "lon", "lat", "tipotrecho", "navegavel", "larguramed", "regime", "encoberto", "fonte_base", "fonte_uf"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 7),
-        tempo_resposta_ms=None,
-        proxima_validacao=datetime(2027, 3, 7),
-        notas="hid_trecho_drenagem_l - rios e córregos (2,1M feições). Geometria decimada (≤12 pts). Camada pesada: consultar via bases_locais.mais_proximos.",
-        responsavel_validacao="IBGE"
-    ))
-
-    registry.register(SourceRegistry(
-        id="ibge_der_municipios",
-        nome="IBGE Derivadas - Municípios (BC250 v2025)",
-        orgao="IBGE",
-        categoria="territorial",
-        dataset_url="https://geoftp.ibge.gov.br/cartas_e_mapas/bases_cartograficas_continuas/",
-        api_endpoint=None,
-        api_docs_url="https://www.ibge.gov.br/geociencias/",
-        formato="Parquet",
-        tipo_geometria="Polygon",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
+        tipo_geometria=None, sistema_coordenadas=None, cobertura_geografica="Brasil",
         registros_totais=5571,
-        data_atualizacao=datetime(2026, 9, 7),
-        periodicidade="Continua (build local)",
-        qualidade={"completude": 1.0, "acuracia": 0.99, "atualidade": 0.95},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="IBGE",
+        data_atualizacao=None, periodicidade="Contínua (serviço ao vivo, cache local de 30 dias)",
+        qualidade={"completude": 1.0}, licenca="Domínio público", atribuicao_obrigatoria="IBGE",
         restricoes="Nenhuma",
-        campos_disponiveis=["nome", "geocodigo", "geometry_wkb", "lon", "lat", "xmin", "ymin", "xmax", "ymax"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 7),
-        tempo_resposta_ms=None,
-        proxima_validacao=datetime(2027, 3, 7),
-        notas="lml_municipio_a - polígonos municipais oficiais (geocodigo 7 dígitos IBGE). Base do municipio_do_ponto().",
-        responsavel_validacao="IBGE"
+        campos_disponiveis=["sigla/nome (estados)", "nome, id (código IBGE), "
+                             "microrregiao.mesorregiao.UF.sigla (municípios)",
+                             "nome, id, municipio.nome, municipio.microrregiao.mesorregiao.UF.sigla (distritos)"],
+        status=SourceStatus.ATIVO, data_ultimo_teste=None, tempo_resposta_ms=None,
+        proxima_validacao=datetime(2026, 12, 1),
+        notas="NÃO retorna latitude/longitude de municípios (confirmado no próprio código) — "
+              "centróides vêm de outras fontes (ArcGIS/Nominatim/fallback GitHub). Meso/micro-região "
+              "são buscadas mas só a sigla da UF é de fato aproveitada.",
+        responsavel_validacao=None, modo_acesso="api_rest_ao_vivo",
+        uso_no_motor="streamlit_app.carregar_dados_ibge (cache em municipios_ibge_v2.pkl, 30 dias)",
     ))
 
-    # =====================================================================
-    # 4. DNIT (Departamento Nacional de Infraestrutura de Transportes) - 5 sources
-    # =====================================================================
-
     registry.register(SourceRegistry(
-        id="dnit_rodovias_federais_br",
-        nome="DNIT - Rodovias Federais (BR-*)",
-        orgao="DNIT",
-        categoria="rodoviaria",
-        dataset_url="https://www.gov.br/dnit/pt-br/",
-        api_endpoint="https://dados.gov.br/api/v3/datasets/rodovias-dnit",
-        api_docs_url="https://www.gov.br/dnit/pt-br/",
+        id="ibge_malhas_api",
+        nome="IBGE — API de Malhas Territoriais (polígonos municipais, v3)",
+        orgao="IBGE",
+        categoria="territorial",
+        dataset_url="https://servicodados.ibge.gov.br/api/v3/malhas",
+        api_endpoint="https://servicodados.ibge.gov.br/api/v3/malhas/municipios/{cod_ibge}",
+        api_docs_url="https://servicodados.ibge.gov.br/api/docs/malhas",
         formato="GeoJSON",
-        tipo_geometria="LineString",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=1095,
-        data_atualizacao=datetime(2025, 7, 30),
-        periodicidade="Trimestral",
-        qualidade={"completude": 0.97, "acuracia": 0.95, "atualidade": 0.88},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="DNIT",
-        restricoes="Nenhuma",
-        campos_disponiveis=["numero_br", "nome", "uf_origem", "uf_destino", "extensao_km", "pavimento", "condicao"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 8, 20),
-        tempo_resposta_ms=380,
-        proxima_validacao=datetime(2026, 11, 20),
-        notas="Rede de rodovias federais com 1.095 trechos. Inclui informações de pavimentação e condição.",
-        responsavel_validacao="DNIT"
+        tipo_geometria="Polygon/MultiPolygon", sistema_coordenadas="EPSG:4326",
+        cobertura_geografica="Brasil", registros_totais=5571,
+        data_atualizacao=None, periodicidade="Contínua (cache de 24h via st.cache_data)",
+        qualidade={}, licenca="Domínio público", atribuicao_obrigatoria="IBGE", restricoes="Nenhuma",
+        campos_disponiveis=["features[].geometry (só os anéis de coordenadas são usados)"],
+        status=SourceStatus.ATIVO, data_ultimo_teste=None, tempo_resposta_ms=None,
+        proxima_validacao=datetime(2026, 12, 1),
+        notas="Alternativa/complemento ao ponto-em-polígono offline (camada 'municipios' do BC250) — "
+              "usado como validador sob demanda, não no pipeline automático de rotas.",
+        responsavel_validacao=None, modo_acesso="api_rest_ao_vivo",
+        uso_no_motor="streamlit_app._ibge_malha_aneis / _validar_ponto_no_municipio (gated por "
+                     "flag IBGE_MALHAS_ATIVO)",
     ))
 
     registry.register(SourceRegistry(
-        id="dnit_pontes_estruturas",
-        nome="DNIT - Pontes e Estruturas",
-        orgao="DNIT",
-        categoria="rodoviaria",
-        dataset_url="https://dados.gov.br/dataset/pontes-estruturas-dnit",
-        api_endpoint="https://api.dnit.gov.br/pontes",
-        api_docs_url="https://www.dnit.gov.br/api-docs",
-        formato="REST/JSON",
-        tipo_geometria="Point",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=8342,
-        data_atualizacao=datetime(2025, 8, 10),
-        periodicidade="Trimestral",
-        qualidade={"completude": 0.94, "acuracia": 0.93, "atualidade": 0.86},
-        licenca="OGL",
-        atribuicao_obrigatoria="DNIT",
-        restricoes="Nenhuma",
-        campos_disponiveis=["id_ponte", "nome", "rodovia", "rio", "km", "tamanho_m", "condicao", "ultimareforma"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 8, 25),
-        tempo_resposta_ms=420,
-        proxima_validacao=datetime(2026, 11, 25),
-        notas="Cadastro de 8.342 pontes em rodovias federais. Inclui condição estrutural e data de última reforma.",
-        responsavel_validacao="DNIT"
+        id="github_municipios_brasileiros",
+        nome="kelvins/municipios-brasileiros (GitHub, dataset comunitário)",
+        orgao="Comunidade (mantenedor: kelvins)",
+        categoria="territorial",
+        dataset_url="https://raw.githubusercontent.com/kelvins/municipios-brasileiros/main/json/municipios.json",
+        api_endpoint="https://raw.githubusercontent.com/kelvins/municipios-brasileiros/main/json/municipios.json",
+        api_docs_url="https://github.com/kelvins/municipios-brasileiros",
+        formato="JSON", tipo_geometria=None, sistema_coordenadas=None, cobertura_geografica="Brasil",
+        registros_totais=5571, data_atualizacao=None,
+        periodicidade="Estática (snapshot do repositório comunitário)",
+        qualidade={}, licenca="Ver licença do repositório (dataset derivado do IBGE)",
+        atribuicao_obrigatoria="kelvins/municipios-brasileiros", restricoes="Nenhuma",
+        campos_disponiveis=["codigo_ibge", "nome", "codigo_uf", "latitude", "longitude"],
+        status=SourceStatus.ATIVO, data_ultimo_teste=None, tempo_resposta_ms=None,
+        proxima_validacao=datetime(2026, 12, 1),
+        notas="Único ponto do app que fornece latitude/longitude de município diretamente — a API "
+              "oficial do IBGE (ibge_localidades_api) não traz essas coordenadas.",
+        responsavel_validacao=None, modo_acesso="api_rest_ao_vivo",
+        uso_no_motor="streamlit_app._carregar_municipios_fallback_github (fallback quando a API "
+                     "IBGE falha/está incompleta; cache de 30 dias)",
     ))
 
     registry.register(SourceRegistry(
-        id="dnit_obras_interdacoes",
-        nome="DNIT - Obras e Interdições",
-        orgao="DNIT",
-        categoria="rodoviaria",
-        dataset_url="https://dados.gov.br/dataset/obras-interdacoes-dnit",
-        api_endpoint="https://api.dnit.gov.br/obras",
-        api_docs_url="https://www.dnit.gov.br/api-docs",
-        formato="REST/JSON",
-        tipo_geometria="Point",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=1234,
-        data_atualizacao=datetime(2025, 8, 5),
-        periodicidade="Diária",
-        qualidade={"completude": 0.89, "acuracia": 0.90, "atualidade": 0.95},
-        licenca="CC0",
-        atribuicao_obrigatoria="Nenhuma",
-        restricoes="Nenhuma",
-        campos_disponiveis=["id_obra", "rodovia", "tipo", "inicio", "fim", "latitude", "longitude", "descricao"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 5),
-        tempo_resposta_ms=250,
-        proxima_validacao=datetime(2026, 9, 12),
-        notas="Obras em execução e interdições em rodovias federais. Atualizado diariamente.",
-        responsavel_validacao="DNIT"
-    ))
-
-    registry.register(SourceRegistry(
-        id="dnit_pavimento_condicoes",
-        nome="DNIT - Condição de Pavimento",
-        orgao="DNIT",
-        categoria="rodoviaria",
-        dataset_url="https://dados.gov.br/dataset/condicao-pavimento-dnit",
-        api_endpoint=None,
-        api_docs_url="https://www.dnit.gov.br/",
-        formato="CSV",
-        tipo_geometria="LineString",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=1095,
-        data_atualizacao=datetime(2025, 6, 15),
-        periodicidade="Anual",
-        qualidade={"completude": 0.92, "acuracia": 0.91, "atualidade": 0.82},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="DNIT",
-        restricoes="Nenhuma",
-        campos_disponiveis=["rodovia", "trecho", "condicao_geral", "defeitos_percentual", "ultim_avaliacao"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 8, 30),
-        tempo_resposta_ms=None,
-        proxima_validacao=datetime(2026, 11, 30),
-        notas="Avaliação de condição de pavimento em rodovias federais. Baseado em inspeções visuais e técnicas.",
-        responsavel_validacao="DNIT"
-    ))
-
-    registry.register(SourceRegistry(
-        id="dnit_trafego_dados",
-        nome="DNIT - Dados de Tráfego",
-        orgao="DNIT",
-        categoria="rodoviaria",
-        dataset_url="https://www.gov.br/dnit/pt-br/",
-        api_endpoint="https://api.dnit.gov.br/trafego",
-        api_docs_url="https://www.dnit.gov.br/api-docs",
-        formato="REST/JSON",
-        tipo_geometria="Point",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=450,
-        data_atualizacao=datetime(2025, 8, 1),
-        periodicidade="Horária",
-        qualidade={"completude": 0.88, "acuracia": 0.87, "atualidade": 0.94},
-        licenca="OGL",
-        atribuicao_obrigatoria="DNIT",
-        restricoes="Nenhuma",
-        campos_disponiveis=["estacao_id", "rodovia", "km", "veiculo_hora", "velocidade_media", "timestamp"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 4),
-        tempo_resposta_ms=310,
-        proxima_validacao=datetime(2026, 9, 18),
-        notas="Dados de tráfego de 450+ estações de contagem em rodovias federais. Atualização horária.",
-        responsavel_validacao="DNIT"
+        id="sedes_oficiais_ibge_csv",
+        nome="Sedes oficiais dos municípios (sedes_oficiais_ibge.csv)",
+        orgao="IBGE",
+        categoria="territorial",
+        dataset_url="arquivo local vendorizado — origem: IBGE",
+        api_endpoint=None, api_docs_url=None,
+        formato="CSV", tipo_geometria="Point", sistema_coordenadas="EPSG:4326",
+        cobertura_geografica="Brasil", registros_totais=5571, data_atualizacao=None,
+        periodicidade="Estática", qualidade={"completude": 1.0}, licenca="Domínio público",
+        atribuicao_obrigatoria="IBGE", restricoes="Nenhuma",
+        campos_disponiveis=["codigo_ibge", "lat", "lon"],
+        status=SourceStatus.ATIVO, data_ultimo_teste=None, tempo_resposta_ms=None,
+        proxima_validacao=datetime(2026, 12, 1),
+        notas="Tabela mínima por design (3 colunas) — todas usadas. Tem fallback embutido em base64 "
+              "(_SEDES_OFICIAIS_B64) para deploys em nuvem onde o CSV pode não estar presente.",
+        responsavel_validacao=None, modo_acesso="arquivo_local",
+        uso_no_motor="streamlit_app (lookup direto de centróide oficial por código IBGE)",
     ))
 
     # =====================================================================
-    # 5. ANTT (Agência Nacional de Transportes Terrestres) - 3 sources
+    # Infraestrutura de dados (não é uma "fonte" temática, mas é onde os
+    # arquivos pesados demais para o GitHub principal são hospedados)
     # =====================================================================
 
     registry.register(SourceRegistry(
-        id="antt_rodovias_concedidas",
-        nome="ANTT - Rodovias Concedidas (Concessões)",
-        orgao="ANTT",
-        categoria="rodoviaria",
-        dataset_url="https://www.antt.gov.br/rodovias/concessoes",
-        api_endpoint="https://api.antt.gov.br/concessoes",
-        api_docs_url="https://www.antt.gov.br/api-docs",
-        formato="GeoJSON",
-        tipo_geometria="LineString",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=356,
-        data_atualizacao=datetime(2025, 7, 20),
-        periodicidade="Trimestral",
-        qualidade={"completude": 0.96, "acuracia": 0.94, "atualidade": 0.89},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="ANTT",
+        id="github_release_openrotas_dados",
+        nome="GitHub Releases — lucascardosolccr/openrotas-dados (bootstrap de dados pesados)",
+        orgao="Projeto OpenRotas (hospedagem própria)",
+        categoria="infra_dados",
+        dataset_url="https://github.com/lucascardosolccr/openrotas-dados/releases/download/dados-geoespaciais-v1/",
+        api_endpoint=None, api_docs_url=None,
+        formato="Parquet / CSV (download binário via urllib)",
+        tipo_geometria=None, sistema_coordenadas=None, cobertura_geografica="Brasil",
+        registros_totais=None, data_atualizacao=None,
+        periodicidade="Ad-hoc (mesma cadência do build das camadas derivadas)",
+        qualidade={}, licenca="Mesma licença dos dados de origem (IBGE/ANA)",
+        atribuicao_obrigatoria="N/A (é hospedagem, não fonte de dados própria)",
         restricoes="Nenhuma",
-        campos_disponiveis=["id_concessao", "nome_concessao", "rodovias", "extensao_km", "operador", "vencimento"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 8, 22),
-        tempo_resposta_ms=360,
-        proxima_validacao=datetime(2026, 11, 22),
-        notas="Rodovias federais concedidas à iniciativa privada. 356 trechos com informações de concessionária.",
-        responsavel_validacao="ANTT"
-    ))
-
-    registry.register(SourceRegistry(
-        id="antt_areas_concessao",
-        nome="ANTT - Áreas de Concessão",
-        orgao="ANTT",
-        categoria="rodoviaria",
-        dataset_url="https://www.antt.gov.br/",
-        api_endpoint="https://api.antt.gov.br/areas-concessao",
-        api_docs_url="https://www.antt.gov.br/api-docs",
-        formato="REST/JSON",
-        tipo_geometria="Polygon",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=89,
-        data_atualizacao=datetime(2025, 7, 15),
-        periodicidade="Semestral",
-        qualidade={"completude": 0.95, "acuracia": 0.93, "atualidade": 0.88},
-        licenca="OGL",
-        atribuicao_obrigatoria="ANTT",
-        restricoes="Nenhuma",
-        campos_disponiveis=["id_area", "concessionaria", "rodovias", "ufs", "praças_pedágio", "area_km2"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 8, 28),
-        tempo_resposta_ms=340,
-        proxima_validacao=datetime(2026, 11, 28),
-        notas="Polígonos das áreas de concessão. Inclui dados de praças de pedágio.",
-        responsavel_validacao="ANTT"
-    ))
-
-    registry.register(SourceRegistry(
-        id="antt_pracas_pedagio",
-        nome="ANTT - Praças de Pedágio",
-        orgao="ANTT",
-        categoria="rodoviaria",
-        dataset_url="https://dados.gov.br/dataset/pracas-pedagio-antt",
-        api_endpoint="https://api.antt.gov.br/pracas-pedagio",
-        api_docs_url="https://www.antt.gov.br/api-docs",
-        formato="REST/JSON",
-        tipo_geometria="Point",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=467,
-        data_atualizacao=datetime(2025, 8, 1),
-        periodicidade="Mensal",
-        qualidade={"completude": 0.94, "acuracia": 0.92, "atualidade": 0.91},
-        licenca="CC0",
-        atribuicao_obrigatoria="Nenhuma",
-        restricoes="Nenhuma",
-        campos_disponiveis=["id_praca", "nome", "rodovia", "km", "concessionaria", "latitude", "longitude", "tarifa"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 2),
-        tempo_resposta_ms=290,
-        proxima_validacao=datetime(2026, 10, 2),
-        notas="467 praças de pedágio com localização, tarifa e operador. Atualizado mensalmente.",
-        responsavel_validacao="ANTT"
+        campos_disponiveis=["drenagem.parquet (451,4 MB)", "rodovias.parquet (121,7 MB)",
+                             "snirh_estacaos.csv (91,1 MB)"],
+        status=SourceStatus.ATIVO, data_ultimo_teste=None, tempo_resposta_ms=None,
+        proxima_validacao=datetime(2026, 12, 1),
+        notas="Existe só porque esses 3 arquivos excedem o limite de 100MB do GitHub para o "
+              "repositório principal — não é uma fonte de dados original.",
+        responsavel_validacao=None, modo_acesso="download_sob_demanda",
+        uso_no_motor="inteligencia_geoespacial.dados_bootstrap.baixar_ausentes",
     ))
 
     # =====================================================================
-    # 6. DERs (Departamentos de Estradas de Rodagem - State Level) - 5 sources
+    # Dado órfão encontrado na auditoria — sem nenhum código que o referencie
     # =====================================================================
 
     registry.register(SourceRegistry(
-        id="der_sp_rodovias_estaduais",
-        nome="DER-SP - Rodovias Estaduais São Paulo",
-        orgao="DER-SP",
-        categoria="rodoviaria",
-        dataset_url="https://www.der.sp.gov.br/",
-        api_endpoint="https://api.der.sp.gov.br/rodovias",
-        api_docs_url="https://www.der.sp.gov.br/dados-abertos",
-        formato="GeoJSON",
-        tipo_geometria="LineString",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="São Paulo",
-        registros_totais=787,
-        data_atualizacao=datetime(2025, 8, 5),
-        periodicidade="Trimestral",
-        qualidade={"completude": 0.96, "acuracia": 0.95, "atualidade": 0.90},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="DER-SP",
-        restricoes="Nenhuma",
-        campos_disponiveis=["numero_rodovia", "nome", "extensao_km", "condicao", "municipios"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 8, 30),
-        tempo_resposta_ms=380,
-        proxima_validacao=datetime(2026, 11, 30),
-        notas="Rede de rodovias estaduais do Estado de São Paulo. 787 segmentos com dados de pavimentação.",
-        responsavel_validacao="DER-SP"
-    ))
-
-    registry.register(SourceRegistry(
-        id="der_mg_rodovias_estaduais",
-        nome="DER-MG - Rodovias Estaduais Minas Gerais",
-        orgao="DER-MG",
-        categoria="rodoviaria",
-        dataset_url="https://www.der.mg.gov.br/",
-        api_endpoint=None,
-        api_docs_url="https://www.der.mg.gov.br/",
-        formato="Shapefile",
-        tipo_geometria="LineString",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Minas Gerais",
-        registros_totais=654,
-        data_atualizacao=datetime(2025, 7, 30),
-        periodicidade="Semestral",
-        qualidade={"completude": 0.94, "acuracia": 0.93, "atualidade": 0.88},
-        licenca="OGL",
-        atribuicao_obrigatoria="DER-MG",
-        restricoes="Nenhuma",
-        campos_disponiveis=["numero_rodovia", "nome", "extensao_km", "tipo_rodovia", "municipios"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 8, 28),
-        tempo_resposta_ms=None,
-        proxima_validacao=datetime(2026, 11, 28),
-        notas="Rede de rodovias estaduais de Minas Gerais. Download em Shapefile via portal DER-MG.",
-        responsavel_validacao="DER-MG"
-    ))
-
-    registry.register(SourceRegistry(
-        id="der_ba_rodovias_estaduais",
-        nome="DER-BA - Rodovias Estaduais Bahia",
-        orgao="DER-BA",
-        categoria="rodoviaria",
-        dataset_url="https://www.derba.gov.br/",
-        api_endpoint=None,
-        api_docs_url="https://www.derba.gov.br/",
-        formato="CSV",
-        tipo_geometria="LineString",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Bahia",
-        registros_totais=512,
-        data_atualizacao=datetime(2025, 7, 15),
-        periodicidade="Anual",
-        qualidade={"completude": 0.90, "acuracia": 0.89, "atualidade": 0.85},
-        licenca="CC0",
-        atribuicao_obrigatoria="Nenhuma",
-        restricoes="Nenhuma",
-        campos_disponiveis=["rodovia", "extensao_km", "condicao", "ultima_manutencao"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 8, 20),
-        tempo_resposta_ms=None,
-        proxima_validacao=datetime(2026, 11, 20),
-        notas="Rodovias estaduais da Bahia. Dados em CSV via portal DER-BA.",
-        responsavel_validacao="DER-BA"
-    ))
-
-    registry.register(SourceRegistry(
-        id="der_pr_rodovias_estaduais",
-        nome="DER-PR - Rodovias Estaduais Paraná",
-        orgao="DER-PR",
-        categoria="rodoviaria",
-        dataset_url="https://www.der.pr.gov.br/",
-        api_endpoint=None,
-        api_docs_url="https://www.der.pr.gov.br/",
-        formato="Shapefile",
-        tipo_geometria="LineString",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Paraná",
-        registros_totais=623,
-        data_atualizacao=datetime(2025, 8, 1),
-        periodicidade="Semestral",
-        qualidade={"completude": 0.93, "acuracia": 0.92, "atualidade": 0.87},
-        licenca="OGL",
-        atribuicao_obrigatoria="DER-PR",
-        restricoes="Nenhuma",
-        campos_disponiveis=["rodovia", "extensao_km", "condicao", "municipios"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 8, 25),
-        tempo_resposta_ms=None,
-        proxima_validacao=datetime(2026, 11, 25),
-        notas="Rodovias estaduais do Paraná. Download em Shapefile.",
-        responsavel_validacao="DER-PR"
-    ))
-
-    registry.register(SourceRegistry(
-        id="der_sc_rodovias_estaduais",
-        nome="DER-SC - Rodovias Estaduais Santa Catarina",
-        orgao="DER-SC",
-        categoria="rodoviaria",
-        dataset_url="https://www.der.sc.gov.br/",
-        api_endpoint=None,
-        api_docs_url="https://www.der.sc.gov.br/",
-        formato="GeoJSON",
-        tipo_geometria="LineString",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Santa Catarina",
-        registros_totais=498,
-        data_atualizacao=datetime(2025, 7, 20),
-        periodicidade="Semestral",
-        qualidade={"completude": 0.94, "acuracia": 0.91, "atualidade": 0.86},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="DER-SC",
-        restricoes="Nenhuma",
-        campos_disponiveis=["rodovia", "nome", "extensao_km", "condicao"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 8, 22),
-        tempo_resposta_ms=None,
-        proxima_validacao=datetime(2026, 11, 22),
-        notas="Rodovias estaduais de Santa Catarina em GeoJSON.",
-        responsavel_validacao="DER-SC"
-    ))
-
-    # =====================================================================
-    # 7. PRF (Polícia Rodoviária Federal) - 4 sources
-    # =====================================================================
-
-    registry.register(SourceRegistry(
-        id="prf_acidentes_rodoviarios",
-        nome="PRF - Acidentes em Rodovias Federais",
-        orgao="PRF",
-        categoria="rodoviaria",
-        dataset_url="https://www.gov.br/prf/pt-br/acesso-informacao/dados-abertos",
-        api_endpoint="https://api.prf.gov.br/acidentes",
-        api_docs_url="https://www.prf.gov.br/api-docs",
-        formato="REST/JSON",
-        tipo_geometria="Point",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=450000,
-        data_atualizacao=datetime(2025, 8, 5),
-        periodicidade="Diária",
-        qualidade={"completude": 0.88, "acuracia": 0.85, "atualidade": 0.97},
-        licenca="CC0",
-        atribuicao_obrigatoria="Nenhuma",
-        restricoes="Nenhuma",
-        campos_disponiveis=["id_acidente", "data", "rodovia", "km", "tipo_acidente", "vitimas", "latitude", "longitude"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 5),
-        tempo_resposta_ms=320,
-        proxima_validacao=datetime(2026, 9, 12),
-        notas="Dados históricos e em tempo real de acidentes em rodovias federais. ~450k registros.",
-        responsavel_validacao="PRF"
-    ))
-
-    registry.register(SourceRegistry(
-        id="prf_bloqueios_interdacoes",
-        nome="PRF - Bloqueios e Interdições",
-        orgao="PRF",
-        categoria="rodoviaria",
-        dataset_url="https://www.gov.br/prf/pt-br/",
-        api_endpoint="https://api.prf.gov.br/bloqueios",
-        api_docs_url="https://www.prf.gov.br/api-docs",
-        formato="REST/JSON",
-        tipo_geometria="Point",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=8000,
-        data_atualizacao=datetime(2025, 8, 4),
-        periodicidade="Horária",
-        qualidade={"completume": 0.92, "acuracia": 0.88, "atualidade": 0.98},
-        licenca="CC-BY",
-        atribuicao_obrigatoria="PRF",
-        restricoes="Nenhuma",
-        campos_disponiveis=["id_bloqueio", "data", "rodovia", "km", "motivo", "status", "latitude", "longitude"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 5),
-        tempo_resposta_ms=280,
-        proxima_validacao=datetime(2026, 9, 12),
-        notas="Bloqueios, interdições e fechamentos em rodovias federais. Atualizado a cada hora.",
-        responsavel_validacao="PRF"
-    ))
-
-    registry.register(SourceRegistry(
-        id="prf_ocorrencias_pontos_criticos",
-        nome="PRF - Ocorrências & Pontos Críticos",
-        orgao="PRF",
-        categoria="rodoviaria",
-        dataset_url="https://dados.gov.br/dataset/ocorrencias-prf",
-        api_endpoint="https://api.prf.gov.br/ocorrencias",
-        api_docs_url="https://www.prf.gov.br/api-docs",
-        formato="REST/JSON",
-        tipo_geometria="Point",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=125000,
-        data_atualizacao=datetime(2025, 8, 3),
-        periodicidade="Diária",
-        qualidade={"completude": 0.85, "acuracia": 0.83, "atualidade": 0.96},
-        licenca="CC0",
-        atribuicao_obrigatoria="Nenhuma",
-        restricoes="Nenhuma",
-        campos_disponiveis=["id_ocorrencia", "data", "tipo", "rodovia", "km", "latitude", "longitude", "descricao"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 5),
-        tempo_resposta_ms=360,
-        proxima_validacao=datetime(2026, 9, 19),
-        notas="Ocorrências gerais (roubo, assalto, apreensão, etc). Inclui identificação de pontos críticos.",
-        responsavel_validacao="PRF"
-    ))
-
-    registry.register(SourceRegistry(
-        id="prf_rodovias_federais_info",
-        nome="PRF - Dados Gerais de Rodovias Federais",
-        orgao="PRF",
-        categoria="rodoviaria",
-        dataset_url="https://www.gov.br/prf/pt-br/",
-        api_endpoint=None,
-        api_docs_url="https://www.prf.gov.br/",
-        formato="CSV",
-        tipo_geometria="LineString",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=1095,
-        data_atualizacao=datetime(2025, 7, 15),
-        periodicidade="Trimestral",
-        qualidade={"completude": 0.91, "acuracia": 0.89, "atualidade": 0.84},
-        licenca="OGL",
-        atribuicao_obrigatoria="PRF",
-        restricoes="Nenhuma",
-        campos_disponiveis=["rodovia", "extensao_km", "uf_origem", "uf_destino", "condicao"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 8, 18),
-        tempo_resposta_ms=None,
-        proxima_validacao=datetime(2026, 11, 18),
-        notas="Informações gerais de rodovias federais sob atuação da PRF.",
-        responsavel_validacao="PRF"
-    ))
-
-    # =====================================================================
-    # 8. INPE/CPTEC/CEMADEN/INMET (Environmental/Meteorological) - 7 sources
-    # =====================================================================
-
-    registry.register(SourceRegistry(
-        id="inpe_satelites_landsat",
-        nome="INPE - Imagens de Satélite (Landsat)",
-        orgao="INPE",
-        categoria="ambiental",
-        dataset_url="https://www.inpe.gov.br/",
-        api_endpoint="https://landsatexplorer.usgs.gov/",
-        api_docs_url="https://www.inpe.gov.br/",
-        formato="GeoTIFF",
-        tipo_geometria="Polygon",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=None,
-        data_atualizacao=datetime(2025, 8, 1),
-        periodicidade="Contínuo",
-        qualidade={"completude": 0.90, "acuracia": 0.88, "atualidade": 0.92},
-        licenca="CC0",
-        atribuicao_obrigatoria="Nenhuma",
-        restricoes="Nenhuma",
-        campos_disponiveis=["banda", "data_aquisicao", "cobertura_nuvem", "path_row"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 8, 20),
-        tempo_resposta_ms=None,
-        proxima_validacao=datetime(2026, 11, 20),
-        notas="Acesso a imagens Landsat para Brasil através de arquivos do INPE. Resolução 30m.",
-        responsavel_validacao="INPE"
-    ))
-
-    registry.register(SourceRegistry(
-        id="cptec_previsao_chuva",
-        nome="CPTEC - Previsão de Precipitação",
-        orgao="CPTEC",
-        categoria="ambiental",
-        dataset_url="https://www.cptec.inpe.gov.br/",
-        api_endpoint="https://api.cptec.inpe.gov.br/v1/tempo",
-        api_docs_url="https://www.cptec.inpe.gov.br/api",
-        formato="REST/JSON",
-        tipo_geometria="Point",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=5570,
-        data_atualizacao=datetime(2025, 8, 5),
-        periodicidade="Diária",
-        qualidade={"completude": 0.98, "acuracia": 0.85, "atualidade": 0.99},
-        licenca="CC0",
-        atribuicao_obrigatoria="Nenhuma",
-        restricoes="Nenhuma",
-        campos_disponiveis=["municipio_codigo", "nome_municipio", "chuva_mm", "temperatura_max", "temperatura_min", "data_previsao"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 5),
-        tempo_resposta_ms=200,
-        proxima_validacao=datetime(2026, 9, 12),
-        notas="Previsão de chuva para 5+ dias para todos os municípios brasileiros. API com limite de 60 req/min.",
-        responsavel_validacao="CPTEC"
-    ))
-
-    registry.register(SourceRegistry(
-        id="cemaden_alertas_desastres",
-        nome="CEMADEN - Alertas de Desastres Naturais",
-        orgao="CEMADEN",
-        categoria="ambiental",
-        dataset_url="https://www.cemaden.gov.br/",
-        api_endpoint="https://api.cemaden.gov.br/alertas",
-        api_docs_url="https://www.cemaden.gov.br/api",
-        formato="REST/JSON",
-        tipo_geometria="Point",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=5570,
-        data_atualizacao=datetime(2025, 8, 5),
-        periodicidade="Horária",
-        qualidade={"completude": 0.96, "acuracia": 0.94, "atualidade": 0.99},
-        licenca="CC0",
-        atribuicao_obrigatoria="Nenhuma",
-        restricoes="Nenhuma",
-        campos_disponiveis=["municipio_codigo", "nome_municipio", "tipo_alerta", "risco_nível", "timestamp", "latitude", "longitude"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 5),
-        tempo_resposta_ms=180,
-        proxima_validacao=datetime(2026, 9, 12),
-        notas="Alertas em tempo real de desastres naturais (chuva, deslizamento, enchente, etc). Monitoramento contínuo.",
-        responsavel_validacao="CEMADEN"
-    ))
-
-    registry.register(SourceRegistry(
-        id="inmet_estacoes_meteo",
-        nome="INMET - Estações Meteorológicas",
-        orgao="INMET",
-        categoria="ambiental",
-        dataset_url="https://www.inmet.gov.br/",
-        api_endpoint="https://api.inmet.gov.br/v1/estacoes",
-        api_docs_url="https://www.inmet.gov.br/api",
-        formato="REST/JSON",
-        tipo_geometria="Point",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=567,
-        data_atualizacao=datetime(2025, 8, 5),
-        periodicidade="Horária",
-        qualidade={"completude": 0.97, "acuracia": 0.96, "atualidade": 0.99},
-        licenca="CC0",
-        atribuicao_obrigatoria="Nenhuma",
-        restricoes="Nenhuma",
-        campos_disponiveis=["codigo_estacao", "nome_estacao", "uf", "temperatura", "umidade", "pressao", "vento", "chuva", "timestamp"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 5),
-        tempo_resposta_ms=220,
-        proxima_validacao=datetime(2026, 9, 12),
-        notas="567 estações meteorológicas com dados horários. Temperatura, umidade, pressão, vento, precipitação.",
-        responsavel_validacao="INMET"
-    ))
-
-    registry.register(SourceRegistry(
-        id="inmet_dados_horarios_csv",
-        nome="INMET - Dados Horários (CSV)",
-        orgao="INMET",
-        categoria="ambiental",
-        dataset_url="https://dados.gov.br/dataset/estacoes-meteorologicas-inmet",
-        api_endpoint=None,
-        api_docs_url="https://www.inmet.gov.br/",
-        formato="CSV",
-        tipo_geometria="Point",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=567,
-        data_atualizacao=datetime(2025, 8, 4),
-        periodicidade="Horária",
-        qualidade={"completude": 0.95, "acuracia": 0.95, "atualidade": 0.98},
-        licenca="CC0",
-        atribuicao_obrigatoria="Nenhuma",
-        restricoes="Nenhuma",
-        campos_disponiveis=["estacao_id", "data", "hora", "temperatura", "umidade", "pressao"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 8, 28),
-        tempo_resposta_ms=None,
-        proxima_validacao=datetime(2026, 11, 28),
-        notas="Download de dados horários de estações meteorológicas em CSV.",
-        responsavel_validacao="INMET"
-    ))
-
-    registry.register(SourceRegistry(
-        id="cemaden_monitoramento_tempo_real",
-        nome="CEMADEN - Monitoramento em Tempo Real",
-        orgao="CEMADEN",
-        categoria="ambiental",
-        dataset_url="https://www.cemaden.gov.br/",
-        api_endpoint="https://api.cemaden.gov.br/tempo-real",
-        api_docs_url="https://www.cemaden.gov.br/api",
-        formato="REST/JSON",
-        tipo_geometria="Point",
-        sistema_coordenadas="EPSG:4326",
-        cobertura_geografica="Brasil",
-        registros_totais=5570,
-        data_atualizacao=datetime(2025, 8, 5),
-        periodicidade="Contínuo",
-        qualidade={"completude": 0.94, "acuracia": 0.92, "atualidade": 1.0},
-        licenca="CC0",
-        atribuicao_obrigatoria="Nenhuma",
-        restricoes="Nenhuma",
-        campos_disponiveis=["municipio", "chuva_acumulada", "risco_atual", "risco_previsto_24h", "timestamp"],
-        status=SourceStatus.ATIVO,
-        data_ultimo_teste=datetime(2026, 9, 5),
-        tempo_resposta_ms=160,
-        proxima_validacao=datetime(2026, 9, 12),
-        notas="Monitoramento em tempo real com WebSocket. Chuva acumulada de 24h e previsão de risco para próximas 24h.",
-        responsavel_validacao="CEMADEN"
+        id="localidades_brasil_shp_orfao",
+        nome="Localidades_Brasil_shp.zip (arquivo órfão, 4,5 MB)",
+        orgao="Desconhecido (não documentado)",
+        categoria="orfao",
+        dataset_url="arquivo local no repositório",
+        api_endpoint=None, api_docs_url=None,
+        formato="Shapefile (zip)", tipo_geometria=None, sistema_coordenadas=None,
+        cobertura_geografica="Brasil (presumido pelo nome)", registros_totais=None,
+        data_atualizacao=None, periodicidade="N/A",
+        qualidade={}, licenca="Desconhecida", atribuicao_obrigatoria="Desconhecida",
+        restricoes="Desconhecidas — origem não documentada",
+        campos_disponiveis=[],
+        status=SourceStatus.INATIVO, data_ultimo_teste=None, tempo_resposta_ms=None,
+        proxima_validacao=datetime(2026, 12, 1),
+        notas="grep em todo o repositório não encontrou NENHUMA referência de código a este "
+              "arquivo. Candidato a remoção ou a ser documentado/integrado numa rodada futura — "
+              "registrado aqui para não ficar invisível ao inventário (§21 da missão).",
+        responsavel_validacao=None, modo_acesso="informativo_apenas",
+        uso_no_motor="",
     ))
 
     return registry
+
+
+# Instância pronta para uso — quem importar este módulo já recebe o catálogo real
+# populado (ao contrário da versão anterior, onde populate_sources() nunca era chamada).
+REGISTRO_REAL = populate_sources()
+
+
+# ==============================================================================
+# Saúde dos Dados (Rodada 11, Missão 2 — extração máxima §19): "FONTES ATIVAS,
+# APIs FUNCIONAIS, DATASETS DISPONÍVEIS, DATASETS DESATUALIZADOS, COBERTURA,
+# QUALIDADE, ÚLTIMA ATUALIZAÇÃO" — tudo a partir de checagens 100% LOCAIS
+# (existência de arquivo, metadados de Parquet, manifest.json, mtime). Nunca
+# faz uma chamada de rede: "APIs funcionais" aqui significa "declaradas como
+# api_rest_ao_vivo no catálogo real" (Rodada 2), não um teste ao vivo — esta
+# missão decidiu explicitamente não fazer novas chamadas de rede (§ decisão
+# de escopo do bloco 1). "ERROS DE CONSULTA" do §19 da missão não é reportado
+# aqui: exigiria telemetria de execução ao vivo que este projeto não mantém
+# hoje — omitido em vez de fabricado.
+# ==============================================================================
+
+def saude_dos_dados() -> dict:
+    """Relatório de saúde 100% local (sem rede) do conjunto de dados.
+    Fail-open: qualquer falha parcial de leitura (arquivo corrompido,
+    manifest ausente) aparece como campo `None`/lista vazia, nunca quebra
+    o relatório inteiro nem inventa um valor."""
+    import os
+
+    registry = populate_sources()
+    fontes = list(registry.sources.values())
+    ativas = [s for s in fontes if s.status == SourceStatus.ATIVO]
+    em_teste = [s for s in fontes if s.status == SourceStatus.EM_TESTE]
+    apis_vivas = [s for s in fontes if s.modo_acesso == "api_rest_ao_vivo"]
+
+    raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    manifest_path = os.path.join(raiz, "data", "brasil", "ibge", "derivadas", "manifest.json")
+    manifest: dict = {}
+    try:
+        with open(manifest_path, encoding="utf-8") as f:
+            manifest = json.load(f)
+    except Exception:
+        manifest = {}
+
+    camadas_status = []
+    for camada, info in manifest.get("camadas", {}).items():
+        caminho = os.path.join(raiz, "data", "brasil", "ibge", "derivadas", camada + ".parquet")
+        existe = os.path.exists(caminho)
+        registros_manifest = info.get("registros")
+        registros_reais = None
+        mtime = None
+        if existe:
+            try:
+                import pyarrow.parquet as _pq
+                registros_reais = _pq.ParquetFile(caminho).metadata.num_rows
+            except Exception:
+                registros_reais = None
+            try:
+                mtime = datetime.fromtimestamp(os.path.getmtime(caminho))
+            except Exception:
+                mtime = None
+        camadas_status.append({
+            "camada": camada,
+            "existe": existe,
+            "registros_manifest": registros_manifest,
+            "registros_reais": registros_reais,
+            "bate_com_manifest": (registros_reais == registros_manifest)
+                                  if (existe and registros_reais is not None) else None,
+            "ultima_modificacao": mtime,
+        })
+
+    bootstrap_ausentes: list = []
+    try:
+        from . import dados_bootstrap as _boot
+        bootstrap_ausentes = _boot.ausentes()
+    except Exception:
+        bootstrap_ausentes = []
+
+    completudes = [s.qualidade.get("completude") for s in fontes
+                   if isinstance(s.qualidade, dict) and s.qualidade.get("completude") is not None]
+    qualidade_media = (sum(completudes) / len(completudes)) if completudes else None
+
+    return {
+        "gerado_em": datetime.utcnow(),
+        "fontes_catalogadas": len(fontes),
+        "fontes_ativas": len(ativas),
+        "fontes_em_teste": len(em_teste),
+        "apis_ao_vivo": len(apis_vivas),
+        "camadas_ibge": camadas_status,
+        "camadas_com_arquivo_presente": sum(1 for c in camadas_status if c["existe"]),
+        "camadas_total": len(camadas_status),
+        "camadas_divergentes_do_manifest": [c["camada"] for c in camadas_status if c["bate_com_manifest"] is False],
+        "bootstrap_ausentes": bootstrap_ausentes,
+        "extraido_em_utc_manifest": manifest.get("extraido_em_utc"),
+        "qualidade_media_completude": qualidade_media,
+    }

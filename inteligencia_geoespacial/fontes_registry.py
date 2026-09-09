@@ -30,7 +30,7 @@ class SourceRegistry:
     # Cobertura e Qualidade
     cobertura_geografica: str  # "Brasil", "Região Amazônia", "Zona Costeira"
     registros_totais: Optional[int]  # number of features
-    data_atualizacao: datetime
+    data_atualizacao: Optional[datetime]  # None = data de atualização da fonte não é conhecida (nunca fabricar uma)
     periodicidade: str  # "Mensal", "Trimestral", "Anual", "Ad-hoc"
     qualidade: Dict[str, float]  # {"completude": 0.95, "acuracia": 0.92, "atualidade": 0.88}
 
@@ -49,6 +49,12 @@ class SourceRegistry:
     proxima_validacao: datetime
     notas: str
     responsavel_validacao: Optional[str]
+
+    # Uso real na aplicação (Rodada 2 da missão "extração máxima de APIs/datasets"):
+    # honestidade sobre COMO a fonte é acessada e ONDE ela é de fato consumida —
+    # nunca "✅ API REST funcional" para algo que o código nunca chama.
+    modo_acesso: str = "arquivo_local"  # "api_rest_ao_vivo" | "arquivo_local" | "download_sob_demanda" | "informativo_apenas"
+    uso_no_motor: str = ""  # onde/como esta fonte é de fato consumida hoje (arquivo:função) — "" se não usada
 
 class SourcesRegistry:
     def __init__(self):
@@ -78,13 +84,17 @@ class SourcesRegistry:
         for source in self.sources.values():
             data.append({
                 'ID': source.id,
+                'Fonte': source.nome,
                 'Órgão': source.orgao,
                 'Categoria': source.categoria,
                 'Formato': source.formato,
+                'Modo de acesso': source.modo_acesso,
                 'Status': source.status.value,
                 'Registros': source.registros_totais or "N/A",
-                'Atualização': source.data_atualizacao.strftime('%Y-%m-%d'),
+                'Atualização': source.data_atualizacao.strftime('%Y-%m-%d') if source.data_atualizacao else "Não informada",
                 'Cobertura': source.cobertura_geografica,
+                'Endpoint/Caminho': source.api_endpoint or source.dataset_url or "—",
+                'Uso no motor hoje': source.uso_no_motor or "Não integrado ao pipeline automático",
                 'Licença': source.licenca,
                 'Nota': source.notas
             })

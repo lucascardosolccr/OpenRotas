@@ -43,6 +43,21 @@ from typing import NamedTuple, List
 import altair as alt
 import plotly.express as px
 import plotly.graph_objects as go
+
+# [PLOTLY-COMPAT - Rodada 7/Missão 2] Plotly >=6.2 usa Scattermapbox/
+# scatter_mapbox + parâmetros "mapbox*"; Plotly >=7 renomeou tudo para
+# Scattermap/scatter_map + "map*" (a família *mapbox foi descontinuada).
+# requirements.txt só fixa `plotly>=6.2.0` sem teto — resolvido neste
+# ambiente para 7.0.0, onde Scattermapbox/scatter_mapbox não existem mais
+# (achado ao testar o mapa temático novo da Rodada 7: várias figuras de
+# mapa já existentes no app dependiam da API antiga e silenciosamente
+# devolviam None/figura vazia por causa de try/except amplos ao redor).
+# Resolvido uma vez aqui, reutilizado por toda função de mapa do arquivo.
+_GO_SCATTER_MAPA = getattr(go, "Scattermap", None) or go.Scattermapbox
+_MAPA_LAYOUT_CHAVE = "map" if hasattr(go, "Scattermap") else "mapbox"
+_PX_SCATTER_MAPA = getattr(px, "scatter_map", None) or px.scatter_mapbox
+_MAPA_STYLE_KW = "map_style" if hasattr(px, "scatter_map") else "mapbox_style"
+_MAPA_LAYERS_KW = "map_layers" if hasattr(px, "scatter_map") else "mapbox_layers"
 from unidecode import unidecode
 from rapidfuzz import process, fuzz
 from diskcache import Cache
@@ -77,12 +92,14 @@ try:
     from inteligencia_geoespacial import enrichment_engine as _geo_enricher
     from inteligencia_geoespacial import xai_formatter as _geo_xai
     from inteligencia_geoespacial import dados_bootstrap as _dados_bootstrap
+    from inteligencia_geoespacial import route_context as _geo_route_context
     _BASES_LOCAIS_IBGE = True
 except Exception:
     _bases_locais_ibge = None
     _geo_enricher = None
     _geo_xai = None
     _dados_bootstrap = None
+    _geo_route_context = None
     _BASES_LOCAIS_IBGE = False
 
 # ==============================================================================
@@ -4230,6 +4247,158 @@ def _fig_fontes_rota_report(df):
         return None
 
 
+def _secao_inteligencia_geografica_html(df):
+    """[GEO-INTEL-HTML] Seção "Inteligência Geográfica" do relatório (§28 da missão de
+    reengenharia da aba de Inteligência): visão geral (rotas com rio/ponte/travessia
+    confirmados, bacias mais frequentes, dependência aquaviária e confiança médias) + tabela
+    das rotas com maior complexidade hidrográfica/aquaviária. PURA leitura do que o motor de
+    contexto geográfico (route_context.py) já computou em df_processado na Rodada 10 — não
+    recalcula nada aqui. Retorna '' (seção não aparece) se o df ainda não foi enriquecido."""
+    import html as _he2
+    try:
+        if df is None or len(df) == 0 or not _col_existente(df, "QT_RIOS"):
+            return ""
+        _n = len(df)
+        _qt_rios = pd.to_numeric(df.get("QT_RIOS"), errors="coerce").fillna(0)
+        _qt_corpos = pd.to_numeric(df.get("QT_CORPOS_DAGUA"), errors="coerce").fillna(0)
+        _qt_pontes = pd.to_numeric(df.get("QT_PONTES"), errors="coerce").fillna(0)
+        _qt_trav = pd.to_numeric(df.get("QT_TRAVESSIAS"), errors="coerce").fillna(0)
+        _dep = pd.to_numeric(df.get("Dependencia Aquaviaria"), errors="coerce")
+        _conf = pd.to_numeric(df.get("Confianca Geografica"), errors="coerce")
+        _qt_rod = pd.to_numeric(df.get("QT_RODOVIAS"), errors="coerce").fillna(0)
+        _qt_ferro = pd.to_numeric(df.get("QT_FERROVIAS"), errors="coerce").fillna(0)
+        _qt_anom = pd.to_numeric(df.get("QT_ANOMALIAS"), errors="coerce").fillna(0)
+
+        _n_com_rio = int((_qt_rios > 0).sum())
+        _n_com_ponte = int((_qt_pontes > 0).sum())
+        _n_com_trav = int((_qt_trav > 0).sum())
+        _n_sem_confirmacao = int(((_qt_rios > 0) & (_qt_pontes == 0) & (_qt_trav == 0)).sum())
+        _n_com_rod = int((_qt_rod > 0).sum())
+        _n_com_ferro = int((_qt_ferro > 0).sum())
+        _n_com_anom = int((_qt_anom > 0).sum())
+
+        _kpis = [
+            ("Rotas com rio/córrego identificado", f"{_n_com_rio:,} de {_n:,} ({(_n_com_rio / _n * 100):.0f}%)"),
+            ("Rotas com ponte confirmada no cruzamento", f"{_n_com_ponte:,}"),
+            ("Rotas com travessia aquaviária real", f"{_n_com_trav:,}"),
+            ("Cruzamentos sem ponte NEM travessia confirmada", f"{_n_sem_confirmacao:,}"),
+            ("Rotas com rodovia oficial identificada", f"{_n_com_rod:,} de {_n:,} ({(_n_com_rod / _n * 100):.0f}%)"),
+            ("Rotas com ferrovia próxima", f"{_n_com_ferro:,}"),
+            ("Rotas com anomalia geográfica detectada", f"{_n_com_anom:,} de {_n:,} ({(_n_com_anom / _n * 100):.0f}%)"),
+        ]
+        if _dep is not None and _dep.notna().any():
+            _kpis.append(("Dependência aquaviária média", f"{_dep.mean():.0f}/100"))
+        if _conf is not None and _conf.notna().any():
+            _kpis.append(("Confiança geográfica média", f"{_conf.mean():.0f}/100"))
+        _kh = "".join(f'<div class="kpi"><div class="kpi-v">{_he2.escape(str(v))}</div>'
+                      f'<div class="kpi-l">{_he2.escape(l)}</div></div>' for l, v in _kpis)
+
+        _bacias_html = ""
+        _bacia_col = _col_existente(df, "Bacia Hidrografica")
+        if _bacia_col:
+            _bc = df[_bacia_col].astype(str).str.strip()
+            _bc = _bc[~_bc.isin(["", "nan", "None"])]
+            if not _bc.empty:
+                _top_b = _bc.value_counts().head(8)
+                _rows_b = "".join(f"<tr><td>{_he2.escape(str(k))}</td><td class='r'>{int(v)}</td></tr>"
+                                  for k, v in _top_b.items())
+                _bacias_html = ("<h4>Bacias hidrográficas mais frequentes</h4>"
+                               f"<table><thead><tr><th>Bacia</th><th class='r'>Rotas</th></tr></thead>"
+                               f"<tbody>{_rows_b}</tbody></table>")
+
+        _rodovias_html = ""
+        _rod_col = _col_existente(df, "NM_RODOVIAS")
+        if _rod_col:
+            _rc = df[_rod_col].dropna().astype(str).str.strip()
+            _rc = _rc[~_rc.isin(["", "nan", "None"])]
+            if not _rc.empty:
+                _top_r = _rc.str.split(", ").explode().str.strip()
+                _top_r = _top_r[_top_r != ""].value_counts().head(10)
+                if not _top_r.empty:
+                    _rows_r = "".join(f"<tr><td>{_he2.escape(str(k))}</td><td class='r'>{int(v)}</td></tr>"
+                                      for k, v in _top_r.items())
+                    _rodovias_html = ("<h4>Rodovias mais frequentes no estudo</h4>"
+                                     f"<table><thead><tr><th>Rodovia</th><th class='r'>Rotas</th></tr></thead>"
+                                     f"<tbody>{_rows_r}</tbody></table>")
+
+        _anomalias_html = ""
+        _anom_col = _col_existente(df, "NM_ANOMALIAS")
+        if _anom_col:
+            _ac = df[_anom_col].dropna().astype(str).str.strip()
+            _ac = _ac[~_ac.isin(["", "nan", "None"])]
+            if not _ac.empty:
+                _top_a = _ac.str.split(", ").explode().str.strip()
+                _top_a = _top_a[_top_a != ""].value_counts().head(10)
+                if not _top_a.empty:
+                    _rows_a = "".join(f"<tr><td>{_he2.escape(str(k))}</td><td class='r'>{int(v)}</td></tr>"
+                                      for k, v in _top_a.items())
+                    _anomalias_html = ("<h4>Anomalias geográficas mais frequentes</h4>"
+                                      f"<table><thead><tr><th>Categoria</th><th class='r'>Rotas</th></tr></thead>"
+                                      f"<tbody>{_rows_a}</tbody></table>")
+
+        _tabela_html = ""
+        try:
+            _col_o = _col_existente(df, "Origem", "Municipio Origem")
+            _col_d = _col_existente(df, "Destino", "Municipio Destino")
+            _col_rios = _col_existente(df, "Rios Cruzados")
+            _col_pontes = _col_existente(df, "Pontes no Cruzamento")
+            _col_trav = _col_existente(df, "Travessias Aquaviarias")
+            if _col_o and _col_d:
+                _score = _qt_rios + _qt_corpos + _qt_pontes * 2 + _qt_trav * 2
+                _idx_top = _score[_score > 0].sort_values(ascending=False).head(15).index
+                if len(_idx_top):
+                    _linhas = []
+                    for _i in _idx_top:
+                        _r = df.loc[_i]
+                        _linhas.append(
+                            f"<tr><td>{_he2.escape(str(_r.get(_col_o, '—')))}</td>"
+                            f"<td>{_he2.escape(str(_r.get(_col_d, '—')))}</td>"
+                            f"<td>{_he2.escape(str(_r.get(_col_rios, '—')) if _col_rios else '—')}</td>"
+                            f"<td>{_he2.escape(str(_r.get(_col_pontes, '—')) if _col_pontes else '—')}</td>"
+                            f"<td>{_he2.escape(str(_r.get(_col_trav, '—')) if _col_trav else '—')}</td></tr>")
+                    _tabela_html = ("<h4>Rotas com maior complexidade hidrográfica/aquaviária</h4>"
+                                    "<table><thead><tr><th>Origem</th><th>Destino</th><th>Rios</th>"
+                                    "<th>Pontes</th><th>Travessias</th></tr></thead>"
+                                    f"<tbody>{''.join(_linhas)}</tbody></table>")
+        except Exception:
+            pass
+
+        _aviso_html = ""
+        if _n_sem_confirmacao:
+            _aviso_html = _caixa_explicativa(
+                "Cruzamentos sem confirmação",
+                f"{_n_sem_confirmacao} rota(s) cruzam um rio/córrego identificado mas não tiveram nem "
+                "ponte nem travessia confirmadas no raio consultado. Isso NÃO significa que a travessia "
+                "não existe — significa que a base local (IBGE BC250/BC100) não teve evidência suficiente "
+                "no raio analisado. Nunca presuma balsa nem ponte nesses casos.", "warning")
+
+        _aviso_anom_html = ""
+        _sev_col = _col_existente(df, "Anomalia Mais Severa")
+        if _sev_col:
+            _n_severa = int(df[_sev_col].astype(str).str.strip().replace(["", "nan", "None"], pd.NA).notna().sum())
+            if _n_severa:
+                _aviso_anom_html = _caixa_explicativa(
+                    "Anomalias geográficas detectadas",
+                    f"{_n_severa} rota(s) apresentam ao menos uma anomalia estruturada (categoria + "
+                    "severidade — ver route_context.Anomalia, §25-26 da missão): coordenada fora do "
+                    "Brasil, distância menor que a linha reta origem-destino, cruzamento hidrográfico "
+                    "sem confirmação, entre outras. Nenhuma anomalia é fabricada — cada uma é uma "
+                    "checagem honesta sobre os dados já coletados para aquela rota.", "warning")
+
+        return (f'<div class="kpis">{_kh}</div>' + _bacias_html + _rodovias_html + _anomalias_html
+               + _tabela_html + _aviso_html + _aviso_anom_html
+               + _caixa_explicativa(
+                   "Sobre esta seção",
+                   "Cada rota do estudo passa automaticamente pelo motor de contexto geográfico "
+                   "(inteligencia_geoespacial/route_context.py), que consulta as camadas oficiais do IBGE "
+                   "(BC250/BC100) e da ANA/SNIRH — sem GDAL, sem rede — para identificar rios, corpos "
+                   "d'água, bacia hidrográfica, pontes e travessias reais próximas ao trajeto. Nomes e "
+                   "bacias nunca são inventados: quando a base não tem correspondência exata, a célula "
+                   "fica vazia e o motivo aparece como aviso explícito.", "info"))
+    except Exception:
+        return ""
+
+
 def _gerar_relatorio_html(df, titulo="Relatório do Estudo", data_str=""):
     """[RELATORIO-HTML-PRO - 184ª geração] Relatório HTML AUTOCONTIDO (offline) de nível profissional/BI:
     capa, NAVEGAÇÃO LATERAL (sumário), cartões executivos e seções analíticas ricas — Resumo, Distribuição de
@@ -4347,6 +4516,15 @@ def _gerar_relatorio_html(df, titulo="Relatório do Estudo", data_str=""):
                              "geodésica é a linha reta corrigida, usada só quando nenhum motor encontrou rota "
                              "(tipicamente acesso fluvial/isolado). Saber a proporção evita tratar como exata "
                              "uma distância que é aproximada.", "info")))
+        # [GEO-INTEL-HTML] Inteligência Geográfica (§28 da missão): rios, bacias, pontes,
+        # travessias e dependência aquaviária que o motor de contexto geográfico identificou
+        # automaticamente em cada rota (Rodada 10). Só aparece se o df já foi enriquecido.
+        try:
+            _geo_html_sec = _secao_inteligencia_geografica_html(df)
+            if _geo_html_sec:
+                _sec.append(("inteligencia_geografica", "🧠 Inteligência Geográfica", _geo_html_sec))
+        except Exception:
+            pass
 
         if 'UF Origem' in df.columns and _dist is not None:
             _g = df.assign(_d=_dist).groupby('UF Origem').agg(Rotas=('_d', 'size'), Media=('_d', 'mean')).reset_index().sort_values('Rotas', ascending=False)
@@ -6479,9 +6657,10 @@ def _mnil_dur(seg):
 
 
 def _mnil_kpi(lbl, val, sub="", cls=""):
+    _sub_html = f'<div class="sub">{sub}</div>' if sub else ""
     return (f'<div class="kpi {cls}"><div class="lbl">{lbl}</div>'
             f'<div class="val">{val}</div>'
-            f'{f"<div class=\"sub\">{sub}</div>" if sub else ""}</div>')
+            f'{_sub_html}</div>')
 
 def _render_kpi_header_lote(df, resumo=None, tempo_seg=None):
     """Header de KPIs do Lote (read-only). Retorna '' se não houver dados — nunca levanta."""
@@ -15987,6 +16166,122 @@ def _portao_de_exibicao(chave='df_processado'):
         logger.error(f"[PORTÃO-EXIBIÇÃO] Falha: {_e}")
         return {"linhas_zero": -1, "recuperadas": 0, "irrecuperaveis": [], "ok": False,
                 "crash": f"{type(_e).__name__}: {_e}"}
+
+
+# ==============================================================================
+# [GEO-INTEL-AUTO] Motor de contexto geográfico (inteligencia_geoespacial.route_context)
+# aplicado automaticamente na FRONTEIRA DE EXIBIÇÃO — mesmo espírito do PORTÃO acima
+# (roda sempre que o df vai ser mostrado, não depende de qual caminho o produziu),
+# mas para uma preocupação diferente: anexar o contexto geográfico (rios, bacia,
+# pontes, travessias, dependência aquaviária) que hoje só existe atrás de um botão
+# manual nas abas "Rotas com Balsa"/"Geoespacial IBGE". Aditivo: só ACRESCENTA
+# colunas no final; nunca altera Distância/Vencedor/Score. Fail-open total.
+# ==============================================================================
+
+_GEO_INTEL_COLUNAS = ("Rios Cruzados", "Bacia Hidrografica", "Pontes no Cruzamento",
+                      "Travessias Aquaviarias", "Dependencia Aquaviaria", "Confianca Geografica",
+                      "QT_RIOS", "QT_CORPOS_DAGUA", "NM_CORPOS_DAGUA", "QT_PONTES", "QT_TRAVESSIAS",
+                      "QT_HIDROVIAS", "NM_HIDROVIAS", "QT_PORTOS_TERMINAIS",
+                      "Rodovias Identificadas", "QT_RODOVIAS", "NM_RODOVIAS",
+                      "Ferrovias Proximas", "QT_FERROVIAS", "NM_FERROVIAS",
+                      "Sub Bacia Codigo SNIRH", "Complexidade Geografica",
+                      "QT_ANOMALIAS", "NM_ANOMALIAS", "Anomalia Mais Severa")
+_GEO_INTEL_LIMIAR_AUTOMATICO = 200  # nº de PARES origem/destino únicos; acima disso, sob demanda
+
+
+def _enriquecer_geo_inteligencia_df(df, forcar=False, limiar_automatico=_GEO_INTEL_LIMIAR_AUTOMATICO):
+    """Roda `route_context.analisar_rota` para cada par origem/destino ÚNICO de
+    `df` e anexa colunas-resumo aditivas (`_GEO_INTEL_COLUNAS`). Automático até
+    `limiar_automatico` pares únicos (protege o tempo de estudos grandes,
+    conforme decidido); acima disso marca `st.session_state['geo_intel_pendente']`
+    para a UI oferecer um botão sob demanda em vez de travar o app. IDEMPOTENTE
+    por fingerprint (tamanho + amostra de coordenadas) — um rerun sem dados
+    novos não reprocessa. `forcar=True` ignora o limiar (usado pelo botão sob
+    demanda). Nunca lança exceção: qualquer falha devolve o df inalterado."""
+    if _geo_route_context is None or df is None:
+        return df, {"executado": False, "motivo": "modulo_indisponivel"}
+    try:
+        if df.empty:
+            return df, {"executado": False, "motivo": "df_vazio"}
+
+        _col_lat_o = _col_existente(df, "Lat Origem")
+        _col_lon_o = _col_existente(df, "Lon Origem")
+        _col_lat_d = _col_existente(df, "Lat Destino")
+        _col_lon_d = _col_existente(df, "Lon Destino")
+        if not all([_col_lat_o, _col_lon_o, _col_lat_d, _col_lon_d]):
+            return df, {"executado": False, "motivo": "sem_coordenadas"}
+
+        _fp = (len(df), str(df[[_col_lat_o, _col_lon_o, _col_lat_d, _col_lon_d]].head(5).values.tolist()))
+        _ja_feito = all(c in df.columns for c in _GEO_INTEL_COLUNAS)
+        if not forcar and _ja_feito and st.session_state.get('_geo_intel_fp') == _fp:
+            return df, {"executado": False, "motivo": "ja_feito"}
+
+        _pares_unicos = df[[_col_lat_o, _col_lon_o, _col_lat_d, _col_lon_d]].drop_duplicates().shape[0]
+        if not forcar and _pares_unicos > limiar_automatico:
+            st.session_state['geo_intel_pendente'] = {'n_pares': int(_pares_unicos), 'limiar': limiar_automatico}
+            return df, {"executado": False, "motivo": "acima_do_limiar", "n_pares": int(_pares_unicos)}
+
+        _col_dist = _col_existente(df, "Distancia", "Distância")
+        _cache: dict = {}
+        _cols: dict = {c: [] for c in _GEO_INTEL_COLUNAS}
+        for _, _row in df.iterrows():
+            _lo = _num_seguro(_row.get(_col_lat_o))
+            _oo = _num_seguro(_row.get(_col_lon_o))
+            _ld = _num_seguro(_row.get(_col_lat_d))
+            _od = _num_seguro(_row.get(_col_lon_d))
+            _ctx = None
+            if _lo is not None and _oo is not None and _ld is not None and _od is not None:
+                _chave = (round(_lo, 4), round(_oo, 4), round(_ld, 4), round(_od, 4))
+                if _chave in _cache:
+                    _ctx = _cache[_chave]
+                else:
+                    _dist = _num_seguro(_row.get(_col_dist)) if _col_dist else None
+                    try:
+                        _ctx = _geo_route_context.analisar_rota((_lo, _oo), (_ld, _od), distancia_km=_dist)
+                    except Exception:
+                        _ctx = None
+                    _cache[_chave] = _ctx
+            if _ctx is None:
+                for _c in _GEO_INTEL_COLUNAS:
+                    _cols[_c].append(None if _c in ("Dependencia Aquaviaria", "Confianca Geografica", "Complexidade Geografica") or _c.startswith("QT_") else "")
+                continue
+            _cols["Rios Cruzados"].append(", ".join(r.nome for r in _ctx.rios_detectados[:3]))
+            _cols["Bacia Hidrografica"].append(_ctx.bacia_hidrografica or "")
+            _cols["Pontes no Cruzamento"].append(", ".join(p.nome for p in _ctx.pontes[:2]))
+            _cols["Travessias Aquaviarias"].append(", ".join(t.nome for t in _ctx.travessias[:2]))
+            _cols["Dependencia Aquaviaria"].append(_ctx.dependencia_aquaviaria)
+            _cols["Confianca Geografica"].append(_ctx.confianca_geral)
+            _cols["QT_RIOS"].append(len(_ctx.rios_detectados))
+            _cols["QT_CORPOS_DAGUA"].append(len(_ctx.corpos_dagua))
+            _cols["NM_CORPOS_DAGUA"].append(", ".join(c.nome for c in _ctx.corpos_dagua[:3]))
+            _cols["QT_PONTES"].append(len(_ctx.pontes))
+            _cols["QT_TRAVESSIAS"].append(len(_ctx.travessias))
+            _cols["QT_HIDROVIAS"].append(len(_ctx.hidrovias_proximas))
+            _cols["NM_HIDROVIAS"].append(", ".join(h.nome for h in _ctx.hidrovias_proximas[:2]))
+            _cols["QT_PORTOS_TERMINAIS"].append(len(_ctx.portos_terminais))
+            _cols["Rodovias Identificadas"].append(", ".join(r.sigla for r in _ctx.rodovias[:5]))
+            _cols["QT_RODOVIAS"].append(len(_ctx.rodovias))
+            _cols["NM_RODOVIAS"].append(", ".join(r.sigla for r in _ctx.rodovias))
+            _cols["Ferrovias Proximas"].append(", ".join(f.nome for f in _ctx.ferrovias[:3]))
+            _cols["QT_FERROVIAS"].append(len(_ctx.ferrovias))
+            _cols["NM_FERROVIAS"].append(", ".join(f.nome for f in _ctx.ferrovias))
+            _cols["Sub Bacia Codigo SNIRH"].append(_ctx.sub_bacia or "")
+            _cols["Complexidade Geografica"].append(_ctx.complexidade_geografica)
+            _cols["QT_ANOMALIAS"].append(len(_ctx.anomalias))
+            _cols["NM_ANOMALIAS"].append(", ".join(a.categoria for a in _ctx.anomalias))
+            _ordem_severidade = {"alta": 0, "media": 1, "baixa": 2}
+            _mais_severa = min(_ctx.anomalias, key=lambda a: _ordem_severidade.get(a.severidade, 9), default=None)
+            _cols["Anomalia Mais Severa"].append(_mais_severa.descricao if _mais_severa else "")
+
+        df = df.copy()
+        for _c in _GEO_INTEL_COLUNAS:
+            df[_c] = _cols[_c]
+        st.session_state['_geo_intel_fp'] = _fp
+        st.session_state.pop('geo_intel_pendente', None)
+        return df, {"executado": True, "n_pares": len(_cache)}
+    except Exception:
+        logger.error("[GEO-INTEL-AUTO] Falha ao enriquecer geograficamente (aditivo, df preservado).", exc_info=True)
+        return df, {"executado": False, "motivo": "excecao"}
 
 
 def _escrever_seguro(df, idx, col, valor):
@@ -32522,6 +32817,152 @@ map.fitBounds(linha.getBounds(),{{padding:[40,40]}});
     import base64 as _b64
     return "data:text/html;base64," + _b64.b64encode(html.encode("utf-8")).decode("ascii")
 
+def _mapa_leaflet_contexto_geografico(ctx, lat_o, lon_o, lat_d, lon_d, nome_origem="", nome_destino="",
+                                       geometria_polyline="", altura=520):
+    """[GEO-MAPA - Rodada 9] Mapa Leaflet da rota com CAMADAS ATIVÁVEIS (§3/§24/§25 da missão):
+    rios/corpos d'água, pontes, travessias, hidrovias e portos que o motor de contexto
+    geográfico (route_context.analisar_rota) identificou para esta rota — cada categoria é um
+    L.control.layers independente, ligado/desligado dentro do próprio mapa (sem precisar de
+    rerun do Streamlit). Ao clicar em cada marcador, o popup mostra nome/tipo/distância ao
+    eixo/posição na rota/fonte (§25). Feições sem coordenada conhecida são omitidas do mapa
+    (nunca inventa posição) — seguem disponíveis nas tabelas/KPIs. Mesmo padrão de degradação
+    graciosa offline de `_gerar_mapa_leaflet_rota`. Retorna um data URI HTML autocontido."""
+    try:
+        pontos = _decodificar_polyline(geometria_polyline) if geometria_polyline else []
+    except Exception:
+        pontos = []
+    if len(pontos) < 2:
+        pontos = [(lat_o, lon_o), (lat_d, lon_d)]
+    pontos_js = "[" + ",".join(f"[{la:.6f},{lo:.6f}]" for la, lo in pontos) + "]"
+    _no = _escapar_js(nome_origem) if nome_origem else "Origem"
+    _nd = _escapar_js(nome_destino) if nome_destino else "Destino"
+
+    def _popup(nome, tipo, dist_eixo, km_origem, fonte, extra=""):
+        partes = [f"<b>{_escapar_js(str(nome))}</b>", f"Tipo: {_escapar_js(str(tipo))}"]
+        if dist_eixo is not None:
+            partes.append(f"Distância ao eixo: {dist_eixo:.1f} km")
+        if km_origem is not None:
+            partes.append(f"Posição na rota: km {km_origem:.1f} desde a origem")
+        if extra:
+            partes.append(_escapar_js(str(extra)))
+        partes.append(f"Fonte: {_escapar_js(str(fonte))}")
+        return "<br>".join(partes)
+
+    def _camada_js(nome_var, itens, icone_cor, tipo_rotulo):
+        marcadores = []
+        for it in (itens or []):
+            _lat = getattr(it, "lat", None)
+            _lon = getattr(it, "lon", None)
+            if _lat is None or _lon is None:
+                continue
+            _extra = ""
+            _nav = getattr(it, "navegavel", None)
+            _bacia = getattr(it, "bacia", None)
+            if _nav:
+                _extra += f"Navegável: {_nav}. "
+            if _bacia:
+                _extra += f"Bacia: {_bacia}."
+            _tipo_ponte = getattr(it, "tipo_ponte", None)
+            _ext_m = getattr(it, "extensao_m", None)
+            if _tipo_ponte:
+                _extra += f"Tipo: {_tipo_ponte}. "
+            if _ext_m:
+                _extra += f"Extensão: {_ext_m:.0f}m. "
+            _bitola = getattr(it, "bitola", None)
+            if _bitola:
+                _extra += f"Bitola: {_bitola}. "
+            _jurisdicao = getattr(it, "jurisdicao", None)
+            if _jurisdicao:
+                _extra += f"Jurisdição: {_jurisdicao}. "
+            _trafego = getattr(it, "trafego", None)
+            if _trafego:
+                _extra += f"Tráfego: {_trafego}. "
+            _pos_rel = getattr(it, "posicao_relativa", None)
+            if _pos_rel:
+                _extra += f"Posição: {_pos_rel}. "
+            _sit_fisica = getattr(it, "situacao_fisica", None)
+            if _sit_fisica:
+                _sits_alerta = getattr(_geo_route_context, "_SITUACOES_FISICAS_NAO_OPERACIONAIS", set())
+                if _sit_fisica in _sits_alerta:
+                    _extra += f"⚠️ Situação física: {_sit_fisica}. "
+                else:
+                    _extra += f"Situação física: {_sit_fisica}. "
+            _nome_it = getattr(it, "nome", None) or getattr(it, "sigla", None)
+            _pop = _popup(_nome_it, tipo_rotulo, getattr(it, "distancia_eixo_km", None),
+                          getattr(it, "km_desde_origem", None), it.fonte, _extra)
+            marcadores.append("L.circleMarker([%.6f,%.6f],{radius:8,color:'%s',fillColor:'%s',"
+                              "fillOpacity:0.85,weight:2}).bindPopup(`%s`)" % (_lat, _lon, icone_cor, icone_cor, _pop))
+        return f"var {nome_var}=L.layerGroup([" + ",".join(marcadores) + "]);"
+
+    _js_rios = _camada_js("camadaRios", (ctx.rios_detectados if ctx else []) + (ctx.corpos_dagua if ctx else []),
+                          "#0891b2", "Rio/corpo d'água")
+    _js_pontes = _camada_js("camadaPontes", ctx.pontes if ctx else [], "#78350f", "Ponte")
+    _js_trav = _camada_js("camadaTravessias", ctx.travessias if ctx else [], "#f97316", "Travessia (balsa)")
+    _js_hidro = _camada_js("camadaHidrovias", ctx.hidrovias_proximas if ctx else [], "#1d4ed8", "Hidrovia")
+    _js_portos = _camada_js("camadaPortos", ctx.portos_terminais if ctx else [], "#7c3aed", "Porto/terminal")
+    _js_rod = _camada_js("camadaRodovias", ctx.rodovias if ctx else [], "#059669", "Rodovia")
+    _js_ferro = _camada_js("camadaFerrovias", ctx.ferrovias if ctx else [], "#57534e", "Ferrovia")
+
+    _n_rios = len((ctx.rios_detectados if ctx else []) + (ctx.corpos_dagua if ctx else []))
+    _n_pontes = len(ctx.pontes if ctx else [])
+    _n_trav = len(ctx.travessias if ctx else [])
+    _n_hidro = len(ctx.hidrovias_proximas if ctx else [])
+    _n_portos = len(ctx.portos_terminais if ctx else [])
+    _n_rod = len(ctx.rodovias if ctx else [])
+    _n_ferro = len(ctx.ferrovias if ctx else [])
+
+    html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>html,body,#map{{height:100%;margin:0;padding:0}}#map{{width:100%;height:100%}}
+.legenda{{position:absolute;bottom:10px;right:10px;z-index:1000;background:#fff;padding:8px 12px;
+border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.2);font-family:system-ui,sans-serif;font-size:11px}}
+.legenda span{{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}}</style>
+</head><body>
+<div style="position:absolute;top:10px;left:50px;right:10px;z-index:1000;background:#fff;padding:6px 12px;
+border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.2);font-family:system-ui,sans-serif;font-size:13px;max-width:90%">
+<b>🧠 Contexto Geográfico da Rota</b><br>
+<span style="color:#16a34a">●</span> {_no} &nbsp;→&nbsp; <span style="color:#dc2626">●</span> {_nd}</div>
+<div id="map" style="position:relative"><div style="position:absolute;top:0;left:0;right:0;bottom:0;z-index:0;
+display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;text-align:center;
+font-family:system-ui,Arial,sans-serif;color:#0E2A3B;background:#f4f6f8;"><div>
+<div style="font-size:1.7em;margin-bottom:6px;">🗺️⚠️</div>
+<div style="font-weight:600;margin-bottom:4px;">Mapa indisponível offline</div>
+<div style="font-size:.9em;line-height:1.45;max-width:440px;">A biblioteca de mapas (Leaflet) ou os ladrilhos não
+puderam ser carregados — sem internet ou o CDN foi bloqueado neste ambiente. Os dados da análise permanecem
+completos nas tabelas e KPIs.</div></div></div></div>
+<script>
+var pts={pontos_js};
+var map=L.map('map');
+L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',{{maxZoom:19,attribution:'© OpenStreetMap'}}).addTo(map);
+var linha=L.polyline(pts,{{color:'#2563eb',weight:5,opacity:0.85}}).addTo(map);
+L.marker(pts[0]).addTo(map).bindPopup('<b>Origem:</b><br>{_no}').openPopup();
+L.marker(pts[pts.length-1]).addTo(map).bindPopup('<b>Destino:</b><br>{_nd}');
+{_js_rios}
+{_js_pontes}
+{_js_trav}
+{_js_hidro}
+{_js_portos}
+{_js_rod}
+{_js_ferro}
+camadaRios.addTo(map); camadaPontes.addTo(map); camadaTravessias.addTo(map);
+camadaHidrovias.addTo(map); camadaPortos.addTo(map); camadaRodovias.addTo(map);
+camadaFerrovias.addTo(map);
+L.control.layers(null,{{
+  '🌊 Rios/corpos d\\'água ({_n_rios})': camadaRios,
+  '🌉 Pontes ({_n_pontes})': camadaPontes,
+  '⛴️ Travessias ({_n_trav})': camadaTravessias,
+  '🚢 Hidrovias ({_n_hidro})': camadaHidrovias,
+  '⚓ Portos/terminais ({_n_portos})': camadaPortos,
+  '🛣️ Rodovias ({_n_rod})': camadaRodovias,
+  '🚆 Ferrovias ({_n_ferro})': camadaFerrovias,
+}},{{collapsed:false}}).addTo(map);
+map.fitBounds(linha.getBounds(),{{padding:[60,60]}});
+</script></body></html>"""
+    import base64 as _b64
+    return "data:text/html;base64," + _b64.b64encode(html.encode("utf-8")).decode("ascii")
+
+
 def _gerar_mapa_rota_osrm(geometria_polyline, lat_o, lon_o, lat_d, lon_d, distancia_km="", tempo_str="", nome_origem="", nome_destino=""):
     """[FIX-OSRM-GEO2] Mapa da rota OSRM com traçado completo. Agora delega ao gerador
     unificado, com rótulos por NOME (não coordenadas). Mantido para compatibilidade."""
@@ -43013,6 +43454,81 @@ if _secao == _SECOES[0]:   # tab_individual
                 elif _metodo_tela != "N/A":
                     st.success(f"✅ **Método utilizado:** ✓ {_metodo_tela}")
 
+                # [GEO-INTEL-AUTO] Contexto geográfico automático da rota (rios, bacia, pontes,
+                # travessias, dependência aquaviária) — aditivo. Sempre que a aplicação calcula
+                # uma rota, ela passa automaticamente por esta análise (sem exigir que o usuário
+                # entre na aba Inteligência). Reaproveita as mesmas coordenadas já resolvidas para
+                # a Caderneta de Rotas Douradas, sem nenhuma consulta de rede adicional.
+                try:
+                    _lat_o_gi = res_ind[19] if len(res_ind) > 22 else None
+                    _lon_o_gi = res_ind[20] if len(res_ind) > 22 else None
+                    _lat_d_gi = res_ind[21] if len(res_ind) > 22 else None
+                    _lon_d_gi = res_ind[22] if len(res_ind) > 22 else None
+                    if (_geo_route_context is not None and _lat_o_gi is not None and _lon_o_gi is not None
+                            and _lat_d_gi is not None and _lon_d_gi is not None):
+                        _dist_gi = res_ind[0] if isinstance(res_ind[0], (int, float)) else None
+                        _ctx_gi = _geo_route_context.analisar_rota(
+                            (float(_lat_o_gi), float(_lon_o_gi)), (float(_lat_d_gi), float(_lon_d_gi)),
+                            distancia_km=_dist_gi)
+                        st.session_state['ultima_rota_individual_geo'] = _ctx_gi
+                        with st.expander("🧠 Contexto Geográfico da Rota (rios, bacia, pontes, travessias)",
+                                         expanded=bool(_ctx_gi.rios_detectados or _ctx_gi.corpos_dagua)):
+                            st.markdown(f"**{_ctx_gi.motivo_decisao}**")
+                            if _ctx_gi.rodovias:
+                                st.caption("🛣️ Rodovias identificadas: " + ", ".join(
+                                    r.sigla for r in _ctx_gi.rodovias))
+                            if _ctx_gi.ferrovias:
+                                st.caption("🚆 Ferrovias próximas: " + ", ".join(
+                                    f.nome for f in _ctx_gi.ferrovias))
+                            if _ctx_gi.rios_detectados:
+                                st.caption("🌊 Rios/córregos cruzados: " + ", ".join(
+                                    r.nome + (f" (bacia {r.bacia})" if r.bacia else "") for r in _ctx_gi.rios_detectados))
+                            if _ctx_gi.sub_bacia:
+                                st.caption(f"🔖 Sub-bacia (código oficial SNIRH, sem nome catalogado nesta base): {_ctx_gi.sub_bacia}")
+                            if _ctx_gi.pontes:
+                                st.caption("🌉 Pontes no cruzamento: " + ", ".join(p.nome for p in _ctx_gi.pontes))
+                            if _ctx_gi.travessias:
+                                st.caption("⛴️ Travessias aquaviárias próximas: " + ", ".join(t.nome for t in _ctx_gi.travessias))
+                            if _ctx_gi.hidrovias_proximas:
+                                st.caption("🚢 Hidrovia próxima: " + _ctx_gi.hidrovias_proximas[0].nome)
+                            if _ctx_gi.dependencia_aquaviaria is not None:
+                                st.caption(f"📊 Dependência aquaviária: {_ctx_gi.dependencia_aquaviaria}/100 · "
+                                          f"Complexidade geográfica: {_ctx_gi.complexidade_geografica}/100 · "
+                                          f"Confiança geográfica: {_ctx_gi.confianca_geral}/100 ({_ctx_gi.confianca_nivel})")
+                            for _av in _ctx_gi.avisos:
+                                st.caption(f"⚠️ {_av}")
+                            if _ctx_gi.anomalias:
+                                # [ANOMALIAS - Rodada 9/Missão 2] §25-26 da missão: alertas
+                                # categorizados/filtráveis (não só texto solto) — cada um mostra
+                                # categoria + severidade, nunca uma anomalia fabricada sem motivo.
+                                _icone_sev = {"alta": "🔴", "media": "🟠", "baixa": "🟡"}
+                                with st.expander(f"🚩 {len(_ctx_gi.anomalias)} anomalia(s) detectada(s)", expanded=False):
+                                    for _an in _ctx_gi.anomalias:
+                                        st.caption(f"{_icone_sev.get(_an.severidade, '•')} **{_an.categoria}** "
+                                                  f"({_an.severidade}): {_an.descricao}")
+                            # [GEO-MAPA - Rodada 9] Mapa com camadas ativáveis (rios, pontes,
+                            # travessias, hidrovias, portos) — só desenhado se houver ao menos
+                            # uma feição com coordenada conhecida (nunca um mapa vazio).
+                            _tem_feicoes_mapa = any([
+                                _ctx_gi.rios_detectados, _ctx_gi.corpos_dagua, _ctx_gi.pontes,
+                                _ctx_gi.travessias, _ctx_gi.hidrovias_proximas, _ctx_gi.portos_terminais,
+                                _ctx_gi.rodovias, _ctx_gi.ferrovias])
+                            if _tem_feicoes_mapa:
+                                try:
+                                    _mapa_geo_uri = _mapa_leaflet_contexto_geografico(
+                                        _ctx_gi, float(_lat_o_gi), float(_lon_o_gi),
+                                        float(_lat_d_gi), float(_lon_d_gi), orig_ind, dest_ind)
+                                    import base64 as _b64geo
+                                    components.html(
+                                        _b64geo.b64decode(_mapa_geo_uri.split(",", 1)[1]).decode("utf-8"),
+                                        height=440, scrolling=False)
+                                    st.caption("🗺️ Use o controle de camadas no canto do mapa para ativar/desativar "
+                                              "rios, pontes, travessias, hidrovias e portos.")
+                                except Exception:
+                                    logger.debug("[GEO-MAPA] Falha ao renderizar mapa de contexto (aditivo).", exc_info=True)
+                except Exception:
+                    logger.debug("[GEO-INTEL-AUTO] Falha no contexto geográfico individual (aditivo).", exc_info=True)
+
                 # [IBGE-SINGLESHOT - 59ª geração / item #2] Identificação municipal oficial (IBGE) na
                 # TELA, origem E destino: Município + UF + Cód IBGE + Fonte da identificação + Confiança.
                 # Reaproveita a resolução da planilha (54ª) via _resolver_identidade_ibge — base IBGE em
@@ -45208,6 +45724,22 @@ if _secao == _SECOES[1]:   # tab_processamento
             if _rel_exib and _rel_exib.get('crash'):
                 st.error(f"🔴 **O PORTÃO FALHOU:** `{_rel_exib['crash']}`. **Isto é um bug — me reporte "
                          "esta mensagem inteira.** Os zeros NÃO foram corrigidos.")
+            # [GEO-INTEL-AUTO] Contexto geografico automatico (rios, bacia, pontes,
+            # travessias, dependencia aquaviaria) - aditivo, ver _enriquecer_geo_inteligencia_df.
+            try:
+                _df_geo, _geo_rel = _enriquecer_geo_inteligencia_df(st.session_state.get('df_processado'))
+                if _geo_rel.get('executado'):
+                    st.session_state['df_processado'] = _df_geo
+                    st.caption(f"🧠 Contexto geografico automatico: {_geo_rel['n_pares']} rota(s) unica(s) analisada(s) (rios, bacia, pontes, travessias).")
+                elif _geo_rel.get('motivo') == 'acima_do_limiar':
+                    _pend = st.session_state.get('geo_intel_pendente') or {}
+                    if st.button(f"🧠 Enriquecer geograficamente ({_pend.get('n_pares', '?')} rotas unicas)", key="geo_intel_forcar_lote2"):
+                        _df_geo2, _geo_rel2 = _enriquecer_geo_inteligencia_df(st.session_state.get('df_processado'), forcar=True)
+                        if _geo_rel2.get('executado'):
+                            st.session_state['df_processado'] = _df_geo2
+                            st.rerun()
+            except Exception:
+                logger.debug("[GEO-INTEL-AUTO] Painel de enriquecimento falhou (aditivo).", exc_info=True)
             renderizar_scorecard_qualidade(st.session_state['df_processado'])
             # [AUDIT-SUSPEITAS - 43ª geração] Auditoria automática de rotas suspeitas (razão V/R anômala)
             _susp_df, _susp_resumo = _auditar_rotas_suspeitas(st.session_state['df_processado'])
@@ -48551,6 +49083,22 @@ if _secao == _SECOES[2]:   # tab_alocacao
             # [ALOC-ENTERPRISE - 49ª geração] Paridade com o Processamento em Lote: o mesmo Scorecard de
             # qualidade e a mesma Auditoria Automática de Rotas Suspeitas (REUSO das funções existentes,
             # sem duplicar lógica). A planilha da Alocação já é enriquecida (mesmo _montar_dataframe_final).
+            # [GEO-INTEL-AUTO] Contexto geografico automatico (rios, bacia, pontes,
+            # travessias, dependencia aquaviaria) - aditivo, ver _enriquecer_geo_inteligencia_df.
+            try:
+                _df_geo, _geo_rel = _enriquecer_geo_inteligencia_df(st.session_state.get('df_processado'))
+                if _geo_rel.get('executado'):
+                    st.session_state['df_processado'] = _df_geo
+                    st.caption(f"🧠 Contexto geografico automatico: {_geo_rel['n_pares']} rota(s) unica(s) analisada(s) (rios, bacia, pontes, travessias).")
+                elif _geo_rel.get('motivo') == 'acima_do_limiar':
+                    _pend = st.session_state.get('geo_intel_pendente') or {}
+                    if st.button(f"🧠 Enriquecer geograficamente ({_pend.get('n_pares', '?')} rotas unicas)", key="geo_intel_forcar_aloc"):
+                        _df_geo2, _geo_rel2 = _enriquecer_geo_inteligencia_df(st.session_state.get('df_processado'), forcar=True)
+                        if _geo_rel2.get('executado'):
+                            st.session_state['df_processado'] = _df_geo2
+                            st.rerun()
+            except Exception:
+                logger.debug("[GEO-INTEL-AUTO] Painel de enriquecimento falhou (aditivo).", exc_info=True)
             renderizar_scorecard_qualidade(st.session_state['df_processado'])
             # [COBERTURA - 140ª geração] PLANEJAMENTO DE POLOS. As duas perguntas que o gestor de exames de
             # fato faz — "quantos candidatos estão longe demais?" e "onde abrir o próximo polo?" — e que a
@@ -52279,15 +52827,16 @@ if _secao == _SECOES[4]:   # tab_analytics
                     if map_style_selection == "OpenStreetMap Clássico": estilo_mapbox = "open-street-map"
                     if map_style_selection == "Satélite (Esri Imagens)": estilo_mapbox = "white-bg"
                     
-                    fig = px.scatter_mapbox(
+                    fig = _PX_SCATTER_MAPA(
                         df_agg, lat='Lat_Media', lon='Lon_Media', size='Qtd_Rotas', color='Qtd_Rotas', color_continuous_scale=px.colors.sequential.Blues,
-                        size_max=45, zoom=3.5, mapbox_style=estilo_mapbox, hover_name='Municipio Destino',
+                        size_max=45, zoom=3.5, hover_name='Municipio Destino',
                         hover_data={'Lat_Media': False, 'Lon_Media': False, 'UF_Sintetica_Origem': True, 'Regiao_Sintetica_Origem': True, 'Qtd_Rotas': True, 'Participacao_Nacional_%': ':.2f', 'Dist_Media': ':.1f', 'Tempo_Medio': ':.1f', 'Score_Medio': False},
-                        title="Densidade Operacional da Seleção Ativa"
+                        title="Densidade Operacional da Seleção Ativa",
+                        **{_MAPA_STYLE_KW: estilo_mapbox}
                     )
-                    
-                    if map_style_selection == "Satélite (Esri Imagens)": 
-                        fig.update_layout(mapbox_layers=[{"below": 'traces', "sourcetype": "raster", "sourceattribution": "Esri World Imagery", "source": ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"]}])
+
+                    if map_style_selection == "Satélite (Esri Imagens)":
+                        fig.update_layout(**{_MAPA_LAYERS_KW: [{"below": 'traces', "sourcetype": "raster", "sourceattribution": "Esri World Imagery", "source": ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"]}]})
                         
                     fig.update_layout(margin={"r":0,"t":40,"l":0,"b":0}, height=600)
                     st.plotly_chart(fig, use_container_width=True)
@@ -52824,11 +53373,12 @@ if _secao == _SECOES[6]:   # tab_classificacao
             df_mapa_clas = df_agg_class.dropna(subset=['Lat_Media', 'Lon_Media'])
             df_mapa_clas = df_mapa_clas[(df_mapa_clas['Lat_Media'] != 0.0) & (df_mapa_clas['Lon_Media'] != 0.0)]
             if not df_mapa_clas.empty:
-                fig_mapa_clas = px.scatter_mapbox(
+                fig_mapa_clas = _PX_SCATTER_MAPA(
                     df_mapa_clas, lat='Lat_Media', lon='Lon_Media', size=col_metrica, color='Rótulo', color_discrete_map=map_colors,
-                    size_max=35, zoom=3.5, mapbox_style="carto-darkmatter", hover_name='Municipio Origem',
+                    size_max=35, zoom=3.5, hover_name='Municipio Origem',
                     hover_data={'Lat_Media': False, 'Lon_Media': False, 'UF_Sintetica_Origem': True, col_metrica: True, 'Percentual (%)': True, 'Rótulo': False},
-                    title="Mapeamento Temático Pós-Classificação"
+                    title="Mapeamento Temático Pós-Classificação",
+                    **{_MAPA_STYLE_KW: "carto-darkmatter"}
                 )
                 fig_mapa_clas.update_layout(margin={"r":0,"t":40,"l":0,"b":0}, height=550)
                 st.plotly_chart(fig_mapa_clas, use_container_width=True)
@@ -55814,13 +56364,80 @@ if _secao == _SECOES[15]:   # tab_route_intel
         if _rotas_proc is None or _rotas_proc.empty:
             st.info("Rode um estudo (aba **⚙️ Estudo em Lote** ou **🎯 Locais de Aplicação**) para visualizar o Centro de Inteligência das rotas.")
         else:
+            # [FILTROS-INTELIGENTES - Rodada 10/Missão 2, §31] Filtra o recorte ANTES de
+            # projetar/exibir — tabela, KPIs, gráficos e mapas abaixo já refletem o filtro
+            # escolhido. Usa só colunas que já existem em df_processado (nenhuma consulta nova).
+            with st.expander("🔍 Filtros inteligentes", expanded=False):
+                _fc1, _fc2, _fc3, _fc4 = st.columns(4)
+                with _fc1:
+                    _filtro_rio = st.checkbox("Só rotas com rio/córrego", key="filtro_rio_intel")
+                    _filtro_balsa = st.checkbox("Só rotas com balsa/travessia", key="filtro_balsa_intel")
+                with _fc2:
+                    _filtro_ponte = st.checkbox("Só rotas com ponte confirmada", key="filtro_ponte_intel")
+                    _filtro_sem_ponte = st.checkbox("Só cruzamento SEM ponte/travessia", key="filtro_sem_ponte_intel")
+                with _fc3:
+                    _filtro_rodovia = st.checkbox("Só rotas com rodovia identificada", key="filtro_rodovia_intel")
+                    _filtro_anomalia = st.checkbox("Só rotas com anomalia", key="filtro_anomalia_intel")
+                with _fc4:
+                    _uf_col_f = _col_existente(_rotas_proc, "UF", "UF_Sintetica_Origem")
+                    _bacia_col_f = _col_existente(_rotas_proc, "Bacia Hidrografica", "Bacia")
+                    _ufs_disp = sorted(_rotas_proc[_uf_col_f].dropna().astype(str).unique()) if _uf_col_f else []
+                    _uf_sel_f = st.multiselect("UF", _ufs_disp, key="filtro_uf_intel")
+                    _bacias_disp = (sorted(b for b in _rotas_proc[_bacia_col_f].dropna().astype(str).unique() if b)
+                                    if _bacia_col_f else [])
+                    _bacia_sel_f = st.multiselect("Bacia hidrográfica", _bacias_disp, key="filtro_bacia_intel")
+
+                try:
+                    _mask_f = pd.Series(True, index=_rotas_proc.index)
+                    _col_qt_rios_f = _col_existente(_rotas_proc, "QT_RIOS")
+                    _col_qt_pontes_f = _col_existente(_rotas_proc, "QT_PONTES")
+                    _col_qt_trav_f = _col_existente(_rotas_proc, "QT_TRAVESSIAS")
+                    _col_qt_rod_f = _col_existente(_rotas_proc, "QT_RODOVIAS")
+                    _col_qt_anom_f = _col_existente(_rotas_proc, "QT_ANOMALIAS")
+                    if _filtro_rio and _col_qt_rios_f:
+                        _mask_f &= pd.to_numeric(_rotas_proc[_col_qt_rios_f], errors="coerce").fillna(0) > 0
+                    if _filtro_balsa:
+                        _col_balsa_f = _col_existente(_rotas_proc, "Balsa")
+                        if _col_balsa_f:
+                            _mask_f &= _rotas_proc[_col_balsa_f].astype(bool)
+                        elif _col_qt_trav_f:
+                            _mask_f &= pd.to_numeric(_rotas_proc[_col_qt_trav_f], errors="coerce").fillna(0) > 0
+                    if _filtro_ponte and _col_qt_pontes_f:
+                        _mask_f &= pd.to_numeric(_rotas_proc[_col_qt_pontes_f], errors="coerce").fillna(0) > 0
+                    if _filtro_sem_ponte and _col_qt_rios_f:
+                        _qtr_f = pd.to_numeric(_rotas_proc[_col_qt_rios_f], errors="coerce").fillna(0)
+                        _qtp_f = (pd.to_numeric(_rotas_proc[_col_qt_pontes_f], errors="coerce").fillna(0)
+                                  if _col_qt_pontes_f else pd.Series(0, index=_rotas_proc.index))
+                        _qtt_f = (pd.to_numeric(_rotas_proc[_col_qt_trav_f], errors="coerce").fillna(0)
+                                  if _col_qt_trav_f else pd.Series(0, index=_rotas_proc.index))
+                        _mask_f &= (_qtr_f > 0) & (_qtp_f == 0) & (_qtt_f == 0)
+                    if _filtro_rodovia and _col_qt_rod_f:
+                        _mask_f &= pd.to_numeric(_rotas_proc[_col_qt_rod_f], errors="coerce").fillna(0) > 0
+                    if _filtro_anomalia and _col_qt_anom_f:
+                        _mask_f &= pd.to_numeric(_rotas_proc[_col_qt_anom_f], errors="coerce").fillna(0) > 0
+                    if _uf_sel_f and _uf_col_f:
+                        _mask_f &= _rotas_proc[_uf_col_f].astype(str).isin(_uf_sel_f)
+                    if _bacia_sel_f and _bacia_col_f:
+                        _mask_f &= _rotas_proc[_bacia_col_f].astype(str).isin(_bacia_sel_f)
+
+                    _n_antes_filtro = len(_rotas_proc)
+                    _rotas_proc = _rotas_proc[_mask_f]
+                    if len(_rotas_proc) != _n_antes_filtro:
+                        st.caption(f"✅ Filtro ativo: {len(_rotas_proc)} de {_n_antes_filtro} rotas.")
+                except Exception:
+                    logger.debug("[FILTROS-INTELIGENTES] Falha ao aplicar filtros (aditivo, sem filtro aplicado).", exc_info=True)
+
+            # Projeção robusta (aceita a nomenclatura real do df_processado). Se o filtro acima
+            # zerou o recorte, _df_intel fica vazio e cai no aviso já existente logo abaixo.
+            # max_linhas=100000 (não 200): a refatoração do Centro de Inteligência em main
+            # passou a assumir o recorte completo, não uma amostra truncada.
             _df_intel = _proj_analise("proj_intel", _rotas_proc, max_linhas=100000)
             if _df_intel is None or _df_intel.empty:
                 st.info("Não há linhas analisáveis nesta sessão. Rode um estudo primeiro.")
             else:
                 _col_ic = _col_existente(_rotas_proc, "Indice Confianca Rota", "Índice Confiança", "Score da Rota", "Score Final Global", "Score Final")
                 _col_fonte = _col_existente(_rotas_proc, "Fonte da Rota", "Fonte Rota", "Motor da Rota")
-                
+
                 # Setup base data for calculations
                 _int_tot = len(_df_intel)
                 _int_km = pd.to_numeric(_df_intel["Distância (km)"], errors="coerce")
@@ -55832,9 +56449,9 @@ if _secao == _SECOES[15]:   # tab_route_intel
                 _int_rios = int(_df_intel["Rio"].astype(str).str.strip().replace(["", "—", "None"], pd.NA).dropna().nunique()) if "Rio" in _df_intel.columns else 0
                 _int_bac = int(_df_intel["Bacia"].astype(str).str.strip().replace(["", "—", "None"], pd.NA).dropna().nunique()) if "Bacia" in _df_intel.columns else 0
                 _ufs_cobertas = _df_intel["UF"].astype(str).str.strip().replace(["", "—", "None"], pd.NA).dropna().nunique() if "UF" in _df_intel.columns else 0
-                
+
                 _abas_intel = st.tabs(["🏠 Visão Geral", "🗺️ Mapa de Rotas", "📊 Distribuição", "💧 Hidrografia", "🔬 Inspetor de Rota", "📋 Tabela Analítica"])
-                
+
                 with _abas_intel[0]:
                     st.subheader("KPIs Globais")
                     _k1, _k2, _k3, _k4 = st.columns(4)
@@ -55842,15 +56459,15 @@ if _secao == _SECOES[15]:   # tab_route_intel
                     _k2.metric("Distância Média", ("%.1f km" % float(_km_mean)) if _int_km.notna().any() else "—")
                     _k3.metric("Distância Mediana", ("%.1f km" % float(_km_med)) if _int_km.notna().any() else "—")
                     _k4.metric("Distância Total", ("%.0f km" % float(_km_sum)) if _int_km.notna().any() else "—")
-                    
+
                     _k5, _k6, _k7, _k8 = st.columns(4)
                     _k5.metric("Rotas com Balsa", f"{_int_balsa:,} ({_pct_balsa:.1f}%)")
                     _k6.metric("Rios Cruzados", _int_rios)
                     _k7.metric("Bacias Hidrográficas", _int_bac)
                     _k8.metric("UFs Cobertas", _ufs_cobertas)
-                    
+
                     st.divider()
-                    
+
                     _g1, _g2 = st.columns(2)
                     with _g1:
                         st.caption("Distribuição de distância (faixas, km)")
@@ -55875,7 +56492,36 @@ if _secao == _SECOES[15]:   # tab_route_intel
                             st.plotly_chart(_fig_bar2, use_container_width=True)
                         else:
                             st.caption("Sem UF disponível.")
-                        
+
+                    # [MAIS-TEMATICOS - Rodada 12/Missão 2, §12] Rodovias/ferrovias mais
+                    # frequentes no estudo — mesmo padrão de "explode + contagem" já usado
+                    # na seção HTML (Rodada 3), agora também na tela ao vivo.
+                    _col_nm_rod = _col_existente(_rotas_proc, "NM_RODOVIAS")
+                    _col_nm_ferro = _col_existente(_rotas_proc, "NM_FERROVIAS")
+                    if _col_nm_rod or _col_nm_ferro:
+                        st.divider()
+                        _ic1, _ic2 = st.columns(2)
+                        with _ic1:
+                            st.caption("Rodovias mais frequentes")
+                            if _col_nm_rod:
+                                _rod_serie = _rotas_proc[_col_nm_rod].dropna().astype(str)
+                                _rod_serie = _rod_serie[_rod_serie != ""]
+                                _rod_exp = _rod_serie.str.split(", ").explode().str.strip()
+                                _rod_exp = _rod_exp[_rod_exp != ""]
+                                st.bar_chart(_rod_exp.value_counts().head(10)) if not _rod_exp.empty else st.caption("Sem rodovias identificadas.")
+                            else:
+                                st.caption("Coluna indisponível neste estudo.")
+                        with _ic2:
+                            st.caption("Ferrovias mais frequentes")
+                            if _col_nm_ferro:
+                                _ferro_serie = _rotas_proc[_col_nm_ferro].dropna().astype(str)
+                                _ferro_serie = _ferro_serie[_ferro_serie != ""]
+                                _ferro_exp = _ferro_serie.str.split(", ").explode().str.strip()
+                                _ferro_exp = _ferro_exp[_ferro_exp != ""]
+                                st.bar_chart(_ferro_exp.value_counts().head(10)) if not _ferro_exp.empty else st.caption("Sem ferrovias identificadas.")
+                            else:
+                                st.caption("Coluna indisponível neste estudo.")
+
                 with _abas_intel[1]:
                     st.subheader("Mapa Origem → Destino")
                     st.caption("Visão espacial de todos os deslocamentos. Arcos coloridos por distância (azul=curto, vermelho=longo).")
@@ -55885,7 +56531,52 @@ if _secao == _SECOES[15]:   # tab_route_intel
                         st.plotly_chart(_fig_intel, use_container_width=True)
                     else:
                         st.info("Coordenadas insuficientes para plotar o mapa.")
-                        
+
+                    # [GEO-MAPA-TEMATICO - Rodada 7/Missão 2] Mapas temáticos (§12 da missão):
+                    # cada um responde uma pergunta específica sobre ONDE as rotas deste estudo
+                    # concentram complexidade/dependência — não um agregado nacional fabricado,
+                    # só os valores já calculados por route_context.analisar_rota nesta sessão.
+                    _fig_cplx = _fig_mapa_tematico(_rotas_proc, "Complexidade Geografica",
+                                                    "Complexidade geográfica", colorscale="YlOrRd")
+                    _fig_dep = _fig_mapa_tematico(_rotas_proc, "Dependencia Aquaviaria",
+                                                   "Dependência aquaviária", colorscale="Blues")
+                    # [MAIS-TEMATICOS - Rodada 12/Missão 2] "Mapa de densidade hidrográfica"
+                    # (§12 da missão): soma QT_RIOS + QT_CORPOS_DAGUA por rota — sem teto
+                    # natural (0-100 não faz sentido aqui), por isso cmax=None (escala
+                    # automática pelo maior valor real do recorte, nunca um teto inventado).
+                    _fig_dens = None
+                    _col_qtr_map = _col_existente(_rotas_proc, "QT_RIOS")
+                    _col_qtc_map = _col_existente(_rotas_proc, "QT_CORPOS_DAGUA")
+                    if _col_qtr_map and _col_qtc_map:
+                        _rotas_dens = _rotas_proc.copy()
+                        _rotas_dens["Densidade Hidrografica"] = (
+                            pd.to_numeric(_rotas_dens[_col_qtr_map], errors="coerce").fillna(0)
+                            + pd.to_numeric(_rotas_dens[_col_qtc_map], errors="coerce").fillna(0))
+                        _fig_dens = _fig_mapa_tematico(_rotas_dens, "Densidade Hidrografica",
+                                                        "Rios + corpos d'água", colorscale="Teal", cmax=None)
+                    if _fig_cplx is not None or _fig_dep is not None or _fig_dens is not None:
+                        st.divider()
+                        st.markdown("##### 🗺️ Mapas temáticos (§12): onde as rotas deste estudo concentram complexidade/dependência/hidrografia")
+                        _mt1, _mt2, _mt3 = st.columns(3)
+                        with _mt1:
+                            if _fig_cplx is not None:
+                                st.caption("Complexidade geográfica por rota (ponto médio origem↔destino)")
+                                st.plotly_chart(_fig_cplx, use_container_width=True)
+                            else:
+                                st.caption("Complexidade geográfica: sem dados suficientes neste estudo ainda.")
+                        with _mt2:
+                            if _fig_dep is not None:
+                                st.caption("Dependência aquaviária por rota (ponto médio origem↔destino)")
+                                st.plotly_chart(_fig_dep, use_container_width=True)
+                            else:
+                                st.caption("Dependência aquaviária: sem dados suficientes neste estudo ainda.")
+                        with _mt3:
+                            if _fig_dens is not None:
+                                st.caption("Densidade hidrográfica (rios + corpos d'água) por rota")
+                                st.plotly_chart(_fig_dens, use_container_width=True)
+                            else:
+                                st.caption("Densidade hidrográfica: sem dados suficientes neste estudo ainda.")
+
                 with _abas_intel[2]:
                     st.subheader("Análise de Distribuição e Modal")
                     _db1, _db2 = st.columns(2)
@@ -55913,7 +56604,7 @@ if _secao == _SECOES[15]:   # tab_route_intel
                             st.plotly_chart(_fig_bar3, use_container_width=True)
                         else:
                             st.caption("Score não disponível.")
-                            
+
                 with _abas_intel[3]:
                     st.subheader("Inteligência Hidrográfica")
                     _ib1, _ib2 = st.columns(2)
@@ -55941,7 +56632,7 @@ if _secao == _SECOES[15]:   # tab_route_intel
                             st.plotly_chart(_fig_bar5, use_container_width=True)
                         else:
                             st.caption("Sem bacias identificadas.")
-                        
+
                 with _abas_intel[4]:
                     st.subheader("Inspetor de Rota (Drill-down)")
                     _labels = (_df_intel["Origem"].astype(str) + " → " + _df_intel["Destino"].astype(str)).tolist()
@@ -55955,9 +56646,9 @@ if _secao == _SECOES[15]:   # tab_route_intel
                             _uf = str(_row.get("UF", "—"))
                             _dest = str(_row.get("Destino", "—"))
                             _dist_km = _num_seguro(_row.get("Distância (km)"), 0.0) or 0.0
-                            
+
                             st.markdown(f"### Dossiê: {_orig} → {_dest}")
-                            
+
                             _cc1, _cc2 = st.columns([2, 1])
                             with _cc1:
                                 _c1, _c2, _c3 = st.columns(3)
@@ -55995,6 +56686,50 @@ if _secao == _SECOES[15]:   # tab_route_intel
                                         }))
                                     _fig_g.update_layout(height=200, margin=dict(l=10, r=10, t=30, b=10))
                                     st.plotly_chart(_fig_g, use_container_width=True)
+
+                            # [GEO-INTEL-EXPLICA - Rodada 13] Contexto geográfico completo desta rota (motor da
+                            # Rodada 10, não a projeção legada usada acima): bacia real, pontes, travessias e
+                            # dependência aquaviária — e uma explicação em texto ("por que esta rota"), reaproveitando
+                            # exatamente o que já foi calculado em df_processado, sem nenhum recálculo aqui.
+                            try:
+                                if _row_orig is not None and _col_existente(_rotas_proc, "QT_RIOS"):
+                                    st.divider()
+                                    st.markdown("##### 🧠 Por que esta rota — contexto geográfico completo")
+                                    _c10, _c11, _c12 = st.columns(3)
+                                    _c10.metric("Bacia hidrográfica", str(_row_orig.get("Bacia Hidrografica") or "—"))
+                                    _qt_p = _num_seguro(_row_orig.get("QT_PONTES"))
+                                    _c11.metric("Pontes no cruzamento", int(_qt_p) if _qt_p is not None else "—")
+                                    _qt_t = _num_seguro(_row_orig.get("QT_TRAVESSIAS"))
+                                    _c12.metric("Travessias aquaviárias", int(_qt_t) if _qt_t is not None else "—")
+                                    _c13, _c14, _c15 = st.columns(3)
+                                    _dep_v = _num_seguro(_row_orig.get("Dependencia Aquaviaria"))
+                                    _c13.metric("Dependência aquaviária", f"{_dep_v:.0f}/100" if _dep_v is not None else "—")
+                                    _conf_v = _num_seguro(_row_orig.get("Confianca Geografica"))
+                                    _c14.metric("Confiança geográfica", f"{_conf_v:.0f}/100" if _conf_v is not None else "—")
+                                    _cplx_v = _num_seguro(_row_orig.get("Complexidade Geografica"))
+                                    _c15.metric("Complexidade geográfica", f"{_cplx_v:.0f}/100" if _cplx_v is not None else "—")
+                                    _pontes_txt = str(_row_orig.get("Pontes no Cruzamento") or "").strip()
+                                    if _pontes_txt and _pontes_txt not in ("—", "nan"):
+                                        st.caption(f"🌉 Ponte(s): {_pontes_txt}")
+                                    _trav_txt = str(_row_orig.get("Travessias Aquaviarias") or "").strip()
+                                    if _trav_txt and _trav_txt not in ("—", "nan"):
+                                        st.caption(f"⛴️ Travessia(s): {_trav_txt}")
+                                    _rod_txt = str(_row_orig.get("Rodovias Identificadas") or "").strip()
+                                    if _rod_txt and _rod_txt not in ("—", "nan"):
+                                        st.caption(f"🛣️ Rodovia(s): {_rod_txt}")
+                                    _ferro_txt = str(_row_orig.get("Ferrovias Proximas") or "").strip()
+                                    if _ferro_txt and _ferro_txt not in ("—", "nan"):
+                                        st.caption(f"🚆 Ferrovia(s) próxima(s): {_ferro_txt}")
+                                    if (_qt_p or 0) == 0 and (_qt_t or 0) == 0 and _num_seguro(_row_orig.get("QT_RIOS"), 0) > 0:
+                                        st.caption("⚠️ Rio identificado sem ponte nem travessia confirmadas no raio "
+                                                  "consultado — modo de travessia não determinado, não presuma.")
+                                    _qt_anom = _num_seguro(_row_orig.get("QT_ANOMALIAS"))
+                                    if _qt_anom:
+                                        _sev_txt = str(_row_orig.get("Anomalia Mais Severa") or "").strip()
+                                        st.caption(f"🚩 {int(_qt_anom)} anomalia(s) geográfica(s) detectada(s)"
+                                                  + (f" — mais severa: {_sev_txt}" if _sev_txt and _sev_txt not in ("—", "nan") else ""))
+                            except Exception:
+                                logger.debug("[GEO-INTEL-EXPLICA] Falha ao exibir contexto completo (aditivo).", exc_info=True)
 
                             st.caption("💾 Exportar Rota Isolada")
                             _origem_fn = str(_orig).replace(' ', '_').replace('/', '_')
@@ -56064,91 +56799,141 @@ if _secao == _SECOES[15]:   # tab_route_intel
 # ==============================================================================
 if _secao == _SECOES[16]:   # tab_data_sources
     st.header("📖 Fontes de Dados Oficiais Integradas")
-    st.caption("Catálogo estruturado de todas as fontes oficiais brasileiras integradas ao motor de roteamento.")
-    
-    _fontes = [
-        {"Órgão": "IBGE", "Fonte": "Malha Municipal 2025 / BC250 / BC100 / BCIM", "Tipo": "Geoespacial / Territorial", "Registros": "5.570 municípios / 1.467.729 nós / 9.569 nomes", "Uso": "Limites municipais, coordenadas oficiais, validação geográfica, grafo fluvial", "Status": "✅ Integrado", "Endpoint": "https://geoftp.ibge.gov.br/organizacao_do_territorio/malhas_territoriais/"},
-        {"Órgão": "ANA / SNIRH", "Fonte": "HidroWeb REST API", "Tipo": "Hidrológico / Hidrográfico", "Registros": "40.745 estações / 6.803 telemétricas / 14.135 rios / 9 bacias / 84 sub-bacias / 5.714 municípios", "Uso": "Rios, bacias, cotas, vazões, sedimentos, curvas de descarga, estações telemétricas", "Status": "✅ API REST funcional", "Endpoint": "https://hidroweb.ana.gov.br/api/v1/"},
-        {"Órgão": "ANTAQ", "Fonte": "Dados Abertos / Hidrovias", "Tipo": "Aquaviário / Portuário", "Registros": "Portos, terminais, hidrovias, travessias, balsas, linhas", "Uso": "Balsas, terminais, hidrovias, infraestrutura aquaviária", "Status": "✅ Integrado via SNIRH", "Endpoint": "https://dadosabertos.antaq.gov.br/"},
-        {"Órgão": "DNIT", "Fonte": "SICRO / VGEO / Dados Abertos", "Tipo": "Rodoviário / Infraestrutura", "Registros": "Rodovias federais, segmentos, pontes, obras, pavimento, tráfego", "Uso": "Validação rodoviária, jurisdição, pavimento, obras, pontes", "Status": "✅ Via OSRM/FOSSGIS", "Endpoint": "https://dadosabertos.dnit.gov.br/"},
-        {"Órgão": "ANTT", "Fonte": "Dados Abertos / Concessões", "Tipo": "Rodoviário / Concessões", "Registros": "Rodovias concedidas, praças de pedágio, trechos, intervenções", "Uso": "Rodovias concedidas, concessões, praças, trechos", "Status": "⚠️ Parcial (via OSRM)", "Endpoint": "https://dados.antt.gov.br/"},
-        {"Órgão": "IBGE", "Fonte": "Malhas Municipais 2025 / BC250 / BC100 / BCIM", "Tipo": "Cartográfico / Territorial", "Registros": "5.570 municípios / 1.467.729 nós / 9.569 nomes", "Uso": "Limites municipais, coordenadas oficiais, validação geográfica, grafo fluvial", "Status": "✅ Disponível (Shapefile/GPKG/PostGIS)", "Endpoint": "https://geoftp.ibge.gov.br/"},
-        {"Órgão": "ANA / SNIRH", "Fonte": "HidroWeb REST API", "Tipo": "Hidrológico", "Registros": "Estações, cotas, vazões, sedimentos, curvas de descarga, rios, bacias", "Uso": "Inteligência de travessias, barreiras hidrográficas, scores de navegabilidade", "Status": "✅ API REST funcional (HAL+JSON)", "Endpoint": "https://hidroweb.ana.gov.br/api/v1/"},
-        {"Órgão": "OSRM / FOSSGIS", "Fonte": "OSRM Routing Engine", "Tipo": "Roteamento rodoviário", "Registros": "Rede viária global (OpenStreetMap)", "Uso": "Distâncias rodoviárias, tempos, geometrias, balsas", "Status": "✅ Público (FOSSGIS)", "Endpoint": "https://router.project-osrm.org/"},
-        {"Órgão": "Valhalla", "Fonte": "Valhalla Routing Engine", "Tipo": "Roteamento multimodal", "Registros": "Rede viária + ferry + transit", "Uso": "Roteamento alternativo, consenso, investigação V/R", "Status": "⚠️ Opt-in (auto-engajamento)", "Endpoint": "https://valhalla1.openstreetmap.de/"},
-        {"Órgão": "Natural Earth", "Fonte": "Natural Earth 10m Rivers", "Tipo": "Hidrografia vetorial global", "Registros": "2.129 rios / 251K nós / 501K arestas", "Uso": "Grafo fluvial base, nomes de rios, confluências", "Status": "✅ Integrado (merge 433ª)", "Endpoint": "https://www.naturalearthdata.com/"},
-    ]
-    
+    st.caption("Catálogo real das fontes de dados e APIs efetivamente usadas pelo motor de rotas — "
+               "gerado a partir do código (inteligencia_geoespacial.sources_inventory), não de uma "
+               "lista estática. Cada fonte mostra COMO é acessada de fato (API ao vivo, arquivo local "
+               "já baixado, download sob demanda ou só um link informativo) e ONDE é usada hoje.")
+
     import pandas as pd
-    _df_fontes = pd.DataFrame(_fontes)
-    
-    # [FONTES-VIS - 452ª] Saúde do catálogo (aditivo): nº de fontes integradas/parciais e órgãos.
+    from inteligencia_geoespacial.sources_inventory import populate_sources as _popular_fontes_reais
+    _df_fontes = _popular_fontes_reais().to_dataframe()
+
+    # [FONTES-VIS - Rodada 2/missão "extração máxima"] Saúde do catálogo (aditivo):
+    # contagem por status real (ativo/em_teste/inativo/descontinuado) e por modo de acesso —
+    # nunca fabricado (substitui a contagem anterior de emojis "✅"/"⚠️" fixos no dicionário).
     try:
         _f_total = len(_df_fontes)
-        _f_int = int(_df_fontes["Status"].astype(str).str.startswith("✅").sum())
-        _f_par = int(_df_fontes["Status"].astype(str).str.startswith("⚠").sum())
+        _f_ativo = int((_df_fontes["Status"] == "ativo").sum())
+        _f_teste = int((_df_fontes["Status"] == "em_teste").sum())
+        _f_api_viva = int((_df_fontes["Modo de acesso"] == "api_rest_ao_vivo").sum())
         _f_org = int(_df_fontes["Órgão"].nunique())
         _fk1, _fk2, _fk3, _fk4 = st.columns(4)
         _fk1.metric("Fontes catalogadas", _f_total)
-        _fk2.metric("Integradas (✅)", _f_int)
-        _fk3.metric("Parciais (⚠️)", _f_par)
-        _fk4.metric("Órgãos distintos", _f_org)
+        _fk2.metric("Ativas", _f_ativo)
+        _fk3.metric("APIs ao vivo", _f_api_viva)
+        _fk4.metric("Órgãos/provedores distintos", _f_org)
+        if _f_teste:
+            st.caption(f"⚠️ {_f_teste} fonte(s) em modo 'em_teste' (acesso frágil/não-oficial, "
+                       "auto-limitado por circuit breaker no código — ver notas na tabela).")
     except Exception:
         logger.debug("[FONTES-VIS] Métricas de fontes isoladas falharam (aditivo).", exc_info=True)
-    
+
     # Abas para melhor organização
-    _aba_fontes = st.tabs(["📋 Tabela Completa", "🔗 Endpoints & APIs", "📊 Resumo por Tipo", "💾 Exportar"])
-    
+    _aba_fontes = st.tabs(["📋 Tabela Completa", "🔗 Endpoints & APIs", "📊 Resumo por Categoria",
+                           "🩺 Saúde dos Dados", "💾 Exportar"])
+
     with _aba_fontes[0]:
         st.dataframe(_df_fontes, use_container_width=True, hide_index=True)
-        st.caption("✅ = Integrado e validado | ⚠️ = Parcial / Em desenvolvimento | ❌ = Não integrado")
-        
+        st.caption("Modo de acesso: **api_rest_ao_vivo** = chamada HTTP real hoje · "
+                   "**arquivo_local** = já baixado/derivado, lido do disco · "
+                   "**download_sob_demanda** = baixado uma vez sob clique do usuário · "
+                   "**informativo_apenas** = aparece na UI mas nunca é de fato consultado.")
+
         # Botões de exportação (bloco único DRY — [Melhoria4-EXCEL 453ª · M3])
         _botoes_exportacao_geo("fontes_dados", _df_fontes, sheet_name="Fontes")
-    
+
     with _aba_fontes[1]:
-        st.subheader("🔗 Endpoints das APIs e Fontes")
+        st.subheader("🔗 Endpoints e Caminhos das Fontes")
         for _, row in _df_fontes.iterrows():
-            with st.expander(f"{row['Status']} {row['Órgão']} — {row['Fonte']}"):
+            _rotulo_status = {"ativo": "✅", "em_teste": "⚠️", "inativo": "⚪", "descontinuado": "❌"}.get(row['Status'], "•")
+            with st.expander(f"{_rotulo_status} {row['Órgão']} — {row['Fonte']}"):
                 st.markdown(f"""
-                **Tipo:** {row['Tipo']}  
-                **Registros:** {row['Registros']}  
-                **Uso no motor:** {row['Uso']}  
-                **Endpoint:** [{row['Endpoint']}]({row['Endpoint']})
+                **Categoria:** {row['Categoria']}
+                **Modo de acesso:** {row['Modo de acesso']}
+                **Registros:** {row['Registros']}
+                **Uso no motor hoje:** {row['Uso no motor hoje']}
+                **Endpoint/Caminho:** {row['Endpoint/Caminho']}
+                **Nota:** {row['Nota']}
                 """)
-    
+
     with _aba_fontes[2]:
-        st.subheader("📊 Resumo por Tipo de Dado")
-        _resumo_tipo = _df_fontes.groupby("Tipo").agg(
+        st.subheader("📊 Resumo por Categoria")
+        _resumo_categoria = _df_fontes.groupby("Categoria").agg(
             Fontes=("Fonte", "count"),
-            Órgãos=("Órgão", lambda x: ", ".join(x.unique())),
-            Status=("Status", lambda x: ", ".join(x.unique()))
+            Órgãos=("Órgão", lambda x: ", ".join(sorted(x.unique()))),
+            Status=("Status", lambda x: ", ".join(sorted(x.unique())))
         ).reset_index()
-        st.dataframe(_resumo_tipo, use_container_width=True, hide_index=True)
-        
+        st.dataframe(_resumo_categoria, use_container_width=True, hide_index=True)
+
         _resumo_status = _df_fontes["Status"].value_counts().reset_index()
         _resumo_status.columns = ["Status", "Quantidade"]
         st.bar_chart(_resumo_status.set_index("Status"))
-    
+
     with _aba_fontes[3]:
+        # [SAUDE-DADOS - Rodada 11/Missão 2, §19] Tudo aqui vem de checagens 100% LOCAIS
+        # (existência de arquivo, metadados de Parquet, manifest.json, mtime) — nunca uma
+        # chamada de rede (decisão de escopo desta missão). "Erros de consulta" do §19 não
+        # é mostrado: exigiria telemetria de execução ao vivo que este projeto não mantém —
+        # omitido em vez de fabricado.
+        st.subheader("🩺 Saúde dos Dados")
+        st.caption("Checagens 100% locais (arquivo existe? contagem bate com o manifest? "
+                   "quando foi gerado?) — nunca uma chamada de rede.")
+        try:
+            from inteligencia_geoespacial.sources_inventory import saude_dos_dados as _saude_dados_fn
+            _saude = _saude_dados_fn()
+
+            _sd1, _sd2, _sd3, _sd4 = st.columns(4)
+            _sd1.metric("Fontes ativas", f"{_saude['fontes_ativas']}/{_saude['fontes_catalogadas']}")
+            _sd2.metric("APIs ao vivo", _saude['apis_ao_vivo'])
+            _sd3.metric("Camadas IBGE presentes", f"{_saude['camadas_com_arquivo_presente']}/{_saude['camadas_total']}")
+            _qm = _saude.get('qualidade_media_completude')
+            _sd4.metric("Qualidade média (completude)", f"{_qm * 100:.1f}%" if _qm is not None else "—")
+
+            if _saude["camadas_divergentes_do_manifest"]:
+                st.error("⚠️ Camadas com contagem DIVERGENTE do manifest.json: "
+                         + ", ".join(_saude["camadas_divergentes_do_manifest"]))
+            else:
+                st.success("✅ Todas as camadas IBGE presentes batem exatamente com manifest.json.")
+
+            if _saude["bootstrap_ausentes"]:
+                st.warning("📥 Arquivos de bootstrap ainda não baixados nesta sessão: "
+                          + ", ".join(_saude["bootstrap_ausentes"])
+                          + " (baixe pelo botão na aba Hidrografia, se necessário).")
+
+            if _saude.get("extraido_em_utc_manifest"):
+                st.caption(f"📅 Camadas derivadas do IBGE geradas em: {_saude['extraido_em_utc_manifest']}")
+
+            _df_camadas = pd.DataFrame(_saude["camadas_ibge"])
+            if not _df_camadas.empty:
+                _df_camadas = _df_camadas.rename(columns={
+                    "camada": "Camada", "existe": "Presente", "registros_manifest": "Registros (manifest)",
+                    "registros_reais": "Registros (real)", "bate_com_manifest": "Bate com manifest?",
+                    "ultima_modificacao": "Última modificação",
+                })
+                st.dataframe(_df_camadas, use_container_width=True, hide_index=True)
+        except Exception:
+            logger.debug("[SAUDE-DADOS] Falha ao montar o painel (aditivo).", exc_info=True)
+            st.info("Não foi possível montar o painel de saúde dos dados nesta sessão.")
+
+    with _aba_fontes[4]:
         st.subheader("💾 Exportar Catálogo Completo")
-        st.caption("Todos os formatos incluem a tabela completa com endpoints.")
-        
+        st.caption("Todos os formatos incluem a tabela completa com endpoints/caminhos.")
+
         _col_e1, _col_e2 = st.columns(2)
         with _col_e1:
             import io
             _xlsx_buf = io.BytesIO()
             with pd.ExcelWriter(_xlsx_buf, engine='xlsxwriter') as _writer:
                 _df_fontes.to_excel(_writer, index=False, sheet_name='Fontes')
-            st.download_button("📊 XLSX (com abas)", 
-                data=_xlsx_buf.getvalue(), 
-                file_name="fontes_dados_completo.xlsx", 
+            st.download_button("📊 XLSX (com abas)",
+                data=_xlsx_buf.getvalue(),
+                file_name="fontes_dados_completo.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True)
         with _col_e2:
-            st.download_button("📄 CSV (UTF-8)", 
-                data=_df_fontes.to_csv(index=False).encode('utf-8-sig'), 
-                file_name="fontes_dados_completo.csv", 
+            st.download_button("📄 CSV (UTF-8)",
+                data=_df_fontes.to_csv(index=False).encode('utf-8-sig'),
+                file_name="fontes_dados_completo.csv",
                 mime="text/csv",
                 use_container_width=True)
 
@@ -56371,14 +57156,15 @@ if _secao == _SECOES[17]:   # tab_hidrografia
                 _map_df = _map_df.dropna(subset=['latitude', 'longitude'])
                 
                 if not _map_df.empty:
-                    fig = px.scatter_mapbox(
-                        _map_df, lat='latitude', lon='longitude', 
+                    fig = _PX_SCATTER_MAPA(
+                        _map_df, lat='latitude', lon='longitude',
                         color='tipo',
                         hover_name='nome_display',
                         hover_data=['bacia', 'uf'] if 'bacia' in _map_df.columns and 'uf' in _map_df.columns else ['tipo'],
-                        zoom=3.5, mapbox_style="carto-darkmatter",
+                        zoom=3.5,
                         height=600, size_max=10,
-                        color_discrete_map={'Rio': '#3498db', 'Estação': '#e74c3c'}
+                        color_discrete_map={'Rio': '#3498db', 'Estação': '#e74c3c'},
+                        **{_MAPA_STYLE_KW: "carto-darkmatter"}
                     )
                     fig.update_layout(margin={"r":0,"t":40,"l":0,"b":0}, height=600)
                     st.plotly_chart(fig, use_container_width=True)
@@ -56716,7 +57502,7 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
                             fig = go.Figure()
                             
                             # Origens
-                            fig.add_trace(go.Scattermapbox(
+                            fig.add_trace(_GO_SCATTER_MAPA(
                                 lat=_map_df['lat_origem'],
                                 lon=_map_df['lon_origem'],
                                 mode='markers',
@@ -56726,9 +57512,9 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
                                 hoverinfo='text',
                                 hovertext=_map_df['origem'] + ' → ' + _map_df['destino'] + '<br>Rio: ' + _map_df['rio_nome'].fillna('—') + '<br>Distância: ' + _map_df['dist_km'].astype(str) + ' km'
                             ))
-                            
+
                             # Destinos
-                            fig.add_trace(go.Scattermapbox(
+                            fig.add_trace(_GO_SCATTER_MAPA(
                                 lat=_map_df['lat_destino'],
                                 lon=_map_df['lon_destino'],
                                 mode='markers',
@@ -56738,10 +57524,10 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
                                 hoverinfo='text',
                                 hovertext=_map_df['origem'] + ' → ' + _map_df['destino'] + '<br>Rio: ' + _map_df['rio_nome'].fillna('—') + '<br>Distância: ' + _map_df['dist_km'].astype(str) + ' km'
                             ))
-                            
+
                             # Linhas de travessia
                             for _, row in _map_df.iterrows():
-                                fig.add_trace(go.Scattermapbox(
+                                fig.add_trace(_GO_SCATTER_MAPA(
                                     lat=[row['lat_origem'], row['lat_destino']],
                                     lon=[row['lon_origem'], row['lon_destino']],
                                     mode='lines',
@@ -56749,13 +57535,13 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
                                     showlegend=False,
                                     hoverinfo='skip'
                                 ))
-                            
+
                             fig.update_layout(
-                                mapbox=dict(
+                                **{_MAPA_LAYOUT_CHAVE: dict(
                                     style="carto-darkmatter",
                                     center=dict(lat=-15, lon=-55),
                                     zoom=3.5
-                                ),
+                                )},
                                 height=600,
                                 margin={"r":0,"t":40,"l":0,"b":0},
                                 showlegend=True
@@ -56910,24 +57696,72 @@ def _fig_pares_od(df, altura=560):
             return None
         _dfp = pd.DataFrame(_pts, columns=['lio', 'lno', 'lid', 'lnd', 'orig', 'dst', 'km'])
         _fig = go.Figure()
-        _fig.add_trace(go.Scattermapbox(
+        _fig.add_trace(_GO_SCATTER_MAPA(
             lat=_dfp['lio'], lon=_dfp['lno'], mode='markers',
             marker=dict(size=10, color='blue'), name='Origem', text=_dfp['orig'],
             hoverinfo='text',
             hovertext=_dfp['orig'] + ' → ' + _dfp['dst'] + '<br>km: ' + _dfp['km'].astype(str)))
-        _fig.add_trace(go.Scattermapbox(
+        _fig.add_trace(_GO_SCATTER_MAPA(
             lat=_dfp['lid'], lon=_dfp['lnd'], mode='markers',
             marker=dict(size=10, color='red'), name='Destino', text=_dfp['dst'],
             hoverinfo='text',
             hovertext=_dfp['orig'] + ' → ' + _dfp['dst'] + '<br>km: ' + _dfp['km'].astype(str)))
         for _, _r in _dfp.iterrows():
-            _fig.add_trace(go.Scattermapbox(
+            _fig.add_trace(_GO_SCATTER_MAPA(
                 lat=[_r['lio'], _r['lid']], lon=[_r['lno'], _r['lnd']],
                 mode='lines', line=dict(width=2, color='blue', dash='dash'),
                 showlegend=False, hoverinfo='skip'))
         _fig.update_layout(
-            mapbox=dict(style="carto-darkmatter", center=dict(lat=-15, lon=-55), zoom=3.5),
+            **{_MAPA_LAYOUT_CHAVE: dict(style="carto-darkmatter", center=dict(lat=-15, lon=-55), zoom=3.5)},
             height=altura, margin={"r": 0, "t": 40, "l": 0, "b": 0}, showlegend=True)
+        return _fig
+    except Exception:
+        return None
+
+
+def _fig_mapa_tematico(df, col_valor, titulo_legenda, colorscale="YlOrRd", altura=560,
+                        cmin=0, cmax=100):
+    """[GEO-MAPA-TEMATICO - Rodada 7/Missão 2] Mapa temático nacional (§12 da
+    missão): cada rota do estudo vira um ponto no meio do caminho (média
+    origem/destino), colorido pelo valor de `col_valor` (ex.: Complexidade
+    Geografica, Dependencia Aquaviaria) — responde "onde no país as rotas
+    deste estudo são mais complexas/mais dependentes de travessia?" (§13:
+    cada mapa deve responder uma pergunta). Escopado ao estudo carregado na
+    sessão, não a um agregado nacional fabricado a partir de nada — usa
+    exatamente os valores já calculados por `route_context.analisar_rota`
+    para essas rotas, nunca estima/interpola pontos sem dado. Retorna None
+    (nunca lança) se a coluna não existir ou não houver valores válidos.
+
+    `cmin`/`cmax`: fixos em 0-100 por padrão (índices já normalizados nessa
+    escala). Para métricas de contagem sem teto natural (ex.: densidade de
+    cruzamentos hidrográficos, Rodada 12), passe `cmax=None` para a escala
+    de cor se ajustar automaticamente ao maior valor real do recorte — nunca
+    inventa um teto arbitrário para uma métrica que não tem um natural."""
+    try:
+        if df is None or len(df) == 0 or col_valor not in df.columns:
+            return None
+        _lo = pd.to_numeric(df.get("Lat Origem"), errors="coerce")
+        _oo = pd.to_numeric(df.get("Lon Origem"), errors="coerce")
+        _ld = pd.to_numeric(df.get("Lat Destino"), errors="coerce")
+        _od = pd.to_numeric(df.get("Lon Destino"), errors="coerce")
+        _val = pd.to_numeric(df.get(col_valor), errors="coerce")
+        _dfp = pd.DataFrame({
+            "lat": (_lo + _ld) / 2.0, "lon": (_oo + _od) / 2.0, "valor": _val,
+            "origem": df.get("Origem", pd.Series(dtype=object)).astype(str),
+            "destino": df.get("Destino", pd.Series(dtype=object)).astype(str),
+        }).dropna(subset=["lat", "lon", "valor"])
+        if _dfp.empty:
+            return None
+        _cmax_ef = cmax if cmax is not None else max(1.0, float(_dfp["valor"].max()))
+        _fig = go.Figure(_GO_SCATTER_MAPA(
+            lat=_dfp["lat"], lon=_dfp["lon"], mode="markers",
+            marker=dict(size=12, color=_dfp["valor"], colorscale=colorscale, cmin=cmin, cmax=_cmax_ef,
+                        showscale=True, colorbar=dict(title=titulo_legenda)),
+            text=_dfp["origem"] + " → " + _dfp["destino"] + "<br>" + titulo_legenda + ": " + _dfp["valor"].astype(str),
+            hoverinfo="text"))
+        _fig.update_layout(
+            **{_MAPA_LAYOUT_CHAVE: dict(style="carto-darkmatter", center=dict(lat=-15, lon=-55), zoom=3.5)},
+            height=altura, margin={"r": 0, "t": 40, "l": 0, "b": 0})
         return _fig
     except Exception:
         return None
