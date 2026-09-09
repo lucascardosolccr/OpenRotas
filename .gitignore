@@ -16,6 +16,7 @@ cache_*/
 logs_*/
 !cache_osm/                 # (registro: nada aqui por ora)
 inteligencia_geoespacial/caches/
+*.pkl
 
 # ---- Estado interno da ferramenta de automação ----
 .superpowers/
