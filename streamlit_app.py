@@ -56398,91 +56398,94 @@ if _secao == _SECOES[15]:   # tab_route_intel
 # ==============================================================================
 if _secao == _SECOES[16]:   # tab_data_sources
     st.header("📖 Fontes de Dados Oficiais Integradas")
-    st.caption("Catálogo estruturado de todas as fontes oficiais brasileiras integradas ao motor de roteamento.")
-    
-    _fontes = [
-        {"Órgão": "IBGE", "Fonte": "Malha Municipal 2025 / BC250 / BC100 / BCIM", "Tipo": "Geoespacial / Territorial", "Registros": "5.570 municípios / 1.467.729 nós / 9.569 nomes", "Uso": "Limites municipais, coordenadas oficiais, validação geográfica, grafo fluvial", "Status": "✅ Integrado", "Endpoint": "https://geoftp.ibge.gov.br/organizacao_do_territorio/malhas_territoriais/"},
-        {"Órgão": "ANA / SNIRH", "Fonte": "HidroWeb REST API", "Tipo": "Hidrológico / Hidrográfico", "Registros": "40.745 estações / 6.803 telemétricas / 14.135 rios / 9 bacias / 84 sub-bacias / 5.714 municípios", "Uso": "Rios, bacias, cotas, vazões, sedimentos, curvas de descarga, estações telemétricas", "Status": "✅ API REST funcional", "Endpoint": "https://hidroweb.ana.gov.br/api/v1/"},
-        {"Órgão": "ANTAQ", "Fonte": "Dados Abertos / Hidrovias", "Tipo": "Aquaviário / Portuário", "Registros": "Portos, terminais, hidrovias, travessias, balsas, linhas", "Uso": "Balsas, terminais, hidrovias, infraestrutura aquaviária", "Status": "✅ Integrado via SNIRH", "Endpoint": "https://dadosabertos.antaq.gov.br/"},
-        {"Órgão": "DNIT", "Fonte": "SICRO / VGEO / Dados Abertos", "Tipo": "Rodoviário / Infraestrutura", "Registros": "Rodovias federais, segmentos, pontes, obras, pavimento, tráfego", "Uso": "Validação rodoviária, jurisdição, pavimento, obras, pontes", "Status": "✅ Via OSRM/FOSSGIS", "Endpoint": "https://dadosabertos.dnit.gov.br/"},
-        {"Órgão": "ANTT", "Fonte": "Dados Abertos / Concessões", "Tipo": "Rodoviário / Concessões", "Registros": "Rodovias concedidas, praças de pedágio, trechos, intervenções", "Uso": "Rodovias concedidas, concessões, praças, trechos", "Status": "⚠️ Parcial (via OSRM)", "Endpoint": "https://dados.antt.gov.br/"},
-        {"Órgão": "IBGE", "Fonte": "Malhas Municipais 2025 / BC250 / BC100 / BCIM", "Tipo": "Cartográfico / Territorial", "Registros": "5.570 municípios / 1.467.729 nós / 9.569 nomes", "Uso": "Limites municipais, coordenadas oficiais, validação geográfica, grafo fluvial", "Status": "✅ Disponível (Shapefile/GPKG/PostGIS)", "Endpoint": "https://geoftp.ibge.gov.br/"},
-        {"Órgão": "ANA / SNIRH", "Fonte": "HidroWeb REST API", "Tipo": "Hidrológico", "Registros": "Estações, cotas, vazões, sedimentos, curvas de descarga, rios, bacias", "Uso": "Inteligência de travessias, barreiras hidrográficas, scores de navegabilidade", "Status": "✅ API REST funcional (HAL+JSON)", "Endpoint": "https://hidroweb.ana.gov.br/api/v1/"},
-        {"Órgão": "OSRM / FOSSGIS", "Fonte": "OSRM Routing Engine", "Tipo": "Roteamento rodoviário", "Registros": "Rede viária global (OpenStreetMap)", "Uso": "Distâncias rodoviárias, tempos, geometrias, balsas", "Status": "✅ Público (FOSSGIS)", "Endpoint": "https://router.project-osrm.org/"},
-        {"Órgão": "Valhalla", "Fonte": "Valhalla Routing Engine", "Tipo": "Roteamento multimodal", "Registros": "Rede viária + ferry + transit", "Uso": "Roteamento alternativo, consenso, investigação V/R", "Status": "⚠️ Opt-in (auto-engajamento)", "Endpoint": "https://valhalla1.openstreetmap.de/"},
-        {"Órgão": "Natural Earth", "Fonte": "Natural Earth 10m Rivers", "Tipo": "Hidrografia vetorial global", "Registros": "2.129 rios / 251K nós / 501K arestas", "Uso": "Grafo fluvial base, nomes de rios, confluências", "Status": "✅ Integrado (merge 433ª)", "Endpoint": "https://www.naturalearthdata.com/"},
-    ]
-    
+    st.caption("Catálogo real das fontes de dados e APIs efetivamente usadas pelo motor de rotas — "
+               "gerado a partir do código (inteligencia_geoespacial.sources_inventory), não de uma "
+               "lista estática. Cada fonte mostra COMO é acessada de fato (API ao vivo, arquivo local "
+               "já baixado, download sob demanda ou só um link informativo) e ONDE é usada hoje.")
+
     import pandas as pd
-    _df_fontes = pd.DataFrame(_fontes)
-    
-    # [FONTES-VIS - 452ª] Saúde do catálogo (aditivo): nº de fontes integradas/parciais e órgãos.
+    from inteligencia_geoespacial.sources_inventory import populate_sources as _popular_fontes_reais
+    _df_fontes = _popular_fontes_reais().to_dataframe()
+
+    # [FONTES-VIS - Rodada 2/missão "extração máxima"] Saúde do catálogo (aditivo):
+    # contagem por status real (ativo/em_teste/inativo/descontinuado) e por modo de acesso —
+    # nunca fabricado (substitui a contagem anterior de emojis "✅"/"⚠️" fixos no dicionário).
     try:
         _f_total = len(_df_fontes)
-        _f_int = int(_df_fontes["Status"].astype(str).str.startswith("✅").sum())
-        _f_par = int(_df_fontes["Status"].astype(str).str.startswith("⚠").sum())
+        _f_ativo = int((_df_fontes["Status"] == "ativo").sum())
+        _f_teste = int((_df_fontes["Status"] == "em_teste").sum())
+        _f_api_viva = int((_df_fontes["Modo de acesso"] == "api_rest_ao_vivo").sum())
         _f_org = int(_df_fontes["Órgão"].nunique())
         _fk1, _fk2, _fk3, _fk4 = st.columns(4)
         _fk1.metric("Fontes catalogadas", _f_total)
-        _fk2.metric("Integradas (✅)", _f_int)
-        _fk3.metric("Parciais (⚠️)", _f_par)
-        _fk4.metric("Órgãos distintos", _f_org)
+        _fk2.metric("Ativas", _f_ativo)
+        _fk3.metric("APIs ao vivo", _f_api_viva)
+        _fk4.metric("Órgãos/provedores distintos", _f_org)
+        if _f_teste:
+            st.caption(f"⚠️ {_f_teste} fonte(s) em modo 'em_teste' (acesso frágil/não-oficial, "
+                       "auto-limitado por circuit breaker no código — ver notas na tabela).")
     except Exception:
         logger.debug("[FONTES-VIS] Métricas de fontes isoladas falharam (aditivo).", exc_info=True)
-    
+
     # Abas para melhor organização
-    _aba_fontes = st.tabs(["📋 Tabela Completa", "🔗 Endpoints & APIs", "📊 Resumo por Tipo", "💾 Exportar"])
-    
+    _aba_fontes = st.tabs(["📋 Tabela Completa", "🔗 Endpoints & APIs", "📊 Resumo por Categoria", "💾 Exportar"])
+
     with _aba_fontes[0]:
         st.dataframe(_df_fontes, use_container_width=True, hide_index=True)
-        st.caption("✅ = Integrado e validado | ⚠️ = Parcial / Em desenvolvimento | ❌ = Não integrado")
-        
+        st.caption("Modo de acesso: **api_rest_ao_vivo** = chamada HTTP real hoje · "
+                   "**arquivo_local** = já baixado/derivado, lido do disco · "
+                   "**download_sob_demanda** = baixado uma vez sob clique do usuário · "
+                   "**informativo_apenas** = aparece na UI mas nunca é de fato consultado.")
+
         # Botões de exportação (bloco único DRY — [Melhoria4-EXCEL 453ª · M3])
         _botoes_exportacao_geo("fontes_dados", _df_fontes, sheet_name="Fontes")
-    
+
     with _aba_fontes[1]:
-        st.subheader("🔗 Endpoints das APIs e Fontes")
+        st.subheader("🔗 Endpoints e Caminhos das Fontes")
         for _, row in _df_fontes.iterrows():
-            with st.expander(f"{row['Status']} {row['Órgão']} — {row['Fonte']}"):
+            _rotulo_status = {"ativo": "✅", "em_teste": "⚠️", "inativo": "⚪", "descontinuado": "❌"}.get(row['Status'], "•")
+            with st.expander(f"{_rotulo_status} {row['Órgão']} — {row['Fonte']}"):
                 st.markdown(f"""
-                **Tipo:** {row['Tipo']}  
-                **Registros:** {row['Registros']}  
-                **Uso no motor:** {row['Uso']}  
-                **Endpoint:** [{row['Endpoint']}]({row['Endpoint']})
+                **Categoria:** {row['Categoria']}
+                **Modo de acesso:** {row['Modo de acesso']}
+                **Registros:** {row['Registros']}
+                **Uso no motor hoje:** {row['Uso no motor hoje']}
+                **Endpoint/Caminho:** {row['Endpoint/Caminho']}
+                **Nota:** {row['Nota']}
                 """)
-    
+
     with _aba_fontes[2]:
-        st.subheader("📊 Resumo por Tipo de Dado")
-        _resumo_tipo = _df_fontes.groupby("Tipo").agg(
+        st.subheader("📊 Resumo por Categoria")
+        _resumo_categoria = _df_fontes.groupby("Categoria").agg(
             Fontes=("Fonte", "count"),
-            Órgãos=("Órgão", lambda x: ", ".join(x.unique())),
-            Status=("Status", lambda x: ", ".join(x.unique()))
+            Órgãos=("Órgão", lambda x: ", ".join(sorted(x.unique()))),
+            Status=("Status", lambda x: ", ".join(sorted(x.unique())))
         ).reset_index()
-        st.dataframe(_resumo_tipo, use_container_width=True, hide_index=True)
-        
+        st.dataframe(_resumo_categoria, use_container_width=True, hide_index=True)
+
         _resumo_status = _df_fontes["Status"].value_counts().reset_index()
         _resumo_status.columns = ["Status", "Quantidade"]
         st.bar_chart(_resumo_status.set_index("Status"))
-    
+
     with _aba_fontes[3]:
         st.subheader("💾 Exportar Catálogo Completo")
-        st.caption("Todos os formatos incluem a tabela completa com endpoints.")
-        
+        st.caption("Todos os formatos incluem a tabela completa com endpoints/caminhos.")
+
         _col_e1, _col_e2 = st.columns(2)
         with _col_e1:
             import io
             _xlsx_buf = io.BytesIO()
             with pd.ExcelWriter(_xlsx_buf, engine='xlsxwriter') as _writer:
                 _df_fontes.to_excel(_writer, index=False, sheet_name='Fontes')
-            st.download_button("📊 XLSX (com abas)", 
-                data=_xlsx_buf.getvalue(), 
-                file_name="fontes_dados_completo.xlsx", 
+            st.download_button("📊 XLSX (com abas)",
+                data=_xlsx_buf.getvalue(),
+                file_name="fontes_dados_completo.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True)
         with _col_e2:
-            st.download_button("📄 CSV (UTF-8)", 
-                data=_df_fontes.to_csv(index=False).encode('utf-8-sig'), 
-                file_name="fontes_dados_completo.csv", 
+            st.download_button("📄 CSV (UTF-8)",
+                data=_df_fontes.to_csv(index=False).encode('utf-8-sig'),
+                file_name="fontes_dados_completo.csv",
                 mime="text/csv",
                 use_container_width=True)
 
