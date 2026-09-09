@@ -1228,7 +1228,8 @@ _SITUACOES_FISICAS_NAO_OPERACIONAIS = {"Abandonada", "Destruída", "Planejada", 
 def _detectar_anomalias(lat_o: float, lon_o: float, lat_d: float, lon_d: float,
                          dist_total_km, dist_geodesica_km, rios: list, corpos: list,
                          pontes: list, travessias: list, bacia_principal,
-                         rodovias: list | None = None, ferrovias: list | None = None) -> list:
+                         rodovias: list | None = None, ferrovias: list | None = None,
+                         balsa_reportada_motor: bool | None = None) -> list:
     """Anomalias estruturadas (§25/§26 da missão) a partir do que
     `analisar_rota` já apurou para esta rota — nunca uma inferência nova
     além do que os próprios dados coletados sustentam. Sobrepõe-se em
@@ -1293,6 +1294,33 @@ def _detectar_anomalias(lat_o: float, lon_o: float, lat_d: float, lon_d: float,
                           "\"%s\" na base IBGE — pode não estar disponível para operação real." %
                           (f.nome or "sem identificação", f.situacao_fisica)))
 
+    # Missão 3, Rodada 2 (§14 da missão "aprimoramento máximo"): cruza o flag de
+    # balsa do MOTOR DE ROTEAMENTO (OSRM/Google — vem de fora, via
+    # `balsa_reportada_motor`) com a travessia detectada de forma INDEPENDENTE
+    # por este motor geográfico (interseção espacial real com a hidrografia
+    # IBGE, não depende do que o roteador informou). É exatamente o cenário que
+    # motivou este módulo inteiro: o roteador pode simplesmente não marcar uma
+    # travessia real (ou, mais raramente, marcar uma que a hidrografia local
+    # não sustenta). Só dispara quando os dois lados têm informação para
+    # comparar — `balsa_reportada_motor=None` (chamador não informou) não gera
+    # nada, para nunca fabricar um "não" que o motor de roteamento não disse.
+    if balsa_reportada_motor is False and travessias:
+        _nomes_trav = ", ".join(t.nome for t in travessias[:2] if getattr(t, "nome", None))
+        anomalias.append(Anomalia(
+            categoria="travessia_nao_reportada_pelo_motor_de_rotas", severidade="alta",
+            descricao="O motor de roteamento não sinalizou balsa/travessia nesta rota, mas a análise "
+                      "geográfica independente (interseção real com a hidrografia IBGE) identificou "
+                      "%s no eixo do trajeto — a rota pode depender de uma travessia que o roteador "
+                      "não reportou. Vale reexaminar esta decisão." %
+                      (_nomes_trav or "uma travessia aquaviária")))
+    elif balsa_reportada_motor is True and not travessias and not rios and not corpos:
+        anomalias.append(Anomalia(
+            categoria="balsa_sem_confirmacao_geografica", severidade="media",
+            descricao="O motor de roteamento sinalizou balsa/travessia nesta rota, mas a análise "
+                      "geográfica independente não encontrou nenhum rio, corpo d'água ou travessia no "
+                      "raio consultado — pode ser limitação do raio de busca, não necessariamente um "
+                      "erro do roteador."))
+
     return anomalias
 
 
@@ -1303,12 +1331,20 @@ def _detectar_anomalias(lat_o: float, lon_o: float, lat_d: float, lon_d: float,
 def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
                    distancia_km: float | None = None, raio_km: float | None = None,
                    nivel: int | None = None, suspeita: bool = False,
-                   repo: GeoIntelligenceRepository | None = None) -> ContextoGeograficoRota:
+                   repo: GeoIntelligenceRepository | None = None,
+                   balsa_reportada_motor: bool | None = None) -> ContextoGeograficoRota:
     """Motor de contexto geográfico da rota: hidrografia real por geometria
     + bacia oficial ANA/SNIRH (Rodada 3) e travessias/hidrovias/infra
     aquaviária reais + índice de dependência aquaviária (Rodada 4).
     Fail-open honesto: qualquer falha de dados vira aviso explícito em
-    `avisos`, nunca um valor fabricado. Nunca lança exceção."""
+    `avisos`, nunca um valor fabricado. Nunca lança exceção.
+
+    `balsa_reportada_motor` (Missão 3, Rodada 2, §14): o flag de balsa que o
+    MOTOR DE ROTEAMENTO (OSRM/Google) reportou para esta rota, se o chamador
+    tiver essa informação — usado só para cruzar contra a travessia detectada
+    de forma independente por este módulo (ver `_detectar_anomalias`). Opcional
+    e aditivo: `None` (padrão) preserva o comportamento de todo chamador
+    existente, que não precisa saber dessa informação."""
     try:
         lat_o, lon_o = float(origem[0]), float(origem[1])
         lat_d, lon_d = float(destino[0]), float(destino[1])
@@ -1448,7 +1484,7 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
     try:
         anomalias = _detectar_anomalias(lat_o, lon_o, lat_d, lon_d, dist_total, dist_geodesica,
                                          rios, corpos, pontes, travessias, bacia_principal,
-                                         rodovias, ferrovias)
+                                         rodovias, ferrovias, balsa_reportada_motor)
     except Exception:
         anomalias = []
 

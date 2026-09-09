@@ -16336,6 +16336,12 @@ def _enriquecer_geo_inteligencia_df(df, forcar=False, limiar_automatico=_GEO_INT
             return df, {"executado": False, "motivo": "acima_do_limiar", "n_pares": int(_pares_unicos)}
 
         _col_dist = _col_existente(df, "Distancia", "Distância")
+        # [GEO-INTEL-BALSA-CROSS - Missão 3, Rodada 2, §14] Coluna que o pipeline de roteamento já
+        # preenche com o flag de balsa REPORTADO PELO MOTOR (OSRM/Google) para esta rota — passada ao
+        # motor de contexto geográfico para cruzar contra a travessia que ELE detecta de forma
+        # independente (interseção espacial real com a hidrografia). Só existe se o df já tiver essa
+        # coluna; senão o cruzamento simplesmente não roda (analisar_rota trata None como "sem dado").
+        _col_balsa_motor = _col_existente(df, "Balsas", "Balsa")
         _cache: dict = {}
         _cols: dict = {c: [] for c in _GEO_INTEL_COLUNAS}
         for _, _row in df.iterrows():
@@ -16345,13 +16351,15 @@ def _enriquecer_geo_inteligencia_df(df, forcar=False, limiar_automatico=_GEO_INT
             _od = _num_seguro(_row.get(_col_lon_d))
             _ctx = None
             if _lo is not None and _oo is not None and _ld is not None and _od is not None:
-                _chave = (round(_lo, 4), round(_oo, 4), round(_ld, 4), round(_od, 4))
+                _bal_motor = _bool_balsa(_row.get(_col_balsa_motor)) if _col_balsa_motor else None
+                _chave = (round(_lo, 4), round(_oo, 4), round(_ld, 4), round(_od, 4), _bal_motor)
                 if _chave in _cache:
                     _ctx = _cache[_chave]
                 else:
                     _dist = _num_seguro(_row.get(_col_dist)) if _col_dist else None
                     try:
-                        _ctx = _geo_route_context.analisar_rota((_lo, _oo), (_ld, _od), distancia_km=_dist)
+                        _ctx = _geo_route_context.analisar_rota((_lo, _oo), (_ld, _od), distancia_km=_dist,
+                                                                 balsa_reportada_motor=_bal_motor)
                     except Exception:
                         _ctx = None
                     _cache[_chave] = _ctx
