@@ -106,3 +106,49 @@ def test_fonte_orfa_esta_marcada_inativa_e_sem_uso():
     assert orfao is not None
     assert orfao.status == SourceStatus.INATIVO
     assert orfao.uso_no_motor == ""
+
+
+# ==============================================================================
+# Missão 2 / Rodada 11 — Saúde dos Dados (§19): checagens 100% locais
+# (existência de arquivo, contagem real vs manifest.json, mtime) — nunca
+# uma chamada de rede.
+# ==============================================================================
+
+def test_saude_dos_dados_estrutura_basica():
+    from inteligencia_geoespacial.sources_inventory import saude_dos_dados
+    r = saude_dos_dados()
+    for chave in ("fontes_catalogadas", "fontes_ativas", "apis_ao_vivo", "camadas_ibge",
+                  "camadas_com_arquivo_presente", "camadas_total", "bootstrap_ausentes"):
+        assert chave in r
+
+
+def test_saude_dos_dados_nunca_fabrica_manifest_quando_ausente(monkeypatch, tmp_path):
+    from inteligencia_geoespacial import sources_inventory as si
+    # Aponta para um "repositório" vazio (sem manifest.json) e confirma que
+    # o relatório degrada honestamente (camadas vazias), não inventa dado.
+    _fake = str(tmp_path / "inteligencia_geoespacial" / "sources_inventory.py")
+    monkeypatch.setattr(os.path, "abspath", lambda p: _fake)
+    r = si.saude_dos_dados()
+    assert r["camadas_ibge"] == []
+    assert r["camadas_total"] == 0
+    assert r["extraido_em_utc_manifest"] is None
+
+
+@pytest.mark.skipif(not os.path.exists(_MANIFEST), reason="manifest.json ausente neste ambiente")
+def test_saude_dos_dados_contagens_reais_batem_com_manifest():
+    from inteligencia_geoespacial.sources_inventory import saude_dos_dados
+    r = saude_dos_dados()
+    assert r["camadas_total"] >= 10
+    assert r["camadas_divergentes_do_manifest"] == []
+    for c in r["camadas_ibge"]:
+        if c["existe"]:
+            assert c["bate_com_manifest"] is True
+            assert c["registros_reais"] == c["registros_manifest"]
+
+
+@pytest.mark.skipif(not os.path.exists(_MANIFEST), reason="manifest.json ausente neste ambiente")
+def test_saude_dos_dados_qualidade_media_e_fracao_valida():
+    from inteligencia_geoespacial.sources_inventory import saude_dos_dados
+    r = saude_dos_dados()
+    if r["qualidade_media_completude"] is not None:
+        assert 0.0 <= r["qualidade_media_completude"] <= 1.0

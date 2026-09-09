@@ -30,6 +30,7 @@ elas não aparecem como fontes próprias aqui — o registro não fabrica uma
 integração que não existe.
 """
 
+import json
 from datetime import datetime
 
 from inteligencia_geoespacial.fontes_registry import SourceRegistry, SourcesRegistry, SourceStatus
@@ -641,3 +642,92 @@ def populate_sources() -> SourcesRegistry:
 # Instância pronta para uso — quem importar este módulo já recebe o catálogo real
 # populado (ao contrário da versão anterior, onde populate_sources() nunca era chamada).
 REGISTRO_REAL = populate_sources()
+
+
+# ==============================================================================
+# Saúde dos Dados (Rodada 11, Missão 2 — extração máxima §19): "FONTES ATIVAS,
+# APIs FUNCIONAIS, DATASETS DISPONÍVEIS, DATASETS DESATUALIZADOS, COBERTURA,
+# QUALIDADE, ÚLTIMA ATUALIZAÇÃO" — tudo a partir de checagens 100% LOCAIS
+# (existência de arquivo, metadados de Parquet, manifest.json, mtime). Nunca
+# faz uma chamada de rede: "APIs funcionais" aqui significa "declaradas como
+# api_rest_ao_vivo no catálogo real" (Rodada 2), não um teste ao vivo — esta
+# missão decidiu explicitamente não fazer novas chamadas de rede (§ decisão
+# de escopo do bloco 1). "ERROS DE CONSULTA" do §19 da missão não é reportado
+# aqui: exigiria telemetria de execução ao vivo que este projeto não mantém
+# hoje — omitido em vez de fabricado.
+# ==============================================================================
+
+def saude_dos_dados() -> dict:
+    """Relatório de saúde 100% local (sem rede) do conjunto de dados.
+    Fail-open: qualquer falha parcial de leitura (arquivo corrompido,
+    manifest ausente) aparece como campo `None`/lista vazia, nunca quebra
+    o relatório inteiro nem inventa um valor."""
+    import os
+
+    registry = populate_sources()
+    fontes = list(registry.sources.values())
+    ativas = [s for s in fontes if s.status == SourceStatus.ATIVO]
+    em_teste = [s for s in fontes if s.status == SourceStatus.EM_TESTE]
+    apis_vivas = [s for s in fontes if s.modo_acesso == "api_rest_ao_vivo"]
+
+    raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    manifest_path = os.path.join(raiz, "data", "brasil", "ibge", "derivadas", "manifest.json")
+    manifest: dict = {}
+    try:
+        with open(manifest_path, encoding="utf-8") as f:
+            manifest = json.load(f)
+    except Exception:
+        manifest = {}
+
+    camadas_status = []
+    for camada, info in manifest.get("camadas", {}).items():
+        caminho = os.path.join(raiz, "data", "brasil", "ibge", "derivadas", camada + ".parquet")
+        existe = os.path.exists(caminho)
+        registros_manifest = info.get("registros")
+        registros_reais = None
+        mtime = None
+        if existe:
+            try:
+                import pyarrow.parquet as _pq
+                registros_reais = _pq.ParquetFile(caminho).metadata.num_rows
+            except Exception:
+                registros_reais = None
+            try:
+                mtime = datetime.fromtimestamp(os.path.getmtime(caminho))
+            except Exception:
+                mtime = None
+        camadas_status.append({
+            "camada": camada,
+            "existe": existe,
+            "registros_manifest": registros_manifest,
+            "registros_reais": registros_reais,
+            "bate_com_manifest": (registros_reais == registros_manifest)
+                                  if (existe and registros_reais is not None) else None,
+            "ultima_modificacao": mtime,
+        })
+
+    bootstrap_ausentes: list = []
+    try:
+        from . import dados_bootstrap as _boot
+        bootstrap_ausentes = _boot.ausentes()
+    except Exception:
+        bootstrap_ausentes = []
+
+    completudes = [s.qualidade.get("completude") for s in fontes
+                   if isinstance(s.qualidade, dict) and s.qualidade.get("completude") is not None]
+    qualidade_media = (sum(completudes) / len(completudes)) if completudes else None
+
+    return {
+        "gerado_em": datetime.utcnow(),
+        "fontes_catalogadas": len(fontes),
+        "fontes_ativas": len(ativas),
+        "fontes_em_teste": len(em_teste),
+        "apis_ao_vivo": len(apis_vivas),
+        "camadas_ibge": camadas_status,
+        "camadas_com_arquivo_presente": sum(1 for c in camadas_status if c["existe"]),
+        "camadas_total": len(camadas_status),
+        "camadas_divergentes_do_manifest": [c["camada"] for c in camadas_status if c["bate_com_manifest"] is False],
+        "bootstrap_ausentes": bootstrap_ausentes,
+        "extraido_em_utc_manifest": manifest.get("extraido_em_utc"),
+        "qualidade_media_completude": qualidade_media,
+    }

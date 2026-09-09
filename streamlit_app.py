@@ -56626,7 +56626,8 @@ if _secao == _SECOES[16]:   # tab_data_sources
         logger.debug("[FONTES-VIS] Métricas de fontes isoladas falharam (aditivo).", exc_info=True)
 
     # Abas para melhor organização
-    _aba_fontes = st.tabs(["📋 Tabela Completa", "🔗 Endpoints & APIs", "📊 Resumo por Categoria", "💾 Exportar"])
+    _aba_fontes = st.tabs(["📋 Tabela Completa", "🔗 Endpoints & APIs", "📊 Resumo por Categoria",
+                           "🩺 Saúde dos Dados", "💾 Exportar"])
 
     with _aba_fontes[0]:
         st.dataframe(_df_fontes, use_container_width=True, hide_index=True)
@@ -56666,6 +56667,52 @@ if _secao == _SECOES[16]:   # tab_data_sources
         st.bar_chart(_resumo_status.set_index("Status"))
 
     with _aba_fontes[3]:
+        # [SAUDE-DADOS - Rodada 11/Missão 2, §19] Tudo aqui vem de checagens 100% LOCAIS
+        # (existência de arquivo, metadados de Parquet, manifest.json, mtime) — nunca uma
+        # chamada de rede (decisão de escopo desta missão). "Erros de consulta" do §19 não
+        # é mostrado: exigiria telemetria de execução ao vivo que este projeto não mantém —
+        # omitido em vez de fabricado.
+        st.subheader("🩺 Saúde dos Dados")
+        st.caption("Checagens 100% locais (arquivo existe? contagem bate com o manifest? "
+                   "quando foi gerado?) — nunca uma chamada de rede.")
+        try:
+            from inteligencia_geoespacial.sources_inventory import saude_dos_dados as _saude_dados_fn
+            _saude = _saude_dados_fn()
+
+            _sd1, _sd2, _sd3, _sd4 = st.columns(4)
+            _sd1.metric("Fontes ativas", f"{_saude['fontes_ativas']}/{_saude['fontes_catalogadas']}")
+            _sd2.metric("APIs ao vivo", _saude['apis_ao_vivo'])
+            _sd3.metric("Camadas IBGE presentes", f"{_saude['camadas_com_arquivo_presente']}/{_saude['camadas_total']}")
+            _qm = _saude.get('qualidade_media_completude')
+            _sd4.metric("Qualidade média (completude)", f"{_qm * 100:.1f}%" if _qm is not None else "—")
+
+            if _saude["camadas_divergentes_do_manifest"]:
+                st.error("⚠️ Camadas com contagem DIVERGENTE do manifest.json: "
+                         + ", ".join(_saude["camadas_divergentes_do_manifest"]))
+            else:
+                st.success("✅ Todas as camadas IBGE presentes batem exatamente com manifest.json.")
+
+            if _saude["bootstrap_ausentes"]:
+                st.warning("📥 Arquivos de bootstrap ainda não baixados nesta sessão: "
+                          + ", ".join(_saude["bootstrap_ausentes"])
+                          + " (baixe pelo botão na aba Hidrografia, se necessário).")
+
+            if _saude.get("extraido_em_utc_manifest"):
+                st.caption(f"📅 Camadas derivadas do IBGE geradas em: {_saude['extraido_em_utc_manifest']}")
+
+            _df_camadas = pd.DataFrame(_saude["camadas_ibge"])
+            if not _df_camadas.empty:
+                _df_camadas = _df_camadas.rename(columns={
+                    "camada": "Camada", "existe": "Presente", "registros_manifest": "Registros (manifest)",
+                    "registros_reais": "Registros (real)", "bate_com_manifest": "Bate com manifest?",
+                    "ultima_modificacao": "Última modificação",
+                })
+                st.dataframe(_df_camadas, use_container_width=True, hide_index=True)
+        except Exception:
+            logger.debug("[SAUDE-DADOS] Falha ao montar o painel (aditivo).", exc_info=True)
+            st.info("Não foi possível montar o painel de saúde dos dados nesta sessão.")
+
+    with _aba_fontes[4]:
         st.subheader("💾 Exportar Catálogo Completo")
         st.caption("Todos os formatos incluem a tabela completa com endpoints/caminhos.")
 
