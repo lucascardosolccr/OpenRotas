@@ -521,3 +521,22 @@ def test_limpar_cache_camadas_pesadas_esvazia_o_cache():
     assert len(rc._cache_janela_pesada) >= 1
     rc._limpar_cache_camadas_pesadas()
     assert len(rc._cache_janela_pesada) == 0
+
+
+def test_cache_camada_pesada_respeita_orcamento_de_memoria_via_limite_de_entradas(monkeypatch):
+    # Orçamento de memória em produção (§ comentário no módulo): mesmo com
+    # muitos pontos distintos consultados de verdade (via
+    # _consultar_camada_pesada_cacheada, não manipulando o dict direto), o
+    # cache nunca cresce acima de `_CACHE_PESADAS_MAX_ENTRADAS` — o LRU
+    # descarta a entrada menos recentemente usada.
+    import pandas as pd
+
+    vazio = pd.DataFrame(columns=["geometry_wkb", "lon", "lat", "xmin", "ymin",
+                                   "xmax", "ymax", "tipo_geom", "nome",
+                                   "fonte_base", "fonte_uf"])
+    monkeypatch.setattr(rc._bl, "_busca_com_filtro", lambda *a, **k: vazio)
+
+    rc._limpar_cache_camadas_pesadas()
+    for i in range(rc._CACHE_PESADAS_MAX_ENTRADAS + 50):
+        rc._consultar_camada_pesada_cacheada("drenagem", -60.0, -3.0 - i * 0.2, raio_km=5.0, limite=5)
+    assert len(rc._cache_janela_pesada) == rc._CACHE_PESADAS_MAX_ENTRADAS

@@ -1,24 +1,43 @@
 """
 route_context.py — Motor de Contexto Geográfico da Rota (GeoIntelligenceEngine).
 
-Missão "Aprimoramento máximo da aba de Inteligência":
-  Rodada 3 — integração hidrográfica real (rios/corpos d'água pela GEOMETRIA
-             da rota, não só quando o motor de roteamento reporta balsa; bacia
-             hidrográfica oficial ANA/SNIRH).
-  Rodada 4 — integração aquaviária (travessias/balsas reais do IBGE, hidrovias,
-             portos/terminais/eclusas; índice de dependência aquaviária).
-  Rodada 5 — pontes NO cruzamento hidrográfico (§8 da missão): para cada rio/
-             corpo d'água detectado, verifica se há uma ponte cadastrada
-             naquele ponto — nunca varre pontes genéricas "perto da rota".
+Missão "Aprimoramento máximo da aba de Inteligência" — 15 rodadas, todas
+aditivas e com gate de zero regressão (validar/decidir/pytest a cada uma):
+  Rodada 3  — integração hidrográfica real (rios/corpos d'água pela GEOMETRIA
+              da rota, não só quando o motor de roteamento reporta balsa;
+              bacia hidrográfica oficial ANA/SNIRH).
+  Rodada 4  — integração aquaviária (travessias/balsas reais do IBGE,
+              hidrovias, portos/terminais/eclusas; índice de dependência
+              aquaviária).
+  Rodada 5  — pontes NO cruzamento hidrográfico (§8 da missão): para cada
+              rio/corpo d'água detectado, verifica se há uma ponte cadastrada
+              naquele ponto — nunca varre pontes genéricas "perto da rota".
+  Rodada 9  — mapa Leaflet multi-camada por rota (streamlit_app.py,
+              `_mapa_leaflet_contexto_geografico`), com o contrato deste
+              módulo como única fonte de dados.
+  Rodada 10 — integração automática ao pipeline de rotas (individual e em
+              lote), com enriquecimento automático até `_GEO_INTEL_LIMIAR_
+              AUTOMATICO` pares (streamlit_app.py:_enriquecer_geo_inteligencia_df).
+  Rodada 11 — colunas do contexto geográfico no Excel exportado.
+  Rodada 12 — seção "Inteligência Geográfica" no HTML exportável.
+  Rodada 13 — explicabilidade ("por que esta rota") no Centro de
+              Inteligência da Rota.
+  Rodada 14 — performance: caminho rápido em memória para as camadas
+              pequenas (`_consultar_rapido_camada_pequena`) e cache de
+              janela ampla para as pesadas (`_consultar_camada_pesada_
+              cacheada`) — ver as duas seções logo abaixo.
+  Rodada 15 — auditoria final: validar 210/0, decidir 38/38, relatorio
+              byte-idêntico ao baseline da Rodada 1 (zero regressão
+              confirmada em todas as rodadas).
 
 Tudo consultando as camadas locais derivadas do IBGE (`bases_locais.py`) —
 sem GDAL, sem geopandas, sem rede.
 
 Este módulo é ADITIVO: não substitui nem altera `enrichment_engine.py` (usado
-hoje pelos dois botões manuais já em produção nas abas "Rotas com Balsa" e
-"Geoespacial IBGE"). Ele é o novo motor que, em rodada futura (integração ao
-motor de rotas), passará a alimentar automaticamente cada rota calculada
-pela aplicação.
+pelos dois botões manuais já em produção nas abas "Rotas com Balsa" e
+"Geoespacial IBGE"). É o motor que alimenta automaticamente cada rota
+calculada pela aplicação (Rodada 10) — ver `_enriquecer_geo_inteligencia_df`
+em `streamlit_app.py`.
 
 Contrato principal:
 
@@ -39,11 +58,10 @@ Contrato principal:
     ctx.confianca_geral          # 0-100
     ctx.avisos                   # incerteza explícita, nunca fabricação
 
-`alternativa_sem_balsa` continua reservado no contrato mas é responsabilidade
-de quem já tem as duas distâncias medidas pelo motor de rotas (este módulo
-não faz roteamento nem chamadas de rede) — ver `montar_alternativa_sem_balsa`,
-uma função pura de formatação para ser usada quando o pipeline principal
-integrar este motor (rodada de integração ao motor de rotas).
+`alternativa_sem_balsa` é preenchido por `montar_alternativa_sem_balsa`
+(função pura de formatação — este módulo não faz roteamento nem chamadas de
+rede), a partir das duas distâncias já medidas pelo motor de rotas
+(streamlit_app.py, Rodada 10).
 """
 
 from __future__ import annotations
@@ -251,7 +269,15 @@ _RAIO_SUPERCACHE_PADRAO_KM = 12.0  # cobre o maior raio da escalada automática 
 # reaproveitem a mesma leitura, mesmo custando uma janela de leitura maior.
 _PRECISAO_GRADE_PESADAS = 1
 _MARGEM_SEGURANCA_ARREDONDAMENTO_KM = 9.0  # folga > deslocamento máx. de arredondar o ponto a 1 casa (~7,85 km no pior caso no Brasil)
-_CACHE_PESADAS_MAX_ENTRADAS = 300
+# Medido (regiões densas: Manaus, Iranduba, foz do Amazonas, litoral de
+# Recife — raio de leitura ~21km): cada entrada de `drenagem`/`massas_dagua`
+# pesa até ~0,85 MB (pior caso observado) em memória. 150 entradas =
+# no máximo ~125 MB no pior caso hipotético (todas as entradas no pior
+# caso ao mesmo tempo — improvável na prática, já que a maioria das
+# células é bem mais leve que o pior caso). Valor escolhido para manter
+# a mesma cautela de orçamento de memória que já motivou NÃO carregar
+# essas duas camadas inteiras (§ comentário acima).
+_CACHE_PESADAS_MAX_ENTRADAS = 150
 
 _cache_janela_pesada: "OrderedDict[tuple, tuple]" = OrderedDict()
 
