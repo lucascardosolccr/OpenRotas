@@ -32732,6 +32732,117 @@ map.fitBounds(linha.getBounds(),{{padding:[40,40]}});
     import base64 as _b64
     return "data:text/html;base64," + _b64.b64encode(html.encode("utf-8")).decode("ascii")
 
+def _mapa_leaflet_contexto_geografico(ctx, lat_o, lon_o, lat_d, lon_d, nome_origem="", nome_destino="",
+                                       geometria_polyline="", altura=520):
+    """[GEO-MAPA - Rodada 9] Mapa Leaflet da rota com CAMADAS ATIVÁVEIS (§3/§24/§25 da missão):
+    rios/corpos d'água, pontes, travessias, hidrovias e portos que o motor de contexto
+    geográfico (route_context.analisar_rota) identificou para esta rota — cada categoria é um
+    L.control.layers independente, ligado/desligado dentro do próprio mapa (sem precisar de
+    rerun do Streamlit). Ao clicar em cada marcador, o popup mostra nome/tipo/distância ao
+    eixo/posição na rota/fonte (§25). Feições sem coordenada conhecida são omitidas do mapa
+    (nunca inventa posição) — seguem disponíveis nas tabelas/KPIs. Mesmo padrão de degradação
+    graciosa offline de `_gerar_mapa_leaflet_rota`. Retorna um data URI HTML autocontido."""
+    try:
+        pontos = _decodificar_polyline(geometria_polyline) if geometria_polyline else []
+    except Exception:
+        pontos = []
+    if len(pontos) < 2:
+        pontos = [(lat_o, lon_o), (lat_d, lon_d)]
+    pontos_js = "[" + ",".join(f"[{la:.6f},{lo:.6f}]" for la, lo in pontos) + "]"
+    _no = _escapar_js(nome_origem) if nome_origem else "Origem"
+    _nd = _escapar_js(nome_destino) if nome_destino else "Destino"
+
+    def _popup(nome, tipo, dist_eixo, km_origem, fonte, extra=""):
+        partes = [f"<b>{_escapar_js(str(nome))}</b>", f"Tipo: {_escapar_js(str(tipo))}"]
+        if dist_eixo is not None:
+            partes.append(f"Distância ao eixo: {dist_eixo:.1f} km")
+        if km_origem is not None:
+            partes.append(f"Posição na rota: km {km_origem:.1f} desde a origem")
+        if extra:
+            partes.append(_escapar_js(str(extra)))
+        partes.append(f"Fonte: {_escapar_js(str(fonte))}")
+        return "<br>".join(partes)
+
+    def _camada_js(nome_var, itens, icone_cor, tipo_rotulo):
+        marcadores = []
+        for it in (itens or []):
+            _lat = getattr(it, "lat", None)
+            _lon = getattr(it, "lon", None)
+            if _lat is None or _lon is None:
+                continue
+            _extra = ""
+            _nav = getattr(it, "navegavel", None)
+            _bacia = getattr(it, "bacia", None)
+            if _nav:
+                _extra += f"Navegável: {_nav}. "
+            if _bacia:
+                _extra += f"Bacia: {_bacia}."
+            _pop = _popup(it.nome, tipo_rotulo, getattr(it, "distancia_eixo_km", None),
+                          getattr(it, "km_desde_origem", None), it.fonte, _extra)
+            marcadores.append("L.circleMarker([%.6f,%.6f],{radius:8,color:'%s',fillColor:'%s',"
+                              "fillOpacity:0.85,weight:2}).bindPopup(`%s`)" % (_lat, _lon, icone_cor, icone_cor, _pop))
+        return f"var {nome_var}=L.layerGroup([" + ",".join(marcadores) + "]);"
+
+    _js_rios = _camada_js("camadaRios", (ctx.rios_detectados if ctx else []) + (ctx.corpos_dagua if ctx else []),
+                          "#0891b2", "Rio/corpo d'água")
+    _js_pontes = _camada_js("camadaPontes", ctx.pontes if ctx else [], "#78350f", "Ponte")
+    _js_trav = _camada_js("camadaTravessias", ctx.travessias if ctx else [], "#f97316", "Travessia (balsa)")
+    _js_hidro = _camada_js("camadaHidrovias", ctx.hidrovias_proximas if ctx else [], "#1d4ed8", "Hidrovia")
+    _js_portos = _camada_js("camadaPortos", ctx.portos_terminais if ctx else [], "#7c3aed", "Porto/terminal")
+
+    _n_rios = len((ctx.rios_detectados if ctx else []) + (ctx.corpos_dagua if ctx else []))
+    _n_pontes = len(ctx.pontes if ctx else [])
+    _n_trav = len(ctx.travessias if ctx else [])
+    _n_hidro = len(ctx.hidrovias_proximas if ctx else [])
+    _n_portos = len(ctx.portos_terminais if ctx else [])
+
+    html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>html,body,#map{{height:100%;margin:0;padding:0}}#map{{width:100%;height:100%}}
+.legenda{{position:absolute;bottom:10px;right:10px;z-index:1000;background:#fff;padding:8px 12px;
+border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.2);font-family:system-ui,sans-serif;font-size:11px}}
+.legenda span{{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}}</style>
+</head><body>
+<div style="position:absolute;top:10px;left:50px;right:10px;z-index:1000;background:#fff;padding:6px 12px;
+border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.2);font-family:system-ui,sans-serif;font-size:13px;max-width:90%">
+<b>🧠 Contexto Geográfico da Rota</b><br>
+<span style="color:#16a34a">●</span> {_no} &nbsp;→&nbsp; <span style="color:#dc2626">●</span> {_nd}</div>
+<div id="map" style="position:relative"><div style="position:absolute;top:0;left:0;right:0;bottom:0;z-index:0;
+display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;text-align:center;
+font-family:system-ui,Arial,sans-serif;color:#0E2A3B;background:#f4f6f8;"><div>
+<div style="font-size:1.7em;margin-bottom:6px;">🗺️⚠️</div>
+<div style="font-weight:600;margin-bottom:4px;">Mapa indisponível offline</div>
+<div style="font-size:.9em;line-height:1.45;max-width:440px;">A biblioteca de mapas (Leaflet) ou os ladrilhos não
+puderam ser carregados — sem internet ou o CDN foi bloqueado neste ambiente. Os dados da análise permanecem
+completos nas tabelas e KPIs.</div></div></div></div>
+<script>
+var pts={pontos_js};
+var map=L.map('map');
+L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',{{maxZoom:19,attribution:'© OpenStreetMap'}}).addTo(map);
+var linha=L.polyline(pts,{{color:'#2563eb',weight:5,opacity:0.85}}).addTo(map);
+L.marker(pts[0]).addTo(map).bindPopup('<b>Origem:</b><br>{_no}').openPopup();
+L.marker(pts[pts.length-1]).addTo(map).bindPopup('<b>Destino:</b><br>{_nd}');
+{_js_rios}
+{_js_pontes}
+{_js_trav}
+{_js_hidro}
+{_js_portos}
+camadaRios.addTo(map); camadaPontes.addTo(map); camadaTravessias.addTo(map);
+camadaHidrovias.addTo(map); camadaPortos.addTo(map);
+L.control.layers(null,{{
+  '🌊 Rios/corpos d\\'água ({_n_rios})': camadaRios,
+  '🌉 Pontes ({_n_pontes})': camadaPontes,
+  '⛴️ Travessias ({_n_trav})': camadaTravessias,
+  '🚢 Hidrovias ({_n_hidro})': camadaHidrovias,
+  '⚓ Portos/terminais ({_n_portos})': camadaPortos,
+}},{{collapsed:false}}).addTo(map);
+map.fitBounds(linha.getBounds(),{{padding:[60,60]}});
+</script></body></html>"""
+    import base64 as _b64
+    return "data:text/html;base64," + _b64.b64encode(html.encode("utf-8")).decode("ascii")
+
+
 def _gerar_mapa_rota_osrm(geometria_polyline, lat_o, lon_o, lat_d, lon_d, distancia_km="", tempo_str="", nome_origem="", nome_destino=""):
     """[FIX-OSRM-GEO2] Mapa da rota OSRM com traçado completo. Agora delega ao gerador
     unificado, com rótulos por NOME (não coordenadas). Mantido para compatibilidade."""
@@ -43257,6 +43368,25 @@ if _secao == _SECOES[0]:   # tab_individual
                                           f"Confiança geográfica: {_ctx_gi.confianca_geral}/100 ({_ctx_gi.confianca_nivel})")
                             for _av in _ctx_gi.avisos:
                                 st.caption(f"⚠️ {_av}")
+                            # [GEO-MAPA - Rodada 9] Mapa com camadas ativáveis (rios, pontes,
+                            # travessias, hidrovias, portos) — só desenhado se houver ao menos
+                            # uma feição com coordenada conhecida (nunca um mapa vazio).
+                            _tem_feicoes_mapa = any([
+                                _ctx_gi.rios_detectados, _ctx_gi.corpos_dagua, _ctx_gi.pontes,
+                                _ctx_gi.travessias, _ctx_gi.hidrovias_proximas, _ctx_gi.portos_terminais])
+                            if _tem_feicoes_mapa:
+                                try:
+                                    _mapa_geo_uri = _mapa_leaflet_contexto_geografico(
+                                        _ctx_gi, float(_lat_o_gi), float(_lon_o_gi),
+                                        float(_lat_d_gi), float(_lon_d_gi), orig_ind, dest_ind)
+                                    import base64 as _b64geo
+                                    components.html(
+                                        _b64geo.b64decode(_mapa_geo_uri.split(",", 1)[1]).decode("utf-8"),
+                                        height=440, scrolling=False)
+                                    st.caption("🗺️ Use o controle de camadas no canto do mapa para ativar/desativar "
+                                              "rios, pontes, travessias, hidrovias e portos.")
+                                except Exception:
+                                    logger.debug("[GEO-MAPA] Falha ao renderizar mapa de contexto (aditivo).", exc_info=True)
                 except Exception:
                     logger.debug("[GEO-INTEL-AUTO] Falha no contexto geográfico individual (aditivo).", exc_info=True)
 

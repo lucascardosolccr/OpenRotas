@@ -178,6 +178,37 @@ def test_detectar_feicoes_nome_ausente_vira_rotulo_explicito(monkeypatch):
     assert achados[0].nome == "<eclusa sem nome>"
 
 
+def test_detectar_feicoes_propaga_coordenada_real(monkeypatch):
+    def _fake(camada, lon, lat, raio_km=30.0, limite=10, filtros=None):
+        return [{"nome": "Porto X", "distancia_km": 1.0, "lat": -22.5, "lon": -43.2}]
+
+    monkeypatch.setattr(rc._bl, "mais_proximos", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    achados = rc._detectar_feicoes([(0.0, 0.0, 0.0)], repo, "complexos_portuarios", 10.0, "porto", "fonte-teste")
+    assert achados[0].lat == -22.5 and achados[0].lon == -43.2
+
+
+def test_detectar_feicoes_sem_coordenada_na_base_fica_none(monkeypatch):
+    def _fake(camada, lon, lat, raio_km=30.0, limite=10, filtros=None):
+        return [{"nome": "Porto Y", "distancia_km": 1.0}]  # sem 'lat'/'lon' na resposta
+
+    monkeypatch.setattr(rc._bl, "mais_proximos", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    achados = rc._detectar_feicoes([(0.0, 0.0, 0.0)], repo, "complexos_portuarios", 10.0, "porto", "fonte-teste")
+    assert achados[0].lat is None and achados[0].lon is None
+
+
+def test_detectar_pontes_propaga_coordenada_propria_da_ponte(monkeypatch):
+    def _fake(camada, lon, lat, raio_km=30.0, limite=10, filtros=None):
+        return [{"nome": "Ponte Z", "distancia_km": 0.2, "lat": -10.1, "lon": -50.2}]
+
+    monkeypatch.setattr(rc._bl, "mais_proximos", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    cz = _cruzamento(nome="Rio W", lat=-10.1001, lon=-50.2001)
+    pontes = rc._detectar_pontes_nos_cruzamentos([cz], repo)
+    assert pontes[0].lat == -10.1 and pontes[0].lon == -50.2  # coordenada da PONTE, não do cruzamento
+
+
 def test_detectar_feicoes_deduplica_mantendo_menor_distancia(monkeypatch):
     respostas = [
         [{"nome": "Porto X", "distancia_km": 5.0}],

@@ -289,6 +289,8 @@ class Feicao:
     distancia_eixo_km: float | None
     km_desde_origem: float | None
     fonte: str
+    lat: float | None = None    # coordenada real da feição (para mapas — Rodada 9)
+    lon: float | None = None
 
 
 @dataclass
@@ -463,8 +465,13 @@ def _detectar_feicoes(pontos: list, repo: GeoIntelligenceRepository, camada: str
             if atual is not None and dist is not None and atual.distancia_eixo_km is not None \
                     and dist >= atual.distancia_eixo_km:
                 continue
+            try:
+                _flat, _flon = float(it.get("lat")), float(it.get("lon"))
+            except Exception:
+                _flat, _flon = None, None
             achados[chave] = Feicao(nome=nome, tipo=tipo_rotulo, distancia_eixo_km=dist,
-                                     km_desde_origem=round(km_o, 1), fonte=fonte)
+                                     km_desde_origem=round(km_o, 1), fonte=fonte,
+                                     lat=_flat, lon=_flon)
     return sorted(achados.values(), key=lambda f: (f.km_desde_origem or 0.0))
 
 
@@ -574,9 +581,13 @@ def _detectar_pontes_nos_cruzamentos(cruzamentos: list, repo: GeoIntelligenceRep
         if atual is not None and dist is not None and atual.distancia_eixo_km is not None \
                 and dist >= atual.distancia_eixo_km:
             continue
+        try:
+            _plat, _plon = float(it.get("lat")), float(it.get("lon"))
+        except Exception:
+            _plat, _plon = cz.lat, cz.lon  # sem coordenada própria -> usa o cruzamento como aproximação
         pontes[chave] = Feicao(nome=rotulo, tipo="ponte", distancia_eixo_km=dist,
                                 km_desde_origem=cz.km_desde_origem,
-                                fonte="IBGE BC250/BC100 (pontes)")
+                                fonte="IBGE BC250/BC100 (pontes)", lat=_plat, lon=_plon)
     return sorted(pontes.values(), key=lambda f: (f.km_desde_origem or 0.0))
 
 
