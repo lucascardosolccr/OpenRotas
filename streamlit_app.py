@@ -9780,10 +9780,11 @@ def _cache_set_seguro(cache, chave, valor, expire=2592000):
 
 # ==============================================================================
 # [JOB-RUNNER + OBSERVABILIDADE - 402a geração] ALICERCE (Rodada 1 da arquitetura híbrida).
-# Infraestrutura ADITIVA e INERTE: ainda NÃO é chamada pelo fluxo de roteamento — é a base onde,
-# nas próximas rodadas, plugaremos (a) o runner de background que tira o processamento do ciclo de
-# rerun/WebSocket e (b) o painel de observabilidade por rota via st.fragment. Zero-regressão: nada
-# existente muda de comportamento.
+# [ATUALIZADO - Missão 3, Rodada 23] O texto original dizia "ainda NÃO é chamada pelo fluxo de
+# roteamento" — desatualizado: o runner de background (405a/406a, `_alo_iniciar_job_background` /
+# `_alo_processar_background`) e o painel de observabilidade (`_obs_painel_rotas_fragment`) já estão
+# em produção. O único gap real encontrado na Rodada 23 era `_job_remover` nunca ser chamado (ver
+# `_alo_processar_background`) — corrigido.
 #
 #  • Registro de jobs THREAD-SAFE que SOBREVIVE aos reruns (singleton de processo via
 #    @st.cache_resource — mesmo padrão do EXECUTOR_GLOBAL). A thread de background escreverá aqui
@@ -10191,6 +10192,14 @@ def _alo_processar_background():
             st.session_state["alo_chunk_idx"] = _total
             st.session_state["alo_bg_on"] = False
             st.session_state["alo_fase"] = "finalizar"
+            # [JOB-RUNNER - Rodada 23] `_job_remover` (402ª geração) existia desde a fundação deste
+            # subsistema mas nunca era chamado: o registro de jobs é um singleton POR PROCESSO
+            # (@st.cache_resource, compartilhado entre TODAS as sessões/usuários do servidor), não
+            # por-sessão — sem remoção, cada estudo concluído deixa uma entrada permanente na memória
+            # do processo (vazamento real num deploy de longa duração, ex. Streamlit Community Cloud).
+            # Seguro aqui: os resultados já foram copiados para session_state acima, e o painel de
+            # observabilidade (_obs_painel_rotas_fragment) lê do SQLite por job_id, não deste registro.
+            _job_remover(_job)
             return "handoff"
         return "poll"
     except Exception:

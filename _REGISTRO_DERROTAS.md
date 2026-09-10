@@ -996,3 +996,32 @@ classe CSS `.dv-caso-mg`), e `st.caption("🔎 Motivo granular: ...")` no expand
 Testes: 8 casos novos, PUROS, sem rede — cobrem `_motivo_granular` (atribuicao ao motor vencedor/motores
 distintos/empate/categoria de balsa) e o efeito colateral (mutacao + idempotencia) de `_montar_stage_b` —
 234 OK / 0 FALHAS (era 226). Suite completa sem regressao.
+
+### 438 geracao: JOB-RUNNER — vazamento de memoria process-wide fechado (Rodada 23)
+
+**Achado da auditoria:** `_obter_registro_jobs()` (402a geracao, fundacao do JOB-RUNNER de background) e
+`@st.cache_resource` — um singleton POR PROCESSO, compartilhado entre TODAS as sessoes/usuarios do
+servidor (nao e por-sessao como `st.session_state`). `_job_remover` foi desenhado desde a fundacao
+justamente para "estudo concluido/descartado", mas nunca era chamado em lugar nenhum — confirmado por
+varredura de todas as chamadas a `_job_status`/`_job_criar`/`_job_concluir`/`_job_remover` no arquivo. Cada
+estudo processado pelo runner de background (`_alo_iniciar_job_background`/`_alo_processar_background`,
+405a/406a geracao — ja em producao, ao contrario do que o comentario original da 402a ainda dizia) deixava
+uma entrada PERMANENTE no dicionario em memoria do processo. Num deploy de longa duracao (Streamlit
+Community Cloud, processo que fica no ar por dias), isso e um vazamento de memoria real e cumulativo — o
+numero de entradas so cresce, nunca diminui, ao longo da vida do processo.
+
+**Verificacao antes do fix:** o painel de observabilidade ao vivo (`_obs_painel_rotas_fragment`) le do
+SQLite por `job_id`, NAO do registro em memoria — remover a entrada do registro nao afeta esse painel.
+Nenhum dos 3 leitores de `_job_status` (dentro do proprio orquestrador) precisa da entrada apos o
+"handoff" (os resultados ja foram copiados para `st.session_state` nesse ponto). Verificado tambem que,
+se o mesmo `job_id` for reusado depois de removido, `_alo_iniciar_job_background` recria a entrada do
+zero via `_job_criar` — sem crash, sem comportamento surpreendente.
+
+**Fix:** uma linha — `_job_remover(_job)` em `_alo_processar_background`, logo apos os resultados serem
+capturados em `st.session_state`, nos 3 desfechos terminais (concluido/cancelado/erro). Tambem corrigido o
+comentario de bloco da 402a geracao, que ainda afirmava (incorretamente) que a infraestrutura era "inerte"
+e "ainda nao chamada pelo fluxo de roteamento" — desatualizado ha pelo menos 2 geracoes.
+
+Testes: 5 casos novos, PUROS, sem rede, exercitando o ciclo de vida completo do registro (criar -> concluir
+-> remover -> status None -> remover de novo e defensivo) — 239 OK / 0 FALHAS (era 234). Suite completa sem
+regressao.

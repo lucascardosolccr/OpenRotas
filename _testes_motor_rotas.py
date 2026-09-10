@@ -1796,6 +1796,25 @@ def validar():
     check("MONTAR-STAGE-B: idempotente (_stage_b) — 2ª chamada preserva o mesmo Motivo Granular",
           _diag_mg["analises"][0]["Motivo Granular"] == _mg_antes)
 
+    print("== 27) JOB-RUNNER — _job_remover fecha o vazamento do registro process-wide (Rodada 23) ==")
+    # [ACHADO] _obter_registro_jobs() é @st.cache_resource — singleton POR PROCESSO, compartilhado entre
+    # TODAS as sessões/usuários do servidor. _job_remover existia desde a fundação (402ª) mas nunca era
+    # chamado: cada estudo concluído deixava uma entrada permanente na memória do processo. Corrigido em
+    # _alo_processar_background (chama _job_remover logo após capturar os resultados no handoff).
+    _jid_27 = "teste-job-rodada23"
+    m._job_remover(_jid_27)  # limpa resíduo de execução anterior, se houver (isolamento do teste)
+    check("JOB-RUNNER: job recém-criado aparece no registro", m._job_criar(_jid_27, total=3, etapa="fila")
+          and m._job_status(_jid_27) is not None)
+    check("JOB-RUNNER: _job_concluir atualiza o status sem remover do registro",
+          m._job_concluir(_jid_27, "concluido", "ok") and m._job_status(_jid_27) is not None
+          and m._job_status(_jid_27).get("status") == "concluido")
+    check("JOB-RUNNER: _job_remover remove o job do registro (fecha o vazamento)",
+          m._job_remover(_jid_27) and m._job_status(_jid_27) is None)
+    check("JOB-RUNNER: _job_remover em job inexistente é defensivo (True, nunca levanta)",
+          m._job_remover("id-que-nunca-existiu-" + _jid_27) is True)
+    check("JOB-RUNNER: registro removido não reaparece sozinho (status permanece None)",
+          m._job_status(_jid_27) is None)
+
     print()
     print("=" * 70)
     print("RESULTADO: %d OK, %d FALHAS" % (ok, fail))
