@@ -21143,6 +21143,24 @@ def _analisar_divergencia_par(linha, fatos_app, fatos_ref, limiar_empate_km=1.0,
         _venc_q = "Aplicação" if _cq_app > _cq_ref else "Referência"
         _venc_criterio = "índice de qualidade (viária equivalente)"
 
+    # [QUALIDADE-DERROTAS - Missão 3, Rodada 16, §36] "Derrotas recuperáveis": a forense por trás do
+    # texto livre do "Parecer Técnico" (_apr2_forense_derrota, via _parecer_divergencia acima) nunca
+    # ficava disponível como campo ESTRUTURADO — só embutida na narrativa. Recalcula aqui (mesma
+    # função pura, mesmos argumentos, custo desprezível) só para expor a classe separadamente, sem
+    # tocar em _parecer_divergencia nem no texto já exibido. Só se aplica a derrota real da app
+    # (vantagem_de == "Referência"); nos demais casos fica None (nunca fabrica uma classificação
+    # onde não há derrota).
+    _forense_classe = None
+    if _classif.get("vantagem_de") == "Referência":
+        try:
+            _fz2 = _apr2_forense_derrota(
+                fatos_ref.get("destino"), universo_app, topk_app, viaria_ref=_dr,
+                tem_balsa_ref=bool(fatos_ref.get("tem_balsa")),
+                rota_ref_valida=(_dr is not None and _num_seguro(_dr, 0) > 0), viaria_vencedor=_da)
+            _forense_classe = _fz2.get("classe")
+        except Exception:
+            _forense_classe = None
+
     return {
         "Município": _mun, "UF": _uf, "Inscritos": int(_insc),
         "Destino Aplicação": fatos_app.get("destino"), "Destino Referência": fatos_ref.get("destino"),
@@ -21176,6 +21194,7 @@ def _analisar_divergencia_par(linha, fatos_app, fatos_ref, limiar_empate_km=1.0,
         "Impacto (km × inscritos)": round((_dif_km or 0.0) * _insc, 1),
         "_cor": _classif["cor"],
         "_iq_app": _iq_app, "_iq_ref": _iq_ref, "_classif": _classif,
+        "_forense_classe": _forense_classe,
     }
 
 
@@ -21202,6 +21221,17 @@ def _agregar_diagnostico_divergencias(analises, uf_para_regiao=None):
     _perdas = [a for a in analises if a.get("Vencedor (Qualidade)") == "Referência"]
     _ganhos = [a for a in analises if a.get("Vencedor (Qualidade)") == "Aplicação"]
 
+    # [QUALIDADE-DERROTAS - Missão 3, Rodada 16, §36] Tally das classes forenses (_apr2_forense_derrota)
+    # entre as perdas reais — "Derrotas recuperáveis" é uma métrica de qualidade nomeada explicitamente
+    # na missão e, até aqui, só existia como texto livre dentro do parecer de CADA derrota individual,
+    # nunca somada. `nao_roteado` é a classe que a própria função rotula "RECUPERÁVEL" (retry/motor
+    # secundário resolveria); as demais ficam disponíveis também, sem inventar rótulo novo.
+    _forense_cnt = {}
+    for _a in _perdas:
+        _fc = _a.get("_forense_classe")
+        if _fc:
+            _forense_cnt[_fc] = _forense_cnt.get(_fc, 0) + 1
+
     _resumo = {
         "divergencias": _n, "inscritos_impactados": _insc_tot,
         "app_superior": _v_app, "ref_superior": _v_ref, "empates": _v_emp,
@@ -21209,6 +21239,11 @@ def _agregar_diagnostico_divergencias(analises, uf_para_regiao=None):
         "pct_ref_superior": round(100.0 * _v_ref / _n, 1),
         "pct_empate": round(100.0 * _v_emp / _n, 1),
         "inscritos_beneficiados_app": _insc_app, "inscritos_em_perda": _insc_ref,
+        "derrotas_recuperaveis": _forense_cnt.get("nao_roteado", 0),
+        "derrotas_evitaveis": _forense_cnt.get("bug_algoritmo", 0),
+        "derrotas_regra_correta": _forense_cnt.get("regra_balsa", 0),
+        "derrotas_sem_derrota_real": _forense_cnt.get("ref_mais_longa", 0),
+        "derrotas_por_classe_forense": _forense_cnt,
     }
 
     # ------- INSIGHTS AUTOMÁTICOS (fundamentados nos dados) -------
@@ -21412,6 +21447,10 @@ def _diagnostico_divergencias_html(diag):
                  + _kpi(f'{_res.get("app_superior", 0)}', "vitórias da aplicação (por qualidade)")
                  + _kpi(f'{_res.get("ref_superior", 0)}', "vitórias da referência (por qualidade)")
                  + _kpi(f'{_res.get("empates", 0)}', "empates técnicos")
+                 + (_kpi(f'{_res.get("derrotas_recuperaveis", 0)}', "derrotas recuperáveis (retry/motor secundário)")
+                    if _res.get("derrotas_recuperaveis") else '')
+                 + (_kpi(f'{_res.get("derrotas_evitaveis", 0)}', "derrotas evitáveis (investigar seleção)")
+                    if _res.get("derrotas_evitaveis") else '')
                  + '</div>')
 
         # ---- resumo executivo ----
@@ -22241,6 +22280,25 @@ def _painel_divergencias_ui(diag, st):
         _c[3].metric("Vence a referência", f"{int(_res.get('ref_superior', 0))}",
                      help="Casos em que o Índice de Qualidade multicritério favorece a referência.")
         _c[4].metric("Empates técnicos", f"{int(_res.get('empates', 0))}")
+
+        # [QUALIDADE-DERROTAS - Missão 3, Rodada 16, §36] "Derrotas recuperáveis"/"evitáveis": métricas
+        # de qualidade nomeadas explicitamente na missão — a forense (_apr2_forense_derrota) já
+        # classificava cada derrota individualmente (embutida no Parecer Técnico), mas nunca era somada
+        # num KPI. Só aparece quando há pelo menos um caso de cada classe (nunca um KPI de zero
+        # fabricado).
+        _n_rec = int(_res.get("derrotas_recuperaveis", 0) or 0)
+        _n_evit = int(_res.get("derrotas_evitaveis", 0) or 0)
+        if _n_rec or _n_evit:
+            _cr1, _cr2 = st.columns(2)
+            if _n_rec:
+                _cr1.metric("🔁 Derrotas recuperáveis", f"{_n_rec}",
+                            help="Entraram no shortlist, mas não obtiveram rota viária válida (falha/pendente) — "
+                                 "recuperáveis por retry ou motor secundário, não deveriam virar derrota definitiva.")
+            if _n_evit:
+                _cr2.metric("⚠️ Derrotas evitáveis", f"{_n_evit}",
+                            help="Referência rodoviária, sem balsa, com viária MENOR que a do vencedor da "
+                                 "aplicação, e mesmo assim não escolhida — derrota real, vale investigar a "
+                                 "seleção final.")
 
         # [CARTOES-DIVERGENCIA - 244ª] resumo visual escaneável no topo (antes do conteúdo denso)
         try:
