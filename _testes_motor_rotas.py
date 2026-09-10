@@ -1706,6 +1706,44 @@ def validar():
     check("MATRIZ-ADAPTATIVA: resposta sempre dentro do intervalo [_min, _max]",
           20 <= m._n_candidatos_adaptativo("MG", _den_453) <= 240)
 
+    print("== 25) FLUVIAL-NAVEGAVEL-WIRE 436ª (navegabilidade real trava falsa vitória fluvial) ==")
+    # A camada de navegabilidade (435ª geração) existia mas nunca era chamada pela varredura fluvial
+    # (434ª) — esta rodada fecha essa lacuna (§17/§24 da missão): elo mais fraco do caminho decide.
+    check("NAVEGAVEL: rio grande conhecido (Amazonas) é navegável com confiança alta",
+          m._rio_e_navegavel("Amazonas") == (True, 95, "rio navegavel conhecido (ANA/ANTAQ)"))
+    check("NAVEGAVEL: riacho pequeno é marcado como NÃO navegável",
+          m._rio_e_navegavel("Riacho Seco")[0] is False)
+    check("NAVEGAVEL: sem nome -> não navegável, confiança 0",
+          m._rio_e_navegavel(None) == (False, 0, "sem nome"))
+    check("OBSTRUCAO: barragem conhecida (Itaipu) é detectada",
+          m._rio_tem_obstrucao("Itaipu")[0] is True)
+    check("OBSTRUCAO: rio sem obstrução conhecida -> (False, None, None)",
+          m._rio_tem_obstrucao("Rio Qualquer Sem Barragem") == (False, None, None))
+    check("SCORE: obstrução conhecida derruba o score para quase zero",
+          m._calcular_score_navegabilidade("Amazonas", 50.0, tem_obstrucao=True) <
+          m._calcular_score_navegabilidade("Amazonas", 50.0, tem_obstrucao=False))
+    check("CUSTO-1RIO: barragem -> inviável (None)",
+          m._fluvial_custo_com_navegabilidade(50.0, "Itaipu", 40.0) is None)
+    check("CUSTO-1RIO: rio navegável grande -> custo efetivo perto do km real (penalidade mínima)",
+          m._fluvial_custo_com_navegabilidade(50.0, "Amazonas", 40.0) < 55.0)
+
+    print("== 25b) FLUVIAL-NAVEGAVEL-WIRE — caminho multi-hop (elo mais fraco) ==")
+    check("CAMINHO: obstrução em QUALQUER rio do caminho bloqueia (mesmo com rios bons antes/depois)",
+          m._fluvial_custo_efetivo_caminho(["Amazonas", "Itaipu", "Tocantins"], 50.0, 40.0)[0] is None)
+    check("CAMINHO: sem rios nomeados -> passa NEUTRO (fail-open honesto, nunca bloqueia por ausência de dado)",
+          m._fluvial_custo_efetivo_caminho([], 50.0, 40.0) == (50.0, None, None))
+    check("CAMINHO: só riachos pequenos -> confiança muito baixa -> inviável (None)",
+          m._fluvial_custo_efetivo_caminho(["Riacho Seco", "Corrego Fundo"], 50.0, 40.0)[0] is None)
+    check("CAMINHO: rio grande conhecido -> custo efetivo muito próximo do km real (alta confiança)",
+          abs(m._fluvial_custo_efetivo_caminho(["Amazonas"], 50.0, 40.0)[0] - 50.0) < 3.0)
+    check("CAMINHO: elo mais fraco de ['Amazonas','Riacho Seco'] é o riacho -> mesmo resultado do riacho sozinho",
+          m._fluvial_custo_efetivo_caminho(["Amazonas", "Riacho Seco"], 50.0, 40.0)[0] ==
+          m._fluvial_custo_efetivo_caminho(["Riacho Seco"], 50.0, 40.0)[0])
+    check("CAMINHO: sinuosidade extrema (>3x a reta) é inviável mesmo com rio navegável bom",
+          m._fluvial_custo_efetivo_caminho(["Amazonas"], 200.0, 40.0)[0] is None)
+    check("CAMINHO: score reportado é o PIOR entre os rios nomeados do caminho",
+          m._fluvial_custo_efetivo_caminho(["Amazonas", "Rio Grande"], 50.0, 40.0)[1] is not None)
+
     print()
     print("=" * 70)
     print("RESULTADO: %d OK, %d FALHAS" % (ok, fail))

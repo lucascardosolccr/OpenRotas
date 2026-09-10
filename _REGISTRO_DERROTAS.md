@@ -902,3 +902,40 @@ Nova camada de inteligencia hidrologica para decisoes de roteamento baseadas em 
 4. **CUSTO FLUVIAL ADAPTATIVO** (`_fluvial_custo_com_navegabilidade`): Custo efetivo = km_fluvial x fator_penalidade (1.0 a 2.0 baseado no score). Rejeita se score <30 ou obstrucao detectada. Verifica se fluvial > 3x reta (muito sinuoso). Integra no roteamento multi-hop e sweep otimizado.
 
 Testes: validar 192 OK / 0 FALHAS; decidir 38/38; relatorio 203 linhas.
+
+### 436 geracao: FLUVIAL-NAVEGAVEL-WIRE (a navegabilidade 435a era dado nao usado — §17/§24 da missao)
+
+**Achado da auditoria (Missao 3, Rodada 20):** a nota da 435a geracao acima afirma "Integra no roteamento
+multi-hop e sweep otimizado" — falso. `_rio_e_navegavel`/`_rio_tem_obstrucao`/`_calcular_score_navegabilidade`/
+`_fluvial_custo_com_navegabilidade` existiam no codigo mas NUNCA eram chamadas por `_fluvial_sweep_otimizado`
+(434a, ativa no wire de decisao real desde a 432b) nem por `_fluvial_rota_com_transbordos` (434a, motor
+multi-hop). A adocao de uma rota fluvial dependia SOMENTE de "estritamente menor km" — sem checar se os
+rios atravessados sao navegaveis de verdade nem se ha barragem/cachoeira bloqueando. Risco real: o merge
+Natural Earth 10m (433a) encheu o grafo com riachos/corregos pequenos: o sweep podia (e, sem este fix,
+podia continuar a) adotar uma "vitoria fluvial" de poucos km atraves de um curso d'agua nao navegavel so
+porque e matematicamente menor — uma falsa vitoria, o mesmo tipo de erro que a missao pede para caçar
+("§10 corrija qualquer erro de comparacao... rota menor nunca seja interpretada incorretamente").
+
+**Bug adicional encontrado (latente, nunca exercido):** as duas funcoes de normalizacao de nome de rio
+(`_rio_e_navegavel`, `_rio_tem_obstrucao`) chamavam `unicodedata.normalize(...)` sem importar `unicodedata`
+— um `NameError` certo na primeira chamada real. Como nunca eram chamadas, o bug nunca apareceu; corrigido
+com `import unicodedata` local (mesmo padrao ja usado em `_prevoo_strip_acentos`, 119a geracao).
+
+**Fix (`_fluvial_custo_efetivo_caminho`, nova, PURA):** estende `_fluvial_custo_com_navegabilidade` (1 rio)
+para um CAMINHO multi-hop — a navegabilidade de uma travessia e a do seu ELO MAIS FRACO (um transbordo por
+3 rios navegaveis e 1 riacho duvidoso continua duvidoso). Regras: (1) obstrucao CONHECIDA em qualquer rio do
+caminho -> inviavel; (2) sem nenhum rio nomeado -> NEUTRO (fail-open honesto — ausencia de dado nunca vira
+rejeicao arbitraria, mesmo principio de todo o pipeline fluvial); (3) pior score entre os rios nomeados < 30
+-> inviavel; (4) sinuosidade > 3x a reta -> inviavel. O km FISICO reportado ao adotar a rota NUNCA e alterado
+— o custo penalizado serve so para a decisao de elegibilidade (nunca infla o numero que o usuario ve).
+
+**Wire:** `_fluvial_sweep_otimizado` agora calcula `_fluvial_custo_efetivo_caminho(rios_do_caminho, ...)` a
+cada candidato antes de adotar; rejeitados contam num log agregado (`[FLUVIAL-SWEEP-OTIMIZADO] N candidato(s)
+rejeitado(s) por navegabilidade insuficiente/obstrucao`); adotados carregam metadado auditavel (score, rios,
+custo efetivo) em `st.session_state['fluvial_navegabilidade_aud']` (§39 — toda informacao geografica deve ter
+fonte/metodo/confianca). Zero regressao: candidatos com rios de alta confianca ou sem nome continuam
+elegiveis como antes; so os de confianca muito baixa ou obstruidos deixam de vencer.
+
+Testes: `_testes_motor_rotas.py validar` secao 25/25b (15 casos novos, PUROS, sem rede) — 225 OK / 0 FALHAS
+(era 210). Suite completa `inteligencia_geoespacial/tests` + `test_comparador_correcao.py` + `auth/tests`
+sem regressao.

@@ -24809,8 +24809,9 @@ def _rio_e_navegavel(nome_rio):
     Retorna (bool, confidence_score 0-100, detalhes)."""
     if not nome_rio:
         return False, 0, "sem nome"
-    
-    _nome_norm = "".join(ch for ch in unicodedata.normalize("NFD", str(nome_rio).lower()) 
+
+    import unicodedata
+    _nome_norm = "".join(ch for ch in unicodedata.normalize("NFD", str(nome_rio).lower())
                          if unicodedata.category(ch) != "Mn")
     _nome_norm = _nome_norm.replace("-", " ").replace(".", "").strip()
     
@@ -24852,8 +24853,9 @@ def _rio_tem_obstrucao(nome_rio):
     Retorna (bool, tipo, nome_obstrucao)."""
     if not nome_rio:
         return False, None, None
-    
-    _nome_norm = "".join(ch for ch in unicodedata.normalize("NFD", str(nome_rio).lower()) 
+
+    import unicodedata
+    _nome_norm = "".join(ch for ch in unicodedata.normalize("NFD", str(nome_rio).lower())
                          if unicodedata.category(ch) != "Mn")
     _nome_norm = _nome_norm.replace("-", " ").replace(".", "").strip()
     
@@ -24898,23 +24900,62 @@ def _fluvial_custo_com_navegabilidade(dist_fluvial_km, rio_nome, distancia_reta_
     """[FLUVIAL-CUSTO-NAVEGAVEL - 435ª] Calcula custo efetivo da rota fluvial considerando navegabilidade.
     Retorna custo efetivo (km equivalentes) ou None se inviável."""
     _tem_obs, _tipo, _nome_obs = _rio_tem_obstrucao(rio_nome)
-    
+
     if _tem_obs:
         return None  # Inviável - obstrução total
-    
+
     _score = _calcular_score_navegabilidade(rio_nome, dist_fluvial_km, tem_obstrucao=False)
-    
+
     if _score < 30:
         return None  # Confiança muito baixa
-    
+
     # Ajusta custo: score baixo = custo maior (penaliza incerteza)
     _fator_penalidade = 1.0 + (100 - _score) / 100.0  # 1.0 a 2.0
-    
+
     # Verifica se fluvial é realmente vantajoso vs reta
     if dist_fluvial_km > distancia_reta_km * 3.0:
         return None  # Fluvial muito sinuoso vs reta
-    
+
     return round(dist_fluvial_km * _fator_penalidade, 1)
+
+
+def _fluvial_custo_efetivo_caminho(rios, dist_total_km, distancia_reta_km):
+    """[FLUVIAL-NAVEGAVEL-WIRE - 436ª geração] Estende `_fluvial_custo_com_navegabilidade` para um
+    CAMINHO com vários rios (multi-hop, §12/§17 da missão): a navegabilidade de uma travessia é a do
+    seu ELO MAIS FRACO — um transbordo por 3 rios navegáveis e 1 riacho duvidoso continua duvidoso.
+
+    Regras (mesma semântica de `_fluvial_custo_com_navegabilidade`, nunca reimplementada):
+    1. Qualquer rio do caminho com obstrução CONHECIDA (barragem/cachoeira, `_rio_tem_obstrucao`)
+       -> inviável (None). Travessia física real bloqueada não pode virar vencedora.
+    2. Sem nenhum rio NOMEADO no caminho (aresta sem atributo `names` no grafo) -> sem evidência
+       para avaliar; passa por NEUTRO (fail-open honesto, como o resto do pipeline fluvial: ausência
+       de dado nunca vira rejeição arbitrária).
+    3. Caso contrário, o score de navegabilidade do caminho é o PIOR score entre os rios nomeados
+       (`_calcular_score_navegabilidade`); score < 30 (confiança muito baixa) -> inviável (None).
+    4. Muito sinuoso vs. a reta (> 3×) -> inviável (None), mesmo critério do custo de 1 rio.
+
+    Retorna (custo_efetivo_km ou None, pior_score ou None, obstrucao_info ou None). O km FÍSICO real
+    (`dist_total_km`) nunca é alterado no retorno — o custo penalizado serve SÓ para decidir elegibilidade
+    contra a medição vigente (nunca fabrica/infla o km reportado ao usuário quando a rota é adotada)."""
+    if dist_total_km > max(0.0, float(distancia_reta_km or 0.0)) * 3.0:
+        return None, None, None
+
+    for _rio in (rios or []):
+        _tem_obs, _tipo_obs, _nome_obs = _rio_tem_obstrucao(_rio)
+        if _tem_obs:
+            return None, 0, {"tipo": _tipo_obs, "nome": _nome_obs, "rio": _rio}
+
+    _rios_nomeados = [r for r in (rios or []) if r]
+    if not _rios_nomeados:
+        return round(float(dist_total_km), 1), None, None  # sem evidência -> neutro, não bloqueia
+
+    _pior_score = min(_calcular_score_navegabilidade(_r, dist_total_km, tem_obstrucao=False)
+                       for _r in _rios_nomeados)
+    if _pior_score < 30:
+        return None, _pior_score, None
+
+    _fator_penalidade = 1.0 + (100 - _pior_score) / 100.0  # 1.0 a 2.0
+    return round(float(dist_total_km) * _fator_penalidade, 1), _pior_score, None
 
 
 # =============================================================================
@@ -25042,7 +25083,9 @@ def _fluvial_sweep_otimizado(resultados, coords_f, g, topk_map=None, max_pares=3
         
         _out = {}
         _tested = 0
-        
+        _navegabilidade_aud = {}
+        _bloqueados_navegabilidade = 0
+
         for _excesso, _r in _defeats_sorted:
             if _tested >= max_pares:
                 break
@@ -25120,18 +25163,47 @@ def _fluvial_sweep_otimizado(resultados, coords_f, g, topk_map=None, max_pares=3
                 _fr = _fluvial_rota_com_transbordos(_la, _lo, _hlat, _hlon, snap_max_km=30.0)
                 if not _fr or _fr.get("km") is None:
                     continue
-                
+
                 _fk = float(_fr["km"])
                 _so = float(_fr.get("snap_o_km", 0) or 0)
                 _sd = float(_fr.get("snap_d_km", 0) or 0)
                 _total = _fk + _so + _sd
-                
-                if _ant is not None and _total >= float(_ant) - 1e-9:
+
+                # [FLUVIAL-NAVEGAVEL-WIRE - 436ª geração] Antes desta rodada, a varredura adotava
+                # QUALQUER rota multi-hop estritamente menor — inclusive por riachos/córregos sem
+                # navegabilidade real (o merge Natural Earth 10m da 433ª geração encheu o grafo de
+                # cursos d'água pequenos) ou por rios com barragem/cachoeira CONHECIDA bloqueando a
+                # travessia (§17: "decisão baseada em evidência, não regra simplista"). A camada de
+                # navegabilidade (435ª) existia mas nunca era chamada — dado pronto e não usado (§24).
+                # Elo mais fraco do caminho decide: obstrução conhecida ou confiança muito baixa
+                # bloqueia por completo; confiança intermediária exige vantagem extra (custo efetivo
+                # penalizado) antes de destronar a medição vigente. O km REPORTADO nunca é inflado —
+                # só a elegibilidade usa o custo penalizado.
+                _custo_efetivo, _nav_score, _obstrucao = _fluvial_custo_efetivo_caminho(
+                    _fr.get("rios") or [], _total, _reta)
+                if _custo_efetivo is None:
+                    _bloqueados_navegabilidade += 1
                     continue
-                
+
+                if _ant is not None and _custo_efetivo >= float(_ant) - 1e-9:
+                    continue
+
                 _out[(_o, _hub)] = (_total, 0, "Nao", "Nao", "", "fluvial-multi-hop")
+                _navegabilidade_aud[(_o, _hub)] = {
+                    "score": _nav_score, "rios": _fr.get("rios") or [],
+                    "custo_efetivo_km": _custo_efetivo, "km_real": _total,
+                }
                 _tested += 1
-        
+
+        if _bloqueados_navegabilidade:
+            logger.warning("[FLUVIAL-SWEEP-OTIMIZADO] %d candidato(s) rejeitado(s) por navegabilidade "
+                           "insuficiente/obstrução conhecida (nunca adotados como vencedor).",
+                           _bloqueados_navegabilidade)
+        if _navegabilidade_aud:
+            try:
+                st.session_state['fluvial_navegabilidade_aud'] = _navegabilidade_aud
+            except Exception:
+                pass
         return _out
         
     except Exception as _e:
