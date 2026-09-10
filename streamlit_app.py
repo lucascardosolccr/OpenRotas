@@ -14947,6 +14947,10 @@ _MAPA_COLUNAS_EXAME = {
     'QT_ANOMALIAS': 'Nº de Anomalias Geográficas Detectadas',
     'NM_ANOMALIAS': 'Anomalia(s) Geográfica(s) Detectada(s)',
     'Anomalia Mais Severa': 'Anomalia Mais Severa Detectada',
+    # [DATA-FUSION - Missão 3, Rodada 10, §2] Confiança fundida (motor de roteamento × contexto
+    # geográfico independente) — ver _confianca_fundida.
+    'Confianca Fundida': 'Confiança Fundida (Motor × Geografia, 0-100)',
+    'Conflito de Confianca': 'Conflito Entre Fontes de Confiança',
 }
 
 
@@ -16332,7 +16336,8 @@ _GEO_INTEL_COLUNAS = ("Rios Cruzados", "Bacia Hidrografica", "Pontes no Cruzamen
                       "Rodovias Identificadas", "QT_RODOVIAS", "NM_RODOVIAS",
                       "Ferrovias Proximas", "QT_FERROVIAS", "NM_FERROVIAS",
                       "Sub Bacia Codigo SNIRH", "Complexidade Geografica",
-                      "QT_ANOMALIAS", "NM_ANOMALIAS", "Anomalia Mais Severa")
+                      "QT_ANOMALIAS", "NM_ANOMALIAS", "Anomalia Mais Severa",
+                      "Confianca Fundida", "Conflito de Confianca")
 _GEO_INTEL_LIMIAR_AUTOMATICO = 200  # nº de PARES origem/destino únicos; acima disso, sob demanda
 
 
@@ -16375,6 +16380,11 @@ def _enriquecer_geo_inteligencia_df(df, forcar=False, limiar_automatico=_GEO_INT
         # independente (interseção espacial real com a hidrografia). Só existe se o df já tiver essa
         # coluna; senão o cruzamento simplesmente não roda (analisar_rota trata None como "sem dado").
         _col_balsa_motor = _col_existente(df, "Balsas", "Balsa")
+        # [DATA-FUSION - Missão 3, Rodada 10, §2] Coluna que o motor de roteamento já preenche com
+        # o índice de confiança PRÓPRIO da rota (fonte, V/R, divergência entre engines) — usada
+        # abaixo para fundir com a confiança geográfica INDEPENDENTE de route_context.analisar_rota.
+        # Só existe se o df já tiver essa coluna; senão a fusão degrada para só o lado geográfico.
+        _col_idx_motor = _col_existente(df, "Indice Confianca Rota")
 
         # [GEO-INTEL-PERF - Missão 3, Rodada 6, §5] Extrai a chave (coordenadas
         # arredondadas + flag de balsa do motor) de cada linha na ordem original
@@ -16386,8 +16396,10 @@ def _enriquecer_geo_inteligencia_df(df, forcar=False, limiar_automatico=_GEO_INT
         # calculado na primeira ocorrência, nunca recalculavam com a própria
         # distância.
         _chaves_por_linha = []
+        _idx_motor_por_linha = []
         _dist_por_chave: dict = {}
         for _, _row in df.iterrows():
+            _idx_motor_por_linha.append(_num_seguro(_row.get(_col_idx_motor)) if _col_idx_motor else None)
             _lo = _num_seguro(_row.get(_col_lat_o))
             _oo = _num_seguro(_row.get(_col_lon_o))
             _ld = _num_seguro(_row.get(_col_lat_d))
@@ -16431,11 +16443,11 @@ def _enriquecer_geo_inteligencia_df(df, forcar=False, limiar_automatico=_GEO_INT
             _cache[_chave] = _ctx
 
         _cols: dict = {c: [] for c in _GEO_INTEL_COLUNAS}
-        for _chave in _chaves_por_linha:
+        for _chave, _idx_motor in zip(_chaves_por_linha, _idx_motor_por_linha):
             _ctx = _cache.get(_chave) if _chave is not None else None
             if _ctx is None:
                 for _c in _GEO_INTEL_COLUNAS:
-                    _cols[_c].append(None if _c in ("Dependencia Aquaviaria", "Confianca Geografica", "Complexidade Geografica") or _c.startswith("QT_") else "")
+                    _cols[_c].append(None if _c in ("Dependencia Aquaviaria", "Confianca Geografica", "Complexidade Geografica", "Confianca Fundida") or _c.startswith("QT_") else "")
                 continue
             _cols["Rios Cruzados"].append(", ".join(r.nome for r in _ctx.rios_detectados[:3]))
             _cols["Bacia Hidrografica"].append(_ctx.bacia_hidrografica or "")
@@ -16464,6 +16476,14 @@ def _enriquecer_geo_inteligencia_df(df, forcar=False, limiar_automatico=_GEO_INT
             _ordem_severidade = {"alta": 0, "media": 1, "baixa": 2}
             _mais_severa = min(_ctx.anomalias, key=lambda a: _ordem_severidade.get(a.severidade, 9), default=None)
             _cols["Anomalia Mais Severa"].append(_mais_severa.descricao if _mais_severa else "")
+            # [DATA-FUSION - Missão 3, Rodada 10, §2] Funde a confiança do motor de roteamento com
+            # a confiança geográfica independente (ver _confianca_fundida) — resumo aditivo, nunca
+            # decide vencedor.
+            _fus = _confianca_fundida(_idx_motor, _ctx.confianca_geral, len(_ctx.anomalias))
+            _cols["Confianca Fundida"].append(_fus["confianca"])
+            _cols["Conflito de Confianca"].append(
+                f"Sim (gap {_fus['gap']:.0f} pts)" if _fus["conflito"] and _fus["gap"] is not None
+                else ("Sim" if _fus["conflito"] else ""))
 
         df = df.copy()
         for _c in _GEO_INTEL_COLUNAS:
@@ -31449,6 +31469,52 @@ def _indice_confianca_rota(km, km_reta, fonte="", balsa_str="", divergencia_pct=
         return int(max(0, min(100, round(_score))))
     except Exception:
         return 70   # fail-open neutro: sem julgamento, não bloqueia
+
+
+def _rotulo_confianca(score):
+    """[DATA-FUSION - Missão 3, Rodada 10, §2] Rótulo textual 0-100 → faixa, mesmo corte já usado
+    para 'Confiança Geográfica' em outros pontos da app (Alta/Média/Baixa). PURA."""
+    try:
+        _s = float(score)
+    except (TypeError, ValueError):
+        return ""
+    if _s >= 80:
+        return "Alta"
+    if _s >= 50:
+        return "Média"
+    return "Baixa"
+
+
+def _confianca_fundida(idx_motor, idx_geografico, qt_anomalias=0):
+    """[DATA-FUSION - Missão 3, Rodada 10, §2] Funde dois sinais de confiança calculados por
+    pipelines INDEPENDENTES um do outro: `_indice_confianca_rota` (motor de roteamento: fonte,
+    plausibilidade V/R, balsa, divergência entre engines, snap) e a confiança geográfica de
+    `route_context.analisar_rota` (interseção espacial real com hidrografia/rodovias IBGE — não
+    depende de nenhum dado do motor de roteamento). Ambos JÁ existem e já são exibidos
+    separadamente; isto só os RESUME — nunca decide vencedor, nunca substitui nenhum dos dois.
+
+    Quando as duas fontes CONCORDAM (gap pequeno), a média é um resumo honesto. Quando DIVERGEM
+    muito (uma confia, a outra não) ou há múltiplas anomalias geográficas confirmadas, marcar como
+    'conflito' é mais honesto que mascarar a divergência numa média cega — o usuário decide qual
+    fonte pesa mais para aquele caso, a função só aponta que elas discordam. PURA; qualquer entrada
+    ausente cai no que sobrar (nunca fabrica o lado que falta); exceção → neutro sem julgamento."""
+    try:
+        _im = _num(idx_motor)
+        _ig = _num(idx_geografico)
+        if _im is None and _ig is None:
+            return {"confianca": None, "rotulo": "", "conflito": False, "gap": None}
+        if _im is None:
+            return {"confianca": round(_ig), "rotulo": _rotulo_confianca(_ig), "conflito": False, "gap": None}
+        if _ig is None:
+            return {"confianca": round(_im), "rotulo": _rotulo_confianca(_im), "conflito": False, "gap": None}
+        _gap = abs(_im - _ig)
+        _fundida = (_im + _ig) / 2.0
+        _qa = int(_num(qt_anomalias) or 0)
+        _conflito = bool(_gap >= 30 or _qa >= 2)
+        return {"confianca": round(_fundida), "rotulo": _rotulo_confianca(_fundida),
+                "conflito": _conflito, "gap": round(_gap, 1)}
+    except Exception:
+        return {"confianca": None, "rotulo": "", "conflito": False, "gap": None}
 
 
 # ==============================================================================
