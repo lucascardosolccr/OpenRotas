@@ -29592,7 +29592,7 @@ def _shortlist_por_matriz(dist_matriz, margem=1.20, teto=4, teto_incerteza=6):
         return {}
 
 
-def _n_candidatos_adaptativo(uf, cands_reta, _base=40, _max=240, _min=20):
+def _n_candidatos_adaptativo(uf, cands_reta, _base=40, _max=240, _min=20, lat=None, lon=None):
     """[MATRIZ-ADAPTATIVA - 184ª geração] Decide DINAMICAMENTE quantos polos a matriz deve medir para uma
     origem, conforme a região e a incerteza logística (pontos 6 e 9 da nota). Fundamento: em regiões de malha
     esparsa (Amazônia Legal) ou quando há muitos polos empatados por linha reta, o vencedor viário pode estar
@@ -29603,6 +29603,8 @@ def _n_candidatos_adaptativo(uf, cands_reta, _base=40, _max=240, _min=20):
       • Amazônia Legal → amplia (malha fraca, rios, acesso indireto).
       • Empate por linha reta (vários polos numa janela estreita) → amplia (decisão sensível).
       • Domínio claro do 1º colocado → reduz (baixa incerteza).
+      • [BARREIRA-HIDRICA - Missão 3, Rodada 11, §1] travessia/hidrovia conhecida perto da
+        ORIGEM (`lat`/`lon`, opcionais) → amplia (ver corpo da função).
 
     Retorna um inteiro no intervalo [_min, _max]. PURA e defensiva."""
     try:
@@ -29637,6 +29639,25 @@ def _n_candidatos_adaptativo(uf, cands_reta, _base=40, _max=240, _min=20):
                 _n = int(max(_n, min(_max, _n_total * 0.60)))
         except Exception:
             pass
+        # [BARREIRA-HIDRICA - Missão 3, Rodada 11, §1] Amplia quando há uma travessia/hidrovia
+        # JÁ CATALOGADA (IBGE) perto da ORIGEM — sinal de que o candidato mais próximo por linha
+        # reta pode estar do lado ERRADO de um obstáculo aquático (a Amazônia Legal já ganha +25
+        # acima, mas o mesmo padrão existe fora dela: ex. São José do Norte/RS). Usa só as camadas
+        # LEVES (travessias/hidrovias — já em memória, sem custo de disco pesado, ver
+        # route_context._CAMADAS_PEQUENAS) — nunca as camadas pesadas (drenagem/rodovias/massas
+        # d'água) cujo custo de I/O foi medido e documentado na Rodada 6. Monotônico: só AMPLIA,
+        # nunca reduz — não pode fazer a busca perder um candidato que já seria medido sem este
+        # sinal. Fail-open total: sem coordenadas, módulo indisponível ou qualquer falha, não
+        # amplia e a função se comporta exatamente como antes desta rodada.
+        if lat is not None and lon is not None and _geo_route_context is not None:
+            try:
+                _repo_bh = _geo_route_context.repositorio_padrao()
+                _trav_bh = _repo_bh.consultar("travessias", float(lat), float(lon), raio_km=15.0, limite=1)
+                _hidr_bh = _repo_bh.consultar("hidrovias", float(lat), float(lon), raio_km=15.0, limite=1)
+                if _trav_bh or _hidr_bh:
+                    _n += 20
+            except Exception:
+                pass
         return int(max(_min, min(_max, _n)))
     except Exception:
         logger.error("[MATRIZ-ADAPTATIVA] Falha ao calcular nº adaptativo de candidatos", exc_info=True)
@@ -29698,7 +29719,7 @@ def _descobrir_vencedores_por_matriz(dest_coords, hubs_validos, topk_map_complet
                         _uf_orig = _p.upper()
             except Exception:
                 _uf_orig = ""
-            _n_cand = _n_candidatos_adaptativo(_uf_orig, _cands_reta)
+            _n_cand = _n_candidatos_adaptativo(_uf_orig, _cands_reta, lat=_olat, lon=_olon)
             if _cands_reta:
                 _nomes = [h for (_r, h) in _cands_reta[:_n_cand]]
             else:
