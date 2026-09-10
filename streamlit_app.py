@@ -5415,8 +5415,10 @@ def _gerar_relatorio_comparacao_html(stats, aud, titulo="Relatório da Comparaç
         # rodovias, ferrovias, anomalias) que o motor de rotas já identificou para o lado da APLICAÇÃO
         # em cada município comparado — mesma leitura que a aba "Inteligência Geográfica" do Centro de
         # Inteligência já mostra para o estudo isolado, agora cruzada com a comparação. A referência
-        # externa não tem esse dado; por isso a seção só fala do lado da aplicação, nunca inventa o
-        # equivalente para a referência.
+        # externa não tem esse dado detalhado; a única exceção é o "Alerta Geográfico da Referência"
+        # (Missão 3, Rodada 9, §3) — um sinal específico e verificável (sinuosidade da referência
+        # próxima demais da linha reta para uma rota que cruza travessia/rio confirmado), nunca uma
+        # invenção genérica do que a referência "deveria" ter calculado.
         try:
             if linhas:
                 _geo_cmp_html = _resumo_geo_comparador(linhas)
@@ -5432,6 +5434,8 @@ def _gerar_relatorio_comparacao_html(stats, aud, titulo="Relatório da Comparaç
                     ]
                     if _kg.get("com_anomalia"):
                         _geo_kpis_html.append(("Com anomalia geográfica detectada", _kg["com_anomalia"]))
+                    if _kg.get("com_alerta_referencia"):
+                        _geo_kpis_html.append(("Com alerta geográfico na referência", _kg["com_alerta_referencia"]))
                     _rows_geo = "".join(
                         "<tr>" + "".join(f"<td>{_he.escape(str(_r.get(_c, '')))}</td>" for _c in
                                          ["Origem", "UF", "Destino Aplicação", "Rio(s)/Córrego(s) Cruzado(s)",
@@ -5454,7 +5458,19 @@ def _gerar_relatorio_comparacao_html(stats, aud, titulo="Relatório da Comparaç
                                      "Por que isso importa",
                                      "Uma divergência onde a referência escolheu um destino mais perto em linha "
                                      "reta, mas a aplicação tem rio/balsa confirmado no seu deslocamento, pode "
-                                     "ser uma diferença metodológica — não um erro da aplicação.", "info")))
+                                     "ser uma diferença metodológica — não um erro da aplicação.", "info") +
+                                 (('<ul>' + "".join(
+                                     f"<li><b>{_he.escape(str(_r.get('Origem', '')))}/{_he.escape(str(_r.get('UF', '')))}"
+                                     f"</b>: {_he.escape(str(_r.get('Alerta Geográfico da Referência', '')))}</li>"
+                                     for _r in _geo_cmp_html["linhas"] if _r.get("Alerta Geográfico da Referência")
+                                 ) + '</ul>' + _caixa_explicativa(
+                                     "Alerta Geográfico da Referência — o que é",
+                                     "A referência é um <b>benchmark</b>, não uma verdade absoluta: quando a "
+                                     "distância que ela reporta está muito próxima da linha reta para uma rota "
+                                     "que a geografia real (rios, travessias) confirma cruzar um obstáculo, vale "
+                                     "conferir se o cálculo da referência considerou esse desvio — a aplicação "
+                                     "não é necessariamente quem está errada.", "info")
+                                 ) if _kg.get("com_alerta_referencia") else '')))
         except Exception:
             logger.error("[GEO-INTEL-COMPARADOR] Falha ao montar seção de inteligência geográfica no HTML", exc_info=True)
         # [BI-COMPARADOR-REPORT - 258ª geração] Coerência tela↔export: traz ao relatório os dois gráficos que a
@@ -19584,6 +19600,46 @@ def _conciliar_comparativo(df_app, df_ref, mapa, limiar_fuzzy=90, limiar_empate_
         _olat, _olon = _coord_rota(a.get("Cod IBGE Origem"), a.get("Municipio Origem"), a.get("Origem"))
         _alat, _alon = _coord_rota(a.get("Cod IBGE Destino"), a.get("Municipio Destino"), a.get("Destino"))
         _rlat, _rlon = _coord_rota(_v(r, _md, ""), a.get("Destino Referencia"))
+        # [GEO-INTEL-REF-ALERTA - Missão 3, Rodada 9, §3] "A referência é benchmark, não verdade
+        # absoluta": o contexto geográfico já calculado para o trajeto da APLICAÇÃO (rios/travessias
+        # reais cruzados, route_context.py) descreve o CORREDOR físico origem→destino — só é válido
+        # para avaliar a distância da REFERÊNCIA quando as duas apontam para o MESMO destino (senão
+        # são corredores diferentes e a comparação seria fabricada). Quando os destinos coincidem
+        # (coordenadas a ≤0.05° ≈ 5km, mesmo teto de tolerância já usado alhures para "mesmo ponto")
+        # e a geografia real confirma travessia/rio no trajeto, comparamos a sinuosidade da referência
+        # com a sinuosidade REAL que o próprio motor da aplicação mediu para ESSE MESMO corredor —
+        # nunca contra um limiar absoluto arbitrário: um corredor onde a travessia É quase reta (ex.:
+        # balsa direta São José do Norte↔Rio Grande, sinuosidade real ~1,11) não pode virar falso
+        # positivo só por ter baixa sinuosidade em si. Só sinaliza quando a referência relata um
+        # trajeto NOTAVELMENTE mais reto do que a rota real que a aplicação de fato percorreu — nunca
+        # decide: não altera nenhum vencedor, só chama atenção para conferir a referência.
+        _sinuosidade_ref = None
+        _alerta_geo_ref = ""
+        try:
+            _reta_km = float(a.get("Linha Reta") or 0)
+            _sinuosidade_app = a.get("Fator Sinuosidade")
+            if _dist_ref and _dist_ref > 0 and _reta_km > 0:
+                _sinuosidade_ref = round(_dist_ref / _reta_km, 3)
+                _mesmo_destino = (
+                    _alat is not None and _alon is not None and _rlat is not None and _rlon is not None
+                    and abs(_alat - _rlat) <= 0.05 and abs(_alon - _rlon) <= 0.05)
+                _qt_trav = int(a.get("QT_TRAVESSIAS") or 0)
+                _qt_rios = int(a.get("QT_RIOS") or 0)
+                _gap_sinuosidade = (float(_sinuosidade_app) - _sinuosidade_ref) if _sinuosidade_app else None
+                # Limiar de 0.15 (15 pontos percentuais de indireção a mais na rota real da app do que
+                # na referência): folga generosa acima do ruído normal de arredondamento/geocodificação
+                # entre duas fontes distintas medindo o mesmo par origem-destino.
+                if _mesmo_destino and (_qt_trav > 0 or _qt_rios > 0) and _gap_sinuosidade is not None and _gap_sinuosidade >= 0.15:
+                    _o_que = ", ".join(
+                        [f"{_qt_trav} travessia(s) aquaviária(s)"] if _qt_trav else []
+                    ) or f"{_qt_rios} rio(s)/córrego(s) cruzado(s)"
+                    _alerta_geo_ref = (
+                        f"A referência reporta um trajeto bem mais reto ({_sinuosidade_ref:.2f}× a linha "
+                        f"reta) do que a rota real que a aplicação percorreu ({float(_sinuosidade_app):.2f}×) "
+                        f"para este mesmo destino, cuja geografia confirma {_o_que} — vale conferir se o "
+                        "cálculo da referência considerou esse obstáculo.")
+        except Exception:
+            _sinuosidade_ref, _alerta_geo_ref = None, ""
         linhas.append({
             "Origem": a.get("Municipio Origem") or a.get("Origem"),
             "UF": a.get("UF Origem", ""),
@@ -19599,6 +19655,8 @@ def _conciliar_comparativo(df_app, df_ref, mapa, limiar_fuzzy=90, limiar_empate_
             "Tempo Aplicacao": a.get("Tempo"),
             "Balsa Aplicacao": a.get("Balsas", ""),
             "Sinuosidade Aplicacao": a.get("Fator Sinuosidade"),
+            "Sinuosidade Referencia": _sinuosidade_ref,
+            "Alerta Geografico Referencia": _alerta_geo_ref,
             "Modo Aplicacao": a.get("Modo/Acesso", ""),
             # [GEO-GARANTIDO - 162ª geração] o tipo de distância vai JUNTO, sempre visível.
             "Tipo de Distancia": _tipo_de_distancia(a),
@@ -19666,6 +19724,11 @@ _GEO_COMPARADOR_CAMPOS = [
     ("APP · Ferrovia(s) Próxima(s)", "Ferrovia(s) Próxima(s)"),
     ("APP · Complexidade Geográfica (0-100)", "Complexidade Geográfica (0-100)"),
     ("APP · Anomalia Geográfica Mais Severa", "Anomalia Geográfica Mais Severa"),
+    # [GEO-INTEL-REF-ALERTA - Missão 3, Rodada 9, §3] Único campo deste grupo que fala da
+    # REFERÊNCIA, não da app: sinaliza quando a distância da referência está implausivelmente
+    # próxima da linha reta para uma rota que a geografia real confirma cruzar travessia/rio —
+    # "a referência é benchmark, não verdade absoluta" (ver _conciliar_comparativo).
+    ("Alerta Geografico Referencia", "Alerta Geográfico da Referência"),
 ]
 
 
@@ -19681,7 +19744,7 @@ def _resumo_geo_comparador(linhas):
         if not linhas:
             return {"linhas": [], "kpis": {}, "tem_dado": False}
         _linhas_out = []
-        _n_rio = _n_ponte = _n_trav = _n_rod = _n_ferro = _n_anom = 0
+        _n_rio = _n_ponte = _n_trav = _n_rod = _n_ferro = _n_anom = _n_alerta_ref = 0
         for _l in linhas:
             _row = {"Origem": _l.get("Origem"), "UF": _l.get("UF"),
                     "Destino Aplicação": _l.get("Destino Aplicacao")}
@@ -19706,11 +19769,14 @@ def _resumo_geo_comparador(linhas):
                 _n_ferro += 1
             if _row.get("Anomalia Geográfica Mais Severa"):
                 _n_anom += 1
+            if _row.get("Alerta Geográfico da Referência"):
+                _n_alerta_ref += 1
         _kpis = {
             "total_comparados": len(linhas),
             "com_contexto_geografico": len(_linhas_out),
             "com_rio": _n_rio, "com_ponte": _n_ponte, "com_travessia": _n_trav,
             "com_rodovia": _n_rod, "com_ferrovia": _n_ferro, "com_anomalia": _n_anom,
+            "com_alerta_referencia": _n_alerta_ref,
         }
         return {"linhas": _linhas_out, "kpis": _kpis, "tem_dado": bool(_linhas_out)}
     except Exception:
