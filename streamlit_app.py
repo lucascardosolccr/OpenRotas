@@ -30297,9 +30297,18 @@ def _fluvial_para_resgate(pares, resultados, coords_f=None, g=None, limite_km=25
                 if not _frr or not _frr.get("km"):
                     continue
                 _fk = float(_frr["km"])
-                if _fk <= 0 or _fk >= _cm:
-                    continue   # só adota estritamente menor (conservador)
+                if _fk <= 0:
+                    continue
                 _rios = _frr.get("rios") or []
+                # [FLUVIAL-NAVEGAVEL-WIRE - 436ª geração, Rodada 21] mesma lacuna corrigida no sweep
+                # otimizado (Rodada 20) também existia aqui: a rota fluvial direta/snap-largo (426ª/432ª)
+                # adotava por "estritamente menor km" sem checar navegabilidade real dos rios nem obstrução
+                # (barragem/cachoeira) — reusa a MESMA função pura `_fluvial_custo_efetivo_caminho` (elo
+                # mais fraco do caminho decide; sem rio nomeado passa neutro, fail-open honesto).
+                _reta_fd = _haversine_fluv((_lof, _laf), (_lndf, _ldf))
+                _custo_ef_fd, _nav_score_fd, _obstr_fd = _fluvial_custo_efetivo_caminho(_rios, _fk, _reta_fd)
+                if _custo_ef_fd is None or _custo_ef_fd >= _cm:
+                    continue   # obstrução conhecida, confiança muito baixa, sinuoso demais, ou não vantajoso
                 if (_frr.get("snap_km") or 0.0) > (float(snap_max_km) + 1e-9):
                     _fonte_fd = "fluvial-direta-largo"
                 else:

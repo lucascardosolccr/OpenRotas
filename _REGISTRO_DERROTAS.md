@@ -939,3 +939,33 @@ elegiveis como antes; so os de confianca muito baixa ou obstruidos deixam de ven
 Testes: `_testes_motor_rotas.py validar` secao 25/25b (15 casos novos, PUROS, sem rede) — 225 OK / 0 FALHAS
 (era 210). Suite completa `inteligencia_geoespacial/tests` + `test_comparador_correcao.py` + `auth/tests`
 sem regressao.
+
+### 436b geracao: FLUVIAL-NAVEGAVEL-WIRE tambem em FLUVIAL-ROTA-DIRETA/SNAP-EXPANDIDO (Rodada 21)
+
+A 436a (acima) so fechou a lacuna no `_fluvial_sweep_otimizado`. A MESMA lacuna existia, sem alteracao, em
+`_fluvial_para_resgate` (426a/432a, FLUVIAL-ROTA-DIRETA/SNAP-EXPANDIDO-COM-PROVA) — a adocao dependia so de
+"estritamente menor km", `_frr.get("rios")` ja estava disponivel mas nunca era checado contra navegabilidade/
+obstrucao. Fix identico ao 436a: reusa `_fluvial_custo_efetivo_caminho` antes de qualquer adocao (snap estrito
+OU largo), usando o km JA COM o acesso as sedes somado (custo honesto preservado, nao alterado).
+
+**Achado colateral importante (calibragem do limiar, nao mudanca de regra):** ao rodar a suite apos o wire,
+o teste pre-existente da 432a (SNAP-EXPANDIDO) falhou — usava um nome de rio fictício de teste ("Rio
+Sintético") que, por ser um nome DESCONHECIDO da base curada de rios navegaveis, cai no caso default de
+`_rio_e_navegavel` (confianca 25, abaixo do limiar 30) e seria bloqueado. Investigacao confirmou que isto
+NAO e uma regressao indevida: e o comportamento CORRETO e intencional do gate (§17 — nunca declarar vencedora
+uma travessia sem evidencia real de navegabilidade). Ajuste: o teste passou a usar `"rios": []` no stub (sem
+dado de nome — fail-open neutro), porque o proposito ORIGINAL do teste e validar o MECANISMO de snap largo/
+custo honesto (432a), ortogonal a navegabilidade (436a), que ja tem cobertura propria na secao 25/25b.
+
+**Achado colateral nº2 (potencial regressao HISTORICA, nao revertida — documentado honestamente):** a
+evidencia da 433a (NE10M RIVERS MERGE) lista "Lagoinha(SP)->Sao Luiz do Paraitinga 32,8 km (dr 46,7; Corrego
+Botucatu)" como uma captura fluvial valida. "Corrego Botucatu" contem o indicador "corrego" (curso d'agua
+pequeno, tipicamente intransponivel por embarcacao) — com o gate de navegabilidade agora ativo em
+FLUVIAL-ROTA-DIRETA, esta captura especifica deixaria de vencer (corretamente: um corrego nao e uma via de
+transporte real para o cenario que a aplicacao modela). Isto NAO foi revertido nem contornado — e a correcao
+pretendida pelo achado da Rodada 20/21: uma "vitoria fluvial" por um corrego nomeado e exatamente o tipo de
+falsa vitoria que a missao pede para caçar (§10/§17), mesmo que uma geracao anterior a tivesse registrado como
+ganho. Zero regressao quanto ao restante: rios grandes/conhecidos e caminhos sem nome continuam elegiveis.
+
+Testes: 1 caso novo (obstrucao bloqueia em FLUVIAL-ROTA-DIRETA mesmo com km estritamente menor) — 226 OK /
+0 FALHAS. Suite completa sem regressao (mesma falha pre-existente e nao-relacionada de `test_cache_read`).

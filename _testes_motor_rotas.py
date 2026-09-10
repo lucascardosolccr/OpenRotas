@@ -1586,7 +1586,10 @@ def validar():
     _stub_flag = {"largo": True}
     def _rota_stub_432(lat_o, lon_o, lat_d, lon_d, limite_km=2500, snap_max_km=8.0):
         if _stub_flag["largo"] and float(snap_max_km) >= 30.0:
-            return {"km": 20.0, "rios": ["Rio Sintético"], "snap_km": 25.0,
+            # [FLUVIAL-NAVEGAVEL-WIRE - Rodada 21] "rios" vazio de propósito: este teste valida o MECANISMO
+            # de snap largo/custo honesto (432a), ortogonal à navegabilidade (436a, testada isoladamente na
+            # seção 25/25b) — sem rio nomeado, o gate de navegabilidade passa NEUTRO (fail-open honesto).
+            return {"km": 20.0, "rios": [], "snap_km": 25.0,
                     "snap_o_km": 10.0, "snap_d_km": 15.0, "path_lonlat": [[lon_o, lat_o], [lon_d, lat_d]]}
         return None
     _rota_orig_432 = m._fluvial_rota_real_sob_demanda
@@ -1619,6 +1622,20 @@ def validar():
                                   snap_max_km=8.0, snap_max_km_largo=8.0) == {})
     check("SNAP-EXPANDIDO: fail-open de argumentos (None) mantém comportamento da 426ª",
           m._fluvial_para_resgate(None, None, None, g=_g_432) == {})
+
+    # [FLUVIAL-NAVEGAVEL-WIRE - Rodada 21] mesmo gate de navegabilidade da 434ª/sweep otimizado (Rodada 20)
+    # agora também protege o FLUVIAL-ROTA-DIRETA/SNAP-EXPANDIDO (426ª/432ª): rio com obstrução conhecida
+    # (barragem/cachoeira) NUNCA vence, mesmo com km estritamente menor e snap dentro da banda.
+    def _rota_stub_obstruida(lat_o, lon_o, lat_d, lon_d, limite_km=2500, snap_max_km=8.0):
+        if float(snap_max_km) >= 30.0:
+            return {"km": 20.0, "rios": ["Itaipu"], "snap_km": 25.0,
+                    "snap_o_km": 10.0, "snap_d_km": 15.0, "path_lonlat": [[lon_o, lat_o], [lon_d, lat_d]]}
+        return None
+    m._fluvial_rota_real_sob_demanda = _rota_stub_obstruida
+    check("NAVEGAVEL-WIRE em FLUVIAL-ROTA-DIRETA: rio com barragem conhecida (Itaipu) NUNCA vence, mesmo "
+          "km estritamente menor (45 < 53)",
+          m._fluvial_para_resgate([("Ribeirinho", "Ribeirinha")], _res_432, _coords_432, g=_g_432,
+                                  snap_max_km=8.0, snap_max_km_largo=30.0) == {})
     m._fluvial_rota_real_sob_demanda = _rota_orig_432
 
     print("== 23) Melhoria4-451 (M1 resgate-dirigido / M3 forense-universo / M5 qualidade-matriz / M4 2ª opinião) ==")
