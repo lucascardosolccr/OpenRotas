@@ -14951,6 +14951,10 @@ _MAPA_COLUNAS_EXAME = {
     # geográfico independente) — ver _confianca_fundida.
     'Confianca Fundida': 'Confiança Fundida (Motor × Geografia, 0-100)',
     'Conflito de Confianca': 'Conflito Entre Fontes de Confiança',
+    # [FUSAO-FONTES - Missão 3, Rodada 19, §40] Corroboração entre extrações IBGE independentes
+    # (BC250 × BC100) — ver route_context.CruzamentoHidrografico.confirmado_por.
+    'QT_CONFIRMADOS_MULTIFONTE': 'Nº de Feições Confirmadas por Múltiplas Fontes',
+    'NM_CONFIRMADOS_MULTIFONTE': 'Feição(ões) Confirmada(s) por Múltiplas Fontes',
 }
 
 
@@ -16337,7 +16341,8 @@ _GEO_INTEL_COLUNAS = ("Rios Cruzados", "Bacia Hidrografica", "Pontes no Cruzamen
                       "Ferrovias Proximas", "QT_FERROVIAS", "NM_FERROVIAS",
                       "Sub Bacia Codigo SNIRH", "Complexidade Geografica",
                       "QT_ANOMALIAS", "NM_ANOMALIAS", "Anomalia Mais Severa",
-                      "Confianca Fundida", "Conflito de Confianca")
+                      "Confianca Fundida", "Conflito de Confianca",
+                      "QT_CONFIRMADOS_MULTIFONTE", "NM_CONFIRMADOS_MULTIFONTE")
 _GEO_INTEL_LIMIAR_AUTOMATICO = 200  # nº de PARES origem/destino únicos; acima disso, sob demanda
 
 
@@ -16484,6 +16489,14 @@ def _enriquecer_geo_inteligencia_df(df, forcar=False, limiar_automatico=_GEO_INT
             _cols["Conflito de Confianca"].append(
                 f"Sim (gap {_fus['gap']:.0f} pts)" if _fus["conflito"] and _fus["gap"] is not None
                 else ("Sim" if _fus["conflito"] else ""))
+            # [FUSAO-FONTES - Missão 3, Rodada 19, §40] Rios/corpos d'água confirmados por
+            # extrações INDEPENDENTES (BC250 e BC100 — ver CruzamentoHidrografico.confirmado_por,
+            # Rodada 18) — corroboração real entre fontes, nunca fabricada quando só uma extração
+            # encontrou a feição.
+            _confirmados = [r.nome for r in (list(_ctx.rios_detectados) + list(_ctx.corpos_dagua))
+                            if getattr(r, "confirmado_por", None)]
+            _cols["QT_CONFIRMADOS_MULTIFONTE"].append(len(_confirmados))
+            _cols["NM_CONFIRMADOS_MULTIFONTE"].append(", ".join(_confirmados[:3]))
 
         df = df.copy()
         for _c in _GEO_INTEL_COLUNAS:
@@ -57569,6 +57582,12 @@ if _secao == _SECOES[15]:   # tab_route_intel
                                                    "roteamento e a análise geográfica independente discordam "
                                                    f"significativamente sobre esta rota ({_conflito_txt}) — "
                                                    "vale conferir qual fonte é mais confiável para este caso.")
+                                    # [FUSAO-FONTES - Missão 3, Rodada 19, §40] Corroboração entre
+                                    # extrações IBGE independentes (BC250 × BC100, Rodada 18).
+                                    _nm_confirm = str(_row_orig.get("NM_CONFIRMADOS_MULTIFONTE") or "").strip()
+                                    if _nm_confirm:
+                                        st.caption(f"✅ Confirmado por 2 extrações IBGE independentes "
+                                                   f"(BC250 e BC100): {_nm_confirm}")
                             except Exception:
                                 logger.debug("[GEO-INTEL-EXPLICA] Falha ao exibir contexto completo (aditivo).", exc_info=True)
 
