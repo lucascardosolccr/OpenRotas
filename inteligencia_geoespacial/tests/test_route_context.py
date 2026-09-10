@@ -328,7 +328,7 @@ def test_analisar_rota_detecta_hidrografia_real_em_manaus():
     assert ctx.rios_detectados or ctx.corpos_dagua
     for r in ctx.rios_detectados:
         assert r.nome and r.nome.strip()
-        assert r.fonte == "IBGE BC250/BC100 (drenagem)"
+        assert r.fonte == "IBGE BC250 (drenagem)"
     assert ctx.confianca_geral > 0
     assert ctx.confianca_nivel in ("alta", "media")
 
@@ -385,7 +385,7 @@ def test_analisar_rota_detecta_travessia_real_br174_manaus():
     assert any("BR-174" in n for n in nomes_travessias)
     for t in ctx.travessias:
         assert t.tipo == "travessia (balsa)"
-        assert t.fonte == "IBGE BC250/BC100 (travessias)"
+        assert t.fonte == "IBGE BC250 (travessias)"
     assert ctx.dependencia_aquaviaria is not None and ctx.dependencia_aquaviaria >= 50
     assert ctx.nivel_analise >= 3
 
@@ -654,7 +654,7 @@ def test_analisar_rota_identifica_br116_entre_sp_e_rj():
     siglas = [r.sigla for r in ctx.rodovias]
     assert any("BR-116" in s for s in siglas)
     for r in ctx.rodovias:
-        assert r.fonte == "IBGE BC250/BC100 (rodovias)"
+        assert r.fonte == "IBGE BC250 (rodovias)"
     assert any("Rodovia" in m for m in [ctx.motivo_decisao])
 
 
@@ -769,7 +769,7 @@ def test_analisar_rota_identifica_estrada_de_ferro_vitoria_a_minas():
     nomes = [f.nome for f in ctx.ferrovias]
     assert any("Vitória" in n or "Vitoria" in n for n in nomes)
     for f in ctx.ferrovias:
-        assert f.fonte == "IBGE BC250/BC100 (ferrovias)"
+        assert f.fonte == "IBGE BC100 (ferrovias) — ES"
 
 
 # ==============================================================================
@@ -874,7 +874,7 @@ def test_analisar_rota_ponte_rio_niteroi_com_atributos_reais():
     ponte = next((p for p in ctx.pontes if "Rio-Niterói" in p.nome), None)
     assert ponte is not None
     assert isinstance(ponte, rc.Ponte)
-    assert ponte.fonte == "IBGE BC250/BC100 (pontes)"
+    assert ponte.fonte == "IBGE BC250 (pontes)"
 
 
 @pytestmark_dados
@@ -1211,3 +1211,35 @@ def test_analisar_rota_propaga_balsa_reportada_motor_para_deteccao_de_anomalias(
     assert isinstance(ctx.anomalias, list)
     if not ctx.rios_detectados and not ctx.corpos_dagua and not ctx.travessias:
         assert any(a.categoria == "balsa_sem_confirmacao_geografica" for a in ctx.anomalias)
+
+
+# ==============================================================================
+# _fonte_real — Missão 3, Rodada 17, §39: usa fonte_base/fonte_uf REAIS do
+# registro quando presentes, nunca inventa especificidade que a base não informa.
+# ==============================================================================
+
+def test_fonte_real_usa_fonte_base_quando_presente():
+    item = {"fonte_base": "BC250", "fonte_uf": ""}
+    assert rc._fonte_real(item, "IBGE BC250/BC100 (drenagem)") == "IBGE BC250 (drenagem)"
+
+
+def test_fonte_real_suprime_uf_br_da_base_nacional():
+    # "BR" é o valor real de fonte_uf quando a origem é a BC250 (nacional) -- não é
+    # uma UF de verdade, não deve aparecer como sufixo redundante.
+    item = {"fonte_base": "BC250", "fonte_uf": "BR"}
+    assert rc._fonte_real(item, "IBGE BC250/BC100 (pontes)") == "IBGE BC250 (pontes)"
+
+
+def test_fonte_real_inclui_uf_quando_base_e_regional():
+    item = {"fonte_base": "BC100", "fonte_uf": "RS"}
+    assert rc._fonte_real(item, "IBGE BC250/BC100 (rodovias)") == "IBGE BC100 (rodovias) — RS"
+
+
+def test_fonte_real_cai_no_fallback_quando_fonte_base_ausente():
+    assert rc._fonte_real({}, "IBGE BC250/BC100 (pontes)") == "IBGE BC250/BC100 (pontes)"
+    assert rc._fonte_real({"fonte_base": None}, "IBGE BC250/BC100 (pontes)") == "IBGE BC250/BC100 (pontes)"
+
+
+def test_fonte_real_fallback_sem_parenteses_nao_lanca():
+    # fallback sem "(" -- defensivo, nunca deve lançar mesmo em formato inesperado.
+    assert rc._fonte_real({"fonte_base": "BC250"}, "fonte generica") == "IBGE BC250 (fonte generica)"
