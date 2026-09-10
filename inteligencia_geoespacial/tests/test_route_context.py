@@ -1243,3 +1243,71 @@ def test_fonte_real_cai_no_fallback_quando_fonte_base_ausente():
 def test_fonte_real_fallback_sem_parenteses_nao_lanca():
     # fallback sem "(" -- defensivo, nunca deve lançar mesmo em formato inesperado.
     assert rc._fonte_real({"fonte_base": "BC250"}, "fonte generica") == "IBGE BC250 (fonte generica)"
+
+
+# ==============================================================================
+# _detectar_cruzamentos_hidro — corroboração entre fontes (Missão 3, Rodada 18, §40):
+# quando o MESMO nome normalizado é encontrado por extrações fonte_base DISTINTAS
+# (BC250 e BC100 se sobrepõem em 7 UFs — construir_bases_locais_ibge.py), marca
+# `confirmado_por` e eleva a confiança para "alta". Repo falso (sem tocar disco).
+# ==============================================================================
+
+class _RepoFake:
+    """Repo mínimo: repo.consultar(camada, lat, lon, raio_km, limite) -> list[dict]."""
+    def __init__(self, respostas_por_ponto):
+        self._respostas = respostas_por_ponto  # lista de listas de itens, uma por ponto
+        self._i = 0
+
+    def consultar(self, camada, lat, lon, raio_km=30.0, limite=10, filtros=None):
+        if camada != "drenagem":
+            return []  # só avança o índice nas chamadas de "drenagem" (_CAMADAS_HIDRO tem 2 camadas)
+        if self._i >= len(self._respostas):
+            return []
+        _r = self._respostas[self._i]
+        self._i += 1
+        return _r
+
+
+def test_detectar_cruzamentos_hidro_marca_confirmado_por_duas_fontes_distintas():
+    # Ponto 1: BC250 encontra "Rio Confirmado" a 1.0 km. Ponto 2: BC100 encontra o
+    # MESMO nome (normalizado) a 0.8 km -- fontes distintas, mesmo rio real.
+    repo = _RepoFake([
+        [{"nome": "Rio Confirmado", "distancia_km": 1.0, "fonte_base": "BC250", "fonte_uf": "BR"}],
+        [{"nome": "Rio Confirmado", "distancia_km": 0.8, "fonte_base": "BC100", "fonte_uf": "RS"}],
+    ])
+    pontos = [(-30.0, -51.0, 0.0), (-30.1, -51.1, 10.0)]
+    achados = rc._detectar_cruzamentos_hidro(pontos, repo, raio_km=5.0, distancia_total_km=20.0)
+    assert len(achados) == 1
+    a = achados[0]
+    assert a["confirmado_por"] == "BC100, BC250"
+    assert a["confianca"] == "alta"
+    # o vencedor por distância continua sendo o de MENOR distância (BC100, 0.8km) --
+    # a corroboração não muda qual registro "vence", só acrescenta o sinal de confiança.
+    assert a["distancia_eixo_km"] == 0.8
+
+
+def test_detectar_cruzamentos_hidro_uma_fonte_so_nao_marca_confirmado_por():
+    # Duas leituras do MESMO ponto pela MESMA extração (ex.: dois pontos amostrados
+    # próximos) não é corroboração entre fontes -- é só a mesma fonte vista de novo.
+    repo = _RepoFake([
+        [{"nome": "Rio Solo", "distancia_km": 2.0, "fonte_base": "BC250", "fonte_uf": "BR"}],
+        [{"nome": "Rio Solo", "distancia_km": 1.5, "fonte_base": "BC250", "fonte_uf": "BR"}],
+    ])
+    pontos = [(-30.0, -51.0, 0.0), (-30.1, -51.1, 10.0)]
+    achados = rc._detectar_cruzamentos_hidro(pontos, repo, raio_km=5.0, distancia_total_km=20.0)
+    assert len(achados) == 1
+    assert achados[0]["confirmado_por"] is None
+    assert achados[0]["confianca"] == "media"  # 1.5km > max(0.5, 5*0.15)=0.75 -> não é "alta" por proximidade
+
+
+def test_detectar_cruzamentos_hidro_rios_diferentes_nunca_marcados_como_confirmados():
+    # Nomes DIFERENTES -> achados DIFERENTES, cada um com sua própria fonte única --
+    # nunca "confirma" um rio com a fonte de outro rio.
+    repo = _RepoFake([
+        [{"nome": "Rio A", "distancia_km": 1.0, "fonte_base": "BC250", "fonte_uf": "BR"}],
+        [{"nome": "Rio B", "distancia_km": 1.0, "fonte_base": "BC100", "fonte_uf": "GO"}],
+    ])
+    pontos = [(-16.0, -49.0, 0.0), (-16.1, -49.1, 10.0)]
+    achados = rc._detectar_cruzamentos_hidro(pontos, repo, raio_km=5.0, distancia_total_km=20.0)
+    assert len(achados) == 2
+    assert all(a["confirmado_por"] is None for a in achados)

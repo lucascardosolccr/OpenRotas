@@ -571,6 +571,10 @@ class CruzamentoHidrografico:
     artificial: str | None = None     # massas_dagua: "Sim"/"Não" — reservatório/lago artificial
     salgada: str | None = None        # massas_dagua: "Sim"/"Não"
     dominialidade: str | None = None  # massas_dagua: "Federal"/"Estadual/Distrital"/"Municipal"/...
+    # [FUSAO-FONTES - Missão 3, Rodada 18, §40] None = só uma extração (BC250 OU BC100) encontrou
+    # esta feição; string com 2+ nomes separados por vírgula (ex.: "BC250, BC100") quando o MESMO
+    # nome normalizado foi confirmado por extrações INDEPENDENTES — corroboração real, não inventada.
+    confirmado_por: str | None = None
 
 
 @dataclass
@@ -810,6 +814,11 @@ def _detectar_cruzamentos_hidro(pontos: list, repo: GeoIntelligenceRepository,
     por (camada, nome normalizado), mantendo a MENOR distância ao eixo da
     rota e o km acumulado (desde a origem) daquele ponto de amostra."""
     achados: dict = {}
+    # [FUSAO-FONTES - Missão 3, Rodada 18, §40] Rastreia TODAS as fonte_base vistas por chave —
+    # inclusive as que perdem o dedup por distância — para poder marcar quando o MESMO nome foi
+    # encontrado por extrações INDEPENDENTES (BC250 e BC100), uma corroboração real entre fontes,
+    # sem alterar qual registro "vence" (continua sendo o de menor distância, como sempre foi).
+    _fontes_vistas: dict = {}
     for la, lo, km_o in pontos:
         for camada in _CAMADAS_HIDRO:
             try:
@@ -821,6 +830,9 @@ def _detectar_cruzamentos_hidro(pontos: list, repo: GeoIntelligenceRepository,
                 if not nome:
                     continue
                 chave = (camada, _unorm(nome))
+                _fb = str(it.get("fonte_base") or "").strip()
+                if _fb:
+                    _fontes_vistas.setdefault(chave, set()).add(_fb)
                 try:
                     dist = round(float(it.get("distancia_km")), 2)
                 except Exception:
@@ -855,7 +867,18 @@ def _detectar_cruzamentos_hidro(pontos: list, repo: GeoIntelligenceRepository,
                     "artificial": (_nome(it.get("artificial")) or None) if camada == "massas_dagua" else None,
                     "salgada": (_nome(it.get("salgada")) or None) if camada == "massas_dagua" else None,
                     "dominialidade": (_nome(it.get("dominialid")) or None) if camada == "massas_dagua" else None,
+                    "confirmado_por": None,
                 }
+    # [FUSAO-FONTES - Missão 3, Rodada 18, §40] Marca corroboração real entre extrações
+    # independentes: só quando 2+ fonte_base DISTINTAS confirmaram o MESMO nome normalizado
+    # (nunca quando é uma só extração, mesmo com vários pontos amostrados a encontrando de novo).
+    # Corroboração por múltiplas fontes é um sinal de confiança genuíno — eleva "media" para "alta",
+    # nunca rebaixa uma confiança já alta por outro motivo.
+    for _chave, _dados in achados.items():
+        _fs = _fontes_vistas.get(_chave)
+        if _fs and len(_fs) > 1:
+            _dados["confirmado_por"] = ", ".join(sorted(_fs))
+            _dados["confianca"] = "alta"
     return sorted(achados.values(), key=lambda x: (x["km_desde_origem"] or 0.0))
 
 
