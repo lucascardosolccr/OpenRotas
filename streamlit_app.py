@@ -51900,6 +51900,27 @@ if _secao == _SECOES[3]:   # tab_comparador
             except Exception:
                 logger.debug("[GEO-INTEL-REF-ALERTA-TELA] Falha ao exibir (aditivo).", exc_info=True)
 
+            # [MAPA-DERROTAS-TELA - Missão 3, Rodada 15, §28/§29] "MAPA DE DERROTAS"/"distribuição das
+            # derrotas": o mapa interativo (Leaflet) que colore cada origem por vencedor — Aplicação/
+            # Referência/Empate — e desenha as duas rotas (app×referência) já existe e é testado em
+            # produção, mas só dentro do HTML exportável (_bi_dashboard_comparacao, usado pelo relatório
+            # desde a 184ª geração). Reaproveita a MESMA função aqui, embutida via components.html —
+            # nenhuma lógica nova de mapa, só um novo lugar (a tela) para o que já existe e já funciona.
+            # Requer internet no navegador do usuário (CDN do Leaflet) — mesma limitação do export;
+            # degrada sozinho com aviso se a internet faltar (ver _bi_mapa_rotas_js).
+            try:
+                _bi_html_tela, _bi_css_tela, _bi_js_tela = _bi_dashboard_comparacao(_cmp)
+                if _bi_html_tela:
+                    with st.expander("🗺️ Mapa Interativo de Divergências (Aplicação × Referência)", expanded=False):
+                        st.caption("Cada ponto é uma origem, colorida por quem venceu naquele município. As "
+                                  "linhas ligam a origem ao local de prova escolhido por cada estudo — "
+                                  "verde = aplicação, vermelho tracejado = referência. Use os filtros do "
+                                  "próprio painel (UF, vencedor, só divergências).")
+                        _pagina_bi_tela = f"<style>{_bi_css_tela}</style>{_bi_html_tela}<script>{_bi_js_tela}</script>"
+                        components.html(_pagina_bi_tela, height=1400, scrolling=True)
+            except Exception:
+                logger.debug("[MAPA-DERROTAS-TELA] Falha ao exibir o dashboard BI na tela (aditivo).", exc_info=True)
+
             with st.expander("📖 Como ler esta análise (leia uma vez, entenda para sempre)", expanded=False):
                 st.markdown("""
                 #### 🧮 O que é “km-candidato”?
