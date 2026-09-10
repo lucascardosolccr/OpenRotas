@@ -21445,6 +21445,10 @@ def _diagnostico_divergencias_html(diag):
             return ""
         _r = diag.get("resumo", {})
         _analises = diag.get("analises") or []
+        # [DIVERGENCIA-XAI-3 - Rodada 22] Chama cedo (idempotente): antes, _montar_stage_b só rodava lá na
+        # frente (via _html_stage_b), DEPOIS dos "Pareceres técnicos" abaixo — então a["Motivo Granular"]
+        # nunca existia a tempo de aparecer no parecer de cada caso. Nenhuma outra ordem de campo muda.
+        _montar_stage_b(diag)
         _ag = diag.get("agregado") or diag  # aceita tanto o dict completo quanto o agregado direto
         if "resumo" not in _ag and "resumo" in diag:
             _ag = diag
@@ -21546,11 +21550,14 @@ def _diagnostico_divergencias_html(diag):
             _venc = a.get("Vencedor (Qualidade)", "—")
             _hip = a.get("Hipóteses") or []
             _hip_html = "".join(f"<li>{_he.escape(h)}</li>" for h in _hip)
+            _mg = a.get("Motivo Granular")
+            _mg_html = f'<div class="dv-caso-mg">🔎 {_he.escape(_mg)}</div>' if _mg else ""
             _pareceres += (
                 f'<div class="dv-caso" style="border-left:4px solid {_cor}">'
                 f'<div class="dv-caso-h"><b>{_he.escape(str(a.get("Município")))}/{_he.escape(str(a.get("UF")))}</b>'
                 f' · {_he.escape(str(a.get("Categoria")))} · <span class="dv-tag">Vantagem: {_he.escape(_venc)}</span></div>'
                 f'<div class="dv-caso-p">{_he.escape(a.get("Parecer Técnico", ""))}</div>'
+                f'{_mg_html}'
                 f'<div class="dv-caso-hip"><b>Hipóteses técnicas:</b><ul>{_hip_html}</ul></div>'
                 f'<div class="dv-caso-rec">{_he.escape(a.get("Recomendação", ""))}</div>'
                 f'</div>')
@@ -21582,6 +21589,7 @@ def _diagnostico_divergencias_html(diag):
             '.dv-caso-h{font-size:13px;color:#334155;margin-bottom:6px}'
             '.dv-tag{background:#eef2ff;color:#3730a3;padding:2px 8px;border-radius:12px;font-size:11px}'
             '.dv-caso-p{font-size:14px;line-height:1.6;color:#1f2937;margin:6px 0}'
+            '.dv-caso-mg{font-size:12px;color:#475569;margin:2px 0 6px;font-style:italic}'
             '.dv-caso-hip{font-size:12px;color:#475569;margin:6px 0}.dv-caso-hip ul{margin:4px 0 0 18px}'
             '.dv-caso-rec{font-size:13px;font-weight:600;color:#0f172a;margin-top:6px}'
             '</style>')
@@ -21662,6 +21670,10 @@ def _abas_diagnostico_divergencias(writer, diag):
         _wb = getattr(writer, "book", None)
         if _wb is None or not hasattr(_wb, "add_format"):
             return
+        # [DIVERGENCIA-XAI-3 - Rodada 22] Chama cedo (idempotente): antes, _montar_stage_b só rodava lá na
+        # frente (via _abas_stage_b), DEPOIS da aba "Diag - Divergencias" já escrita — então a coluna
+        # "Motivo Granular" (239ª) nunca chegava a existir a tempo de aparecer na planilha.
+        _montar_stage_b(diag)
         _analises = diag.get("analises") or []
         _res = diag.get("resumo", {}) or {}
         _ins = diag.get("insights", []) or []
@@ -21753,8 +21765,9 @@ def _abas_diagnostico_divergencias(writer, diag):
                          "Diferença Tempo (min)", "Balsa Aplicação", "Balsa Referência", "Acesso Aplicação",
                          "Acesso Referência", "Sinuosidade Aplicação (V/R)", "Sinuosidade Referência (V/R)",
                          "Motor Aplicação", "Motor Referência", "Divergência Motores (%)", "Categoria",
-                         "Índice Qualidade Aplicação", "Índice Qualidade Referência", "Vencedor (Qualidade)"]
-                _larg = [22, 5, 9, 20, 20, 14, 14, 11, 11, 12, 10, 10, 16, 16, 14, 14, 12, 12, 14, 24, 12, 12, 16]
+                         "Índice Qualidade Aplicação", "Índice Qualidade Referência", "Vencedor (Qualidade)",
+                         "Motivo Granular"]
+                _larg = [22, 5, 9, 20, 20, 14, 14, 11, 11, 12, 10, 10, 16, 16, 14, 14, 12, 12, 14, 24, 12, 12, 16, 42]
                 _ordi = sorted(_analises, key=lambda a: abs((a.get("Diferença (km)") or 0.0)
                                * (int(a.get("Inscritos") or 0) or 1)), reverse=True)
                 _last = _escrever_tabela(_ws, 0, _cols, _ordi, _larg)
@@ -21768,7 +21781,9 @@ def _abas_diagnostico_divergencias(writer, diag):
                             "risco operacional — por isso o 'Vencedor (Qualidade)' pode diferir de quem tem a menor "
                             "distância pura (ex.: uma rota 5 km maior, mas sem balsa, pode ser preferível). 'V/R' é a "
                             "razão viário/linha-reta (quanto maior, mais sinuoso/indireto). 'Divergência Motores (%)' "
-                            "alta sugere malhas cartográficas distintas entre os motores — candidata a auditoria.", 150)
+                            "alta sugere malhas cartográficas distintas entre os motores — candidata a auditoria. "
+                            "'Motivo Granular' atribui a diferença ao MOTOR quando aplicável (ex.: 'OSRM encontrou "
+                            "uma rota 12 km menor') e sinaliza motores distintos/alta divergência entre malhas.", 160)
         except Exception:
             pass
 
@@ -22439,6 +22454,12 @@ def _painel_divergencias_ui(diag, st):
                 _cc[1].metric("IQ aplicação", f"{a.get('Índice Qualidade Aplicação','—')}")
                 _cc[2].metric("IQ referência", f"{a.get('Índice Qualidade Referência','—')}")
                 st.markdown(a.get("Parecer Técnico", "—"))
+                # [FLUVIAL-NAVEGAVEL-WIRE / DIVERGENCIA-XAI-3 - Rodada 22] "Motivo Granular" (239ª) já era
+                # calculado por _montar_stage_b mas nunca era exibido em lugar nenhum — atribui a diferença
+                # ao MOTOR quando aplicável (§32/§40 da missão: explique a decisão, sinalize conflito de fontes).
+                _mg = a.get("Motivo Granular")
+                if _mg:
+                    st.caption(f"🔎 Motivo granular: {_mg}")
                 _hip = a.get("Hipóteses") or []
                 if _hip:
                     st.markdown("**Hipóteses técnicas:**")

@@ -1761,6 +1761,41 @@ def validar():
     check("CAMINHO: score reportado é o PIOR entre os rios nomeados do caminho",
           m._fluvial_custo_efetivo_caminho(["Amazonas", "Rio Grande"], 50.0, 40.0)[1] is not None)
 
+    print("== 26) DIVERGENCIA-XAI-3 — Motivo Granular agora É EXIBIDO (Rodada 22) ==")
+    # [ACHADO] a["Motivo Granular"] era calculado por _montar_stage_b (239ª) mas nunca aparecia em nenhuma
+    # das 3 superfícies (tela/HTML/Excel) — nem a própria função _motivo_granular tinha teste. Esta seção
+    # fecha as duas lacunas: cobre a função pura e o efeito colateral (mutação) de _montar_stage_b.
+    _mg1 = m._motivo_granular({"Vencedor (Qualidade)": "Referência", "Diferença (km)": 12.4,
+                               "Motor Aplicação": "google", "Motor Referência": "osrm"})
+    check("MOTIVO-GRANULAR: referência menor -> atribui ao motor da referência (OSRM) com 'km menor'",
+          "OSRM" in _mg1 and "12 km menor" in _mg1 and "referência" in _mg1)
+    check("MOTIVO-GRANULAR: motores distintos (Google×OSRM) aparece como hipótese extra",
+          "Google" in _mg1 and "OSRM" in _mg1)
+    _mg2 = m._motivo_granular({"Vencedor (Qualidade)": "Aplicação", "Diferença (km)": -8.0,
+                               "Motor Aplicação": "valhalla", "Motor Referência": "valhalla"})
+    check("MOTIVO-GRANULAR: aplicação menor -> atribui ao motor da aplicação (Valhalla)",
+          "Valhalla" in _mg2 and "8 km menor" in _mg2 and "aplicação" in _mg2)
+    check("MOTIVO-GRANULAR: mesmo motor nos dois lados -> NÃO aponta 'motores distintos'",
+          "motores distintos" not in _mg2)
+    _mg3 = m._motivo_granular({"Vencedor (Qualidade)": "Empate", "Diferença (km)": 0.3})
+    check("MOTIVO-GRANULAR: sem vencedor claro -> 'diferença dentro do erro esperado entre fontes'",
+          _mg3 == "diferença dentro do erro esperado entre fontes")
+    _mg4 = m._motivo_granular({"Vencedor (Qualidade)": "Referência", "Diferença (km)": 5.0,
+                               "Categoria": "Dependência de balsa"})
+    check("MOTIVO-GRANULAR: categoria com 'balsa' soma a hipótese de dependência de travessia",
+          "dependência de balsa" in _mg4)
+
+    _diag_mg = {"analises": [{"Vencedor (Qualidade)": "Referência", "Diferença (km)": 10.0,
+                              "Motor Aplicação": "google", "Motor Referência": "osrm",
+                              "Categoria": "Diferença por sinuosidade"}]}
+    m._montar_stage_b(_diag_mg)
+    check("MONTAR-STAGE-B: popula 'Motivo Granular' em cada análise (antes, ficava calculado e nunca lido)",
+          bool(_diag_mg["analises"][0].get("Motivo Granular")))
+    _mg_antes = _diag_mg["analises"][0]["Motivo Granular"]
+    m._montar_stage_b(_diag_mg)  # idempotente: 2ª chamada não recalcula nem quebra
+    check("MONTAR-STAGE-B: idempotente (_stage_b) — 2ª chamada preserva o mesmo Motivo Granular",
+          _diag_mg["analises"][0]["Motivo Granular"] == _mg_antes)
+
     print()
     print("=" * 70)
     print("RESULTADO: %d OK, %d FALHAS" % (ok, fail))

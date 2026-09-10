@@ -969,3 +969,30 @@ ganho. Zero regressao quanto ao restante: rios grandes/conhecidos e caminhos sem
 
 Testes: 1 caso novo (obstrucao bloqueia em FLUVIAL-ROTA-DIRETA mesmo com km estritamente menor) — 226 OK /
 0 FALHAS. Suite completa sem regressao (mesma falha pre-existente e nao-relacionada de `test_cache_read`).
+
+### 437 geracao: "Motivo Granular" — calculado desde a 239a, exibido pela primeira vez (Rodada 22)
+
+**Achado da auditoria:** `_motivo_granular` (239a geracao, DIVERGENCIA-XAI-3) atribui a diferenca de uma
+divergencia ao MOTOR responsavel quando aplicavel (ex.: "OSRM (referencia) encontrou uma rota 12 km menor
+- motores distintos (Google x OSRM)") — exatamente o que a missao pede em §32 (explique cada decisao) e §40
+(sinalize conflito entre fontes). `_montar_stage_b` ja gravava isso em `a["Motivo Granular"]` para toda
+analise, mas a chave NUNCA era lida em nenhuma das 3 superficies que mostram o diagnostico por caso (painel
+on-screen, HTML exportavel, Excel "Diag - Divergencias") — nem a propria funcao `_motivo_granular` tinha
+teste. Dado computado, pago (roda para TODAS as analises), e nunca aproveitado.
+
+**Bug de ordenacao encontrado (Excel e HTML):** `_montar_stage_b(diag)` so era chamado tarde — dentro de
+`_abas_stage_b`/`_html_stage_b`, que rodam DEPOIS da tabela rica "Diag - Divergencias" (Excel) e dos
+"Pareceres tecnicos" (HTML) serem escritos. Ou seja, mesmo se alguem tivesse adicionado a coluna sem notar
+isso, ela sairia vazia em ambas as exportacoes (a mutacao ainda nao tinha acontecido). Corrigido chamando
+`_montar_stage_b(diag)` cedo, logo apos `_analises = diag.get("analises")`, em `_abas_diagnostico_divergencias`
+e `_diagnostico_divergencias_html` — idempotente (`diag["_stage_b"]`), nao recalcula quando chamado de novo
+mais tarde pelo stage_b. O painel on-screen (`_painel_divergencias_ui`) ja chamava `_painel_stage_b` (que
+roda `_montar_stage_b`) ANTES do loop de pareceres — sem bug de ordem ali, so faltava exibir a linha.
+
+**Wire:** as 3 superficies agora mostram "Motivo Granular" — coluna nova na aba "Diag - Divergencias" do
+Excel (com nota didatica no rodape da tabela), linha `🔎 {motivo}` nos cartoes de parecer do HTML (nova
+classe CSS `.dv-caso-mg`), e `st.caption("🔎 Motivo granular: ...")` no expander de cada caso na tela.
+
+Testes: 8 casos novos, PUROS, sem rede — cobrem `_motivo_granular` (atribuicao ao motor vencedor/motores
+distintos/empate/categoria de balsa) e o efeito colateral (mutacao + idempotencia) de `_montar_stage_b` —
+234 OK / 0 FALHAS (era 226). Suite completa sem regressao.
