@@ -16359,27 +16359,64 @@ def _enriquecer_geo_inteligencia_df(df, forcar=False, limiar_automatico=_GEO_INT
         # independente (interseção espacial real com a hidrografia). Só existe se o df já tiver essa
         # coluna; senão o cruzamento simplesmente não roda (analisar_rota trata None como "sem dado").
         _col_balsa_motor = _col_existente(df, "Balsas", "Balsa")
-        _cache: dict = {}
-        _cols: dict = {c: [] for c in _GEO_INTEL_COLUNAS}
+
+        # [GEO-INTEL-PERF - Missão 3, Rodada 6, §5] Extrai a chave (coordenadas
+        # arredondadas + flag de balsa do motor) de cada linha na ordem original
+        # da planilha, mas SEM calcular `analisar_rota` ainda — isso é adiado
+        # para depois de reordenar os pares únicos por proximidade geográfica
+        # (ver abaixo). Guarda a distância da PRIMEIRA linha que produziu cada
+        # chave — idêntico ao comportamento anterior (linha por linha), já que
+        # linhas repetidas da mesma chave sempre reaproveitavam o contexto
+        # calculado na primeira ocorrência, nunca recalculavam com a própria
+        # distância.
+        _chaves_por_linha = []
+        _dist_por_chave: dict = {}
         for _, _row in df.iterrows():
             _lo = _num_seguro(_row.get(_col_lat_o))
             _oo = _num_seguro(_row.get(_col_lon_o))
             _ld = _num_seguro(_row.get(_col_lat_d))
             _od = _num_seguro(_row.get(_col_lon_d))
-            _ctx = None
-            if _lo is not None and _oo is not None and _ld is not None and _od is not None:
-                _bal_motor = _bool_balsa(_row.get(_col_balsa_motor)) if _col_balsa_motor else None
-                _chave = (round(_lo, 4), round(_oo, 4), round(_ld, 4), round(_od, 4), _bal_motor)
-                if _chave in _cache:
-                    _ctx = _cache[_chave]
-                else:
-                    _dist = _num_seguro(_row.get(_col_dist)) if _col_dist else None
-                    try:
-                        _ctx = _geo_route_context.analisar_rota((_lo, _oo), (_ld, _od), distancia_km=_dist,
-                                                                 balsa_reportada_motor=_bal_motor)
-                    except Exception:
-                        _ctx = None
-                    _cache[_chave] = _ctx
+            if _lo is None or _oo is None or _ld is None or _od is None:
+                _chaves_por_linha.append(None)
+                continue
+            _bal_motor = _bool_balsa(_row.get(_col_balsa_motor)) if _col_balsa_motor else None
+            _chave = (round(_lo, 4), round(_oo, 4), round(_ld, 4), round(_od, 4), _bal_motor)
+            _chaves_por_linha.append(_chave)
+            if _chave not in _dist_por_chave:
+                _dist_por_chave[_chave] = _num_seguro(_row.get(_col_dist)) if _col_dist else None
+
+        # [GEO-INTEL-PERF - Missão 3, Rodada 6, §5] Processa os pares ÚNICOS
+        # ordenados por proximidade geográfica (arredondamento grosso da
+        # origem/destino), não na ordem da planilha: a janela de cache de
+        # `_consultar_camada_pesada_cacheada` (route_context.py, LRU de 150
+        # entradas) só é reaproveitada quando consultas à MESMA região vêm em
+        # sequência. Planilhas reais tipicamente concentram várias linhas numa
+        # mesma região (um polo → vários destinos, ou vários polos → um
+        # destino comum), mas a ordem da planilha raramente respeita isso —
+        # sem essa reordenação, pontos de regiões distantes se intercalam e
+        # expulsam do cache entradas que seriam reaproveitadas poucas linhas
+        # depois. Não muda NENHUM valor calculado nem a ordem das linhas de
+        # saída — só a ordem em que os pares únicos são computados (auditado:
+        # medido ~32min para 40 pares dispersos em todo o Brasil antes desta
+        # mudança; ver commit da Rodada 6 para o achado completo de causa-raiz).
+        _chaves_unicas = sorted(
+            _dist_por_chave.keys(),
+            key=lambda c: (round(c[0], 1), round(c[1], 1), round(c[2], 1), round(c[3], 1)))
+
+        _cache: dict = {}
+        for _chave in _chaves_unicas:
+            _clo, _coo, _cld, _cod, _cbal = _chave
+            _dist = _dist_por_chave[_chave]
+            try:
+                _ctx = _geo_route_context.analisar_rota((_clo, _coo), (_cld, _cod), distancia_km=_dist,
+                                                          balsa_reportada_motor=_cbal)
+            except Exception:
+                _ctx = None
+            _cache[_chave] = _ctx
+
+        _cols: dict = {c: [] for c in _GEO_INTEL_COLUNAS}
+        for _chave in _chaves_por_linha:
+            _ctx = _cache.get(_chave) if _chave is not None else None
             if _ctx is None:
                 for _c in _GEO_INTEL_COLUNAS:
                     _cols[_c].append(None if _c in ("Dependencia Aquaviaria", "Confianca Geografica", "Complexidade Geografica") or _c.startswith("QT_") else "")
@@ -56941,10 +56978,21 @@ if _secao == _SECOES[15]:   # tab_route_intel
                             + pd.to_numeric(_rotas_dens[_col_qtc_map], errors="coerce").fillna(0))
                         _fig_dens = _fig_mapa_tematico(_rotas_dens, "Densidade Hidrografica",
                                                         "Rios + corpos d'água", colorscale="Teal", cmax=None)
-                    if _fig_cplx is not None or _fig_dep is not None or _fig_dens is not None:
+                    # [MAIS-TEMATICOS - Rodada 7/Missão 3, §28] "Mapa temático hidroviário":
+                    # única camada já coletada (QT_HIDROVIAS) sem visualização nacional própria
+                    # — mesma lógica de densidade hidrográfica acima, sem teto natural (cmax=None).
+                    _fig_hidrov = None
+                    _col_qth_map = _col_existente(_rotas_proc, "QT_HIDROVIAS")
+                    if _col_qth_map:
+                        _rotas_hidrov = _rotas_proc.copy()
+                        _rotas_hidrov["Hidrovias Proximas"] = pd.to_numeric(
+                            _rotas_hidrov[_col_qth_map], errors="coerce").fillna(0)
+                        _fig_hidrov = _fig_mapa_tematico(_rotas_hidrov, "Hidrovias Proximas",
+                                                          "Hidrovias próximas", colorscale="Purples", cmax=None)
+                    if _fig_cplx is not None or _fig_dep is not None or _fig_dens is not None or _fig_hidrov is not None:
                         st.divider()
                         st.markdown("##### 🗺️ Mapas temáticos (§12): onde as rotas deste estudo concentram complexidade/dependência/hidrografia")
-                        _mt1, _mt2, _mt3 = st.columns(3)
+                        _mt1, _mt2, _mt3, _mt4 = st.columns(4)
                         with _mt1:
                             if _fig_cplx is not None:
                                 st.caption("Complexidade geográfica por rota (ponto médio origem↔destino)")
@@ -56963,6 +57011,12 @@ if _secao == _SECOES[15]:   # tab_route_intel
                                 st.plotly_chart(_fig_dens, use_container_width=True)
                             else:
                                 st.caption("Densidade hidrográfica: sem dados suficientes neste estudo ainda.")
+                        with _mt4:
+                            if _fig_hidrov is not None:
+                                st.caption("Hidrovias próximas por rota (nº de hidrovias no raio consultado)")
+                                st.plotly_chart(_fig_hidrov, use_container_width=True)
+                            else:
+                                st.caption("Hidrovias próximas: sem dados suficientes neste estudo ainda.")
 
                 with _abas_intel[2]:
                     st.subheader("Análise de Distribuição e Modal")
