@@ -781,6 +781,29 @@ def _n_pontos_para_nivel(nivel: int, distancia_km: float | None) -> int:
 _CAMADAS_HIDRO = ("drenagem", "massas_dagua")
 
 
+def _fonte_real(item: dict, fallback: str) -> str:
+    """[FONTE-REAL - Missão 3, Rodada 17, §39] Monta a descrição de fonte a partir do registro REAL
+    (`fonte_base`/`fonte_uf`, já selecionados por `bases_locais.mais_proximos`/`_busca_com_filtro` —
+    ver construir_bases_locais_ibge.py: BC250 é a base nacional, BC100 cobre só 7 UFs em maior
+    detalhe). `fallback` é o rótulo genérico já usado por cada camada (ex.: "IBGE BC250/BC100
+    (travessias)") — usado sem alteração quando o registro não traz `fonte_base` (nunca inventa uma
+    especificidade que a base não informa). PURA; nunca lança."""
+    try:
+        _fb = str(item.get("fonte_base") or "").strip()
+        if not _fb:
+            return fallback
+        # "BR" é o valor real da base para fonte_uf quando a camada de origem é a BC250
+        # (nacional, não uma extração estadual) — não é uma UF de verdade, então não
+        # aparece como sufixo (mostrar "— BR" seria ruído, não informação nova).
+        _fu = str(item.get("fonte_uf") or "").strip()
+        if _fu.upper() == "BR":
+            _fu = ""
+        _rotulo = fallback.split("(", 1)[1].rstrip(")") if "(" in fallback else fallback
+        return f"IBGE {_fb} ({_rotulo})" + (f" — {_fu}" if _fu else "")
+    except Exception:
+        return fallback
+
+
 def _detectar_cruzamentos_hidro(pontos: list, repo: GeoIntelligenceRepository,
                                  raio_km: float, distancia_total_km: float) -> list:
     """Consulta as camadas hidrográficas em cada ponto amostrado e deduplica
@@ -816,8 +839,14 @@ def _detectar_cruzamentos_hidro(pontos: list, repo: GeoIntelligenceRepository,
                     "navegavel": _nome(it.get("navegavel")) or None,
                     "regime": _nome(it.get("regime")) or None,
                     "bacia": bacia_do_rio(nome) if camada == "drenagem" else None,
-                    "fonte": ("IBGE BC250/BC100 (drenagem)" if camada == "drenagem"
-                              else "IBGE BC250/BC100 (massas d'água)"),
+                    # [FONTE-REAL - Missão 3, Rodada 17, §39] `mais_proximos`/`_busca_com_filtro` já
+                    # selecionam fonte_base/fonte_uf do próprio parquet (bases_locais.py) — colunas
+                    # reais descritas na base original (ex.: "BC250"/"BC100" + a UF quando a base é
+                    # regional), mas até aqui eram descartadas em favor de uma string genérica fixa.
+                    # Usa o valor REAL do registro quando presente; cai no genérico só quando ausente
+                    # (nunca fabrica uma fonte mais específica do que a base realmente informa).
+                    "fonte": _fonte_real(it, "IBGE BC250/BC100 (drenagem)" if camada == "drenagem"
+                                         else "IBGE BC250/BC100 (massas d'água)"),
                     "confianca": ("alta" if (dist is not None and dist <= max(0.5, raio_km * 0.15))
                                   else "media"),
                     "lat": la,
@@ -902,8 +931,11 @@ def _detectar_feicoes(pontos: list, repo: GeoIntelligenceRepository, camada: str
                 _v = _nome(it.get(_campo))
                 if _v:
                     _extras[_campo] = _v
+            # [FONTE-REAL - Missão 3, Rodada 17, §39] Mesmo tratamento de _detectar_cruzamentos_hidro:
+            # usa fonte_base/fonte_uf REAIS do registro quando presentes, cai no `fonte` genérico do
+            # chamador quando ausentes.
             achados[chave] = Feicao(nome=nome, tipo=tipo_rotulo, distancia_eixo_km=dist,
-                                     km_desde_origem=round(km_o, 1), fonte=fonte,
+                                     km_desde_origem=round(km_o, 1), fonte=_fonte_real(it, fonte),
                                      lat=_flat, lon=_flon, atributos=_extras)
     return sorted(achados.values(), key=lambda f: (f.km_desde_origem or 0.0))
 
@@ -991,6 +1023,8 @@ def _detectar_rodovias(pontos: list, repo: GeoIntelligenceRepository, raio_km: f
                 limite_velocidade_kmh=_num(it.get("limitevelo")),
                 trafego=_nome(it.get("trafego")) or None,
                 situacao_fisica=_nome(it.get("situacaofi")) or None,
+                # [FONTE-REAL - Missão 3, Rodada 17, §39] Mesmo tratamento de _detectar_cruzamentos_hidro.
+                fonte=_fonte_real(it, "IBGE BC250/BC100 (rodovias)"),
                 lat=_flat, lon=_flon,
             )
     return sorted(achados.values(), key=lambda r: (r.km_desde_origem or 0.0))
@@ -1048,6 +1082,8 @@ def _detectar_ferrovias(pontos: list, repo: GeoIntelligenceRepository, raio_km: 
                 concessionaria=concessao if concessao and concessao.strip().lower() not in ("não", "nao") else None,
                 posicao_relativa=_nome(it.get("posicaorel")) or None,
                 situacao_fisica=_nome(it.get("situacaofi")) or None,
+                # [FONTE-REAL - Missão 3, Rodada 17, §39] Mesmo tratamento de _detectar_cruzamentos_hidro.
+                fonte=_fonte_real(it, "IBGE BC250/BC100 (ferrovias)"),
                 lat=_flat, lon=_flon,
             )
     return sorted(achados.values(), key=lambda f: (f.km_desde_origem or 0.0))
@@ -1196,6 +1232,8 @@ def _detectar_pontes_nos_cruzamentos(cruzamentos: list, repo: GeoIntelligenceRep
             tipo_pavimento=_nome(it.get("tipopavime")) or None,
             extensao_m=_numf(it.get("extensao")),
             largura_m=_numf(it.get("largura")),
+            # [FONTE-REAL - Missão 3, Rodada 17, §39] Mesmo tratamento de _detectar_cruzamentos_hidro.
+            fonte=_fonte_real(it, "IBGE BC250/BC100 (pontes)"),
             lat=_plat, lon=_plon)
     return sorted(pontes.values(), key=lambda f: (f.km_desde_origem or 0.0))
 
