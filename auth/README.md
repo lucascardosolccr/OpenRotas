@@ -89,11 +89,22 @@ auth/
 ├── validators.py       # validação/normalização pura (nome, e-mail, telefone, CEP, senha) — sem I/O
 ├── supabase_client.py  # cliente Supabase compartilhado (cacheado), lê credenciais de st.secrets
 ├── auth_service.py     # cadastro/login/logout/recuperação/perfil — só fala com o Supabase Auth
-├── session_manager.py  # st.session_state + o PORTÃO exigir_autenticacao() chamado no topo do app
+├── email_service.py    # e-mail de boas-vindas (SMTP Gmail já usado pela aplicação)
+├── session_manager.py  # st.session_state + o PORTÃO exigir_autenticacao() + telas de auth/perfil
 ├── schema.sql           # tabela de perfil + RLS + triggers (rodar uma vez no Supabase)
 ├── secrets.toml.example
 └── tests/                # testes offline (validators) e com cliente Supabase mockado (auth_service)
 ```
+
+### Perfil e troca de e-mail
+
+Com a sessão aberta, o botão **Perfil** na barra lateral abre uma tela onde o usuário vê/edita
+nome, telefone e endereço (`auth_service.obter_perfil`/`atualizar_perfil`) e pode solicitar a
+troca do e-mail de login. A troca de e-mail nunca é imediata: `atualizar_perfil` recusa
+explicitamente a chave `email`, e o pedido de troca (`auth_service.solicitar_alteracao_email`)
+dispara a confirmação nativa do Supabase Auth para o **novo** endereço — a alteração só é
+efetivada quando o usuário clica no link recebido lá. Nenhum código desta aplicação decide
+quando a troca vale; isso é delegado inteiramente ao Supabase, como todo o resto da autenticação.
 
 A senha do usuário **nunca** passa pelo código desta aplicação em texto puro além do
 formulário — é enviada diretamente ao Supabase Auth via HTTPS, que já faz o hash (bcrypt)

@@ -40742,7 +40742,11 @@ with st.sidebar:
     _auth_user = session_manager.usuario_atual()
     if _auth_user:
         st.caption(f"👤 {_auth_user['email']}")
-        if st.button("Sair", key="_auth_btn_logout", use_container_width=True):
+        _auth_c1, _auth_c2 = st.columns(2)
+        if _auth_c1.button("Perfil", key="_auth_btn_perfil", use_container_width=True):
+            session_manager.abrir_perfil()
+            st.rerun()
+        if _auth_c2.button("Sair", key="_auth_btn_logout", use_container_width=True):
             session_manager.encerrar_sessao()
             st.rerun()
         st.markdown("---")

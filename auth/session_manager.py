@@ -264,6 +264,97 @@ def _tela_recuperar():
         st.rerun()
 
 
+def _tela_perfil():
+    """[§9/§10 da missão] Perfil do usuário logado: ver/editar nome/telefone/endereço e
+    solicitar troca de e-mail. A troca de e-mail NUNCA é imediata — `atualizar_perfil` recusa
+    a chave 'email' (ver auth_service), e a troca real passa por `solicitar_alteracao_email`,
+    que só é efetivada quando o usuário confirma o novo endereço pelo link que o Supabase
+    envia (nenhum código deste módulo decide quando a troca vale — delegado ao Supabase Auth,
+    mesma disciplina de nunca reimplementar o que o backend de auth já resolve com segurança)."""
+    st.markdown("### 👤 Meu perfil")
+    _user = usuario_atual()
+    if not _user:
+        st.session_state["_mostrar_perfil"] = False
+        st.rerun()
+        return
+
+    with st.spinner("Carregando perfil..."):
+        _perfil = auth_service.obter_perfil(_user["user_id"])
+
+    if _perfil is None:
+        st.error("Não foi possível carregar seu perfil no momento — tente novamente em instantes.")
+    else:
+        st.caption(f"E-mail de login atual: **{_user['email']}**")
+        with st.form("form_editar_perfil"):
+            _nome = st.text_input("Nome completo*", value=_perfil.get("nome_completo") or "")
+            _telefone = st.text_input("Telefone (com DDD)*", value=_perfil.get("telefone") or "",
+                                      placeholder="(11) 98765-4321")
+            st.caption("Endereço")
+            _cc1, _cc2 = st.columns([3, 1])
+            _logradouro = _cc1.text_input("Logradouro*", value=_perfil.get("logradouro") or "")
+            _numero = _cc2.text_input("Número*", value=_perfil.get("numero") or "")
+            _cc3, _cc4 = st.columns(2)
+            _complemento = _cc3.text_input("Complemento", value=_perfil.get("complemento") or "")
+            _bairro = _cc4.text_input("Bairro*", value=_perfil.get("bairro") or "")
+            _cc5, _cc6, _cc7 = st.columns([2, 2, 1])
+            _cidade = _cc5.text_input("Cidade*", value=_perfil.get("cidade") or "")
+            _cep = _cc6.text_input("CEP*", value=_perfil.get("cep") or "", placeholder="00000-000")
+            _uf = _cc7.text_input("UF*", value=_perfil.get("uf") or "", max_chars=2)
+            _salvar = st.form_submit_button("Salvar alterações", type="primary", use_container_width=True)
+        if _salvar:
+            _erros = []
+            _ok_nome, _nome_norm, _erro_nome = validators.validar_nome(_nome)
+            if not _ok_nome:
+                _erros.append(_erro_nome)
+            _ok_tel, _tel_norm, _erro_tel = validators.validar_telefone(_telefone)
+            if not _ok_tel:
+                _erros.append(_erro_tel)
+            _ok_end, _end_norm, _erros_end = validators.validar_endereco(
+                _logradouro, _numero, _bairro, _cidade, _uf, _cep, _complemento)
+            _erros.extend(_erros_end)
+            if _erros:
+                for _e in _erros:
+                    st.error(_e)
+            else:
+                _campos = dict(_end_norm)
+                _campos["nome_completo"] = _nome_norm
+                _campos["telefone"] = _tel_norm
+                with st.spinner("Salvando..."):
+                    _res = auth_service.atualizar_perfil(_user["user_id"], _campos)
+                if _res.ok:
+                    st.success("✅ " + _res.mensagem)
+                    time.sleep(1.0)
+                    st.rerun()
+                else:
+                    st.error(_res.mensagem)
+
+    st.markdown("---")
+    st.markdown("#### ✉️ Alterar e-mail")
+    st.caption("Você continua conectado com o e-mail atual até confirmar o novo endereço — "
+               "a alteração NUNCA entra em vigor antes dessa confirmação.")
+    with st.form("form_trocar_email"):
+        _novo_email = st.text_input("Novo e-mail")
+        _pedir = st.form_submit_button("Solicitar alteração de e-mail")
+    if _pedir:
+        _ok_email, _email_norm, _erro_email = validators.validar_email(_novo_email)
+        if not _ok_email:
+            st.error(_erro_email)
+        elif _email_norm == (_user.get("email") or "").strip().lower():
+            st.warning("Esse já é o seu e-mail atual.")
+        else:
+            with st.spinner("Enviando confirmação..."):
+                _res = auth_service.solicitar_alteracao_email(_email_norm)
+            if _res.ok:
+                st.info(_res.mensagem)
+            else:
+                st.error(_res.mensagem)
+
+    st.markdown("---")
+    if st.button("← Voltar para a aplicação"):
+        st.session_state["_mostrar_perfil"] = False
+        st.rerun()
+
+
 def _renderizar_tela_autenticacao():
     st.markdown(
         "<div style='max-width:440px;margin:40px auto 0;text-align:center'>"
@@ -286,6 +377,14 @@ def _renderizar_tela_autenticacao():
     st.stop()
 
 
+def abrir_perfil():
+    """Chamado pela sidebar (ou qualquer outro ponto da UI) para abrir a tela de perfil no
+    próximo rerun — não renderiza nada aqui, só sinaliza; `exigir_autenticacao()` é quem
+    efetivamente desenha a tela e para a execução, mantendo o portão como o único lugar que
+    decide o que aparece no lugar do conteúdo normal da aplicação."""
+    st.session_state["_mostrar_perfil"] = True
+
+
 def exigir_autenticacao():
     """PORTÃO da aplicação — chamar uma única vez, logo no início do script principal.
     Bloqueia (st.stop()) enquanto não houver sessão válida; nada abaixo desta chamada
@@ -304,3 +403,12 @@ def exigir_autenticacao():
             _renderizar_tela_autenticacao()
             return
         st.session_state["auth_last_check_ts"] = time.time()
+
+    # [§9 da missão - PERFIL] mesma mecânica do portão: enquanto a flag estiver ligada, a
+    # tela de perfil substitui o conteúdo normal (st.stop() ao final) — nunca é sobreposta
+    # visualmente, é bloqueio real de execução, igual à tela de login.
+    if st.session_state.get("_mostrar_perfil"):
+        _col_esq, _col_mid, _col_dir = st.columns([1, 3, 1])
+        with _col_mid:
+            _tela_perfil()
+        st.stop()
