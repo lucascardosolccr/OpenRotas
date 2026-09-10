@@ -298,3 +298,36 @@ def test_n_candidatos_adaptativo_nao_amplia_sem_travessia_hidrovia_por_perto():
     _base = m._n_candidatos_adaptativo("MG", cands)
     _sem_agua = m._n_candidatos_adaptativo("MG", cands, lat=-18.5, lon=-44.5)
     assert _sem_agua == _base
+
+
+# ==============================================================================
+# _agregar_diagnostico_divergencias — Rodada 16 (§36): tally de "derrotas recuperáveis"/
+# "derrotas evitáveis" por classe forense (_apr2_forense_derrota), antes só disponível como
+# texto livre dentro do parecer de CADA derrota individual, nunca somado num KPI agregado.
+# ==============================================================================
+
+def _analise(venc, forense=None, uf="SP"):
+    return {"Inscritos": 1, "Vencedor (Qualidade)": venc, "Diferença (km)": -5.0 if venc == "Referência" else 5.0,
+            "UF": uf, "Categoria": "x", "Balsa Aplicação": "Não", "_forense_classe": forense}
+
+
+def test_agregar_diagnostico_tally_derrotas_por_classe_forense():
+    analises = [
+        _analise("Referência", "nao_roteado"),
+        _analise("Referência", "bug_algoritmo"),
+        _analise("Referência", "regra_balsa"),
+        _analise("Aplicação", None),
+        _analise("Empate", None),
+    ]
+    r = m._agregar_diagnostico_divergencias(analises)["resumo"]
+    assert r["derrotas_recuperaveis"] == 1
+    assert r["derrotas_evitaveis"] == 1
+    assert r["derrotas_regra_correta"] == 1
+    assert r["derrotas_por_classe_forense"] == {"nao_roteado": 1, "bug_algoritmo": 1, "regra_balsa": 1}
+    assert r["ref_superior"] == 3 and r["app_superior"] == 1 and r["empates"] == 1
+
+
+def test_agregar_diagnostico_sem_derrotas_forenses_nunca_fabrica_classe():
+    r = m._agregar_diagnostico_divergencias([_analise("Aplicação", None)])["resumo"]
+    assert r["derrotas_recuperaveis"] == 0
+    assert r["derrotas_por_classe_forense"] == {}
