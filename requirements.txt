@@ -37,6 +37,11 @@ requests>=2.32.4
 urllib3>=2.5.0
 
 # ------------------------------------------------------------------------------------------
+# AUTENTICAÇÃO — Supabase (Postgres + Auth gerenciados, ver auth/README.md)
+# ------------------------------------------------------------------------------------------
+supabase==2.31.0           # import direto (auth/supabase_client.py) — versão fixada e testada localmente
+
+# ------------------------------------------------------------------------------------------
 # GEOCODIFICAÇÃO / GEODÉSIA
 # ------------------------------------------------------------------------------------------
 geographiclib>=2.0         # import direto (Karney/WGS-84 — a linha reta rigorosa)

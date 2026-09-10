@@ -82,6 +82,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from functools import lru_cache as _lru_cache
+from auth import session_manager
 try:
     from cachetools import LRUCache as _CacheToolsLRU
     _CACHETOOLS_DISPONIVEL = True
@@ -1135,6 +1136,13 @@ st.markdown("""
     [data-ds-tip] { position: relative; cursor: help; border-bottom: 1px dotted var(--tx-4); }
 </style>
 """, unsafe_allow_html=True)
+
+# ==============================================================================
+# PORTÃO DE AUTENTICAÇÃO — bloqueia (st.stop()) todo o restante do script para quem
+# não estiver autenticado. Chamado aqui (depois do CSS, antes de qualquer conteúdo
+# real) para que a própria tela de login já receba o estilo visual da aplicação.
+# ==============================================================================
+session_manager.exigir_autenticacao()
 
 # ==============================================================================
 # DESIGN SYSTEM — Helpers de UI reutilizáveis [UX 2ª geração]
@@ -40618,6 +40626,16 @@ except Exception:
     logger.error("[DEV-ABOUT] Falha ao exibir apresentação na home — ignorada", exc_info=True)
 
 with st.sidebar:
+    # [AUTH] Usuário logado + logout — visível em toda a aplicação, já que o portão
+    # exigir_autenticacao() garante que ninguém chega até aqui sem sessão válida.
+    _auth_user = session_manager.usuario_atual()
+    if _auth_user:
+        st.caption(f"👤 {_auth_user['email']}")
+        if st.button("Sair", key="_auth_btn_logout", use_container_width=True):
+            session_manager.encerrar_sessao()
+            st.rerun()
+        st.markdown("---")
+
     # [OFFLINE - 144ª geração] Controle do curto-circuito oficial. Ligado por padrão porque a sede do
     # IBGE é a coordenada OFICIAL, determinística e auditável — e porque a nuvem, nesses casos, era
     # chamada 3× para chegar a um ponto ~1-2 km ao lado do que já estava em memória.
