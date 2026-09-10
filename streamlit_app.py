@@ -57248,6 +57248,68 @@ if _secao == _SECOES[15]:   # tab_route_intel
                         else:
                             st.caption("Sem bacias identificadas.")
 
+                    # [MAIS-ANALITICAS - Missão 3, Rodada 13, §29] "Rotas com mais pontes"/"rotas com
+                    # mais travessias" e "UFs com maior quantidade de travessias" — perguntas nomeadas
+                    # explicitamente na missão e ainda sem gráfico próprio (só apareciam como filtro ou
+                    # métrica por rota isolada no Inspetor). Mesmo padrão do Top 15 Rios/Bacias acima:
+                    # reaproveita QT_PONTES/QT_TRAVESSIAS já calculados, sem nenhum recálculo.
+                    st.divider()
+                    _ib3, _ib4 = st.columns(2)
+                    _col_qtp_rank = _col_existente(_rotas_proc, "QT_PONTES")
+                    _col_qtt_rank = _col_existente(_rotas_proc, "QT_TRAVESSIAS")
+                    with _ib3:
+                        st.caption("Top 15 Rotas com Mais Pontes")
+                        if _col_qtp_rank:
+                            _rp = _rotas_proc.copy()
+                            _rp["_qtp"] = pd.to_numeric(_rp[_col_qtp_rank], errors="coerce").fillna(0)
+                            _rp["_rota"] = _rp.get("Origem", "").astype(str) + " → " + _rp.get("Destino", "").astype(str)
+                            _rp_top = _rp[_rp["_qtp"] > 0].nlargest(15, "_qtp")
+                            if not _rp_top.empty:
+                                _fig_bar6 = px.bar(_rp_top, y="_rota", x="_qtp", orientation='h', color="_qtp",
+                                                    color_continuous_scale="Oranges",
+                                                    labels={"_rota": "Rota", "_qtp": "Nº de Pontes"})
+                                _fig_bar6.update_layout(yaxis={'categoryorder': 'total ascending'})
+                                st.plotly_chart(_fig_bar6, use_container_width=True)
+                            else:
+                                st.caption("Nenhuma rota com ponte confirmada neste estudo.")
+                        else:
+                            st.caption("Coluna indisponível neste estudo.")
+                    with _ib4:
+                        st.caption("Top 15 Rotas com Mais Travessias")
+                        if _col_qtt_rank:
+                            _rt = _rotas_proc.copy()
+                            _rt["_qtt"] = pd.to_numeric(_rt[_col_qtt_rank], errors="coerce").fillna(0)
+                            _rt["_rota"] = _rt.get("Origem", "").astype(str) + " → " + _rt.get("Destino", "").astype(str)
+                            _rt_top = _rt[_rt["_qtt"] > 0].nlargest(15, "_qtt")
+                            if not _rt_top.empty:
+                                _fig_bar7 = px.bar(_rt_top, y="_rota", x="_qtt", orientation='h', color="_qtt",
+                                                    color_continuous_scale="Cividis",
+                                                    labels={"_rota": "Rota", "_qtt": "Nº de Travessias"})
+                                _fig_bar7.update_layout(yaxis={'categoryorder': 'total ascending'})
+                                st.plotly_chart(_fig_bar7, use_container_width=True)
+                            else:
+                                st.caption("Nenhuma rota com travessia confirmada neste estudo.")
+                        else:
+                            st.caption("Coluna indisponível neste estudo.")
+
+                    st.caption("UFs com Maior Quantidade de Travessias")
+                    _uf_col_trav = _col_existente(_rotas_proc, "UF", "UF_Sintetica_Origem")
+                    if _uf_col_trav and _col_qtt_rank:
+                        _ruf = _rotas_proc.copy()
+                        _ruf["_qtt_uf"] = pd.to_numeric(_ruf[_col_qtt_rank], errors="coerce").fillna(0)
+                        _g_uf = _ruf.groupby(_uf_col_trav)["_qtt_uf"].sum().sort_values(ascending=False).head(15)
+                        _g_uf = _g_uf[_g_uf > 0]
+                        if not _g_uf.empty:
+                            _gdf_uf = _g_uf.reset_index()
+                            _gdf_uf.columns = ["UF", "Travessias"]
+                            _fig_bar8 = px.bar(_gdf_uf, x="UF", y="Travessias", color="Travessias",
+                                                color_continuous_scale="Purples")
+                            st.plotly_chart(_fig_bar8, use_container_width=True)
+                        else:
+                            st.caption("Nenhuma UF com travessia confirmada neste estudo.")
+                    else:
+                        st.caption("Dados insuficientes (UF ou travessias) neste estudo.")
+
                 with _abas_intel[4]:
                     st.subheader("Inspetor de Rota (Drill-down)")
                     _labels = (_df_intel["Origem"].astype(str) + " → " + _df_intel["Destino"].astype(str)).tolist()
