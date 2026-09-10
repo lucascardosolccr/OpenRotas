@@ -220,3 +220,81 @@ def test_rota_sem_balsa_razoavel_dentro_da_banda_e_true():
 
 def test_rota_sem_balsa_razoavel_muito_alem_da_banda_e_false():
     assert m._rota_sem_balsa_razoavel(km_balsa=7.0, km_rodovia=315.0) is False
+
+
+# ==============================================================================
+# _confianca_fundida(idx_motor, idx_geografico, qt_anomalias) / _rotulo_confianca(score)
+# Missão 3, Rodada 12: cobertura real via pytest do que a Rodada 10 só tinha verificado
+# por script isolado (não commitado) — mesmo motivo de existir deste arquivo (ver docstring
+# do módulo): uma alegação de verificação que não vira suíte re-executável não vale nada.
+# ==============================================================================
+
+def test_confianca_fundida_concordam_media_alta_sem_conflito():
+    r = m._confianca_fundida(90, 85, qt_anomalias=0)
+    assert r["conflito"] is False
+    assert 85 <= r["confianca"] <= 90
+    assert r["rotulo"] == "Alta"
+
+
+def test_confianca_fundida_gap_grande_e_conflito():
+    r = m._confianca_fundida(95, 20, qt_anomalias=1)
+    assert r["conflito"] is True
+    assert r["gap"] == 75.0
+    assert r["confianca"] == 58  # round((95+20)/2)
+
+
+def test_confianca_fundida_muitas_anomalias_tambem_e_conflito_mesmo_com_gap_pequeno():
+    r = m._confianca_fundida(70, 68, qt_anomalias=3)
+    assert r["conflito"] is True
+
+
+def test_confianca_fundida_so_um_lado_disponivel_nao_fabrica_o_outro():
+    r_geo = m._confianca_fundida(None, 60, qt_anomalias=0)
+    assert r_geo == {"confianca": 60, "rotulo": "Média", "conflito": False, "gap": None}
+    r_motor = m._confianca_fundida(72, None, qt_anomalias=0)
+    assert r_motor["confianca"] == 72 and r_motor["gap"] is None
+
+
+def test_confianca_fundida_nenhum_lado_disponivel_e_none():
+    r = m._confianca_fundida(None, None)
+    assert r["confianca"] is None
+    assert r["conflito"] is False
+
+
+def test_rotulo_confianca_faixas():
+    assert m._rotulo_confianca(85) == "Alta"
+    assert m._rotulo_confianca(80) == "Alta"
+    assert m._rotulo_confianca(79.9) == "Média"
+    assert m._rotulo_confianca(50) == "Média"
+    assert m._rotulo_confianca(49.9) == "Baixa"
+    assert m._rotulo_confianca(None) == ""
+
+
+# ==============================================================================
+# _n_candidatos_adaptativo(uf, cands_reta, ..., lat=None, lon=None) — Rodada 11: o caminho
+# NOVO (lat/lon), que amplia o teto perto de travessia/hidrovia catalogada. Cobre o gap que
+# a Rodada 6 do agente de auditoria apontou: o único teste existente (_testes_motor_rotas.py)
+# nunca passa lat/lon, então o caminho novo nunca era exercitado por nenhuma suíte.
+# ==============================================================================
+
+def test_n_candidatos_adaptativo_sem_lat_lon_e_retrocompativel():
+    cands = [(500.0, f"Hub{i}") for i in range(30)]
+    assert m._n_candidatos_adaptativo("MG", cands) == m._n_candidatos_adaptativo("MG", cands, lat=None, lon=None)
+
+
+def test_n_candidatos_adaptativo_amplia_perto_de_travessia_real_catalogada():
+    # São José do Norte/RS — mesmo ponto de embarque da balsa usado como caso canônico em
+    # _testes_motor_rotas.py (travessia real, catalogada na base IBGE).
+    cands = [(500.0, f"Hub{i}") for i in range(30)]
+    _base = m._n_candidatos_adaptativo("RS", cands)
+    _com_agua = m._n_candidatos_adaptativo("RS", cands, lat=-32.0091, lon=-52.0168)
+    assert _com_agua >= _base  # nunca reduz (monotônico)
+    assert _com_agua > _base   # e de fato amplia quando há travessia real por perto
+
+
+def test_n_candidatos_adaptativo_nao_amplia_sem_travessia_hidrovia_por_perto():
+    # Interior seco de MG, sem travessia/hidrovia catalogada nas proximidades.
+    cands = [(500.0, f"Hub{i}") for i in range(30)]
+    _base = m._n_candidatos_adaptativo("MG", cands)
+    _sem_agua = m._n_candidatos_adaptativo("MG", cands, lat=-18.5, lon=-44.5)
+    assert _sem_agua == _base

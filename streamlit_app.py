@@ -51879,6 +51879,27 @@ if _secao == _SECOES[3]:   # tab_comparador
                         "**Tipo de Distância** na tabela. (Na prática, bases de referência costumam usar "
                         "linha reta nesses casos — pelo mesmo motivo que nós.)")
 
+            # [GEO-INTEL-REF-ALERTA-TELA - Missão 3, Rodada 12, §3] O "Alerta Geográfico da Referência"
+            # (Rodada 9) já era calculado e exportado (xlsx/HTML), mas só aparecia fora da tela — mesmo
+            # gap que a Rodada 12 fechou para "Confiança Fundida". Reaproveita _resumo_geo_comparador
+            # (mesma função que já monta a aba/seção exportável) sem recalcular nada.
+            try:
+                _geo_cmp_tela = _resumo_geo_comparador(_cmp)
+                _n_alerta_ref_tela = _geo_cmp_tela.get("kpis", {}).get("com_alerta_referencia", 0)
+                if _n_alerta_ref_tela:
+                    with st.expander(f"🧭 {_n_alerta_ref_tela} município(s) com Alerta Geográfico da "
+                                     "Referência", expanded=False):
+                        st.caption("A referência é um **benchmark**, não uma verdade absoluta: nestes "
+                                  "municípios ela reporta um trajeto notavelmente mais reto do que a rota "
+                                  "REAL que a nossa aplicação percorreu para o mesmo destino — vale conferir "
+                                  "se o cálculo da referência considerou a travessia/rio confirmado.")
+                        for _lr in _geo_cmp_tela.get("linhas", []):
+                            _at = _lr.get("Alerta Geográfico da Referência")
+                            if _at:
+                                st.warning(f"**{_lr.get('Origem', '—')}/{_lr.get('UF', '—')}**: {_at}")
+            except Exception:
+                logger.debug("[GEO-INTEL-REF-ALERTA-TELA] Falha ao exibir (aditivo).", exc_info=True)
+
             with st.expander("📖 Como ler esta análise (leia uma vez, entenda para sempre)", expanded=False):
                 st.markdown("""
                 #### 🧮 O que é “km-candidato”?
@@ -57341,6 +57362,19 @@ if _secao == _SECOES[15]:   # tab_route_intel
                                                 "análise geográfica independente não encontrou rio, corpo "
                                                 "d'água ou travessia no raio consultado — pode ser limitação "
                                                 "do raio, não necessariamente um erro do roteador.")
+                                    # [DATA-FUSION - Missão 3, Rodada 12, §2] A confiança fundida (Rodada 10)
+                                    # já era calculada e exportada, mas nunca aparecia na tela — só na
+                                    # planilha. Mesmo padrão dos blocos acima: reaproveita o valor já
+                                    # calculado, nunca recalcula.
+                                    _cf_v = _num_seguro(_row_orig.get("Confianca Fundida"))
+                                    if _cf_v is not None:
+                                        st.caption(f"🔀 Confiança fundida (motor × geografia): {_cf_v:.0f}/100")
+                                    _conflito_txt = str(_row_orig.get("Conflito de Confianca") or "").strip()
+                                    if _conflito_txt:
+                                        st.warning("⚖️ **Conflito entre fontes de confiança**: o motor de "
+                                                   "roteamento e a análise geográfica independente discordam "
+                                                   f"significativamente sobre esta rota ({_conflito_txt}) — "
+                                                   "vale conferir qual fonte é mais confiável para este caso.")
                             except Exception:
                                 logger.debug("[GEO-INTEL-EXPLICA] Falha ao exibir contexto completo (aditivo).", exc_info=True)
 
