@@ -57192,6 +57192,59 @@ if _secao == _SECOES[15]:   # tab_route_intel
                             else:
                                 st.caption("Hidrovias próximas: sem dados suficientes neste estudo ainda.")
 
+                    # [MAIS-TEMATICOS - Rodada 14/Missão 3, §28] "MAPA DE PONTES", "MAPA DE
+                    # TRAVESSIAS" e "MAPA DE ANOMALIAS": as três únicas entradas da lista de mapas
+                    # do §28 ainda sem visualização nacional própria (hoje só filtro/métrica por
+                    # rota isolada) — mesmo padrão de _fig_mapa_tematico acima (sem teto natural
+                    # para contagem, cmax=None).
+                    _fig_pontes_map = None
+                    _col_qtp_map2 = _col_existente(_rotas_proc, "QT_PONTES")
+                    if _col_qtp_map2:
+                        _rotas_pontes = _rotas_proc.copy()
+                        _rotas_pontes["Pontes no Cruzamento (Qtd)"] = pd.to_numeric(
+                            _rotas_pontes[_col_qtp_map2], errors="coerce").fillna(0)
+                        _fig_pontes_map = _fig_mapa_tematico(_rotas_pontes, "Pontes no Cruzamento (Qtd)",
+                                                              "Pontes no cruzamento", colorscale="Oranges", cmax=None)
+                    _fig_trav_map = None
+                    _col_qtt_map2 = _col_existente(_rotas_proc, "QT_TRAVESSIAS")
+                    if _col_qtt_map2:
+                        _rotas_trav = _rotas_proc.copy()
+                        _rotas_trav["Travessias Aquaviarias (Qtd)"] = pd.to_numeric(
+                            _rotas_trav[_col_qtt_map2], errors="coerce").fillna(0)
+                        _fig_trav_map = _fig_mapa_tematico(_rotas_trav, "Travessias Aquaviarias (Qtd)",
+                                                            "Travessias aquaviárias", colorscale="Cividis", cmax=None)
+                    _fig_anom_map = None
+                    _col_qta_map2 = _col_existente(_rotas_proc, "QT_ANOMALIAS")
+                    if _col_qta_map2:
+                        _rotas_anom = _rotas_proc.copy()
+                        _rotas_anom["Anomalias Detectadas (Qtd)"] = pd.to_numeric(
+                            _rotas_anom[_col_qta_map2], errors="coerce").fillna(0)
+                        _fig_anom_map = _fig_mapa_tematico(_rotas_anom, "Anomalias Detectadas (Qtd)",
+                                                            "Anomalias geográficas", colorscale="Reds", cmax=None)
+                    if _fig_pontes_map is not None or _fig_trav_map is not None or _fig_anom_map is not None:
+                        st.divider()
+                        st.markdown("##### 🗺️ Mapas de infraestrutura e anomalias (§28): pontes, travessias e "
+                                    "anomalias geográficas no espaço")
+                        _mt5, _mt6, _mt7 = st.columns(3)
+                        with _mt5:
+                            if _fig_pontes_map is not None:
+                                st.caption("Pontes no cruzamento por rota")
+                                st.plotly_chart(_fig_pontes_map, use_container_width=True)
+                            else:
+                                st.caption("Pontes: sem dados suficientes neste estudo ainda.")
+                        with _mt6:
+                            if _fig_trav_map is not None:
+                                st.caption("Travessias aquaviárias por rota")
+                                st.plotly_chart(_fig_trav_map, use_container_width=True)
+                            else:
+                                st.caption("Travessias: sem dados suficientes neste estudo ainda.")
+                        with _mt7:
+                            if _fig_anom_map is not None:
+                                st.caption("Anomalias geográficas detectadas por rota")
+                                st.plotly_chart(_fig_anom_map, use_container_width=True)
+                            else:
+                                st.caption("Anomalias: sem dados suficientes neste estudo ainda.")
+
                 with _abas_intel[2]:
                     st.subheader("Análise de Distribuição e Modal")
                     _db1, _db2 = st.columns(2)
