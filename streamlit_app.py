@@ -49361,2105 +49361,2123 @@ if _secao == _SECOES[2]:   # tab_alocacao
                 st.session_state.pop('alo_tempo_total', None)
             # [RESGATE-CIRCUIDADE - 238ª] Resumo do refinamento: destinos melhorados PARA O CANDIDATO.
             _resg = st.session_state.get('alo_resgate') or {}
-            if _resg.get('n_trocas'):
-                with st.container(border=True):
-                    st.markdown("#### 🧭 Refinamento inteligente da escolha (resgate por circuidade)")
-                    _cc = st.columns(3)
-                    _cc[0].metric("Destinos melhorados", _resg.get('n_trocas', 0),
-                                  help="Origens em que um destino mais direto — melhor para o candidato — "
-                                       "substituiu a escolha inicial de rota indireta/com balsa.")
-                    _cc[1].metric("Km economizados", f"{_resg.get('km_economizados', 0):,.0f}".replace(",", "."))
-                    _cc[2].metric("Candidatos beneficiados", f"{_resg.get('inscritos_beneficiados', 0):,}".replace(",", "."))
-                    for _t in (_resg.get('trocas') or [])[:30]:
-                        st.markdown(f"- **{_t.get('origem')}/{_t.get('uf')}**: {_t.get('explicacao', '')}")
-                    st.caption("Cada troca só ocorre quando é comprovadamente melhor para o candidato: menor "
-                               "rota real, ou quase-igual eliminando balsa/circuidade. A escolha nunca piora.")
-            elif _resg.get('n_acionados'):
-                st.caption(f"🧭 O refinamento por circuidade avaliou {_resg.get('n_acionados')} escolha(s) de "
-                           f"perfil de risco; todas já eram as melhores para o candidato — nenhuma troca necessária.")
-            # [V312 · §15] VALIDAÇÃO CRUZADA DA ALOCAÇÃO — leva o alerta de qualidade da decisão (antes só no
-            # Comparador) para a própria Alocação. READ-ONLY: classifica a proveniência de cada vencedor e
-            # destaca quantos NÃO são viária genuína (fluvial/fallback) ou têm geometria suspeita. Memoizado
-            # por assinatura para não recomputar a cada rerun. Defensivo (erro → silencioso, painel intocado).
-            try:
-                if df_final_alo is not None and not getattr(df_final_alo, "empty", True):
-                    _assin_v15 = (len(df_final_alo), _VERSAO_APP)
-                    if st.session_state.get('alo_v15_assin') != _assin_v15:
-                        # [V363 · BLINDAGEM-VALIDACAO] fonte robusta: usa o df vivo se estiver no escopo, senão o
-                        # DF-seguro do session_state. Elimina o NameError 'df_final_alo is not defined' em reruns
-                        # onde o bloco de montagem não executou (o erro do log) — sem depender do escopo local.
-                        try:
-                            _df_v15 = df_final_alo
-                        except NameError:
-                            _df_v15 = None
-                        if _df_v15 is None or not hasattr(_df_v15, "columns"):
-                            _df_v15 = st.session_state.get('alo_df_seguro')
-                        if _df_v15 is None or not len(_df_v15):
-                            raise RuntimeError("df da alocação indisponível para validação (ainda não montado)")
-                        _col_v15 = {str(c).strip().lower(): c for c in _df_v15.columns}
-                        _cd = _col_v15.get("distancia"); _cr = _col_v15.get("linha reta")
-                        _cf = _col_v15.get("fonte da rota"); _cb = _col_v15.get("balsas")
-                        _cs = _col_v15.get("status da rota"); _cref = _col_v15.get("refinado (resgate)")
-                        _regs_v15 = []
-                        for _rec in _df_v15.to_dict("records"):
-                            _dist = _rec.get(_cd) if _cd else None
-                            _vrr = None
+            # [UI-REENGENHARIA - Rodada 1] Resultado agrupado em abas (mission UI/UX §9/§39):
+            # nada de lógica mudou aqui — cada painel abaixo é EXATAMENTE o mesmo código de antes,
+            # só passou a renderizar dentro de uma aba em vez de empilhado verticalmente.
+            _tab_resumo_alo, _tab_diag_alo, _tab_cob_alo, _tab_rank_alo, _tab_sim_alo, _tab_exp_alo = st.tabs([
+                "\U0001F4CB Resumo", "\U0001F52C Diagn\u00f3stico da Decis\u00e3o",
+                "\U0001F4CA Cobertura & Capacidade", "\U0001F3C6 Ranking & Decis\u00e3o",
+                "\U0001F3AF Simulador de Novo Polo", "\u2B07\uFE0F Exporta\u00e7\u00e3o"])
+            with _tab_diag_alo:
+                if _resg.get('n_trocas'):
+                    with st.container(border=True):
+                        st.markdown("#### 🧭 Refinamento inteligente da escolha (resgate por circuidade)")
+                        _cc = st.columns(3)
+                        _cc[0].metric("Destinos melhorados", _resg.get('n_trocas', 0),
+                                      help="Origens em que um destino mais direto — melhor para o candidato — "
+                                           "substituiu a escolha inicial de rota indireta/com balsa.")
+                        _cc[1].metric("Km economizados", f"{_resg.get('km_economizados', 0):,.0f}".replace(",", "."))
+                        _cc[2].metric("Candidatos beneficiados", f"{_resg.get('inscritos_beneficiados', 0):,}".replace(",", "."))
+                        for _t in (_resg.get('trocas') or [])[:30]:
+                            st.markdown(f"- **{_t.get('origem')}/{_t.get('uf')}**: {_t.get('explicacao', '')}")
+                        st.caption("Cada troca só ocorre quando é comprovadamente melhor para o candidato: menor "
+                                   "rota real, ou quase-igual eliminando balsa/circuidade. A escolha nunca piora.")
+                elif _resg.get('n_acionados'):
+                    st.caption(f"🧭 O refinamento por circuidade avaliou {_resg.get('n_acionados')} escolha(s) de "
+                               f"perfil de risco; todas já eram as melhores para o candidato — nenhuma troca necessária.")
+                # [V312 · §15] VALIDAÇÃO CRUZADA DA ALOCAÇÃO — leva o alerta de qualidade da decisão (antes só no
+                # Comparador) para a própria Alocação. READ-ONLY: classifica a proveniência de cada vencedor e
+                # destaca quantos NÃO são viária genuína (fluvial/fallback) ou têm geometria suspeita. Memoizado
+                # por assinatura para não recomputar a cada rerun. Defensivo (erro → silencioso, painel intocado).
+            with _tab_diag_alo:
+                try:
+                    if df_final_alo is not None and not getattr(df_final_alo, "empty", True):
+                        _assin_v15 = (len(df_final_alo), _VERSAO_APP)
+                        if st.session_state.get('alo_v15_assin') != _assin_v15:
+                            # [V363 · BLINDAGEM-VALIDACAO] fonte robusta: usa o df vivo se estiver no escopo, senão o
+                            # DF-seguro do session_state. Elimina o NameError 'df_final_alo is not defined' em reruns
+                            # onde o bloco de montagem não executou (o erro do log) — sem depender do escopo local.
                             try:
-                                _dn = float(_dist); _rn = float(_rec.get(_cr)) if _cr else 0.0
-                                _vrr = _dn / _rn if _rn > 0 else None
-                            except (TypeError, ValueError):
+                                _df_v15 = df_final_alo
+                            except NameError:
+                                _df_v15 = None
+                            if _df_v15 is None or not hasattr(_df_v15, "columns"):
+                                _df_v15 = st.session_state.get('alo_df_seguro')
+                            if _df_v15 is None or not len(_df_v15):
+                                raise RuntimeError("df da alocação indisponível para validação (ainda não montado)")
+                            _col_v15 = {str(c).strip().lower(): c for c in _df_v15.columns}
+                            _cd = _col_v15.get("distancia"); _cr = _col_v15.get("linha reta")
+                            _cf = _col_v15.get("fonte da rota"); _cb = _col_v15.get("balsas")
+                            _cs = _col_v15.get("status da rota"); _cref = _col_v15.get("refinado (resgate)")
+                            _regs_v15 = []
+                            for _rec in _df_v15.to_dict("records"):
+                                _dist = _rec.get(_cd) if _cd else None
                                 _vrr = None
-                            _prov = _v307_classificar_proveniencia_distancia(
-                                _dist, _rec.get(_cf, "") if _cf else "", _rec.get(_cs, "") if _cs else "",
-                                tem_balsa=_rec.get(_cb, "") if _cb else "", vr=_vrr, fluvial=False)
-                            _regs_v15.append({
-                                "tipo": _prov["tipo"], "vr": _vrr,
-                                "refinado": (str(_rec.get(_cref, "")).strip().lower() == "sim") if _cref else False})
-                        st.session_state['alo_v15'] = _v312_resumo_validacao_alocacao(_regs_v15)
-                        st.session_state['alo_v15_assin'] = _assin_v15
-                    _v15 = st.session_state.get('alo_v15') or {}
-                    if _v15.get("nivel") == "critico":
-                        st.error(
-                            f"🚨 **{_fmt_num(_v15.get('nao_viaria', 0))} local(is) de prova vencedor(es) sem rota "
-                            f"viária genuína** ({_fmt_num(_v15.get('fluvial', 0))} fluvial/estimada · "
-                            f"{_fmt_num(_v15.get('fallback', 0))} fallback geodésico · "
-                            f"{_fmt_num(_v15.get('indeterminada', 0))} indeterminada). A distância desses não é "
-                            "comparável como estrada — confira **Fonte da Rota** e a **Auditoria da Escolha** abaixo.")
-                    elif _v15.get("nivel") == "atencao":
-                        st.warning(
-                            f"⚠️ **{_fmt_num(_v15.get('vr_alto', 0))} rota(s) com geometria muito indireta "
-                            "(V/R ≥ 1,9)** — podem ser desvios reais ou coordenada imprecisa; vale conferir na "
-                            "Auditoria da Escolha abaixo.")
-                    elif _v15.get("total"):
-                        st.caption(f"✅ Validação da decisão: {_fmt_num(_v15.get('viaria_genuina', 0))} de "
-                                   f"{_fmt_num(_v15.get('total', 0))} vencedores têm rota viária genuína.")
-            except Exception as _e_v15a:
-                logger.error(f"[V312-VALIDACAO-ALOC] alerta de validação da alocação falhou: {_e_v15a}")
-            # [V316 · Melhoria 3, fatia 2] ALERTA VISUAL "alternativa mais curta com balsa". Sempre que a
-            # política evitou balsa mas havia uma travessia mais curta, mostra de forma clara e não-poluente.
-            try:
-                _rb = st.session_state.get('alo_balsa_resumo') or {}
-                if _rb.get('n'):
-                    st.warning(
-                        f"⚠️ **ALTERNATIVA MAIS CURTA COM BALSA IDENTIFICADA em {_fmt_num(_rb['n'])} município(s).** "
-                        f"A rota **terrestre** foi mantida como vencedora porque a metodologia prioriza trajetos "
-                        f"sem balsa. Economia potencial **não capturada** por essa política: "
-                        f"**{_rb.get('km_total', 0):.0f} km** ({_fmt_num(_rb.get('kmc_total', 0))} km-candidato). "
-                        f"As colunas **Alerta Balsa / Distância Balsa / Economia Potencial Balsa** detalham cada caso "
-                        f"na planilha e nos relatórios.")
-                    _lb = _rb.get('linhas') or []
-                    if _lb:
-                        with st.expander(f"🛳️ Ver os {min(len(_lb), 200)} caso(s) com balsa mais curta", expanded=False):
-                            _dfb = pd.DataFrame([{
-                                "Origem": _x.get("origem"), "🏆 Terrestre (vencedor)": _x.get("destino_terrestre"),
-                                "km terrestre": _x.get("dist_terrestre"), "🛳️ Alternativa balsa": _x.get("destino_balsa"),
-                                "km balsa": _x.get("dist_balsa"), "Economia (km)": _x.get("economia_km"),
-                                "km-candidato": _x.get("km_candidato"), "Medição": _x.get("medicao"),
-                            } for _x in _lb[:200]])
-                            st.dataframe(_dfb, use_container_width=True, hide_index=True)
-                            st.caption("A rota terrestre permanece a escolhida; a balsa é apresentada apenas como "
-                                       "oportunidade, para transparência total da decisão.")
-                    # [V316 · Melhoria 3, fatia 3] ANÁLISES AGREGADAS de balsa (economia potencial, por UF, top).
-                    try:
-                        _agb = _v316_agregar_balsa(df_final_alo)
-                        if _agb.get("n"):
-                            with st.expander("📊 Análise agregada — alternativas por balsa", expanded=False):
-                                _kb = st.columns(4)
-                                _kb[0].metric("Municípios c/ balsa + curta", _fmt_num(_agb["n"]))
-                                _kb[1].metric("Economia potencial", f"{_agb['economia_total_km']:.0f} km")
-                                _kb[2].metric("Economia média", f"{_agb['economia_media_km']:.1f} km")
-                                _kb[3].metric("km-candidato potenciais", _fmt_num(_agb["kmc_total"]))
-                                st.caption(f"Maior economia individual: **{_agb['economia_max_km']:.0f} km** · "
-                                           f"presente em **{_agb['pct']:.1f}%** das rotas. Todas mantiveram a "
-                                           f"rota terrestre; os valores mostram o que a política de balsa "
-                                           f"economizaria (não uma perda da aplicação).")
-                                if _agb.get("por_uf"):
-                                    st.markdown("**Por UF**")
-                                    st.dataframe(pd.DataFrame([{
-                                        "UF": _u["uf"], "Casos": _u["n"],
-                                        "Economia (km)": round(_u["economia_km"], 1),
-                                        "km-candidato": round(_u["km_candidato"], 0)} for _u in _agb["por_uf"]],
-                                        ), use_container_width=True, hide_index=True)
-                    except Exception as _e_agb:
-                        logger.error(f"[V316-BALSA-AGG] análise agregada de balsa falhou: {_e_agb}")
-                    # [Melhoria 4 · §8] MEMÓRIA GEOGRÁFICA DIAGNÓSTICA (read-only): municípios problemáticos por
-                    # sinais já calculados. Não persiste nem altera decisão — auditoria/observabilidade.
-                    # [MELHORIA4-450 · M1] Auditoria unificada (memória + golden drift + drift de coordenada)
-                    # agora vive em _exibir_auditoria_geo_memoria e cobre TAMBÉM o pipeline do Lote (M1).
-                    try:
-                        _exibir_auditoria_geo_memoria(df_final_alo)
-                    except Exception as _e_mg:
-                        logger.error(f"[V317-MEMGEO] memória geográfica falhou: {_e_mg}")
-                    # [V330 · Melhoria6 §10/§15] AUDITORIA DE COMPLETUDE: expõe o controle explícito de tarefas
-                    # do roteamento (total/OK/falhas/recuperadas). Read-only; garante que "99% não é 100%".
-                    try:
-                        _cp = st.session_state.get('_lote_completude')
-                        if _cp and _cp.get("total"):
-                            _falhas_cp = int(_cp.get("falhas", 0))
-                            if _falhas_cp == 0:
-                                st.success(f"✅ **Processamento completo:** {_fmt_num(_cp['ok'])}/"
-                                           f"{_fmt_num(_cp['total'])} rotas processadas — nenhuma rota pendente.")
-                            else:
-                                st.warning(f"⚠️ **Completude:** {_fmt_num(_cp['ok'])}/{_fmt_num(_cp['total'])} "
-                                           f"rotas OK · {_fmt_num(_falhas_cp)} falha(s) de roteamento registrada(s)"
-                                           + (f" · {_fmt_num(_cp.get('recuperadas', 0))} recuperada(s) no retry"
-                                              if _cp.get("recuperadas") else "")
-                                           + ". As falhas estão marcadas explicitamente nas linhas correspondentes "
-                                           "(distância 0 e status 'FALHA DE ROTEAMENTO') — nenhuma foi perdida "
-                                           "nem apresentada como sucesso.")
-                    except Exception as _e_cp:
-                        logger.error(f"[V330-COMPLETUDE] painel de completude falhou: {_e_cp}")
-                    # [V321 · §17] SAÚDE DA PERSISTÊNCIA (read-only): torna visível o cache que já existe —
-                    # rotas, rotas douradas (validadas), geocodificação. Só LÊ tamanhos; não escreve/limpa nada.
-                    try:
-                        _sc = _v321_saude_cache([
-                            ("Rotas (viárias)", globals().get("cache_rotas")),
-                            ("Rotas douradas (validadas)", globals().get("cache_rotas_douradas")),
-                            ("Geocodificação", globals().get("cache_geo")),
-                            ("Google", globals().get("cache_google")),
-                            ("Reverso", globals().get("cache_reverse")),
-                            ("Base local IBGE", globals().get("cache_base_local"))])
-                        if _sc.get("n_caches"):
-                            with st.expander(f"💾 Persistência — {_fmt_num(_sc['total_itens'])} itens em cache "
-                                             f"(reaproveitados entre execuções)", expanded=False):
-                                st.caption("Read-only: a aplicação já persiste rotas e geocodificação (diskcache, "
-                                           "TTL 30 dias + versionamento de schema), evitando recalcular o que já "
-                                           "foi validado. Este painel só mostra a saúde desse cache — não altera nada.")
-                                st.dataframe(pd.DataFrame([{
-                                    "Cache": _l["cache"], "Itens": _l["itens"],
-                                    "Tamanho (MB)": (_l["mb"] if _l["mb"] is not None else "—")}
-                                    for _l in _sc["linhas"]]), use_container_width=True, hide_index=True)
-                                st.caption("As **rotas douradas** são trajetos já conferidos/confiáveis, preservados "
-                                           "sem expiração; as demais respeitam o TTL. Para forçar recálculo, limpe "
-                                           "as pastas ./cache_* no servidor.")
-                    except Exception as _e_sc:
-                        logger.error(f"[V321-CACHE] painel de saúde do cache falhou: {_e_sc}")
-            except Exception as _e_balsa_ui:
-                logger.error(f"[V316-BALSA-UI] alerta de balsa falhou: {_e_balsa_ui}")
-            # [FASE2-RESUMO-ALOC - 184ª geração] RESUMO EXECUTIVO da alocação: KPIs no topo (municípios de
-            # origem, polos utilizados, deslocamento médio/máximo ao polo) antes do detalhamento denso. A
-            # resposta em 5 segundos. Defensivo: cada métrica só aparece se a coluna existir; erro →
-            # silencioso. Reusa o df_processado já pronto. Aditivo, dentro do bloco de resultado.
-            with st.container(border=True):
-                st.markdown("#### 📋 Resumo Executivo")
-                try:
-                    _dfa = st.session_state['df_processado']
-                    _dist_a = pd.to_numeric(_dfa['Distancia'], errors='coerce') if 'Distancia' in _dfa.columns else None
-                    _n_orig = _dfa['Municipio Origem'].nunique() if 'Municipio Origem' in _dfa.columns else len(_dfa)
-                    _n_polos = _dfa['Municipio Destino'].nunique() if 'Municipio Destino' in _dfa.columns else None
-                    _ra1, _ra2, _ra3, _ra4 = st.columns(4)
-                    _ra1.metric("Municípios de origem", f"{_n_orig:,}", help="Municípios de candidatos alocados no estudo.")
-                    if _n_polos is not None:
-                        _ra2.metric("Polos utilizados", f"{_n_polos:,}", help="Locais de prova distintos para onde os candidatos foram alocados.")
-                    if _dist_a is not None:
-                        _ra3.metric("Deslocamento médio", f"{_dist_a.mean():.1f} km", help="Distância viária média do candidato até o polo alocado.")
-                        _ra4.metric("Deslocamento máximo", f"{_dist_a.max():.1f} km", help="Maior distância viária de um candidato até seu polo — sinaliza acessibilidade crítica.")
-                except Exception:
-                    pass
-            # [SSOT-DECISAO - 184ª geração] Método de SELEÇÃO dos hubs, HONESTO por modo. Antes esta mensagem
-            # era hardcoded "Linha reta" e aparecia SEMPRE — inclusive no modo viária, mentindo sobre o método
-            # e minando a confiança. Agora reflete o modo real: no modo viária, a alocação final é por MENOR
-            # ROTA VIÁRIA (a linha reta é só pré-filtro/desempate); no modo reta, é por menor geodésica.
-            if st.session_state.get('alo_multicriterio'):
-                st.success("✅ **Método de seleção dos hubs:** 🛣️ Menor rota viária (Google → OSRM)")
-                st.caption("Cada cliente foi alocado ao polo de **menor distância viária real** entre os polos "
-                           "próximos roteados (Google prioritário → OSRM fallback). A distância em linha reta é "
-                           "usada apenas como **pré-filtro** (quais polos rotear) e **desempate**, nunca como "
-                           "critério final da escolha. As distâncias viárias constam na coluna **Método Utilizado**.")
-                # [SSOT-DECISAO - 184ª geração] PROVA ao usuário de que a metodologia foi cumprida: confirma o
-                # invariante 'vencedor = menor rota viária' no resultado final, e quantos ajustes autoritativos
-                # foram aplicados. Transparência — a validação automática que faltava para gerar confiança.
-                _inv = st.session_state.get('alo_invariante_viaria') or {}
-                _corr = int(st.session_state.get('alo_correcoes_viaria', 0) or 0)
-                if _inv.get('com_concorrente'):
-                    _prot_inv = int(_inv.get('protegidas', 0) or 0)
-                    if _inv.get('violacoes', 0) == 0:
-                        st.success("✓ **Invariante garantido:** todos os **{}** locais com alternativa avaliada "
-                                   "têm a **menor rota viária** entre o escolhido e o 2º colocado.{}".format(
-                                       _inv['com_concorrente'],
-                                       " {} ajuste(s) autoritativo(s) aplicado(s) para garantir isso.".format(_corr)
-                                       if _corr > 0 else ""))
-                        if _prot_inv > 0:
-                            st.caption("🛡️ **{}** decisão(ões) foram **protegidas pela guarda anti-fantasma**: o "
-                                       "concorrente mais curto não é rota viária real (fluvial/fantasma), então o "
-                                       "local genuíno foi mantido — maior em km, porém a única estrada de verdade.".format(_prot_inv))
-                    else:
-                        st.warning("⚠️ **{} de {}** locais ainda com o escolhido tendo viária maior que o 2º "
-                                   "**genuíno** — veja a coluna **Alerta Coerência Viária** na planilha.{}".format(
-                                       _inv['violacoes'], _inv['com_concorrente'],
-                                       " (Fora essas, {} foram protegidas contra concorrente fantasma — não são "
-                                       "violações.)".format(_prot_inv) if _prot_inv > 0 else ""))
-                    # [APRENDIZADO - 184ª geração] Painel de padrões aprendidos com as derrotas/subotimalidades.
-                    _pad = st.session_state.get('alo_padroes_derrota') or []
-                    if _pad:
-                        _nf = sum(1 for _p in _pad if _p['padrao'] == 'desvio_fantasma')
-                        _nd = sum(1 for _p in _pad if _p['padrao'] == 'polo_mais_distante')
-                        with st.expander(f"🧠 Aprendizado com padrões ({len(_pad)} caso(s) de atenção detectados)"):
-                            st.caption("A aplicação identifica automaticamente assinaturas de escolha "
-                                       "potencialmente subótima para revisão e melhoria contínua.")
-                            if _nf:
-                                st.markdown(f"- 🚢 **{_nf}** caso(s) de **desvio fluvial fantasma** (sinuosidade "
-                                            "> 4× a linha reta) — rota rodoviária provavelmente fluvial na prática.")
-                            if _nd:
-                                st.markdown(f"- 📍 **{_nd}** caso(s) de **polo mais distante que o concorrente** — "
-                                            "candidatos a revalidação do 2º colocado.")
-                            _amostra = _pad[:8]
-                            st.dataframe(pd.DataFrame(_amostra), hide_index=True, use_container_width=True)
-                    # [DIAGNOSTICO-POLO - 184ª geração] Painel de polos suspeitos: vencedores muito sinuosos
-                    # que sugerem um polo melhor ausente da lista ou mal roteado (raiz das derrotas).
-                    # [PARTICIPACAO-MOTOR - 184ª geração] Painel de participação dos motores com veredito.
-                    _pm = st.session_state.get('alo_participacao_motor') or {}
-                    if _pm and _pm.get('total'):
-                        _emoji_pm = {"ok": "🟢", "info": "🔵", "aviso": "🟡", "erro": "🔴"}.get(_pm.get('nivel'), "⚪")
-                        with st.expander(f"🛰️ Participação dos motores de roteamento "
-                                         f"({_emoji_pm} Google {_pm['pct_google']:.0f}% · "
-                                         f"OSRM {_pm['pct_osrm']:.0f}%)"):
-                            st.caption("Quanto cada motor participou do resultado final. O Google é o motor "
-                                       "prioritário quando responde; o OSRM cobre o restante e serve de "
-                                       "auditoria e redundância.")
-                            _c1_pm, _c2_pm, _c3_pm = st.columns(3)
-                            _c1_pm.metric("Google Maps", f"{_pm['pct_google']:.0f}%", f"{_pm['n_google']:,} rotas")
-                            _c2_pm.metric("OSRM", f"{_pm['pct_osrm']:.0f}%", f"{_pm['n_osrm']:,} rotas")
-                            _c3_pm.metric("Fallback geodésico", f"{_pm['pct_fallback']:.0f}%",
-                                          f"{_pm['n_fallback']:,} rotas")
-                            # [SEGUNDA-PASSADA-GOOGLE] informa quantas rotas o Google recuperou na 2ª tentativa.
-                            _rec_g = st.session_state.get('alo_recuperados_google')
-                            if _rec_g:
-                                st.success(f"🔁 A segunda tentativa do Google recuperou {_rec_g:,} rota(s) que "
-                                           "haviam caído no OSRM/fallback — a participação do Google acima já "
-                                           "inclui essa recuperação.")
-                            _nivel_pm = _pm.get('nivel')
-                            if _nivel_pm == "erro":
-                                st.error(_pm['veredito'])
-                            elif _nivel_pm == "aviso":
-                                st.warning(_pm['veredito'])
-                            else:
-                                st.info(_pm['veredito'])
-                            # [CIRCUIT-BREAKER] informa se o disjuntor do Google chegou a abrir na sessão.
-                            try:
-                                _cb_est = _GOOGLE_CB_ESTADO
-                                if _cb_est and _cb_est.get('status') != 'fechado':
-                                    st.caption("⚡ O disjuntor de proteção do Google esteve ativo nesta sessão: "
-                                               "ao detectar falhas em série (rate-limit), o sistema suspendeu "
-                                               "temporariamente as chamadas ao Google para não agravar o "
-                                               "bloqueio, usando o OSRM nesse intervalo e retomando o Google "
-                                               "em seguida. É um comportamento de proteção esperado, não um erro.")
-                            except Exception:
-                                pass
-                    _susp = st.session_state.get('alo_polos_suspeitos') or []
-                    if _susp:
-                        with st.expander(f"🔍 Polos possivelmente subótimos ({len(_susp)} caso(s)) — investigar"):
-                            st.caption("Estes municípios têm o polo vencedor com rota muito sinuosa (a estrada "
-                                       "é 3× ou mais que a linha reta). Isso costuma indicar que a rota contorna "
-                                       "um rio e que **pode existir um polo terrestre mais próximo** que não está "
-                                       "na lista de destinos ou foi mal roteado. Compare com o estudo de "
-                                       "referência: se ele usa um polo mais perto, considere incluí-lo na "
-                                       "planilha de destinos e reprocessar.")
-                            st.dataframe(pd.DataFrame(_susp[:15]), hide_index=True, use_container_width=True)
-                    # [REGIAO-ADAPTATIVA - 184ª geração] Resumo da confiabilidade regional do roteamento.
-                    try:
-                        if 'Confiabilidade Regional' in df_final_alo.columns:
-                            _conf = df_final_alo['Confiabilidade Regional'].astype(str)
-                            _n_baixa = int(_conf.str.contains('Baixa').sum())
-                            _n_media = int(_conf.str.contains('Média').sum())
-                            _n_alta = int(_conf.str.contains('Alta').sum())
-                            _tot_c = max(len(df_final_alo), 1)
-                            with st.expander(f"🧭 Confiabilidade regional do roteamento "
-                                             f"(🟢 {_n_alta} · 🟡 {_n_media} · 🔴 {_n_baixa})"):
-                                st.caption("Classificação automática da confiabilidade por região, sem alterar "
-                                           "nenhuma decisão. A malha viária é mais esparsa na Amazônia Legal "
-                                           "(rios, poucas estradas mapeadas) e em rotas com balsa ou muito "
-                                           "sinuosas — ali o roteamento tem incerteza maior. Isto dá "
-                                           "transparência sobre onde os resultados merecem conferência extra.")
-                                _pct_alta = 100.0 * _n_alta / _tot_c
-                                st.markdown(
-                                    f"- 🟢 **Alta confiabilidade:** {_n_alta} município(s) ({_pct_alta:.0f}%) — "
-                                    "malha consolidada, rota direta.\n"
-                                    f"- 🟡 **Média:** {_n_media} — Amazônia Legal, balsa ou rota sinuosa; "
-                                    "resultado utilizável com atenção.\n"
-                                    f"- 🔴 **Baixa:** {_n_baixa} — fallback geodésico ou rota muito sinuosa na "
-                                    "Amazônia; recomenda-se validação manual e verificação de acesso fluvial ou "
-                                    "polo alternativo.")
-                    except Exception as _e_cr:
-                        logger.error(f"[REGIAO-ADAPTATIVA] {_e_cr}")
-                    try:
-                        _cov = _auditar_cobertura_roteamento(st.session_state.get('alo_topk_map'),
-                                                             st.session_state.get('alo_resultados'))
-                        if _cov and _cov.get('pares_candidatos'):
-                            with st.expander("🔎 Auditoria de cobertura do roteamento"):
-                                _c1, _c2, _c3 = st.columns(3)
-                                _c1.metric("Municípios avaliados", f"{_cov['clientes']:,}")
-                                _c2.metric("Pares candidatos roteados", f"{_cov['pares_reais']:,}",
-                                           help="Rotas viárias reais calculadas (fora fallback geodésico)")
-                                _c3.metric("Taxa de sucesso viária", f"{_cov['taxa_sucesso']:.0f}%")
-                                st.caption(
-                                    f"Foram avaliados **{_cov['media_candidatos_por_cliente']:.1f} polos por "
-                                    f"município** em média ({_cov['pares_candidatos']:,} pares candidatos no total). "
-                                    f"Destes, **{_cov['pares_reais']:,}** obtiveram rota viária real, "
-                                    f"**{_cov['pares_fallback']:,}** caíram em geodésica (acesso fluvial/sem malha) "
-                                    f"e **{_cov['pares_sem_rota']:,}** não retornaram rota. A decisão final usou "
-                                    "sempre a menor viária real disponível entre os candidatos roteados.")
-                                # [GARANTIA-OTIMA - 184ª geração] Selo de prova de otimalidade.
-                                _prova = st.session_state.get('alo_prova_otimalidade')
-                                # [MATRIZ-VIARIA - 184ª geração] cobertura do motor de matriz.
-                                _dm = st.session_state.get('alo_dist_matriz') or {}
-                                if _dm:
-                                    st.info(
-                                        f"🧭 **Motor híbrido de duas fases ativo.** Fase 1 — descoberta: "
-                                        f"{len(_dm):,} origem(ns) foram medidas contra todos os polos "
-                                        "candidatos numa única consulta de matriz do OSRM (/table/v1, gratuito "
-                                        "e ideal para varredura ampla), sem depender do top-K. Fase 2 — "
-                                        "decisão: os melhores candidatos de cada origem foram re-roteados com o "
-                                        "**Google Maps (prioritário)**, que tem a rota de maior qualidade; o "
-                                        "OSRM /route atua como fallback quando o Google não responde. Assim "
-                                        "cada motor age no seu ponto forte: OSRM varre para não descartar o "
-                                        "vencedor, Google decide a menor viária real.")
-                                    # [DIVERGENCIA-MOTOR - 184ª geração] Sensibilidade ao motor.
-                                    _div = st.session_state.get('alo_divergencia_motor')
-                                    # [DOMINANCIA-GEO - 184ª geração] Economia por prova de dominância.
-                                    _ndom = st.session_state.get('alo_dominancia_geo')
-                                    if _ndom:
-                                        st.caption(
-                                            f"⚡ **Prova de dominância geométrica:** em {_ndom} município(s), o "
-                                            "polo mais próximo foi matematicamente provado imbatível (rota "
-                                            "viária ≤ linha reta dos concorrentes), dispensando consultas extras "
-                                            "ao Google sem qualquer perda de exatidão — decisão mais rápida onde "
-                                            "o vencedor é inequívoco.")
-                                    if _div and _div.get('total_avaliado'):
-                                        _tx = _div.get('taxa_divergencia_pct', 0)
-                                        if _div.get('divergencias'):
-                                            st.caption(
-                                                f"🔀 **Sensibilidade ao motor:** em {_div['divergencias']} de "
-                                                f"{_div['total_avaliado']} município(s) ({_tx:.0f}%), o vencedor "
-                                                "pela varredura OSRM diferiu da decisão final do Google — são "
-                                                "regiões onde a escolha é sensível ao motor (malha complexa). A "
-                                                "decisão final priorizou o Google (maior qualidade). Estes casos "
-                                                "são bons candidatos a revisão manual.")
-                                        else:
-                                            st.caption(
-                                                f"🔀 **Sensibilidade ao motor:** OSRM e Google concordaram no "
-                                                f"vencedor em 100% dos {_div['total_avaliado']} município(s) "
-                                                "avaliados — decisão robusta, independente do motor.")
-                                if _prova and _prova.get('fechada'):
-                                    _extras = _prova.get('polos_extras_reais', 0)
-                                    st.success(
-                                        "🎯 **Otimalidade comprovada.** Após o roteamento, a aplicação executou "
-                                        "uma prova matemática (branch-and-bound): como a distância viária é "
-                                        "sempre maior ou igual à linha reta, todo polo cuja linha reta já supera "
-                                        "a menor viária encontrada é descartado com segurança — não há como "
-                                        "vencer. Todos os polos que ainda poderiam ter rota menor foram "
-                                        "roteados. **Nenhum município não-avaliado pode ter viária menor que o "
-                                        "vencedor escolhido.**" + (
-                                            f" Nesta execução, **{_extras}** polo(s) fora do top-K inicial "
-                                            "foram roteados pela prova." if _extras else
-                                            " O vencedor já estava garantido pelo top-K (nenhum polo extra "
-                                            "precisou ser roteado)."))
-                    except Exception as _e_cov:
-                        logger.error(f"[AUDITORIA-COBERTURA] {_e_cov}")
-            else:
-                st.success("✅ **Método de seleção dos hubs:** ✓ Linha reta (GeographicLib · WGS-84)")
-                st.caption("A base logística mais próxima de cada cliente foi escolhida pela **menor distância "
-                           "em linha reta** (geodésica WGS-84; valor via GeographicLib/Karney, erro <1mm; ranking "
-                           "por Haversine/IUGG, de ordem idêntica). As **distâncias viárias** por cliente "
-                           "(Google prioritário → OSRM fallback) constam na planilha exportada, na coluna "
-                           "**Método Utilizado**.")
-            # [ALOC-ENTERPRISE - 49ª geração] Paridade com o Processamento em Lote: o mesmo Scorecard de
-            # qualidade e a mesma Auditoria Automática de Rotas Suspeitas (REUSO das funções existentes,
-            # sem duplicar lógica). A planilha da Alocação já é enriquecida (mesmo _montar_dataframe_final).
-            # [GEO-INTEL-AUTO] Contexto geografico automatico (rios, bacia, pontes,
-            # travessias, dependencia aquaviaria) - aditivo, ver _enriquecer_geo_inteligencia_df.
-            try:
-                _df_geo, _geo_rel = _enriquecer_geo_inteligencia_df(st.session_state.get('df_processado'))
-                if _geo_rel.get('executado'):
-                    st.session_state['df_processado'] = _df_geo
-                    st.caption(f"🧠 Contexto geografico automatico: {_geo_rel['n_pares']} rota(s) unica(s) analisada(s) (rios, bacia, pontes, travessias).")
-                elif _geo_rel.get('motivo') == 'acima_do_limiar':
-                    _pend = st.session_state.get('geo_intel_pendente') or {}
-                    if st.button(f"🧠 Enriquecer geograficamente ({_pend.get('n_pares', '?')} rotas unicas)", key="geo_intel_forcar_aloc"):
-                        _df_geo2, _geo_rel2 = _enriquecer_geo_inteligencia_df(st.session_state.get('df_processado'), forcar=True)
-                        if _geo_rel2.get('executado'):
-                            st.session_state['df_processado'] = _df_geo2
-                            st.rerun()
-            except Exception:
-                logger.debug("[GEO-INTEL-AUTO] Painel de enriquecimento falhou (aditivo).", exc_info=True)
-            renderizar_scorecard_qualidade(st.session_state['df_processado'])
-            # [COBERTURA - 140ª geração] PLANEJAMENTO DE POLOS. As duas perguntas que o gestor de exames de
-            # fato faz — "quantos candidatos estão longe demais?" e "onde abrir o próximo polo?" — e que a
-            # app não respondia. Container fixo, rótulo estático (padrão da 132ª).
-            with st.expander("🎯 Planejamento de Polos — cobertura e onde abrir o próximo", expanded=False):
-                try:
-                    _dfp_cob = st.session_state.get('df_processado')
-                    _ok_cob = (_dfp_cob is not None and len(_dfp_cob) > 0
-                               and {'Distancia', 'Lat Origem', 'Lon Origem'}.issubset(_dfp_cob.columns))
-                    if not _ok_cob:
-                        st.caption("Indisponível: o estudo precisa de distância e coordenadas de origem.")
-                    if _ok_cob:
-                        # peso = inscritos (se a planilha do usuário trouxer a coluna); senão, 1 por município
-                        _cands_col = [c for c in _dfp_cob.columns
-                                      if any(k in str(c).lower() for k in ("inscrit", "candidat", "matricul"))
-                                      and pd.api.types.is_numeric_dtype(_dfp_cob[c])]
-                        # [INSCRITOS - 141ª geração] pré-seleciona a coluna escolhida na config da Alocação
-                        _pre = st.session_state.get('alo_col_inscritos')
-                        _opts_ci = ["(sem peso — 1 por município)"] + _cands_col
-                        _idx_ci = _opts_ci.index(_pre) if (_pre in _opts_ci) else 0
-                        _col_insc = st.selectbox(
-                            "Coluna com a quantidade de inscritos (opcional, mas muda tudo)",
-                            _opts_ci, index=_idx_ci, key="cob_insc",
-                            help="Se a sua planilha de origens tiver o nº de candidatos por município, selecione-a: "
-                                 "todos os indicadores passam a ser ponderados por CANDIDATO, não por linha.")
-                        _pesos = (pd.to_numeric(_dfp_cob[_col_insc], errors='coerce').fillna(0).tolist()
-                                  if _col_insc in _cands_col else [1.0] * len(_dfp_cob))
-                        _dists = pd.to_numeric(_dfp_cob['Distancia'], errors='coerce').tolist()
-                        _cv = _curva_cobertura(_dists, _pesos)
-                        _unid = "candidatos" if _col_insc in _cands_col else "municípios"
-
-                        st.markdown("##### 📐 Curva de Cobertura")
-                        _q1, _q2, _q3, _q4 = st.columns(4)
-                        _q1.metric(f"Total de {_unid}", _fmt_num(_cv['total']))
-                        _q2.metric("Mediana", f"{_cv['mediana']} km" if _cv['mediana'] is not None else "—",
-                                   help="Metade dos candidatos percorre menos que isso. Mais honesta que a média.")
-                        _q3.metric("P90", f"{_cv['p90']} km" if _cv['p90'] is not None else "—",
-                                   help="90% percorrem menos que isso — os 10% piores estão acima.")
-                        _q4.metric("Pior caso", f"{_cv['max']} km" if _cv['max'] is not None else "—")
-                        if _cv["faixas"]:
-                            st.bar_chart(pd.Series(_cv["faixas"]))
-                            _leitura_grafico(
-                                como_ler=f"cada barra é uma **faixa de distância**; a altura é quantos {_unid} têm esse "
-                                         f"deslocamento até o polo alocado. Barras concentradas à esquerda = maioria perto.",
-                                conclusao=(f"metade dos {_unid} percorre até **{_cv['mediana']} km** e 90% até "
-                                           f"**{_cv['p90']} km**; o pior caso é **{_cv['max']} km**."
-                                           if _cv['mediana'] is not None else
-                                           f"distribuição dos {_unid} por faixa de deslocamento até o polo."))
-                            _f200 = _cv["faixas"].get(200, 0)
-                            st.caption(f"Interpretação: **{_f200}% dos {_unid}** estão a **≤200 km** do local de prova — "
-                                       f"logo **{round(100 - _f200, 1)}%** estão **acima** disso. A média de "
-                                       f"{_cv['media']} km esconde essa cauda; a curva não.")
-
-                        st.markdown("##### 🏫 Carga por Local de Prova")
-                        st.caption("Quantos candidatos cada polo vai **receber**. É aqui que a quantidade de "
-                                   "inscritos muda uma decisão de verdade — um polo com 47.000 candidatos pode "
-                                   "simplesmente não caber numa escola.")
-                        try:
-                            _pol_c = (_dfp_cob['Municipio Destino'] if 'Municipio Destino' in _dfp_cob.columns
-                                      else _dfp_cob['Destino']).astype(str).tolist()
-                            _ufp_c = (_dfp_cob['UF Destino'].astype(str).tolist()
-                                      if 'UF Destino' in _dfp_cob.columns else [""] * len(_dfp_cob))
-                            _carga = _carga_por_polo([{"polo": _pol_c[_i], "uf_polo": _ufp_c[_i],
-                                                       "inscritos": _pesos[_i], "dist_km": _dists[_i]}
-                                                      for _i in range(len(_dfp_cob))])
-                            if _carga:
-                                _dfc = pd.DataFrame(_carga)
-                                st.dataframe(_rotular_colunas(_dfc[[
-                                    "polo", "uf", "candidatos", "pct_candidatos", "municipios",
-                                    "dist_media_km", "dist_max_km"]].head(25)),
-                                    use_container_width=True, hide_index=True, height=240)
-                                _t1 = _carga[0]
-                                st.info(f"🏫 O polo mais carregado é **{_t1['polo']}/{_t1['uf']}**: receberia "
-                                        f"**{_fmt_num(_t1['candidatos'])} {_unid}** ({_t1['pct_candidatos']}% do total), "
-                                        f"vindos de {_t1['municipios']} município(s). Verifique se há estrutura "
-                                        f"(salas, fiscais, acessos) para esse volume.")
-                                if len(_carga) >= 2 and _t1["pct_candidatos"] > 40:
-                                    st.warning(f"⚠️ **Concentração alta:** um único polo absorve "
-                                               f"{_t1['pct_candidatos']}% dos candidatos. Distribuir a carga pode ser "
-                                               "mais importante que economizar quilômetros — avalie abrir um polo "
-                                               "adicional (simulador abaixo).")
-                        except Exception as _e_cg:
-                            logger.error(f"[INSCRITOS] Falha na carga por polo: {_e_cg}")
-
-                        # [CAPACIDADE - 152ª geração] ALOCAÇÃO REALISTA. Até aqui a plataforma REPORTAVA a
-                        # carga ("Rio Verde receberia 47.000") mas NÃO A RESTRINGIA. Se Rio Verde só cabe
-                        # 5.000, o plano é FICÇÃO. Container fixo, rótulo estático (132ª).
-                        with st.container():
-                            _caps = st.session_state.get('alo_capacidades')
-                            if not _caps:
-                                st.markdown("##### 🏫 Capacidade dos Polos")
-                                st.caption("Sem coluna de **capacidade** na planilha de polos, a plataforma assume "
-                                           "vagas **ilimitadas** — e pode recomendar um polo que simplesmente **não "
-                                           "cabe**. Informe a capacidade (salas/carteiras) para obter um plano que "
-                                           "sobrevive ao contato com a realidade.")
-                            if _caps:
-                                st.markdown("##### 🏫 Alocação com Capacidade (plano realista)")
                                 try:
-                                    # [HARDENING 241ª] corrige NameError: _nom_c indefinido neste escopo
-                                    _nom_c = (_dfp_cob['Municipio Origem'] if 'Municipio Origem' in _dfp_cob.columns
-                                              else _dfp_cob['Origem']).astype(str).tolist()
-                                    _mun_cap = []
-                                    for _i in range(len(_dfp_cob)):
-                                        _mun_cap.append({"nome": _nom_c[_i], "uf": _uf_c[_i],
-                                                         "inscritos": _pesos[_i],
-                                                         "custos": {_pol_c[_i]: _dists[_i]}})
-                                    # custos para TODOS os polos vêm do top-K roteado (quando existir)
-                                    _tk = st.session_state.get('alo_topk_map') or {}
-                                    _res_r = st.session_state.get('alo_resultados') or {}
-                                    for _m in _mun_cap:
-                                        for _t in (_tk.get(_m["nome"]) or []):
-                                            _hb = str(_t[1]).strip()
-                                            _rr = _res_r.get((_m["nome"], _hb))
-                                            if _rr and _rr[0]:
-                                                _m["custos"][_hb] = float(_rr[0])
-                                            elif _hb not in _m["custos"]:
-                                                _m["custos"][_hb] = float(_t[0]) * 1.3   # estimativa viária
-                                    # [PERF - 153ª geração] FORA DO CAMINHO QUENTE. Na 152ª eu chamava isto
-                                    # DIRETO no painel — ou seja, A CADA RERUN da seção. Medido em escala
-                                    # nacional: **44,5 s de CPU bloqueante por clique** (agora 0,06 s, mas
-                                    # ainda assim: nada pesado no caminho quente). É a TERCEIRA vez que eu
-                                    # cometo essa classe de bug (138ª, 152ª). Agora memoizo pela ASSINATURA
-                                    # da entrada: recalcula só quando os dados realmente mudam.
-                                    _assin = (len(_mun_cap), int(sum(_caps.values())),
-                                              int(sum(float(m.get("inscritos") or 0) for m in _mun_cap)))
-                                    if st.session_state.get('alo_cap_assin') != _assin:
-                                        st.session_state['alo_cap_res'] = _alocar_com_capacidade(_mun_cap, _caps)
-                                        st.session_state['alo_cap_assin'] = _assin
-                                    _rc = st.session_state['alo_cap_res']
-                                    _q1, _q2, _q3, _q4 = st.columns(4)
-                                    _q1.metric("Candidatos", _fmt_num(_rc["total_candidatos"]))
-                                    _q2.metric("Capacidade total", _fmt_num(_rc["total_capacidade"]))
-                                    _q3.metric("Municípios deslocados", _rc["n_deslocados"],
-                                               help="Ficaram fora do polo IDEAL porque ele estava lotado.")
-                                    _q4.metric("Preço da restrição",
-                                               f"{_fmt_num(_rc['preco_da_restricao_km_cand'])} km-cand.",
-                                               help="Quanto a falta de vaga custa aos candidatos, em km-candidato.")
-                                    if not _rc["viavel"]:
-                                        st.error(f"⛔ **PLANO INVIÁVEL.** A capacidade declarada "
-                                                 f"(**{_fmt_num(_rc['total_capacidade'])}**) é MENOR que o número de "
-                                                 f"candidatos (**{_fmt_num(_rc['total_candidatos'])}**). "
-                                                 "Não adianta otimizar quilômetros: **não há onde aplicar a prova**. "
-                                                 "Abra polos ou amplie os existentes.")
-                                    if _rc["viavel"] and _rc["n_deslocados"] == 0:
-                                        st.success("✅ **Plano viável e ótimo:** todo município ficou no seu polo "
-                                                   "ideal. A capacidade não restringiu nada.")
-                                    if _rc["viavel"] and _rc["n_deslocados"] > 0:
-                                        st.warning(
-                                            f"⚠️ **{_rc['n_deslocados']} município(s)** "
-                                            f"(**{_fmt_num(_rc['candidatos_deslocados'])} candidatos**) foram "
-                                            "deslocados do polo ideal **por falta de vaga**. Isso custa "
-                                            f"**{_fmt_num(_rc['preco_da_restricao_km_cand'])} km-candidato** a mais. "
-                                            "Ampliar a capacidade dos polos lotados devolveria esse ganho.")
-                                    if _rc["sem_vaga"]:
-                                        st.error(f"⛔ **{len(_rc['sem_vaga'])} município(s) sem vaga em polo nenhum** "
-                                                 "— nem no maior. Eles precisam de um polo próprio, ou de divisão "
-                                                 "de turmas.")
-                                        st.dataframe(pd.DataFrame(_rc["sem_vaga"]), use_container_width=True,
-                                                     hide_index=True)
-                                    if _rc["deslocados"]:
-                                        st.dataframe(_rotular_colunas(pd.DataFrame(_rc["deslocados"])),
-                                                     use_container_width=True, hide_index=True, height=240)
-                                    _oc = pd.DataFrame([{"Polo": _p, **_o} for _p, _o in _rc["ocupacao"].items()])
-                                    if len(_oc):
-                                        _oc = _oc.sort_values("pct", ascending=False)
-                                        st.dataframe(
-                                            _colorir_risco(_rotular_colunas(_oc), cols_pct_ruim=["Ocupação (%)"]),
-                                            use_container_width=True, hide_index=True, height=200)
-                                        _lot = _oc[_oc["pct"] >= 100]
-                                        if len(_lot):
-                                            st.caption(f"🔴 **{len(_lot)} polo(s) 100% lotados** — são eles que estão "
-                                                       "empurrando candidatos para longe. Ampliá-los é a intervenção "
-                                                       "de maior retorno.")
-                                    # [DASHBOARD - 177ª geração] O ESTUDO PELOS OLHOS DO CANDIDATO.
-                                    # Todo o resto conta MUNICÍPIOS. Mas município não faz prova — GENTE faz.
-                                    # Um município com 5.000 candidatos a 250 km importa 500× mais que um
-                                    # com 10 candidatos a 400 km. Aqui cada faixa conta CANDIDATOS.
-                                    _dash = _dashboard_candidatos(_mun_cap)
-                                    if not _dash:
-                                        st.info("ℹ️ **Mapeie a coluna de INSCRITOS** para desbloquear esta "
-                                                "análise. Sem ela, a plataforma conta MUNICÍPIOS — e um "
-                                                "município com 5.000 candidatos pesa o mesmo que um com 10. "
-                                                "A coluna continua **opcional**: sem ela, tudo funciona "
-                                                "normalmente.")
-                                    if _dash:
-                                        st.markdown("###### 👥 O estudo pelos olhos do CANDIDATO")
-                                        st.caption(
-                                            "📖 Todo o resto desta aba conta **municípios**. Mas município "
-                                            "não faz prova — **gente faz**. Um município com 5.000 candidatos "
-                                            "a 250 km importa **500× mais** que um com 10 candidatos a 400 km. "
-                                            "Aqui **cada faixa conta CANDIDATOS**.")
-                                        _d1, _d2, _d3, _d4 = st.columns(4)
-                                        _d1.metric("Total de candidatos",
-                                                   _fmt_num(_dash["total_candidatos"]))
-                                        _d2.metric("Média por município",
-                                                   _fmt_num(_dash["media_por_municipio"], 1),
-                                                   help=f"Mediana: {_fmt_num(_dash['mediana'])} · "
-                                                        f"Máximo: {_fmt_num(_dash['maximo'])}")
-                                        _d3.metric("80% viajam até",
-                                                   f"{_fmt_num(_dash['km_para_80pct'], 1)} km"
-                                                   if _dash.get("km_para_80pct") else "—",
-                                                   help="Quem está muito acima disso é exceção — e merece "
-                                                        "revisão.")
-                                        _d4.metric("🚢 Usam balsa",
-                                                   _fmt_num(_dash["candidatos_balsa"]),
-                                                   f"{_dash['pct_balsa']}%", delta_color="inverse")
-
-                                        _e1, _e2 = st.columns(2)
-                                        with _e1:
-                                            st.markdown("**Candidatos por faixa de DISTÂNCIA**")
-                                            _fd = pd.DataFrame(_dash["faixas_distancia"])
-                                            st.dataframe(_fd[_fd["Candidatos"] > 0],
-                                                         use_container_width=True, hide_index=True)
-                                        with _e2:
-                                            st.markdown("**Candidatos por faixa de TEMPO**")
-                                            _ft = pd.DataFrame(_dash["faixas_tempo"])
-                                            st.dataframe(_ft[_ft["Candidatos"] > 0],
-                                                         use_container_width=True, hide_index=True)
-
-                                        st.markdown("**Concentração: quais polos carregam a maior parte**")
-                                        st.caption(f"**{_dash['polos_para_80pct']} de {_dash['n_polos']} "
-                                                   "polos** concentram 80% dos candidatos.")
-                                        st.dataframe(pd.DataFrame(_dash["polos"][:20]),
-                                                     use_container_width=True, hide_index=True, height=240)
-
-                                    # [VIABILIDADE - 175ª geração] O CANDIDATO CONSEGUE CHEGAR?
-                                    st.markdown("###### ⏰ O candidato consegue CHEGAR a tempo?")
-                                    st.caption(
-                                        "📖 **A pergunta que esta plataforma nunca fez.** Tudo aqui responde "
-                                        "*“quão longe fica?”*. Mas num exame nacional o que decide é: "
-                                        "**“ele consegue CHEGAR, saindo de casa numa hora humana?”** Um "
-                                        "candidato a 12h de viagem precisaria sair à meia-noite. Isso **não é "
-                                        "mais deslocamento — é EXCLUSÃO**, e nenhuma média de quilômetros "
-                                        "mostra isso.")
-                                    _vc1, _vc2 = st.columns(2)
-                                    _hora_p = _vc1.number_input(
-                                        "Hora de início da prova", 6.0, 22.0, 13.5, 0.5, key="viab_hora",
-                                        help="ENEM: 13h30 (portões fecham às 13h).")
-                                    _folga_p = _vc2.number_input(
-                                        "Folga para chegar (horas)", 0.5, 4.0, 1.0, 0.5, key="viab_folga",
-                                        help="Quanto antes do fechamento dos portões o candidato deve estar lá.")
-                                    _muns_v = [m for m in _mun_cap
-                                               if m.get("tempo_min") not in (None, "")]
-                                    if not _muns_v:
-                                        st.info("ℹ️ **Falta o TEMPO de viagem.** Rode a alocação em modo "
-                                                "**multicritério** — é ele que calcula o tempo de cada rota. "
-                                                "Sem tempo, é impossível saber se o candidato chega.")
-                                    if _muns_v:
-                                        _viab = _viabilidade_de_chegada(_muns_v, _hora_p, _folga_p)
-                                        _f = _viab["faixas"]
-                                        _q1, _q2, _q3, _q4 = st.columns(4)
-                                        _q1.metric("✅ Normal", _fmt_num(_f["normal"]["candidatos"]),
-                                                   f"{_f['normal']['pct_candidatos']}% · sai após 6h")
-                                        _q2.metric("🟡 Cedo", _fmt_num(_f["cedo"]["candidatos"]),
-                                                   f"{_f['cedo']['pct_candidatos']}% · sai 4h-6h")
-                                        _q3.metric("🟠 Madrugada", _fmt_num(_f["madrugada"]["candidatos"]),
-                                                   f"{_f['madrugada']['pct_candidatos']}% · sai 2h-4h")
-                                        _q4.metric("🔴 INVIÁVEL", _fmt_num(_f["inviavel"]["candidatos"]),
-                                                   f"{_f['inviavel']['pct_candidatos']}% · véspera",
-                                                   delta_color="inverse")
-                                        for _lin in _viab["leitura"]:
-                                            (_st_box := (st.error if "🔴" in _lin else
-                                                         (st.warning if "🟠" in _lin else
-                                                          (st.success if "✅" in _lin else st.caption))))(_lin)
-                                        if _viab["criticos"]:
-                                            st.markdown("**Os municípios críticos (revise um a um):**")
-                                            _fh = _viab["fmt_hora"]
-                                            _df_cr = pd.DataFrame([{
-                                                "Município": _c.get("nome"), "UF": _c.get("uf", ""),
-                                                "Candidatos": int(_c.get("inscritos") or 0),
-                                                "Polo": _c.get("polo", "—"),
-                                                "Viagem (h)": _c["horas_viagem"],
-                                                "Sai de casa às": _fh(_c["hora_saida"]),
-                                                "Situação": ("🔴 Precisa viajar na VÉSPERA"
-                                                             if _c["hora_saida"] < 2 else
-                                                             "🟠 Madrugada (verifique se há ônibus)"),
-                                            } for _c in _viab["criticos"]])
-                                            st.dataframe(
-                                                _colorir_risco(_df_cr, cols_risco=["Situação"]),
-                                                use_container_width=True, hide_index=True, height=300)
-
-                                    # [DASHBOARD - 177ª geração] 🧠 O ANALISTA SÊNIOR.
-                                    # Vem DEPOIS da viabilidade de propósito: assim ele pode CRUZAR as
-                                    # dimensões. "4.200 viajam mais de 300 km" é um NÚMERO. "Desses, 830
-                                    # NÃO CONSEGUEM CHEGAR" é um INSIGHT — ele aponta uma AÇÃO.
-                                    if _dash:
-                                        st.markdown("###### 🧠 Insights automáticos")
-                                        st.caption(
-                                            "📖 **O que separa um insight de um número:** *“4.200 candidatos "
-                                            "viajam mais de 300 km”* é um NÚMERO — não diz o que fazer. "
-                                            "*“Desses, **830 NÃO CONSEGUEM CHEGAR**”* é um INSIGHT: cruza duas "
-                                            "dimensões e aponta uma **ação**. Cada item abaixo é derivado dos "
-                                            "**seus** dados e termina com **o que fazer**.")
-                                        # [PERF - 181ª geração] REUSA o cálculo do painel acima em vez
-                                        # de refazê-lo. Medido: _viabilidade_de_chegada rodava 2× por
-                                        # rerun (9,1 ms). É o MESMO padrão da 172ª — e eu reincidi.
-                                        _viab_ins = _viab if _muns_v else None
-                                        for _ins in _insights_automaticos(_dash, _viab_ins, _caps):
-                                            _cx = (st.error if "🔴" in _ins["tipo"] else
-                                                   (st.warning if ("🟠" in _ins["tipo"]
-                                                                   or "🟡" in _ins["tipo"]
-                                                                   or "🚢" in _ins["tipo"]) else
-                                                    (st.success if "✅" in _ins["tipo"] else st.info)))
-                                            _cx(f"**{_ins['tipo']} — {_ins['titulo']}**\n\n{_ins['texto']}"
-                                                f"\n\n➡️ **O que fazer:** {_ins['acao']}")
-
-                                    # [CONTINGENCIA - 154ª geração] E SE UM POLO CAIR? Escola alagada, greve,
-                                    # interdição — acontece, e às vezes a duas semanas da prova.
-                                    st.markdown("###### 🚨 Contingência: qual polo você NÃO pode perder?")
-                                    if st.button("🚨 Simular a queda de cada polo", key="cont_run",
-                                                 help="Para CADA polo, remove-o e realoca tudo respeitando a "
-                                                      "capacidade dos sobreviventes. Mostra o ranking de "
-                                                      "criticidade — onde colocar reserva técnica e vistoria."):
-                                        with st.spinner("Simulando a queda de cada polo..."):
-                                            st.session_state['cont_res'] = _contingencia_polos(
-                                                _mun_cap, _caps, top=15)
-                                    _ct = st.session_state.get('cont_res')
-                                    if not _ct:
-                                        st.caption("Clique acima para descobrir quais polos são insubstituíveis.")
-                                    if _ct:
-                                        _t0 = _ct[0]
-                                        if not _t0["viavel_sem_ele"]:
-                                            st.error(
-                                                f"🔴 **{_t0['polo']} é insubstituível.** "
-                                                f"**{_fmt_num(_t0['candidatos_que_dependem'])} candidatos** dependem "
-                                                f"dele. Se cair, **{_fmt_num(_t0['candidatos_sem_vaga'])} ficam SEM "
-                                                "VAGA** — a prova simplesmente **não acontece** para eles. "
-                                                "Reserva técnica e vistoria prioritária começam aqui.")
-                                        if _t0["viavel_sem_ele"]:
-                                            st.warning(
-                                                f"⚠️ **{_t0['polo']}** é o polo mais crítico: se cair, todos ainda "
-                                                f"cabem, mas custaria **{_fmt_num(_t0['km_candidato_a_mais'])} "
-                                                "km-candidato** a mais.")
-                                        # [UX-TABELA - 155ª geração] rótulos humanos + o PERIGO colorido.
-                                        _df_ct = _rotular_colunas(pd.DataFrame(_ct))
-                                        st.dataframe(
-                                            _colorir_risco(_df_ct,
-                                                           cols_risco=["Plano Sobrevive?"],
-                                                           cols_negativo_ruim=[]),
-                                            use_container_width=True, hide_index=True, height=280)
-                                        st.caption("**Por que isto importa:** sem este ranking, o gestor espalha "
-                                                   "reserva e vistoria por igual sobre todos os polos — sendo que a "
-                                                   "queda da maioria custaria **quase nada**, e a de um punhado "
-                                                   "seria **catastrófica**. Concentre o recurso no topo desta lista.")
-
-                                    st.caption("**Método:** aproximação de Vogel (arrependimento). Atende primeiro o "
-                                               "município que mais PERDE se não conseguir seu polo ideal — não o de "
-                                               "menor custo. Um guloso ingênuo encheria os melhores polos com quem "
-                                               "TINHA alternativa e encalharia quem NÃO tinha (testado: 14,6× pior).")
-                                except Exception as _e_cp:
-                                    logger.error(f"[CAPACIDADE] Falha na alocação com capacidade: {_e_cp}")
-
-                        st.markdown("##### 🚨 Acessibilidade Crítica")
-                        _lim = st.slider("Limiar de deslocamento crítico (km)", 100, 500, 200, 25, key="cob_lim")
-                        _muns = []
-                        _lat_c = pd.to_numeric(_dfp_cob['Lat Origem'], errors='coerce').tolist()
-                        _lon_c = pd.to_numeric(_dfp_cob['Lon Origem'], errors='coerce').tolist()
-                        _nom_c = (_dfp_cob['Municipio Origem'] if 'Municipio Origem' in _dfp_cob.columns
-                                  else _dfp_cob['Origem']).astype(str).tolist()
-                        _uf_c = (_dfp_cob['UF Origem'].astype(str).tolist()
-                                 if 'UF Origem' in _dfp_cob.columns else [""] * len(_dfp_cob))
-                        for _i in range(len(_dfp_cob)):
-                            _muns.append({"nome": _nom_c[_i], "uf": _uf_c[_i], "lat": _lat_c[_i], "lon": _lon_c[_i],
-                                          "inscritos": _pesos[_i], "dist_atual_km": _dists[_i]})
-                        _crit = _acessibilidade_critica(_muns, float(_lim))
-                        if not _crit:
-                            st.success(f"✅ Nenhum município acima de {_lim} km. A cobertura está adequada nesse limiar.")
-                        if _crit:
-                            _tot_crit = sum(m["inscritos"] for m in _crit)
-                            st.error(f"⛔ **{len(_crit)} município(s)** acima de {_lim} km, somando "
-                                     f"**{_fmt_num(_tot_crit)} {_unid}**. Ordenados por IMPACTO (inscritos × km) — "
-                                     "3.000 candidatos a 210 km doem mais que 20 a 400 km.")
-                            st.dataframe(_rotular_colunas(pd.DataFrame(_crit)[
-                                ["nome", "uf", "inscritos", "dist_atual_km", "impacto_km_candidato"]].head(30)),
-                                use_container_width=True, hide_index=True, height=240)
-
-                        st.markdown("##### 🏗️ Simulador: onde abrir o próximo polo?")
-                        st.caption("Calcula, para cada município, quanto se pouparia **se um polo abrisse ali** — "
-                                   "considerando que só migram os candidatos que ficariam **mais perto**. Escolhe o "
-                                   "melhor, atualiza as distâncias e repete (guloso).")
-                        # [EQUIDADE - 154ª geração] O OBJETIVO agora é uma ESCOLHA. Na 140ª eu nomeei a
-                        # tensão eficiência × equidade e disse "a decisão é sua" — sem dar a ferramenta.
-                        _obj = st.radio(
-                            "O que o polo novo deve maximizar?",
-                            ["⚡ Eficiência — maior economia TOTAL de deslocamento",
-                             "⚖️ Equidade — ajudar quem está PIOR atendido"],
-                            key="cob_obj", horizontal=False,
-                            help="EFICIÊNCIA abre polos onde há MUITA gente (o total economizado é enorme, "
-                                 "mas pode ser gente que já estava bem servida). EQUIDADE só valoriza polos "
-                                 "que ajudam quem está ACIMA do limiar crítico — pouca gente, mas são os que "
-                                 "de fato sofrem. As duas respostas são legítimas: elas respondem perguntas "
-                                 "DIFERENTES.")
-                        _obj_key = "equidade" if _obj.startswith("⚖️") else "eficiencia"
-                        _s1, _s2 = st.columns(2)
-                        _n_polos = _s1.slider("Quantos polos simular", 1, 10, 3, key="cob_npolos")
-                        _dmin = _s2.slider("Distância mínima entre polos (km)", 0, 200, 50, 10, key="cob_dmin",
-                                           help="Sem isso, o simulador sugere polos colados (ótimo na conta, absurdo na prática).")
-                        if st.button("🏗️ Simular abertura de polos", key="cob_run"):
-                            with st.spinner("Calculando o ganho marginal de cada município..."):
-                                _pex = None
-                                if {'Lat Destino', 'Lon Destino'}.issubset(_dfp_cob.columns):
-                                    _pex = list({(round(a, 4), round(b, 4)) for a, b in zip(
-                                        pd.to_numeric(_dfp_cob['Lat Destino'], errors='coerce'),
-                                        pd.to_numeric(_dfp_cob['Lon Destino'], errors='coerce'))
-                                        if a == a and b == b})
-                                st.session_state['cob_sim'] = _simular_abertura_polos(
-                                    _muns, n_polos=int(_n_polos), dist_min_km=float(_dmin),
-                                    polos_existentes=_pex, objetivo=_obj_key,
-                                    limiar_equidade_km=float(_lim))
-                        _sim_r = st.session_state.get('cob_sim')
-                        if not _sim_r:
-                            st.caption("Clique em **Simular** para ver o ranking de municípios candidatos a polo.")
-                        if _sim_r:
-                            _df_sim = pd.DataFrame(_sim_r)
-                            st.dataframe(_rotular_colunas(_df_sim[[
-                                "ordem", "polo", "uf", "ganho_km_candidato", "candidatos_beneficiados",
-                                "municipios_beneficiados", "dist_media_antes_km", "dist_media_depois_km",
-                                "reducao_media_km"]]), use_container_width=True, hide_index=True)
-                            _p1 = _sim_r[0]
-                            st.success(f"🏗️ **Melhor abertura: {_p1['polo']}/{_p1['uf']}** — pouparia "
-                                       f"**{_fmt_num(_p1['ganho_km_candidato'])} km-candidato**, beneficiando "
-                                       f"**{_fmt_num(_p1['candidatos_beneficiados'])} {_unid}** em "
-                                       f"{_p1['municipios_beneficiados']} município(s): a distância média deles cairia "
-                                       f"de **{_p1['dist_media_antes_km']} km** para **{_p1['dist_media_depois_km']} km**.")
-                            try:
-                                st.map(_df_sim[["lat", "lon"]].astype(float), size=20000, color="#16a34a")
-                            except Exception:
-                                pass
-                            st.caption(f"🎯 Objetivo usado: **{_sim_r[0].get('objetivo', 'eficiencia')}**"
-                                       + (f" — só contou o ganho dos municípios acima de **{_lim} km** "
-                                          "(quem já estava bem servido não valeu ponto)."
-                                          if _sim_r[0].get('objetivo') == 'equidade' else
-                                          " — maximizou a economia TOTAL, o que privilegia clusters densos."))
-                            st.warning("⚠️ **Duas ressalvas honestas.** (1) A simulação usa distância **geodésica** "
-                                       "(linha reta), não viária — ela serve para **triagem**: diz quais municípios "
-                                       "investigar, e os finalistas devem ser roteados de verdade (modo multicritério). "
-                                       "(2) O critério é **eficiência** (maximizar km-candidato poupados), então ele "
-                                       "privilegia **clusters densos**. Municípios isolados com poucos candidatos podem "
-                                       "seguir mal atendidos — a lista de **Acessibilidade Crítica** acima é o contrapeso "
-                                       "de **equidade**. Eficiência e equidade não são a mesma coisa; a decisão é sua.")
-                except Exception as _e_cob:
-                    logger.error(f"[COBERTURA] Falha no painel de planejamento de polos: {_e_cob}")
-            # [DISPUTA-HUB - 53ª geração] Painel de Auditoria da Disputa de Hubs: traz para a TELA a
-            # comparação vencedor × melhor concorrente (que antes só existia na planilha), com
-            # sensibilidade, índice de competitividade e explicação automática. Usa dados já
-            # calculados (colunas Concorrente Analisado/Distancia Concorrente) — custo ZERO.
-            _dfp_alo = st.session_state['df_processado']
-            if 'Concorrente Analisado' in _dfp_alo.columns and 'Origem' in _dfp_alo.columns:
-                with st.expander("🗺️ Análise Geográfica Visual — origem, 1º e 2º colocados", expanded=False):
-                    st.caption("Veja a decisão de cada município no mapa: para onde vai o 1º colocado e a "
-                               "alternativa (2º). As coordenadas são as **reais usadas no roteamento** (§ fidelidade).")
+                                    _dn = float(_dist); _rn = float(_rec.get(_cr)) if _cr else 0.0
+                                    _vrr = _dn / _rn if _rn > 0 else None
+                                except (TypeError, ValueError):
+                                    _vrr = None
+                                _prov = _v307_classificar_proveniencia_distancia(
+                                    _dist, _rec.get(_cf, "") if _cf else "", _rec.get(_cs, "") if _cs else "",
+                                    tem_balsa=_rec.get(_cb, "") if _cb else "", vr=_vrr, fluvial=False)
+                                _regs_v15.append({
+                                    "tipo": _prov["tipo"], "vr": _vrr,
+                                    "refinado": (str(_rec.get(_cref, "")).strip().lower() == "sim") if _cref else False})
+                            st.session_state['alo_v15'] = _v312_resumo_validacao_alocacao(_regs_v15)
+                            st.session_state['alo_v15_assin'] = _assin_v15
+                        _v15 = st.session_state.get('alo_v15') or {}
+                        if _v15.get("nivel") == "critico":
+                            st.error(
+                                f"🚨 **{_fmt_num(_v15.get('nao_viaria', 0))} local(is) de prova vencedor(es) sem rota "
+                                f"viária genuína** ({_fmt_num(_v15.get('fluvial', 0))} fluvial/estimada · "
+                                f"{_fmt_num(_v15.get('fallback', 0))} fallback geodésico · "
+                                f"{_fmt_num(_v15.get('indeterminada', 0))} indeterminada). A distância desses não é "
+                                "comparável como estrada — confira **Fonte da Rota** e a **Auditoria da Escolha** abaixo.")
+                        elif _v15.get("nivel") == "atencao":
+                            st.warning(
+                                f"⚠️ **{_fmt_num(_v15.get('vr_alto', 0))} rota(s) com geometria muito indireta "
+                                "(V/R ≥ 1,9)** — podem ser desvios reais ou coordenada imprecisa; vale conferir na "
+                                "Auditoria da Escolha abaixo.")
+                        elif _v15.get("total"):
+                            st.caption(f"✅ Validação da decisão: {_fmt_num(_v15.get('viaria_genuina', 0))} de "
+                                       f"{_fmt_num(_v15.get('total', 0))} vencedores têm rota viária genuína.")
+                except Exception as _e_v15a:
+                    logger.error(f"[V312-VALIDACAO-ALOC] alerta de validação da alocação falhou: {_e_v15a}")
+                # [V316 · Melhoria 3, fatia 2] ALERTA VISUAL "alternativa mais curta com balsa". Sempre que a
+                # política evitou balsa mas havia uma travessia mais curta, mostra de forma clara e não-poluente.
+            with _tab_diag_alo:
+                try:
+                    _rb = st.session_state.get('alo_balsa_resumo') or {}
+                    if _rb.get('n'):
+                        st.warning(
+                            f"⚠️ **ALTERNATIVA MAIS CURTA COM BALSA IDENTIFICADA em {_fmt_num(_rb['n'])} município(s).** "
+                            f"A rota **terrestre** foi mantida como vencedora porque a metodologia prioriza trajetos "
+                            f"sem balsa. Economia potencial **não capturada** por essa política: "
+                            f"**{_rb.get('km_total', 0):.0f} km** ({_fmt_num(_rb.get('kmc_total', 0))} km-candidato). "
+                            f"As colunas **Alerta Balsa / Distância Balsa / Economia Potencial Balsa** detalham cada caso "
+                            f"na planilha e nos relatórios.")
+                        _lb = _rb.get('linhas') or []
+                        if _lb:
+                            with st.expander(f"🛳️ Ver os {min(len(_lb), 200)} caso(s) com balsa mais curta", expanded=False):
+                                _dfb = pd.DataFrame([{
+                                    "Origem": _x.get("origem"), "🏆 Terrestre (vencedor)": _x.get("destino_terrestre"),
+                                    "km terrestre": _x.get("dist_terrestre"), "🛳️ Alternativa balsa": _x.get("destino_balsa"),
+                                    "km balsa": _x.get("dist_balsa"), "Economia (km)": _x.get("economia_km"),
+                                    "km-candidato": _x.get("km_candidato"), "Medição": _x.get("medicao"),
+                                } for _x in _lb[:200]])
+                                st.dataframe(_dfb, use_container_width=True, hide_index=True)
+                                st.caption("A rota terrestre permanece a escolhida; a balsa é apresentada apenas como "
+                                           "oportunidade, para transparência total da decisão.")
+                        # [V316 · Melhoria 3, fatia 3] ANÁLISES AGREGADAS de balsa (economia potencial, por UF, top).
+                        try:
+                            _agb = _v316_agregar_balsa(df_final_alo)
+                            if _agb.get("n"):
+                                with st.expander("📊 Análise agregada — alternativas por balsa", expanded=False):
+                                    _kb = st.columns(4)
+                                    _kb[0].metric("Municípios c/ balsa + curta", _fmt_num(_agb["n"]))
+                                    _kb[1].metric("Economia potencial", f"{_agb['economia_total_km']:.0f} km")
+                                    _kb[2].metric("Economia média", f"{_agb['economia_media_km']:.1f} km")
+                                    _kb[3].metric("km-candidato potenciais", _fmt_num(_agb["kmc_total"]))
+                                    st.caption(f"Maior economia individual: **{_agb['economia_max_km']:.0f} km** · "
+                                               f"presente em **{_agb['pct']:.1f}%** das rotas. Todas mantiveram a "
+                                               f"rota terrestre; os valores mostram o que a política de balsa "
+                                               f"economizaria (não uma perda da aplicação).")
+                                    if _agb.get("por_uf"):
+                                        st.markdown("**Por UF**")
+                                        st.dataframe(pd.DataFrame([{
+                                            "UF": _u["uf"], "Casos": _u["n"],
+                                            "Economia (km)": round(_u["economia_km"], 1),
+                                            "km-candidato": round(_u["km_candidato"], 0)} for _u in _agb["por_uf"]],
+                                            ), use_container_width=True, hide_index=True)
+                        except Exception as _e_agb:
+                            logger.error(f"[V316-BALSA-AGG] análise agregada de balsa falhou: {_e_agb}")
+                        # [Melhoria 4 · §8] MEMÓRIA GEOGRÁFICA DIAGNÓSTICA (read-only): municípios problemáticos por
+                        # sinais já calculados. Não persiste nem altera decisão — auditoria/observabilidade.
+                        # [MELHORIA4-450 · M1] Auditoria unificada (memória + golden drift + drift de coordenada)
+                        # agora vive em _exibir_auditoria_geo_memoria e cobre TAMBÉM o pipeline do Lote (M1).
+                        try:
+                            _exibir_auditoria_geo_memoria(df_final_alo)
+                        except Exception as _e_mg:
+                            logger.error(f"[V317-MEMGEO] memória geográfica falhou: {_e_mg}")
+                        # [V330 · Melhoria6 §10/§15] AUDITORIA DE COMPLETUDE: expõe o controle explícito de tarefas
+                        # do roteamento (total/OK/falhas/recuperadas). Read-only; garante que "99% não é 100%".
+                        try:
+                            _cp = st.session_state.get('_lote_completude')
+                            if _cp and _cp.get("total"):
+                                _falhas_cp = int(_cp.get("falhas", 0))
+                                if _falhas_cp == 0:
+                                    st.success(f"✅ **Processamento completo:** {_fmt_num(_cp['ok'])}/"
+                                               f"{_fmt_num(_cp['total'])} rotas processadas — nenhuma rota pendente.")
+                                else:
+                                    st.warning(f"⚠️ **Completude:** {_fmt_num(_cp['ok'])}/{_fmt_num(_cp['total'])} "
+                                               f"rotas OK · {_fmt_num(_falhas_cp)} falha(s) de roteamento registrada(s)"
+                                               + (f" · {_fmt_num(_cp.get('recuperadas', 0))} recuperada(s) no retry"
+                                                  if _cp.get("recuperadas") else "")
+                                               + ". As falhas estão marcadas explicitamente nas linhas correspondentes "
+                                               "(distância 0 e status 'FALHA DE ROTEAMENTO') — nenhuma foi perdida "
+                                               "nem apresentada como sucesso.")
+                        except Exception as _e_cp:
+                            logger.error(f"[V330-COMPLETUDE] painel de completude falhou: {_e_cp}")
+                        # [V321 · §17] SAÚDE DA PERSISTÊNCIA (read-only): torna visível o cache que já existe —
+                        # rotas, rotas douradas (validadas), geocodificação. Só LÊ tamanhos; não escreve/limpa nada.
+                        try:
+                            _sc = _v321_saude_cache([
+                                ("Rotas (viárias)", globals().get("cache_rotas")),
+                                ("Rotas douradas (validadas)", globals().get("cache_rotas_douradas")),
+                                ("Geocodificação", globals().get("cache_geo")),
+                                ("Google", globals().get("cache_google")),
+                                ("Reverso", globals().get("cache_reverse")),
+                                ("Base local IBGE", globals().get("cache_base_local"))])
+                            if _sc.get("n_caches"):
+                                with st.expander(f"💾 Persistência — {_fmt_num(_sc['total_itens'])} itens em cache "
+                                                 f"(reaproveitados entre execuções)", expanded=False):
+                                    st.caption("Read-only: a aplicação já persiste rotas e geocodificação (diskcache, "
+                                               "TTL 30 dias + versionamento de schema), evitando recalcular o que já "
+                                               "foi validado. Este painel só mostra a saúde desse cache — não altera nada.")
+                                    st.dataframe(pd.DataFrame([{
+                                        "Cache": _l["cache"], "Itens": _l["itens"],
+                                        "Tamanho (MB)": (_l["mb"] if _l["mb"] is not None else "—")}
+                                        for _l in _sc["linhas"]]), use_container_width=True, hide_index=True)
+                                    st.caption("As **rotas douradas** são trajetos já conferidos/confiáveis, preservados "
+                                               "sem expiração; as demais respeitam o TTL. Para forçar recálculo, limpe "
+                                               "as pastas ./cache_* no servidor.")
+                        except Exception as _e_sc:
+                            logger.error(f"[V321-CACHE] painel de saúde do cache falhou: {_e_sc}")
+                except Exception as _e_balsa_ui:
+                    logger.error(f"[V316-BALSA-UI] alerta de balsa falhou: {_e_balsa_ui}")
+                # [FASE2-RESUMO-ALOC - 184ª geração] RESUMO EXECUTIVO da alocação: KPIs no topo (municípios de
+                # origem, polos utilizados, deslocamento médio/máximo ao polo) antes do detalhamento denso. A
+                # resposta em 5 segundos. Defensivo: cada métrica só aparece se a coluna existir; erro →
+                # silencioso. Reusa o df_processado já pronto. Aditivo, dentro do bloco de resultado.
+            with _tab_resumo_alo:
+                with st.container(border=True):
+                    st.markdown("#### 📋 Resumo Executivo")
                     try:
-                        _cm_map = {str(c).strip().lower(): c for c in _dfp_alo.columns}
-                        def _cm(_k):
-                            return _cm_map.get(_k)
-                        _c_org = _cm('origem'); _c_lato = _cm('lat origem'); _c_lono = _cm('lon origem')
-                        _c_venc = _cm('municipio destino') or _cm('destino')
-                        _c_latd = _cm('lat destino'); _c_lond = _cm('lon destino')
-                        _c_conc = _cm('concorrente analisado')
-                        _c_latc = _cm('lat concorrente'); _c_lonc = _cm('lon concorrente')
-                        if not (_c_org and _c_lato and _c_lono and _c_latd and _c_lond):
-                            st.info("Este estudo não possui coordenadas suficientes (origem/destino) para o mapa.")
+                        _dfa = st.session_state['df_processado']
+                        _dist_a = pd.to_numeric(_dfa['Distancia'], errors='coerce') if 'Distancia' in _dfa.columns else None
+                        _n_orig = _dfa['Municipio Origem'].nunique() if 'Municipio Origem' in _dfa.columns else len(_dfa)
+                        _n_polos = _dfa['Municipio Destino'].nunique() if 'Municipio Destino' in _dfa.columns else None
+                        _ra1, _ra2, _ra3, _ra4 = st.columns(4)
+                        _ra1.metric("Municípios de origem", f"{_n_orig:,}", help="Municípios de candidatos alocados no estudo.")
+                        if _n_polos is not None:
+                            _ra2.metric("Polos utilizados", f"{_n_polos:,}", help="Locais de prova distintos para onde os candidatos foram alocados.")
+                        if _dist_a is not None:
+                            _ra3.metric("Deslocamento médio", f"{_dist_a.mean():.1f} km", help="Distância viária média do candidato até o polo alocado.")
+                            _ra4.metric("Deslocamento máximo", f"{_dist_a.max():.1f} km", help="Maior distância viária de um candidato até seu polo — sinaliza acessibilidade crítica.")
+                    except Exception:
+                        pass
+                # [SSOT-DECISAO - 184ª geração] Método de SELEÇÃO dos hubs, HONESTO por modo. Antes esta mensagem
+                # era hardcoded "Linha reta" e aparecia SEMPRE — inclusive no modo viária, mentindo sobre o método
+                # e minando a confiança. Agora reflete o modo real: no modo viária, a alocação final é por MENOR
+                # ROTA VIÁRIA (a linha reta é só pré-filtro/desempate); no modo reta, é por menor geodésica.
+            with _tab_diag_alo:
+                if st.session_state.get('alo_multicriterio'):
+                    st.success("✅ **Método de seleção dos hubs:** 🛣️ Menor rota viária (Google → OSRM)")
+                    st.caption("Cada cliente foi alocado ao polo de **menor distância viária real** entre os polos "
+                               "próximos roteados (Google prioritário → OSRM fallback). A distância em linha reta é "
+                               "usada apenas como **pré-filtro** (quais polos rotear) e **desempate**, nunca como "
+                               "critério final da escolha. As distâncias viárias constam na coluna **Método Utilizado**.")
+                    # [SSOT-DECISAO - 184ª geração] PROVA ao usuário de que a metodologia foi cumprida: confirma o
+                    # invariante 'vencedor = menor rota viária' no resultado final, e quantos ajustes autoritativos
+                    # foram aplicados. Transparência — a validação automática que faltava para gerar confiança.
+                    _inv = st.session_state.get('alo_invariante_viaria') or {}
+                    _corr = int(st.session_state.get('alo_correcoes_viaria', 0) or 0)
+                    if _inv.get('com_concorrente'):
+                        _prot_inv = int(_inv.get('protegidas', 0) or 0)
+                        if _inv.get('violacoes', 0) == 0:
+                            st.success("✓ **Invariante garantido:** todos os **{}** locais com alternativa avaliada "
+                                       "têm a **menor rota viária** entre o escolhido e o 2º colocado.{}".format(
+                                           _inv['com_concorrente'],
+                                           " {} ajuste(s) autoritativo(s) aplicado(s) para garantir isso.".format(_corr)
+                                           if _corr > 0 else ""))
+                            if _prot_inv > 0:
+                                st.caption("🛡️ **{}** decisão(ões) foram **protegidas pela guarda anti-fantasma**: o "
+                                           "concorrente mais curto não é rota viária real (fluvial/fantasma), então o "
+                                           "local genuíno foi mantido — maior em km, porém a única estrada de verdade.".format(_prot_inv))
                         else:
-                            _orgs_map = _dfp_alo[_c_org].dropna().astype(str).unique().tolist()
-                            _sel_map = st.selectbox("Município de origem", _orgs_map, key="geo_map_sel")
-                            _modo_rota = st.radio("Trajetos a exibir",
-                                                  ["Ambos", "Só 1º colocado", "Só 2º colocado", "Nenhum"],
-                                                  horizontal=True, key="geo_map_rota")
-                            _c_insc = _cm('inscritos')
-                            _dim_insc = st.checkbox("Dimensionar marcadores pela quantidade de candidatos",
-                                                    value=True, key="geo_map_dim") if _c_insc else False
-                            _ver_universo = st.checkbox(
-                                "🧭 Mostrar todos os polos avaliados (universo da decisão)", value=False,
-                                key="geo_map_univ",
-                                help="Plota TODOS os locais de prova que disputaram esta origem, marcando quais "
-                                     "podiam vencer (✅) e quais foram descartados por já estarem mais longe em "
-                                     "linha reta do que a viária do vencedor (✂️). Mostra por que o vencedor venceu.")
-                            _row = _dfp_alo[_dfp_alo[_c_org].astype(str) == str(_sel_map)]
-                            if not len(_row):
-                                st.info("Selecione uma origem.")
-                            else:
-                                _r = _row.iloc[0]
-                                _lato = _num(_r.get(_c_lato)); _lono = _num(_r.get(_c_lono))
-                                _latd = _num(_r.get(_c_latd)); _lond = _num(_r.get(_c_lond))
-                                _latc = _num(_r.get(_c_latc)) if _c_latc else None
-                                _lonc = _num(_r.get(_c_lonc)) if _c_lonc else None
-                                _venc_nome = str(_r.get(_c_venc, '') or '')
-                                _conc_nome = str(_r.get(_c_conc, '') or '') if _c_conc else ''
-                                _insc_v = _num(_r.get(_c_insc)) if _c_insc else None
-                                _coord_ok = all(v not in (None, 0.0) for v in (_lato, _lono, _latd, _lond))
-                                if not _coord_ok:
-                                    st.warning("⚠️ Coordenada de origem/destino ausente ou (0,0) — o mapa pode "
-                                               "não refletir fielmente a rota real desta linha.")
-                                def _raio(_base):
-                                    if _dim_insc and _insc_v:
-                                        return float(_base) * (1.0 + min(3.0, (_insc_v ** 0.5) / 6.0))
-                                    return float(_base)
-                                _pts = [{"nome": f"📍 {_sel_map} (origem)", "lat": _lato, "lon": _lono,
-                                         "cor": [59, 130, 246], "raio": _raio(9000)}]
-                                _lns = []
-                                # [V372] rótulos do mapa com DISTÂNCIA e TEMPO já calculados + nome da origem
-                                # (resolvido), para aparecerem no tooltip mesmo quando a entrada foi código/CEP.
-                                _dist_map = _r.get(_cm('distancia'), '') if _cm('distancia') else ''
-                                _tempo_map = _r.get(_cm('tempo'), '') if _cm('tempo') else ''
-                                _onome_map = str(_r.get(_cm('municipio origem') or '', '') or '').strip() or str(_sel_map)
+                            st.warning("⚠️ **{} de {}** locais ainda com o escolhido tendo viária maior que o 2º "
+                                       "**genuíno** — veja a coluna **Alerta Coerência Viária** na planilha.{}".format(
+                                           _inv['violacoes'], _inv['com_concorrente'],
+                                           " (Fora essas, {} foram protegidas contra concorrente fantasma — não são "
+                                           "violações.)".format(_prot_inv) if _prot_inv > 0 else ""))
+                        # [APRENDIZADO - 184ª geração] Painel de padrões aprendidos com as derrotas/subotimalidades.
+                        _pad = st.session_state.get('alo_padroes_derrota') or []
+                        if _pad:
+                            _nf = sum(1 for _p in _pad if _p['padrao'] == 'desvio_fantasma')
+                            _nd = sum(1 for _p in _pad if _p['padrao'] == 'polo_mais_distante')
+                            with st.expander(f"🧠 Aprendizado com padrões ({len(_pad)} caso(s) de atenção detectados)"):
+                                st.caption("A aplicação identifica automaticamente assinaturas de escolha "
+                                           "potencialmente subótima para revisão e melhoria contínua.")
+                                if _nf:
+                                    st.markdown(f"- 🚢 **{_nf}** caso(s) de **desvio fluvial fantasma** (sinuosidade "
+                                                "> 4× a linha reta) — rota rodoviária provavelmente fluvial na prática.")
+                                if _nd:
+                                    st.markdown(f"- 📍 **{_nd}** caso(s) de **polo mais distante que o concorrente** — "
+                                                "candidatos a revalidação do 2º colocado.")
+                                _amostra = _pad[:8]
+                                st.dataframe(pd.DataFrame(_amostra), hide_index=True, use_container_width=True)
+                        # [DIAGNOSTICO-POLO - 184ª geração] Painel de polos suspeitos: vencedores muito sinuosos
+                        # que sugerem um polo melhor ausente da lista ou mal roteado (raiz das derrotas).
+                        # [PARTICIPACAO-MOTOR - 184ª geração] Painel de participação dos motores com veredito.
+                        _pm = st.session_state.get('alo_participacao_motor') or {}
+                        if _pm and _pm.get('total'):
+                            _emoji_pm = {"ok": "🟢", "info": "🔵", "aviso": "🟡", "erro": "🔴"}.get(_pm.get('nivel'), "⚪")
+                            with st.expander(f"🛰️ Participação dos motores de roteamento "
+                                             f"({_emoji_pm} Google {_pm['pct_google']:.0f}% · "
+                                             f"OSRM {_pm['pct_osrm']:.0f}%)"):
+                                st.caption("Quanto cada motor participou do resultado final. O Google é o motor "
+                                           "prioritário quando responde; o OSRM cobre o restante e serve de "
+                                           "auditoria e redundância.")
+                                _c1_pm, _c2_pm, _c3_pm = st.columns(3)
+                                _c1_pm.metric("Google Maps", f"{_pm['pct_google']:.0f}%", f"{_pm['n_google']:,} rotas")
+                                _c2_pm.metric("OSRM", f"{_pm['pct_osrm']:.0f}%", f"{_pm['n_osrm']:,} rotas")
+                                _c3_pm.metric("Fallback geodésico", f"{_pm['pct_fallback']:.0f}%",
+                                              f"{_pm['n_fallback']:,} rotas")
+                                # [SEGUNDA-PASSADA-GOOGLE] informa quantas rotas o Google recuperou na 2ª tentativa.
+                                _rec_g = st.session_state.get('alo_recuperados_google')
+                                if _rec_g:
+                                    st.success(f"🔁 A segunda tentativa do Google recuperou {_rec_g:,} rota(s) que "
+                                               "haviam caído no OSRM/fallback — a participação do Google acima já "
+                                               "inclui essa recuperação.")
+                                _nivel_pm = _pm.get('nivel')
+                                if _nivel_pm == "erro":
+                                    st.error(_pm['veredito'])
+                                elif _nivel_pm == "aviso":
+                                    st.warning(_pm['veredito'])
+                                else:
+                                    st.info(_pm['veredito'])
+                                # [CIRCUIT-BREAKER] informa se o disjuntor do Google chegou a abrir na sessão.
+                                try:
+                                    _cb_est = _GOOGLE_CB_ESTADO
+                                    if _cb_est and _cb_est.get('status') != 'fechado':
+                                        st.caption("⚡ O disjuntor de proteção do Google esteve ativo nesta sessão: "
+                                                   "ao detectar falhas em série (rate-limit), o sistema suspendeu "
+                                                   "temporariamente as chamadas ao Google para não agravar o "
+                                                   "bloqueio, usando o OSRM nesse intervalo e retomando o Google "
+                                                   "em seguida. É um comportamento de proteção esperado, não um erro.")
+                                except Exception:
+                                    pass
+                        _susp = st.session_state.get('alo_polos_suspeitos') or []
+                        if _susp:
+                            with st.expander(f"🔍 Polos possivelmente subótimos ({len(_susp)} caso(s)) — investigar"):
+                                st.caption("Estes municípios têm o polo vencedor com rota muito sinuosa (a estrada "
+                                           "é 3× ou mais que a linha reta). Isso costuma indicar que a rota contorna "
+                                           "um rio e que **pode existir um polo terrestre mais próximo** que não está "
+                                           "na lista de destinos ou foi mal roteado. Compare com o estudo de "
+                                           "referência: se ele usa um polo mais perto, considere incluí-lo na "
+                                           "planilha de destinos e reprocessar.")
+                                st.dataframe(pd.DataFrame(_susp[:15]), hide_index=True, use_container_width=True)
+                        # [REGIAO-ADAPTATIVA - 184ª geração] Resumo da confiabilidade regional do roteamento.
+                        try:
+                            if 'Confiabilidade Regional' in df_final_alo.columns:
+                                _conf = df_final_alo['Confiabilidade Regional'].astype(str)
+                                _n_baixa = int(_conf.str.contains('Baixa').sum())
+                                _n_media = int(_conf.str.contains('Média').sum())
+                                _n_alta = int(_conf.str.contains('Alta').sum())
+                                _tot_c = max(len(df_final_alo), 1)
+                                with st.expander(f"🧭 Confiabilidade regional do roteamento "
+                                                 f"(🟢 {_n_alta} · 🟡 {_n_media} · 🔴 {_n_baixa})"):
+                                    st.caption("Classificação automática da confiabilidade por região, sem alterar "
+                                               "nenhuma decisão. A malha viária é mais esparsa na Amazônia Legal "
+                                               "(rios, poucas estradas mapeadas) e em rotas com balsa ou muito "
+                                               "sinuosas — ali o roteamento tem incerteza maior. Isto dá "
+                                               "transparência sobre onde os resultados merecem conferência extra.")
+                                    _pct_alta = 100.0 * _n_alta / _tot_c
+                                    st.markdown(
+                                        f"- 🟢 **Alta confiabilidade:** {_n_alta} município(s) ({_pct_alta:.0f}%) — "
+                                        "malha consolidada, rota direta.\n"
+                                        f"- 🟡 **Média:** {_n_media} — Amazônia Legal, balsa ou rota sinuosa; "
+                                        "resultado utilizável com atenção.\n"
+                                        f"- 🔴 **Baixa:** {_n_baixa} — fallback geodésico ou rota muito sinuosa na "
+                                        "Amazônia; recomenda-se validação manual e verificação de acesso fluvial ou "
+                                        "polo alternativo.")
+                        except Exception as _e_cr:
+                            logger.error(f"[REGIAO-ADAPTATIVA] {_e_cr}")
+                        try:
+                            _cov = _auditar_cobertura_roteamento(st.session_state.get('alo_topk_map'),
+                                                                 st.session_state.get('alo_resultados'))
+                            if _cov and _cov.get('pares_candidatos'):
+                                with st.expander("🔎 Auditoria de cobertura do roteamento"):
+                                    _c1, _c2, _c3 = st.columns(3)
+                                    _c1.metric("Municípios avaliados", f"{_cov['clientes']:,}")
+                                    _c2.metric("Pares candidatos roteados", f"{_cov['pares_reais']:,}",
+                                               help="Rotas viárias reais calculadas (fora fallback geodésico)")
+                                    _c3.metric("Taxa de sucesso viária", f"{_cov['taxa_sucesso']:.0f}%")
+                                    st.caption(
+                                        f"Foram avaliados **{_cov['media_candidatos_por_cliente']:.1f} polos por "
+                                        f"município** em média ({_cov['pares_candidatos']:,} pares candidatos no total). "
+                                        f"Destes, **{_cov['pares_reais']:,}** obtiveram rota viária real, "
+                                        f"**{_cov['pares_fallback']:,}** caíram em geodésica (acesso fluvial/sem malha) "
+                                        f"e **{_cov['pares_sem_rota']:,}** não retornaram rota. A decisão final usou "
+                                        "sempre a menor viária real disponível entre os candidatos roteados.")
+                                    # [GARANTIA-OTIMA - 184ª geração] Selo de prova de otimalidade.
+                                    _prova = st.session_state.get('alo_prova_otimalidade')
+                                    # [MATRIZ-VIARIA - 184ª geração] cobertura do motor de matriz.
+                                    _dm = st.session_state.get('alo_dist_matriz') or {}
+                                    if _dm:
+                                        st.info(
+                                            f"🧭 **Motor híbrido de duas fases ativo.** Fase 1 — descoberta: "
+                                            f"{len(_dm):,} origem(ns) foram medidas contra todos os polos "
+                                            "candidatos numa única consulta de matriz do OSRM (/table/v1, gratuito "
+                                            "e ideal para varredura ampla), sem depender do top-K. Fase 2 — "
+                                            "decisão: os melhores candidatos de cada origem foram re-roteados com o "
+                                            "**Google Maps (prioritário)**, que tem a rota de maior qualidade; o "
+                                            "OSRM /route atua como fallback quando o Google não responde. Assim "
+                                            "cada motor age no seu ponto forte: OSRM varre para não descartar o "
+                                            "vencedor, Google decide a menor viária real.")
+                                        # [DIVERGENCIA-MOTOR - 184ª geração] Sensibilidade ao motor.
+                                        _div = st.session_state.get('alo_divergencia_motor')
+                                        # [DOMINANCIA-GEO - 184ª geração] Economia por prova de dominância.
+                                        _ndom = st.session_state.get('alo_dominancia_geo')
+                                        if _ndom:
+                                            st.caption(
+                                                f"⚡ **Prova de dominância geométrica:** em {_ndom} município(s), o "
+                                                "polo mais próximo foi matematicamente provado imbatível (rota "
+                                                "viária ≤ linha reta dos concorrentes), dispensando consultas extras "
+                                                "ao Google sem qualquer perda de exatidão — decisão mais rápida onde "
+                                                "o vencedor é inequívoco.")
+                                        if _div and _div.get('total_avaliado'):
+                                            _tx = _div.get('taxa_divergencia_pct', 0)
+                                            if _div.get('divergencias'):
+                                                st.caption(
+                                                    f"🔀 **Sensibilidade ao motor:** em {_div['divergencias']} de "
+                                                    f"{_div['total_avaliado']} município(s) ({_tx:.0f}%), o vencedor "
+                                                    "pela varredura OSRM diferiu da decisão final do Google — são "
+                                                    "regiões onde a escolha é sensível ao motor (malha complexa). A "
+                                                    "decisão final priorizou o Google (maior qualidade). Estes casos "
+                                                    "são bons candidatos a revisão manual.")
+                                            else:
+                                                st.caption(
+                                                    f"🔀 **Sensibilidade ao motor:** OSRM e Google concordaram no "
+                                                    f"vencedor em 100% dos {_div['total_avaliado']} município(s) "
+                                                    "avaliados — decisão robusta, independente do motor.")
+                                    if _prova and _prova.get('fechada'):
+                                        _extras = _prova.get('polos_extras_reais', 0)
+                                        st.success(
+                                            "🎯 **Otimalidade comprovada.** Após o roteamento, a aplicação executou "
+                                            "uma prova matemática (branch-and-bound): como a distância viária é "
+                                            "sempre maior ou igual à linha reta, todo polo cuja linha reta já supera "
+                                            "a menor viária encontrada é descartado com segurança — não há como "
+                                            "vencer. Todos os polos que ainda poderiam ter rota menor foram "
+                                            "roteados. **Nenhum município não-avaliado pode ter viária menor que o "
+                                            "vencedor escolhido.**" + (
+                                                f" Nesta execução, **{_extras}** polo(s) fora do top-K inicial "
+                                                "foram roteados pela prova." if _extras else
+                                                " O vencedor já estava garantido pelo top-K (nenhum polo extra "
+                                                "precisou ser roteado)."))
+                        except Exception as _e_cov:
+                            logger.error(f"[AUDITORIA-COBERTURA] {_e_cov}")
+                else:
+                    st.success("✅ **Método de seleção dos hubs:** ✓ Linha reta (GeographicLib · WGS-84)")
+                    st.caption("A base logística mais próxima de cada cliente foi escolhida pela **menor distância "
+                               "em linha reta** (geodésica WGS-84; valor via GeographicLib/Karney, erro <1mm; ranking "
+                               "por Haversine/IUGG, de ordem idêntica). As **distâncias viárias** por cliente "
+                               "(Google prioritário → OSRM fallback) constam na planilha exportada, na coluna "
+                               "**Método Utilizado**.")
+                # [ALOC-ENTERPRISE - 49ª geração] Paridade com o Processamento em Lote: o mesmo Scorecard de
+                # qualidade e a mesma Auditoria Automática de Rotas Suspeitas (REUSO das funções existentes,
+                # sem duplicar lógica). A planilha da Alocação já é enriquecida (mesmo _montar_dataframe_final).
+                # [GEO-INTEL-AUTO] Contexto geografico automatico (rios, bacia, pontes,
+                # travessias, dependencia aquaviaria) - aditivo, ver _enriquecer_geo_inteligencia_df.
+            with _tab_diag_alo:
+                try:
+                    _df_geo, _geo_rel = _enriquecer_geo_inteligencia_df(st.session_state.get('df_processado'))
+                    if _geo_rel.get('executado'):
+                        st.session_state['df_processado'] = _df_geo
+                        st.caption(f"🧠 Contexto geografico automatico: {_geo_rel['n_pares']} rota(s) unica(s) analisada(s) (rios, bacia, pontes, travessias).")
+                    elif _geo_rel.get('motivo') == 'acima_do_limiar':
+                        _pend = st.session_state.get('geo_intel_pendente') or {}
+                        if st.button(f"🧠 Enriquecer geograficamente ({_pend.get('n_pares', '?')} rotas unicas)", key="geo_intel_forcar_aloc"):
+                            _df_geo2, _geo_rel2 = _enriquecer_geo_inteligencia_df(st.session_state.get('df_processado'), forcar=True)
+                            if _geo_rel2.get('executado'):
+                                st.session_state['df_processado'] = _df_geo2
+                                st.rerun()
+                except Exception:
+                    logger.debug("[GEO-INTEL-AUTO] Painel de enriquecimento falhou (aditivo).", exc_info=True)
+                renderizar_scorecard_qualidade(st.session_state['df_processado'])
+                # [COBERTURA - 140ª geração] PLANEJAMENTO DE POLOS. As duas perguntas que o gestor de exames de
+                # fato faz — "quantos candidatos estão longe demais?" e "onde abrir o próximo polo?" — e que a
+                # app não respondia. Container fixo, rótulo estático (padrão da 132ª).
+            with _tab_cob_alo:
+                with st.expander("🎯 Planejamento de Polos — cobertura e onde abrir o próximo", expanded=False):
+                    try:
+                        _dfp_cob = st.session_state.get('df_processado')
+                        _ok_cob = (_dfp_cob is not None and len(_dfp_cob) > 0
+                                   and {'Distancia', 'Lat Origem', 'Lon Origem'}.issubset(_dfp_cob.columns))
+                        if not _ok_cob:
+                            st.caption("Indisponível: o estudo precisa de distância e coordenadas de origem.")
+                        if _ok_cob:
+                            # peso = inscritos (se a planilha do usuário trouxer a coluna); senão, 1 por município
+                            _cands_col = [c for c in _dfp_cob.columns
+                                          if any(k in str(c).lower() for k in ("inscrit", "candidat", "matricul"))
+                                          and pd.api.types.is_numeric_dtype(_dfp_cob[c])]
+                            # [INSCRITOS - 141ª geração] pré-seleciona a coluna escolhida na config da Alocação
+                            _pre = st.session_state.get('alo_col_inscritos')
+                            _opts_ci = ["(sem peso — 1 por município)"] + _cands_col
+                            _idx_ci = _opts_ci.index(_pre) if (_pre in _opts_ci) else 0
+                            _col_insc = st.selectbox(
+                                "Coluna com a quantidade de inscritos (opcional, mas muda tudo)",
+                                _opts_ci, index=_idx_ci, key="cob_insc",
+                                help="Se a sua planilha de origens tiver o nº de candidatos por município, selecione-a: "
+                                     "todos os indicadores passam a ser ponderados por CANDIDATO, não por linha.")
+                            _pesos = (pd.to_numeric(_dfp_cob[_col_insc], errors='coerce').fillna(0).tolist()
+                                      if _col_insc in _cands_col else [1.0] * len(_dfp_cob))
+                            _dists = pd.to_numeric(_dfp_cob['Distancia'], errors='coerce').tolist()
+                            _cv = _curva_cobertura(_dists, _pesos)
+                            _unid = "candidatos" if _col_insc in _cands_col else "municípios"
 
-                                def _dtsfx(_d, _t):
-                                    _pp = []
+                            st.markdown("##### 📐 Curva de Cobertura")
+                            _q1, _q2, _q3, _q4 = st.columns(4)
+                            _q1.metric(f"Total de {_unid}", _fmt_num(_cv['total']))
+                            _q2.metric("Mediana", f"{_cv['mediana']} km" if _cv['mediana'] is not None else "—",
+                                       help="Metade dos candidatos percorre menos que isso. Mais honesta que a média.")
+                            _q3.metric("P90", f"{_cv['p90']} km" if _cv['p90'] is not None else "—",
+                                       help="90% percorrem menos que isso — os 10% piores estão acima.")
+                            _q4.metric("Pior caso", f"{_cv['max']} km" if _cv['max'] is not None else "—")
+                            if _cv["faixas"]:
+                                st.bar_chart(pd.Series(_cv["faixas"]))
+                                _leitura_grafico(
+                                    como_ler=f"cada barra é uma **faixa de distância**; a altura é quantos {_unid} têm esse "
+                                             f"deslocamento até o polo alocado. Barras concentradas à esquerda = maioria perto.",
+                                    conclusao=(f"metade dos {_unid} percorre até **{_cv['mediana']} km** e 90% até "
+                                               f"**{_cv['p90']} km**; o pior caso é **{_cv['max']} km**."
+                                               if _cv['mediana'] is not None else
+                                               f"distribuição dos {_unid} por faixa de deslocamento até o polo."))
+                                _f200 = _cv["faixas"].get(200, 0)
+                                st.caption(f"Interpretação: **{_f200}% dos {_unid}** estão a **≤200 km** do local de prova — "
+                                           f"logo **{round(100 - _f200, 1)}%** estão **acima** disso. A média de "
+                                           f"{_cv['media']} km esconde essa cauda; a curva não.")
+
+                            st.markdown("##### 🏫 Carga por Local de Prova")
+                            st.caption("Quantos candidatos cada polo vai **receber**. É aqui que a quantidade de "
+                                       "inscritos muda uma decisão de verdade — um polo com 47.000 candidatos pode "
+                                       "simplesmente não caber numa escola.")
+                            try:
+                                _pol_c = (_dfp_cob['Municipio Destino'] if 'Municipio Destino' in _dfp_cob.columns
+                                          else _dfp_cob['Destino']).astype(str).tolist()
+                                _ufp_c = (_dfp_cob['UF Destino'].astype(str).tolist()
+                                          if 'UF Destino' in _dfp_cob.columns else [""] * len(_dfp_cob))
+                                _carga = _carga_por_polo([{"polo": _pol_c[_i], "uf_polo": _ufp_c[_i],
+                                                           "inscritos": _pesos[_i], "dist_km": _dists[_i]}
+                                                          for _i in range(len(_dfp_cob))])
+                                if _carga:
+                                    _dfc = pd.DataFrame(_carga)
+                                    st.dataframe(_rotular_colunas(_dfc[[
+                                        "polo", "uf", "candidatos", "pct_candidatos", "municipios",
+                                        "dist_media_km", "dist_max_km"]].head(25)),
+                                        use_container_width=True, hide_index=True, height=240)
+                                    _t1 = _carga[0]
+                                    st.info(f"🏫 O polo mais carregado é **{_t1['polo']}/{_t1['uf']}**: receberia "
+                                            f"**{_fmt_num(_t1['candidatos'])} {_unid}** ({_t1['pct_candidatos']}% do total), "
+                                            f"vindos de {_t1['municipios']} município(s). Verifique se há estrutura "
+                                            f"(salas, fiscais, acessos) para esse volume.")
+                                    if len(_carga) >= 2 and _t1["pct_candidatos"] > 40:
+                                        st.warning(f"⚠️ **Concentração alta:** um único polo absorve "
+                                                   f"{_t1['pct_candidatos']}% dos candidatos. Distribuir a carga pode ser "
+                                                   "mais importante que economizar quilômetros — avalie abrir um polo "
+                                                   "adicional (simulador abaixo).")
+                            except Exception as _e_cg:
+                                logger.error(f"[INSCRITOS] Falha na carga por polo: {_e_cg}")
+
+                            # [CAPACIDADE - 152ª geração] ALOCAÇÃO REALISTA. Até aqui a plataforma REPORTAVA a
+                            # carga ("Rio Verde receberia 47.000") mas NÃO A RESTRINGIA. Se Rio Verde só cabe
+                            # 5.000, o plano é FICÇÃO. Container fixo, rótulo estático (132ª).
+                            with st.container():
+                                _caps = st.session_state.get('alo_capacidades')
+                                if not _caps:
+                                    st.markdown("##### 🏫 Capacidade dos Polos")
+                                    st.caption("Sem coluna de **capacidade** na planilha de polos, a plataforma assume "
+                                               "vagas **ilimitadas** — e pode recomendar um polo que simplesmente **não "
+                                               "cabe**. Informe a capacidade (salas/carteiras) para obter um plano que "
+                                               "sobrevive ao contato com a realidade.")
+                                if _caps:
+                                    st.markdown("##### 🏫 Alocação com Capacidade (plano realista)")
+                                    try:
+                                        # [HARDENING 241ª] corrige NameError: _nom_c indefinido neste escopo
+                                        _nom_c = (_dfp_cob['Municipio Origem'] if 'Municipio Origem' in _dfp_cob.columns
+                                                  else _dfp_cob['Origem']).astype(str).tolist()
+                                        _mun_cap = []
+                                        for _i in range(len(_dfp_cob)):
+                                            _mun_cap.append({"nome": _nom_c[_i], "uf": _uf_c[_i],
+                                                             "inscritos": _pesos[_i],
+                                                             "custos": {_pol_c[_i]: _dists[_i]}})
+                                        # custos para TODOS os polos vêm do top-K roteado (quando existir)
+                                        _tk = st.session_state.get('alo_topk_map') or {}
+                                        _res_r = st.session_state.get('alo_resultados') or {}
+                                        for _m in _mun_cap:
+                                            for _t in (_tk.get(_m["nome"]) or []):
+                                                _hb = str(_t[1]).strip()
+                                                _rr = _res_r.get((_m["nome"], _hb))
+                                                if _rr and _rr[0]:
+                                                    _m["custos"][_hb] = float(_rr[0])
+                                                elif _hb not in _m["custos"]:
+                                                    _m["custos"][_hb] = float(_t[0]) * 1.3   # estimativa viária
+                                        # [PERF - 153ª geração] FORA DO CAMINHO QUENTE. Na 152ª eu chamava isto
+                                        # DIRETO no painel — ou seja, A CADA RERUN da seção. Medido em escala
+                                        # nacional: **44,5 s de CPU bloqueante por clique** (agora 0,06 s, mas
+                                        # ainda assim: nada pesado no caminho quente). É a TERCEIRA vez que eu
+                                        # cometo essa classe de bug (138ª, 152ª). Agora memoizo pela ASSINATURA
+                                        # da entrada: recalcula só quando os dados realmente mudam.
+                                        _assin = (len(_mun_cap), int(sum(_caps.values())),
+                                                  int(sum(float(m.get("inscritos") or 0) for m in _mun_cap)))
+                                        if st.session_state.get('alo_cap_assin') != _assin:
+                                            st.session_state['alo_cap_res'] = _alocar_com_capacidade(_mun_cap, _caps)
+                                            st.session_state['alo_cap_assin'] = _assin
+                                        _rc = st.session_state['alo_cap_res']
+                                        _q1, _q2, _q3, _q4 = st.columns(4)
+                                        _q1.metric("Candidatos", _fmt_num(_rc["total_candidatos"]))
+                                        _q2.metric("Capacidade total", _fmt_num(_rc["total_capacidade"]))
+                                        _q3.metric("Municípios deslocados", _rc["n_deslocados"],
+                                                   help="Ficaram fora do polo IDEAL porque ele estava lotado.")
+                                        _q4.metric("Preço da restrição",
+                                                   f"{_fmt_num(_rc['preco_da_restricao_km_cand'])} km-cand.",
+                                                   help="Quanto a falta de vaga custa aos candidatos, em km-candidato.")
+                                        if not _rc["viavel"]:
+                                            st.error(f"⛔ **PLANO INVIÁVEL.** A capacidade declarada "
+                                                     f"(**{_fmt_num(_rc['total_capacidade'])}**) é MENOR que o número de "
+                                                     f"candidatos (**{_fmt_num(_rc['total_candidatos'])}**). "
+                                                     "Não adianta otimizar quilômetros: **não há onde aplicar a prova**. "
+                                                     "Abra polos ou amplie os existentes.")
+                                        if _rc["viavel"] and _rc["n_deslocados"] == 0:
+                                            st.success("✅ **Plano viável e ótimo:** todo município ficou no seu polo "
+                                                       "ideal. A capacidade não restringiu nada.")
+                                        if _rc["viavel"] and _rc["n_deslocados"] > 0:
+                                            st.warning(
+                                                f"⚠️ **{_rc['n_deslocados']} município(s)** "
+                                                f"(**{_fmt_num(_rc['candidatos_deslocados'])} candidatos**) foram "
+                                                "deslocados do polo ideal **por falta de vaga**. Isso custa "
+                                                f"**{_fmt_num(_rc['preco_da_restricao_km_cand'])} km-candidato** a mais. "
+                                                "Ampliar a capacidade dos polos lotados devolveria esse ganho.")
+                                        if _rc["sem_vaga"]:
+                                            st.error(f"⛔ **{len(_rc['sem_vaga'])} município(s) sem vaga em polo nenhum** "
+                                                     "— nem no maior. Eles precisam de um polo próprio, ou de divisão "
+                                                     "de turmas.")
+                                            st.dataframe(pd.DataFrame(_rc["sem_vaga"]), use_container_width=True,
+                                                         hide_index=True)
+                                        if _rc["deslocados"]:
+                                            st.dataframe(_rotular_colunas(pd.DataFrame(_rc["deslocados"])),
+                                                         use_container_width=True, hide_index=True, height=240)
+                                        _oc = pd.DataFrame([{"Polo": _p, **_o} for _p, _o in _rc["ocupacao"].items()])
+                                        if len(_oc):
+                                            _oc = _oc.sort_values("pct", ascending=False)
+                                            st.dataframe(
+                                                _colorir_risco(_rotular_colunas(_oc), cols_pct_ruim=["Ocupação (%)"]),
+                                                use_container_width=True, hide_index=True, height=200)
+                                            _lot = _oc[_oc["pct"] >= 100]
+                                            if len(_lot):
+                                                st.caption(f"🔴 **{len(_lot)} polo(s) 100% lotados** — são eles que estão "
+                                                           "empurrando candidatos para longe. Ampliá-los é a intervenção "
+                                                           "de maior retorno.")
+                                        # [DASHBOARD - 177ª geração] O ESTUDO PELOS OLHOS DO CANDIDATO.
+                                        # Todo o resto conta MUNICÍPIOS. Mas município não faz prova — GENTE faz.
+                                        # Um município com 5.000 candidatos a 250 km importa 500× mais que um
+                                        # com 10 candidatos a 400 km. Aqui cada faixa conta CANDIDATOS.
+                                        _dash = _dashboard_candidatos(_mun_cap)
+                                        if not _dash:
+                                            st.info("ℹ️ **Mapeie a coluna de INSCRITOS** para desbloquear esta "
+                                                    "análise. Sem ela, a plataforma conta MUNICÍPIOS — e um "
+                                                    "município com 5.000 candidatos pesa o mesmo que um com 10. "
+                                                    "A coluna continua **opcional**: sem ela, tudo funciona "
+                                                    "normalmente.")
+                                        if _dash:
+                                            st.markdown("###### 👥 O estudo pelos olhos do CANDIDATO")
+                                            st.caption(
+                                                "📖 Todo o resto desta aba conta **municípios**. Mas município "
+                                                "não faz prova — **gente faz**. Um município com 5.000 candidatos "
+                                                "a 250 km importa **500× mais** que um com 10 candidatos a 400 km. "
+                                                "Aqui **cada faixa conta CANDIDATOS**.")
+                                            _d1, _d2, _d3, _d4 = st.columns(4)
+                                            _d1.metric("Total de candidatos",
+                                                       _fmt_num(_dash["total_candidatos"]))
+                                            _d2.metric("Média por município",
+                                                       _fmt_num(_dash["media_por_municipio"], 1),
+                                                       help=f"Mediana: {_fmt_num(_dash['mediana'])} · "
+                                                            f"Máximo: {_fmt_num(_dash['maximo'])}")
+                                            _d3.metric("80% viajam até",
+                                                       f"{_fmt_num(_dash['km_para_80pct'], 1)} km"
+                                                       if _dash.get("km_para_80pct") else "—",
+                                                       help="Quem está muito acima disso é exceção — e merece "
+                                                            "revisão.")
+                                            _d4.metric("🚢 Usam balsa",
+                                                       _fmt_num(_dash["candidatos_balsa"]),
+                                                       f"{_dash['pct_balsa']}%", delta_color="inverse")
+
+                                            _e1, _e2 = st.columns(2)
+                                            with _e1:
+                                                st.markdown("**Candidatos por faixa de DISTÂNCIA**")
+                                                _fd = pd.DataFrame(_dash["faixas_distancia"])
+                                                st.dataframe(_fd[_fd["Candidatos"] > 0],
+                                                             use_container_width=True, hide_index=True)
+                                            with _e2:
+                                                st.markdown("**Candidatos por faixa de TEMPO**")
+                                                _ft = pd.DataFrame(_dash["faixas_tempo"])
+                                                st.dataframe(_ft[_ft["Candidatos"] > 0],
+                                                             use_container_width=True, hide_index=True)
+
+                                            st.markdown("**Concentração: quais polos carregam a maior parte**")
+                                            st.caption(f"**{_dash['polos_para_80pct']} de {_dash['n_polos']} "
+                                                       "polos** concentram 80% dos candidatos.")
+                                            st.dataframe(pd.DataFrame(_dash["polos"][:20]),
+                                                         use_container_width=True, hide_index=True, height=240)
+
+                                        # [VIABILIDADE - 175ª geração] O CANDIDATO CONSEGUE CHEGAR?
+                                        st.markdown("###### ⏰ O candidato consegue CHEGAR a tempo?")
+                                        st.caption(
+                                            "📖 **A pergunta que esta plataforma nunca fez.** Tudo aqui responde "
+                                            "*“quão longe fica?”*. Mas num exame nacional o que decide é: "
+                                            "**“ele consegue CHEGAR, saindo de casa numa hora humana?”** Um "
+                                            "candidato a 12h de viagem precisaria sair à meia-noite. Isso **não é "
+                                            "mais deslocamento — é EXCLUSÃO**, e nenhuma média de quilômetros "
+                                            "mostra isso.")
+                                        _vc1, _vc2 = st.columns(2)
+                                        _hora_p = _vc1.number_input(
+                                            "Hora de início da prova", 6.0, 22.0, 13.5, 0.5, key="viab_hora",
+                                            help="ENEM: 13h30 (portões fecham às 13h).")
+                                        _folga_p = _vc2.number_input(
+                                            "Folga para chegar (horas)", 0.5, 4.0, 1.0, 0.5, key="viab_folga",
+                                            help="Quanto antes do fechamento dos portões o candidato deve estar lá.")
+                                        _muns_v = [m for m in _mun_cap
+                                                   if m.get("tempo_min") not in (None, "")]
+                                        if not _muns_v:
+                                            st.info("ℹ️ **Falta o TEMPO de viagem.** Rode a alocação em modo "
+                                                    "**multicritério** — é ele que calcula o tempo de cada rota. "
+                                                    "Sem tempo, é impossível saber se o candidato chega.")
+                                        if _muns_v:
+                                            _viab = _viabilidade_de_chegada(_muns_v, _hora_p, _folga_p)
+                                            _f = _viab["faixas"]
+                                            _q1, _q2, _q3, _q4 = st.columns(4)
+                                            _q1.metric("✅ Normal", _fmt_num(_f["normal"]["candidatos"]),
+                                                       f"{_f['normal']['pct_candidatos']}% · sai após 6h")
+                                            _q2.metric("🟡 Cedo", _fmt_num(_f["cedo"]["candidatos"]),
+                                                       f"{_f['cedo']['pct_candidatos']}% · sai 4h-6h")
+                                            _q3.metric("🟠 Madrugada", _fmt_num(_f["madrugada"]["candidatos"]),
+                                                       f"{_f['madrugada']['pct_candidatos']}% · sai 2h-4h")
+                                            _q4.metric("🔴 INVIÁVEL", _fmt_num(_f["inviavel"]["candidatos"]),
+                                                       f"{_f['inviavel']['pct_candidatos']}% · véspera",
+                                                       delta_color="inverse")
+                                            for _lin in _viab["leitura"]:
+                                                (_st_box := (st.error if "🔴" in _lin else
+                                                             (st.warning if "🟠" in _lin else
+                                                              (st.success if "✅" in _lin else st.caption))))(_lin)
+                                            if _viab["criticos"]:
+                                                st.markdown("**Os municípios críticos (revise um a um):**")
+                                                _fh = _viab["fmt_hora"]
+                                                _df_cr = pd.DataFrame([{
+                                                    "Município": _c.get("nome"), "UF": _c.get("uf", ""),
+                                                    "Candidatos": int(_c.get("inscritos") or 0),
+                                                    "Polo": _c.get("polo", "—"),
+                                                    "Viagem (h)": _c["horas_viagem"],
+                                                    "Sai de casa às": _fh(_c["hora_saida"]),
+                                                    "Situação": ("🔴 Precisa viajar na VÉSPERA"
+                                                                 if _c["hora_saida"] < 2 else
+                                                                 "🟠 Madrugada (verifique se há ônibus)"),
+                                                } for _c in _viab["criticos"]])
+                                                st.dataframe(
+                                                    _colorir_risco(_df_cr, cols_risco=["Situação"]),
+                                                    use_container_width=True, hide_index=True, height=300)
+
+                                        # [DASHBOARD - 177ª geração] 🧠 O ANALISTA SÊNIOR.
+                                        # Vem DEPOIS da viabilidade de propósito: assim ele pode CRUZAR as
+                                        # dimensões. "4.200 viajam mais de 300 km" é um NÚMERO. "Desses, 830
+                                        # NÃO CONSEGUEM CHEGAR" é um INSIGHT — ele aponta uma AÇÃO.
+                                        if _dash:
+                                            st.markdown("###### 🧠 Insights automáticos")
+                                            st.caption(
+                                                "📖 **O que separa um insight de um número:** *“4.200 candidatos "
+                                                "viajam mais de 300 km”* é um NÚMERO — não diz o que fazer. "
+                                                "*“Desses, **830 NÃO CONSEGUEM CHEGAR**”* é um INSIGHT: cruza duas "
+                                                "dimensões e aponta uma **ação**. Cada item abaixo é derivado dos "
+                                                "**seus** dados e termina com **o que fazer**.")
+                                            # [PERF - 181ª geração] REUSA o cálculo do painel acima em vez
+                                            # de refazê-lo. Medido: _viabilidade_de_chegada rodava 2× por
+                                            # rerun (9,1 ms). É o MESMO padrão da 172ª — e eu reincidi.
+                                            _viab_ins = _viab if _muns_v else None
+                                            for _ins in _insights_automaticos(_dash, _viab_ins, _caps):
+                                                _cx = (st.error if "🔴" in _ins["tipo"] else
+                                                       (st.warning if ("🟠" in _ins["tipo"]
+                                                                       or "🟡" in _ins["tipo"]
+                                                                       or "🚢" in _ins["tipo"]) else
+                                                        (st.success if "✅" in _ins["tipo"] else st.info)))
+                                                _cx(f"**{_ins['tipo']} — {_ins['titulo']}**\n\n{_ins['texto']}"
+                                                    f"\n\n➡️ **O que fazer:** {_ins['acao']}")
+
+                                        # [CONTINGENCIA - 154ª geração] E SE UM POLO CAIR? Escola alagada, greve,
+                                        # interdição — acontece, e às vezes a duas semanas da prova.
+                                        st.markdown("###### 🚨 Contingência: qual polo você NÃO pode perder?")
+                                        if st.button("🚨 Simular a queda de cada polo", key="cont_run",
+                                                     help="Para CADA polo, remove-o e realoca tudo respeitando a "
+                                                          "capacidade dos sobreviventes. Mostra o ranking de "
+                                                          "criticidade — onde colocar reserva técnica e vistoria."):
+                                            with st.spinner("Simulando a queda de cada polo..."):
+                                                st.session_state['cont_res'] = _contingencia_polos(
+                                                    _mun_cap, _caps, top=15)
+                                        _ct = st.session_state.get('cont_res')
+                                        if not _ct:
+                                            st.caption("Clique acima para descobrir quais polos são insubstituíveis.")
+                                        if _ct:
+                                            _t0 = _ct[0]
+                                            if not _t0["viavel_sem_ele"]:
+                                                st.error(
+                                                    f"🔴 **{_t0['polo']} é insubstituível.** "
+                                                    f"**{_fmt_num(_t0['candidatos_que_dependem'])} candidatos** dependem "
+                                                    f"dele. Se cair, **{_fmt_num(_t0['candidatos_sem_vaga'])} ficam SEM "
+                                                    "VAGA** — a prova simplesmente **não acontece** para eles. "
+                                                    "Reserva técnica e vistoria prioritária começam aqui.")
+                                            if _t0["viavel_sem_ele"]:
+                                                st.warning(
+                                                    f"⚠️ **{_t0['polo']}** é o polo mais crítico: se cair, todos ainda "
+                                                    f"cabem, mas custaria **{_fmt_num(_t0['km_candidato_a_mais'])} "
+                                                    "km-candidato** a mais.")
+                                            # [UX-TABELA - 155ª geração] rótulos humanos + o PERIGO colorido.
+                                            _df_ct = _rotular_colunas(pd.DataFrame(_ct))
+                                            st.dataframe(
+                                                _colorir_risco(_df_ct,
+                                                               cols_risco=["Plano Sobrevive?"],
+                                                               cols_negativo_ruim=[]),
+                                                use_container_width=True, hide_index=True, height=280)
+                                            st.caption("**Por que isto importa:** sem este ranking, o gestor espalha "
+                                                       "reserva e vistoria por igual sobre todos os polos — sendo que a "
+                                                       "queda da maioria custaria **quase nada**, e a de um punhado "
+                                                       "seria **catastrófica**. Concentre o recurso no topo desta lista.")
+
+                                        st.caption("**Método:** aproximação de Vogel (arrependimento). Atende primeiro o "
+                                                   "município que mais PERDE se não conseguir seu polo ideal — não o de "
+                                                   "menor custo. Um guloso ingênuo encheria os melhores polos com quem "
+                                                   "TINHA alternativa e encalharia quem NÃO tinha (testado: 14,6× pior).")
+                                    except Exception as _e_cp:
+                                        logger.error(f"[CAPACIDADE] Falha na alocação com capacidade: {_e_cp}")
+
+                            st.markdown("##### 🚨 Acessibilidade Crítica")
+                            _lim = st.slider("Limiar de deslocamento crítico (km)", 100, 500, 200, 25, key="cob_lim")
+                            _muns = []
+                            _lat_c = pd.to_numeric(_dfp_cob['Lat Origem'], errors='coerce').tolist()
+                            _lon_c = pd.to_numeric(_dfp_cob['Lon Origem'], errors='coerce').tolist()
+                            _nom_c = (_dfp_cob['Municipio Origem'] if 'Municipio Origem' in _dfp_cob.columns
+                                      else _dfp_cob['Origem']).astype(str).tolist()
+                            _uf_c = (_dfp_cob['UF Origem'].astype(str).tolist()
+                                     if 'UF Origem' in _dfp_cob.columns else [""] * len(_dfp_cob))
+                            for _i in range(len(_dfp_cob)):
+                                _muns.append({"nome": _nom_c[_i], "uf": _uf_c[_i], "lat": _lat_c[_i], "lon": _lon_c[_i],
+                                              "inscritos": _pesos[_i], "dist_atual_km": _dists[_i]})
+                            _crit = _acessibilidade_critica(_muns, float(_lim))
+                            if not _crit:
+                                st.success(f"✅ Nenhum município acima de {_lim} km. A cobertura está adequada nesse limiar.")
+                            if _crit:
+                                _tot_crit = sum(m["inscritos"] for m in _crit)
+                                st.error(f"⛔ **{len(_crit)} município(s)** acima de {_lim} km, somando "
+                                         f"**{_fmt_num(_tot_crit)} {_unid}**. Ordenados por IMPACTO (inscritos × km) — "
+                                         "3.000 candidatos a 210 km doem mais que 20 a 400 km.")
+                                st.dataframe(_rotular_colunas(pd.DataFrame(_crit)[
+                                    ["nome", "uf", "inscritos", "dist_atual_km", "impacto_km_candidato"]].head(30)),
+                                    use_container_width=True, hide_index=True, height=240)
+
+                            st.markdown("##### 🏗️ Simulador: onde abrir o próximo polo?")
+                            st.caption("Calcula, para cada município, quanto se pouparia **se um polo abrisse ali** — "
+                                       "considerando que só migram os candidatos que ficariam **mais perto**. Escolhe o "
+                                       "melhor, atualiza as distâncias e repete (guloso).")
+                            # [EQUIDADE - 154ª geração] O OBJETIVO agora é uma ESCOLHA. Na 140ª eu nomeei a
+                            # tensão eficiência × equidade e disse "a decisão é sua" — sem dar a ferramenta.
+                            _obj = st.radio(
+                                "O que o polo novo deve maximizar?",
+                                ["⚡ Eficiência — maior economia TOTAL de deslocamento",
+                                 "⚖️ Equidade — ajudar quem está PIOR atendido"],
+                                key="cob_obj", horizontal=False,
+                                help="EFICIÊNCIA abre polos onde há MUITA gente (o total economizado é enorme, "
+                                     "mas pode ser gente que já estava bem servida). EQUIDADE só valoriza polos "
+                                     "que ajudam quem está ACIMA do limiar crítico — pouca gente, mas são os que "
+                                     "de fato sofrem. As duas respostas são legítimas: elas respondem perguntas "
+                                     "DIFERENTES.")
+                            _obj_key = "equidade" if _obj.startswith("⚖️") else "eficiencia"
+                            _s1, _s2 = st.columns(2)
+                            _n_polos = _s1.slider("Quantos polos simular", 1, 10, 3, key="cob_npolos")
+                            _dmin = _s2.slider("Distância mínima entre polos (km)", 0, 200, 50, 10, key="cob_dmin",
+                                               help="Sem isso, o simulador sugere polos colados (ótimo na conta, absurdo na prática).")
+                            if st.button("🏗️ Simular abertura de polos", key="cob_run"):
+                                with st.spinner("Calculando o ganho marginal de cada município..."):
+                                    _pex = None
+                                    if {'Lat Destino', 'Lon Destino'}.issubset(_dfp_cob.columns):
+                                        _pex = list({(round(a, 4), round(b, 4)) for a, b in zip(
+                                            pd.to_numeric(_dfp_cob['Lat Destino'], errors='coerce'),
+                                            pd.to_numeric(_dfp_cob['Lon Destino'], errors='coerce'))
+                                            if a == a and b == b})
+                                    st.session_state['cob_sim'] = _simular_abertura_polos(
+                                        _muns, n_polos=int(_n_polos), dist_min_km=float(_dmin),
+                                        polos_existentes=_pex, objetivo=_obj_key,
+                                        limiar_equidade_km=float(_lim))
+                            _sim_r = st.session_state.get('cob_sim')
+                            if not _sim_r:
+                                st.caption("Clique em **Simular** para ver o ranking de municípios candidatos a polo.")
+                            if _sim_r:
+                                _df_sim = pd.DataFrame(_sim_r)
+                                st.dataframe(_rotular_colunas(_df_sim[[
+                                    "ordem", "polo", "uf", "ganho_km_candidato", "candidatos_beneficiados",
+                                    "municipios_beneficiados", "dist_media_antes_km", "dist_media_depois_km",
+                                    "reducao_media_km"]]), use_container_width=True, hide_index=True)
+                                _p1 = _sim_r[0]
+                                st.success(f"🏗️ **Melhor abertura: {_p1['polo']}/{_p1['uf']}** — pouparia "
+                                           f"**{_fmt_num(_p1['ganho_km_candidato'])} km-candidato**, beneficiando "
+                                           f"**{_fmt_num(_p1['candidatos_beneficiados'])} {_unid}** em "
+                                           f"{_p1['municipios_beneficiados']} município(s): a distância média deles cairia "
+                                           f"de **{_p1['dist_media_antes_km']} km** para **{_p1['dist_media_depois_km']} km**.")
+                                try:
+                                    st.map(_df_sim[["lat", "lon"]].astype(float), size=20000, color="#16a34a")
+                                except Exception:
+                                    pass
+                                st.caption(f"🎯 Objetivo usado: **{_sim_r[0].get('objetivo', 'eficiencia')}**"
+                                           + (f" — só contou o ganho dos municípios acima de **{_lim} km** "
+                                              "(quem já estava bem servido não valeu ponto)."
+                                              if _sim_r[0].get('objetivo') == 'equidade' else
+                                              " — maximizou a economia TOTAL, o que privilegia clusters densos."))
+                                st.warning("⚠️ **Duas ressalvas honestas.** (1) A simulação usa distância **geodésica** "
+                                           "(linha reta), não viária — ela serve para **triagem**: diz quais municípios "
+                                           "investigar, e os finalistas devem ser roteados de verdade (modo multicritério). "
+                                           "(2) O critério é **eficiência** (maximizar km-candidato poupados), então ele "
+                                           "privilegia **clusters densos**. Municípios isolados com poucos candidatos podem "
+                                           "seguir mal atendidos — a lista de **Acessibilidade Crítica** acima é o contrapeso "
+                                           "de **equidade**. Eficiência e equidade não são a mesma coisa; a decisão é sua.")
+                    except Exception as _e_cob:
+                        logger.error(f"[COBERTURA] Falha no painel de planejamento de polos: {_e_cob}")
+                # [DISPUTA-HUB - 53ª geração] Painel de Auditoria da Disputa de Hubs: traz para a TELA a
+                # comparação vencedor × melhor concorrente (que antes só existia na planilha), com
+                # sensibilidade, índice de competitividade e explicação automática. Usa dados já
+                # calculados (colunas Concorrente Analisado/Distancia Concorrente) — custo ZERO.
+                _dfp_alo = st.session_state['df_processado']
+            with _tab_rank_alo:
+                if 'Concorrente Analisado' in _dfp_alo.columns and 'Origem' in _dfp_alo.columns:
+                    with st.expander("🗺️ Análise Geográfica Visual — origem, 1º e 2º colocados", expanded=False):
+                        st.caption("Veja a decisão de cada município no mapa: para onde vai o 1º colocado e a "
+                                   "alternativa (2º). As coordenadas são as **reais usadas no roteamento** (§ fidelidade).")
+                        try:
+                            _cm_map = {str(c).strip().lower(): c for c in _dfp_alo.columns}
+                            def _cm(_k):
+                                return _cm_map.get(_k)
+                            _c_org = _cm('origem'); _c_lato = _cm('lat origem'); _c_lono = _cm('lon origem')
+                            _c_venc = _cm('municipio destino') or _cm('destino')
+                            _c_latd = _cm('lat destino'); _c_lond = _cm('lon destino')
+                            _c_conc = _cm('concorrente analisado')
+                            _c_latc = _cm('lat concorrente'); _c_lonc = _cm('lon concorrente')
+                            if not (_c_org and _c_lato and _c_lono and _c_latd and _c_lond):
+                                st.info("Este estudo não possui coordenadas suficientes (origem/destino) para o mapa.")
+                            else:
+                                _orgs_map = _dfp_alo[_c_org].dropna().astype(str).unique().tolist()
+                                _sel_map = st.selectbox("Município de origem", _orgs_map, key="geo_map_sel")
+                                _modo_rota = st.radio("Trajetos a exibir",
+                                                      ["Ambos", "Só 1º colocado", "Só 2º colocado", "Nenhum"],
+                                                      horizontal=True, key="geo_map_rota")
+                                _c_insc = _cm('inscritos')
+                                _dim_insc = st.checkbox("Dimensionar marcadores pela quantidade de candidatos",
+                                                        value=True, key="geo_map_dim") if _c_insc else False
+                                _ver_universo = st.checkbox(
+                                    "🧭 Mostrar todos os polos avaliados (universo da decisão)", value=False,
+                                    key="geo_map_univ",
+                                    help="Plota TODOS os locais de prova que disputaram esta origem, marcando quais "
+                                         "podiam vencer (✅) e quais foram descartados por já estarem mais longe em "
+                                         "linha reta do que a viária do vencedor (✂️). Mostra por que o vencedor venceu.")
+                                _row = _dfp_alo[_dfp_alo[_c_org].astype(str) == str(_sel_map)]
+                                if not len(_row):
+                                    st.info("Selecione uma origem.")
+                                else:
+                                    _r = _row.iloc[0]
+                                    _lato = _num(_r.get(_c_lato)); _lono = _num(_r.get(_c_lono))
+                                    _latd = _num(_r.get(_c_latd)); _lond = _num(_r.get(_c_lond))
+                                    _latc = _num(_r.get(_c_latc)) if _c_latc else None
+                                    _lonc = _num(_r.get(_c_lonc)) if _c_lonc else None
+                                    _venc_nome = str(_r.get(_c_venc, '') or '')
+                                    _conc_nome = str(_r.get(_c_conc, '') or '') if _c_conc else ''
+                                    _insc_v = _num(_r.get(_c_insc)) if _c_insc else None
+                                    _coord_ok = all(v not in (None, 0.0) for v in (_lato, _lono, _latd, _lond))
+                                    if not _coord_ok:
+                                        st.warning("⚠️ Coordenada de origem/destino ausente ou (0,0) — o mapa pode "
+                                                   "não refletir fielmente a rota real desta linha.")
+                                    def _raio(_base):
+                                        if _dim_insc and _insc_v:
+                                            return float(_base) * (1.0 + min(3.0, (_insc_v ** 0.5) / 6.0))
+                                        return float(_base)
+                                    _pts = [{"nome": f"📍 {_sel_map} (origem)", "lat": _lato, "lon": _lono,
+                                             "cor": [59, 130, 246], "raio": _raio(9000)}]
+                                    _lns = []
+                                    # [V372] rótulos do mapa com DISTÂNCIA e TEMPO já calculados + nome da origem
+                                    # (resolvido), para aparecerem no tooltip mesmo quando a entrada foi código/CEP.
+                                    _dist_map = _r.get(_cm('distancia'), '') if _cm('distancia') else ''
+                                    _tempo_map = _r.get(_cm('tempo'), '') if _cm('tempo') else ''
+                                    _onome_map = str(_r.get(_cm('municipio origem') or '', '') or '').strip() or str(_sel_map)
+
+                                    def _dtsfx(_d, _t):
+                                        _pp = []
+                                        _ds = str(_d).strip() if _d not in (None, "") else ""
+                                        _ts = str(_t).strip() if _t not in (None, "") else ""
+                                        if _ds and _ds.lower() not in ("nan", "n/a", "none"):
+                                            _pp.append(f"{_ds} km")
+                                        if _ts and _ts.lower() not in ("nan", "n/a", "none"):
+                                            _pp.append(_ts)
+                                        return (" · " + " · ".join(_pp)) if _pp else ""
+                                    _dt_map = _dtsfx(_dist_map, _tempo_map)
+                                    _pts[0]["nome"] = f"📍 {_onome_map} (origem)"
+                                    if _latd and _lond:
+                                        _pts.append({"nome": f"🏆 {_venc_nome} (1º){_dt_map}", "lat": _latd,
+                                                     "lon": _lond, "cor": [16, 185, 129], "raio": _raio(8000)})
+                                        if _modo_rota in ("Ambos", "Só 1º colocado"):
+                                            _lns.append({"lon_o": _lono, "lat_o": _lato, "lon_d": _lond,
+                                                         "lat_d": _latd, "cor": [16, 185, 129],
+                                                         "nome": f"📍 {_onome_map} → 🏆 {_venc_nome}{_dt_map}"})
+                                    if _latc and _lonc:
+                                        _pts.append({"nome": f"🥈 {_conc_nome} (2º)", "lat": _latc, "lon": _lonc,
+                                                     "cor": [249, 115, 22], "raio": _raio(7000)})
+                                        if _modo_rota in ("Ambos", "Só 2º colocado"):
+                                            _lns.append({"lon_o": _lono, "lat_o": _lato, "lon_d": _lonc,
+                                                         "lat_d": _latc, "cor": [249, 115, 22],
+                                                         "nome": f"📍 {_onome_map} → 🥈 {_conc_nome} (2º colocado)"})
+                                    # [V316 · Melhoria 3, fatia 4] Rota da ALTERNATIVA POR BALSA (🛳️ roxo), quando
+                                    # existe e tem coordenada real resolvida. Diferenciada das demais (§ mapas).
+                                    _balsa_alt = None
+                                    try:
+                                        for _bx in (st.session_state.get('alo_balsa_resumo') or {}).get('linhas') or []:
+                                            if str(_bx.get('origem', '')).strip().lower() == str(_sel_map).strip().lower():
+                                                _balsa_alt = _bx
+                                                break
+                                    except Exception:
+                                        _balsa_alt = None
+                                    if _balsa_alt and _num(_balsa_alt.get('lat_balsa')) not in (None, 0.0) \
+                                            and _num(_balsa_alt.get('lon_balsa')) not in (None, 0.0):
+                                        _latb = _num(_balsa_alt['lat_balsa']); _lonb = _num(_balsa_alt['lon_balsa'])
+                                        _pts.append({"nome": f"🛳️ {_balsa_alt.get('destino_balsa','?')} (balsa, não escolhida)",
+                                                     "lat": _latb, "lon": _lonb, "cor": [124, 58, 237], "raio": _raio(7000)})
+                                        _lns.append({"lon_o": _lono, "lat_o": _lato, "lon_d": _lonb,
+                                                     "lat_d": _latb, "cor": [124, 58, 237],
+                                                     "nome": f"🛳️ {_onome_map} → {_balsa_alt.get('destino_balsa','?')} "
+                                                             f"(balsa, não escolhida)"})
+                                    # [V322 · Análise Geográfica] UNIVERSO DA DECISÃO: plota TODOS os polos avaliados
+                                    # para esta origem, classificados por branch-and-bound (considerado × podado).
+                                    # Reusa topk_completo + coords reais (vencedor/2º) + resolvedor IBGE (§15/§19).
+                                    _univ = None
+                                    if _ver_universo:
+                                        try:
+                                            _topk_u = st.session_state.get('alo_topk_completo') or {}
+                                            _cands_u = (_topk_u.get(_sel_map)
+                                                        or _topk_u.get(str(_sel_map).strip()) or [])
+                                            _vd_u = _num(_r.get(_cm('distancia')))
+                                            _uf_u = str(_r.get(_cm('uf') or _cm('uf origem') or '', '') or '')
+                                            _conhec = {}
+                                            if _venc_nome and _latd and _lond:
+                                                _conhec[_venc_nome.strip().lower()] = (_latd, _lond)
+                                            if _conc_nome and _latc and _lonc:
+                                                _conhec[_conc_nome.strip().lower()] = (_latc, _lonc)
+                                            _univ = _v322_universo_polos(
+                                                _cands_u, _vd_u, _venc_nome, _conc_nome, _conhec,
+                                                resolver=lambda _n: _v316_resolver_coord_alt(_n, uf_hint=_uf_u))
+                                            for _pu in _univ["polos"]:
+                                                if _pu["status"] in ("vencedor", "vice"):
+                                                    continue  # já plotados com trajeto
+                                                _flag = " ⚠️coord aprox." if _pu["incerto"] else ""
+                                                _pts.append({
+                                                    "nome": f"{_pu['rotulo']} · {_pu['nome']} (reta {_pu['reta']} km){_flag}",
+                                                    "lat": _pu["lat"], "lon": _pu["lon"], "cor": _pu["cor"],
+                                                    "raio": _raio(4200) * _pu["raio_mult"]})
+                                        except Exception as _e_univ:
+                                            logger.error(f"[V322-UNIVERSO] universo de polos falhou: {_e_univ}")
+                                            _univ = None
+                                    try:
+                                        import pydeck as _pdk2
+                                        _dfp = pd.DataFrame(_pts)
+                                        _dfl = pd.DataFrame(_lns) if _lns else pd.DataFrame(
+                                            columns=["lon_o", "lat_o", "lon_d", "lat_d", "cor", "nome"])
+                                        _layers = []
+                                        _tracado_real = False
+                                        # [V329 · Geografia das rotas] TRAÇADO REAL da estrada (vencedor), quando a
+                                        # geometria estiver em session_state. Recai no conector reto se não houver
+                                        # (rotas muito longas não têm geometria embarcada, por salvaguarda de URL).
+                                        try:
+                                            _gv = (st.session_state.get('_geo_rotas_v329') or {}).get(
+                                                str(_sel_map).strip().lower())
+                                            _path = _v329_extrair_geometria(_gv) if _gv else []
+                                            if _path and len(_path) >= 2:
+                                                _pathll = [[_c[1], _c[0]] for _c in _path]  # geometria vem [lat,lon]→[lon,lat]
+                                                _layers.append(_pdk2.Layer(
+                                                    "PathLayer", pd.DataFrame([{"path": _pathll,
+                                                        "nome": f"🛣️ {_onome_map} → {_venc_nome}{_dt_map} (estrada real)"}]),
+                                                    get_path="path", get_color=[13, 148, 136], get_width=5,
+                                                    width_min_pixels=3, pickable=True))
+                                                _tracado_real = True
+                                        except Exception:
+                                            _tracado_real = False
+                                        if len(_dfl):
+                                            _layers.append(_pdk2.Layer(
+                                                "LineLayer", _dfl, get_source_position=["lon_o", "lat_o"],
+                                                get_target_position=["lon_d", "lat_d"], get_color="cor", get_width=4,
+                                                pickable=True))
+                                        _layers.append(_pdk2.Layer(
+                                            "ScatterplotLayer", _dfp, get_position=["lon", "lat"], get_color="cor",
+                                            get_radius="raio", pickable=True))
+                                        _view2 = _pdk2.ViewState(latitude=_lato, longitude=_lono, zoom=7)
+                                        st.pydeck_chart(_pdk2.Deck(layers=_layers, initial_view_state=_view2,
+                                                                   tooltip={"text": "{nome}"}, map_style=None))
+                                        if _tracado_real:
+                                            st.caption("🛣️ A linha **teal** é o **traçado real da estrada** do vencedor "
+                                                       "(geometria do roteador), não uma reta — mostra o caminho que o "
+                                                       "candidato de fato percorre. As demais linhas são conectores.")
+                                    except Exception:
+                                        st.map(pd.DataFrame([{"lat": _pp["lat"], "lon": _pp["lon"]}
+                                                             for _pp in _pts if _pp["lat"] and _pp["lon"]]), zoom=6)
+                                    st.caption("📍 Azul = origem · 🏆 Verde = 1º colocado · 🥈 Laranja = 2º colocado"
+                                               + ("· 🛳️ Roxo = alternativa por balsa (não escolhida)" if _balsa_alt and _num(_balsa_alt.get('lat_balsa')) not in (None, 0.0) else "")
+                                               + ". Linha verde = trajeto ao vencedor · laranja = à alternativa"
+                                               + (" · roxa = à balsa mais curta" if _balsa_alt and _num(_balsa_alt.get('lat_balsa')) not in (None, 0.0) else "") + ".")
+                                    if _ver_universo and _univ and _univ.get("n_total"):
+                                        st.caption(
+                                            f"🧭 **Universo da decisão:** {_univ['n_total']} polos no raio desta origem · "
+                                            f"🟢 verde-claro = {_univ['n_considerados']} podiam vencer (linha reta menor "
+                                            f"que a viária do vencedor) · ⚪ cinza = {_univ['n_podados']} descartados por "
+                                            f"limite inferior (linha reta já maior que a viária do vencedor — não poderiam "
+                                            f"vencer, nem foi preciso rotear). É a prova visual da otimalidade: o vencedor "
+                                            f"é o menor viária entre todos os que tinham chance.")
+                                        # [V327] Gráfico de RANKING: polos por linha reta, com a viária do vencedor
+                                        # como "linha de corte" (branch-and-bound). Torna VISÍVEL por que os
+                                        # distantes não podiam vencer. Read-only; reusa os dados do universo.
+                                        try:
+                                            _rk = _v327_ranking_universo(_univ["polos"], _num(_r.get(_cm('distancia'))))
+                                            if _rk["linhas"]:
+                                                _dfr = pd.DataFrame(_rk["linhas"])
+                                                _base = alt.Chart(_dfr).encode(
+                                                    y=alt.Y("polo:N", sort=alt.SortField("reta", order="ascending"),
+                                                            title=None),
+                                                    x=alt.X("reta:Q", title="Distância em linha reta (km)"))
+                                                _barras = _base.mark_bar().encode(
+                                                    color=alt.Color("cor_hex:N", scale=None, legend=None),
+                                                    tooltip=[alt.Tooltip("polo:N", title="Local de prova"),
+                                                             alt.Tooltip("reta:Q", title="Linha reta (km)"),
+                                                             alt.Tooltip("status:N", title="Situação")])
+                                                _camadas = [_barras]
+                                                if _rk["corte"] is not None:
+                                                    _corte_df = pd.DataFrame({"corte": [_rk["corte"]]})
+                                                    _regua = alt.Chart(_corte_df).mark_rule(
+                                                        color="#dc2626", strokeDash=[6, 4], size=2).encode(
+                                                        x="corte:Q",
+                                                        tooltip=[alt.Tooltip("corte:Q", title="Viária do vencedor (corte)")])
+                                                    _camadas.append(_regua)
+                                                st.altair_chart(alt.layer(*_camadas).properties(height=min(360, 30 + 26 * len(_dfr))),
+                                                                use_container_width=True)
+                                                st.caption("Cada barra é a **linha reta** de um polo candidato. A linha "
+                                                           "tracejada vermelha é a **distância viária do vencedor** — todo "
+                                                           "polo cuja barra ultrapassa essa linha já estava longe demais em "
+                                                           "linha reta para vencer (por isso foi podado, sem nem ser roteado).")
+                                        except Exception as _e_rk:
+                                            logger.error(f"[V327-RANKING] gráfico de ranking do universo falhou: {_e_rk}")
+                                    if _balsa_alt:
+                                        _ekm = _balsa_alt.get('economia_km'); _kmc = _balsa_alt.get('km_candidato')
+                                        _inc = " ⚠️ coordenada aproximada (homônimo/base)" if _balsa_alt.get('coord_incerta') else ""
+                                        st.warning(
+                                            f"🛳️ **Alternativa mais curta por balsa:** {_balsa_alt.get('destino_balsa','?')} "
+                                            f"— {(_num(_balsa_alt.get('dist_balsa')) or 0):.1f} km"
+                                            + (f" · {_balsa_alt.get('tempo_balsa')}" if _balsa_alt.get('tempo_balsa') else "")
+                                            + f". Economia potencial de **{(_ekm or 0):.1f} km**"
+                                            + (f" ({(_kmc or 0):.0f} km-candidato)" if _kmc else "")
+                                            + f". A terrestre foi mantida porque a metodologia evita balsa.{_inc}")
+                                    _c_dist = _cm('distancia'); _c_reta = _cm('linha reta'); _c_tempo = _cm('tempo')
+                                    _c_balsa = _cm('balsas'); _c_fonte = _cm('fonte da rota'); _c_acesso = _cm('modo/acesso')
+                                    _c_distc = _cm('distancia concorrente'); _c_retac = _cm('linha reta concorrente')
+                                    _c_tempoc = _cm('tempo concorrente'); _c_tipo = _cm('tipo de distancia'); _c_met = _cm('metodologia')
+                                    _vd = _num(_r.get(_c_dist)) if _c_dist else None
+                                    _cd = _num(_r.get(_c_distc)) if _c_distc else None
+                                    _colA, _colB = st.columns(2)
+                                    with _colA:
+                                        st.markdown(f"#### 🏆 1º colocado: {_venc_nome or '—'}")
+                                        st.markdown(_v315_fmt_detalhe(_r, _c_dist, _c_reta, _c_tempo, _c_balsa, _c_fonte, _c_acesso))
+                                    with _colB:
+                                        st.markdown(f"#### 🥈 2º colocado: {_conc_nome or '—'}")
+                                        if _conc_nome:
+                                            st.markdown(_v315_fmt_detalhe(_r, _c_distc, _c_retac, _c_tempoc, None, None, None))
+                                            if _vd is not None and _cd is not None:
+                                                _dif = _cd - _vd
+                                                _kmc = (f" · impacto: {abs(_dif):.1f} × {int(_insc_v)} = "
+                                                        f"{abs(_dif)*_insc_v:.0f} km-candidato") if _insc_v else ""
+                                                st.caption(f"Fica {abs(_dif):.1f} km "
+                                                           f"{'atrás' if _dif > 0 else 'à frente'} do vencedor.{_kmc}")
+                                        else:
+                                            st.caption("Sem 2º colocado registrado para esta origem.")
+                                    _geo_flag = False
+                                    if _c_tipo or _c_fonte:
+                                        _geo_flag = ("geod" in str(_r.get(_c_tipo, "")).lower()
+                                                     or "linha reta" in str(_r.get(_c_fonte, "")).lower())
+                                    st.markdown("##### 🧠 Leitura do Analista")
+                                    st.info(_v315_leitura_analista({
+                                        "origem": _sel_map,
+                                        "uf": str(_r.get(_cm('uf') or _cm('uf origem') or '', '') or ''),
+                                        "inscritos": _insc_v, "venc_nome": _venc_nome, "venc_dist": _vd,
+                                        "venc_reta": _num(_r.get(_c_reta)) if _c_reta else None,
+                                        "venc_tempo": _r.get(_c_tempo) if _c_tempo else None,
+                                        "conc_nome": _conc_nome, "conc_dist": _cd,
+                                        "conc_reta": _num(_r.get(_c_retac)) if _c_retac else None,
+                                        "metodologia": (str(_r.get(_c_met, '') or '') if _c_met else 'Menor rota viária'),
+                                        "motor": str(_r.get(_c_fonte, '') or '') if _c_fonte else '',
+                                        "geodesica": _geo_flag}))
+                                    with st.expander("❓ Como interpretar este mapa?"):
+                                        st.markdown(
+                                            "- 📍 **Origem**: onde estão os candidatos.\n"
+                                            "- 🏆 **1º colocado (verde)**: o local de prova escolhido — menor esforço na metodologia ativa.\n"
+                                            "- 🥈 **2º colocado (laranja)**: a melhor alternativa; a linha mostra o trajeto até ela.\n"
+                                            "- **Linhas**: ligam a origem a cada destino (conexão, não o traçado exato do asfalto).\n"
+                                            "- **Tamanho do marcador**: proporcional à quantidade de candidatos, quando ativado.\n"
+                                            "- **Divergência**: se o 2º tem linha reta menor porém viária maior, a escolha do 1º está correta na metodologia viária.")
+                        except Exception as _e_geo:
+                            logger.error(f"[V315-GEOMAP] Falha no mapa de análise geográfica: {_e_geo}")
+                            st.info("Não foi possível montar o mapa de análise geográfica para este estudo.")
+                    # [V376 · M2 §31] MÉTRICAS DE OBSERVABILIDADE (read-only): agrega tempo por rota (p50/p95/p99),
+                    # throughput, resgatadas e distribuição por fonte/status — de colunas já existentes. Não toca no
+                    # fluxo; serve para descobrir gargalos com dados reais.
+                    try:
+                        _mobs = _m2_metricas_observabilidade(
+                            _dfp_alo, tempo_total_s=st.session_state.get('alo_tempo_total'),
+                            resgatados=st.session_state.get('alo_resgatados'))
+                        with st.expander("📈 Métricas de processamento (observabilidade)", expanded=False):
+                            st.caption("Diagnóstico de desempenho do estudo, agregado das rotas já calculadas — para "
+                                       "identificar gargalos com dados reais. Não altera nenhum resultado.")
+                            _m1c = st.columns(4)
+                            _m1c[0].metric("Rotas", f"{_mobs.get('n_rotas', 0):,}".replace(",", "."))
+                            if _mobs.get("throughput_rotas_min") is not None:
+                                _m1c[1].metric("Throughput", f"{_mobs['throughput_rotas_min']:g} rotas/min")
+                            if _mobs.get("resgatadas_retry") is not None:
+                                _m1c[2].metric("Recuperadas (retry)", f"{_mobs['resgatadas_retry']:,}".replace(",", "."))
+                            if _mobs.get("pct_estimada") is not None:
+                                _m1c[3].metric("Rotas estimadas", f"{_mobs['pct_estimada']:g}%")
+                            _tr = _mobs.get("tempo_rota_s")
+                            if _tr:
+                                st.markdown("**Tempo por rota (s)**")
+                                _tc = st.columns(5)
+                                for _i2, (_lb, _kk) in enumerate([("média", "media"), ("p50", "p50"),
+                                                                  ("p95", "p95"), ("p99", "p99"), ("máx", "max")]):
+                                    _tc[_i2].metric(_lb, f"{_tr.get(_kk, 0):g}s")
+                            if _mobs.get("por_fonte"):
+                                st.markdown("**Rotas por fonte (motor/proveniência)**")
+                                st.dataframe(pd.DataFrame(_mobs["por_fonte"]).rename(
+                                    columns={"fonte": "Fonte da rota", "n": "Rotas"}),
+                                    use_container_width=True, hide_index=True)
+                            if _mobs.get("por_status"):
+                                st.dataframe(pd.DataFrame(_mobs["por_status"]).rename(
+                                    columns={"status": "Status da rota", "n": "Rotas"}),
+                                    use_container_width=True, hide_index=True)
+                            if _mobs.get("mais_lentas"):
+                                st.markdown("**Rotas mais lentas (investigar geocodificação/motor)**")
+                                _dfl_ob = pd.DataFrame(_mobs["mais_lentas"]).rename(columns={
+                                    "origem": "Origem", "destino": "Destino", "fonte": "Fonte",
+                                    "tempo_s": "Tempo (s)"})
+                                st.dataframe(_dfl_ob, use_container_width=True, hide_index=True)
+                                st.caption("São as rotas que puxam a cauda (p95/p99). Tempo alto costuma indicar "
+                                           "geocodificação difícil ou motor lento naquele trecho — bom ponto de "
+                                           "partida para auditar casos individuais.")
+                    except Exception as _e_mobs:
+                        logger.error(f"[V376-MOBS] painel de métricas falhou: {_e_mobs}")
+                    # [V328 · Geografia das rotas] MAPA FLUVIAL DEDICADO: locais fluviais/isolados + rotas que
+                    # cruzam água (balsa/fluvial). Read-only, coords reais (§15/§19). Honesto: não nomeia o rio.
+                    # [V425 · PAINEL BARREIRA HÍDRICA] Transparência sobre a correção fantasma-fluvial: lista as
+                    # rotas em que a rodovia era inviável (o roteador contornou um rio) e a distância foi trocada
+                    # pela fluvial realista — com origem, destino, km rodoviário original, km fluvial, economia e
+                    # os RIOS atravessados. Read-only; só aparece se houve correção.
+                    try:
+                        _dfp_bh = st.session_state.get('df_processado')
+                        if _dfp_bh is not None and not getattr(_dfp_bh, "empty", True):
+                            _cmodo_bh = next((c for c in _dfp_bh.columns
+                                              if str(c).strip().lower() in ('modo/acesso',
+                                              'forma de deslocamento ao local de prova')), None)
+                            _cvo_bh = 'Viaria Rodoviaria Original (km)' if 'Viaria Rodoviaria Original (km)' in _dfp_bh.columns else None
+                            if _cmodo_bh and _cvo_bh:
+                                _mask_bh = (_dfp_bh[_cmodo_bh].astype(str).str.contains("barreira hídrica", case=False, na=False)
+                                            & _dfp_bh[_cvo_bh].astype(str).ne("—") & _dfp_bh[_cvo_bh].astype(str).ne(""))
+                                _n_bh = int(_mask_bh.sum())
+                                if _n_bh > 0:
+                                    with st.expander(f"🌊 Barreira hídrica — {_n_bh} rota(s) rodoviária(s) inviável(is) "
+                                                     f"corrigida(s) para deslocamento fluvial real", expanded=False):
+                                        st.caption("Nestes municípios ribeirinhos não há estrada: o roteador contornava "
+                                                   "o rio gerando uma distância irreal (às vezes >2.000 km). O valor foi "
+                                                   "substituído pelo deslocamento FLUVIAL realista (o candidato vai de "
+                                                   "barco), espelhando o estudo de referência. A quilometragem rodoviária "
+                                                   "original fica preservada para auditoria.")
+                                        _co_bh = next((c for c in _dfp_bh.columns if str(c).strip().lower() in
+                                                       ('municipio origem', 'município de origem do candidato')), None)
+                                        _cd_bh = next((c for c in _dfp_bh.columns if str(c).strip().lower() in
+                                                       ('municipio destino', 'local de aplicação da prova', 'destino')), None)
+                                        _cdist_bh = next((c for c in _dfp_bh.columns if str(c).strip().lower() in
+                                                          ('distancia', 'distância do candidato ao local de prova (km)')), None)
+                                        _crios_bh = next((c for c in _dfp_bh.columns if 'rios' in str(c).lower()), None)
+                                        _sub = _dfp_bh.loc[_mask_bh, [c for c in
+                                              (_co_bh, _cd_bh, _cvo_bh, _cdist_bh, _crios_bh) if c]].copy()
+                                        try:
+                                            _orig_km = pd.to_numeric(_sub[_cvo_bh], errors='coerce')
+                                            _novo_km = pd.to_numeric(_sub[_cdist_bh], errors='coerce') if _cdist_bh else None
+                                            if _novo_km is not None:
+                                                _sub['Economia (km)'] = (_orig_km - _novo_km).round(0)
+                                                _eco_total = float((_orig_km - _novo_km).clip(lower=0).sum())
+                                                st.metric("Quilometragem irreal eliminada (total)",
+                                                          f"{_eco_total:,.0f} km".replace(",", "."))
+                                        except Exception:
+                                            pass
+                                        _ren = {}
+                                        if _co_bh: _ren[_co_bh] = "Origem"
+                                        if _cd_bh: _ren[_cd_bh] = "Destino"
+                                        _ren[_cvo_bh] = "Rodoviária irreal (km)"
+                                        if _cdist_bh: _ren[_cdist_bh] = "Fluvial real (km)"
+                                        if _crios_bh: _ren[_crios_bh] = "Rios atravessados"
+                                        st.dataframe(_sub.rename(columns=_ren), use_container_width=True, hide_index=True)
+                    except Exception as _e_bh:
+                        logger.error(f"[V425-PAINEL-BH] {_e_bh}")
+                    with st.expander("🌊 Geografia fluvial das rotas — locais isolados e travessias de água",
+                                     expanded=False):
+                        st.caption("Mapa dedicado à dimensão fluvial do deslocamento: municípios de acesso "
+                                   "fluvial/isolado e as rotas que dependem de travessia de água (balsa ou fluvial). "
+                                   "Coordenadas reais do processamento.")
+                        st.info("ℹ️ A aplicação identifica **que** a rota cruza água (balsa/fluvial), mas **não nomeia "
+                                "o rio/lago específico** — isso exigiria uma base hidrográfica que a aplicação não "
+                                "possui hoje. O mapa mostra a classificação de travessia efetivamente calculada, sem "
+                                "inventar nomes de corpos d'água.")
+                        try:
+                            _gf = _v328_geografia_fluvial(_dfp_alo)
+                            if not (_gf.get("n_isolados") or _gf.get("n_travessias")):
+                                st.success("Nenhuma rota deste estudo depende de travessia de água — todos os "
+                                           "deslocamentos são terrestres.")
+                            else:
+                                _kf = st.columns(3)
+                                _kf[0].metric("Locais fluviais/isolados", _fmt_num(_gf["n_isolados"]))
+                                _kf[1].metric("Rotas que cruzam água", _fmt_num(_gf["n_travessias"]))
+                                _kf[2].metric("UFs afetadas", _fmt_num(len(_gf["por_uf"])))
+                                _mostrar_f = st.radio("Exibir", ["Ambos", "Só locais isolados", "Só travessias"],
+                                                      horizontal=True, key="geo_flu_modo")
+                                _pts_f, _lns_f = [], []
+                                # [V372] rótulo com distância + tempo (mostra "· X km · Y" quando disponíveis)
+                                def _lbl_dt(_d, _t):
+                                    _p = []
                                     _ds = str(_d).strip() if _d not in (None, "") else ""
                                     _ts = str(_t).strip() if _t not in (None, "") else ""
                                     if _ds and _ds.lower() not in ("nan", "n/a", "none"):
-                                        _pp.append(f"{_ds} km")
+                                        _p.append(f"{_ds} km")
                                     if _ts and _ts.lower() not in ("nan", "n/a", "none"):
-                                        _pp.append(_ts)
-                                    return (" · " + " · ".join(_pp)) if _pp else ""
-                                _dt_map = _dtsfx(_dist_map, _tempo_map)
-                                _pts[0]["nome"] = f"📍 {_onome_map} (origem)"
-                                if _latd and _lond:
-                                    _pts.append({"nome": f"🏆 {_venc_nome} (1º){_dt_map}", "lat": _latd,
-                                                 "lon": _lond, "cor": [16, 185, 129], "raio": _raio(8000)})
-                                    if _modo_rota in ("Ambos", "Só 1º colocado"):
-                                        _lns.append({"lon_o": _lono, "lat_o": _lato, "lon_d": _lond,
-                                                     "lat_d": _latd, "cor": [16, 185, 129],
-                                                     "nome": f"📍 {_onome_map} → 🏆 {_venc_nome}{_dt_map}"})
-                                if _latc and _lonc:
-                                    _pts.append({"nome": f"🥈 {_conc_nome} (2º)", "lat": _latc, "lon": _lonc,
-                                                 "cor": [249, 115, 22], "raio": _raio(7000)})
-                                    if _modo_rota in ("Ambos", "Só 2º colocado"):
-                                        _lns.append({"lon_o": _lono, "lat_o": _lato, "lon_d": _lonc,
-                                                     "lat_d": _latc, "cor": [249, 115, 22],
-                                                     "nome": f"📍 {_onome_map} → 🥈 {_conc_nome} (2º colocado)"})
-                                # [V316 · Melhoria 3, fatia 4] Rota da ALTERNATIVA POR BALSA (🛳️ roxo), quando
-                                # existe e tem coordenada real resolvida. Diferenciada das demais (§ mapas).
-                                _balsa_alt = None
-                                try:
-                                    for _bx in (st.session_state.get('alo_balsa_resumo') or {}).get('linhas') or []:
-                                        if str(_bx.get('origem', '')).strip().lower() == str(_sel_map).strip().lower():
-                                            _balsa_alt = _bx
-                                            break
-                                except Exception:
-                                    _balsa_alt = None
-                                if _balsa_alt and _num(_balsa_alt.get('lat_balsa')) not in (None, 0.0) \
-                                        and _num(_balsa_alt.get('lon_balsa')) not in (None, 0.0):
-                                    _latb = _num(_balsa_alt['lat_balsa']); _lonb = _num(_balsa_alt['lon_balsa'])
-                                    _pts.append({"nome": f"🛳️ {_balsa_alt.get('destino_balsa','?')} (balsa, não escolhida)",
-                                                 "lat": _latb, "lon": _lonb, "cor": [124, 58, 237], "raio": _raio(7000)})
-                                    _lns.append({"lon_o": _lono, "lat_o": _lato, "lon_d": _lonb,
-                                                 "lat_d": _latb, "cor": [124, 58, 237],
-                                                 "nome": f"🛳️ {_onome_map} → {_balsa_alt.get('destino_balsa','?')} "
-                                                         f"(balsa, não escolhida)"})
-                                # [V322 · Análise Geográfica] UNIVERSO DA DECISÃO: plota TODOS os polos avaliados
-                                # para esta origem, classificados por branch-and-bound (considerado × podado).
-                                # Reusa topk_completo + coords reais (vencedor/2º) + resolvedor IBGE (§15/§19).
-                                _univ = None
-                                if _ver_universo:
+                                        _p.append(_ts)
+                                    return (" · " + " · ".join(_p)) if _p else ""
+                                if _mostrar_f in ("Ambos", "Só locais isolados"):
+                                    for _i in _gf["isolados"]:
+                                        _pts_f.append({"nome": f"🛶 {_i['origem']}/{_i['uf']} (fluvial/isolado)"
+                                                               f"{_lbl_dt(_i.get('dist'), _i.get('tempo'))}",
+                                                       "lat": _i["lat"], "lon": _i["lon"], "cor": [37, 99, 235],
+                                                       "raio": 7000})
+                                if _mostrar_f in ("Ambos", "Só travessias"):
+                                    for _t in _gf["travessias"]:
+                                        _cor_t = [8, 145, 178] if _t["tipo"] == "fluvial" else [217, 119, 6]
+                                        _ico = '🛶' if _t['tipo'] == 'fluvial' else '🛳️'
+                                        _dt = _lbl_dt(_t.get("dist"), _t.get("tempo"))
+                                        _pts_f.append({
+                                            "nome": f"{_ico} Destino: {_t['destino']} (travessia {_t['tipo']})",
+                                            "lat": _t["lat_d"], "lon": _t["lon_d"], "cor": _cor_t, "raio": 5000})
+                                        _lns_f.append({"lon_o": _t["lon_o"], "lat_o": _t["lat_o"],
+                                                       "lon_d": _t["lon_d"], "lat_d": _t["lat_d"], "cor": _cor_t,
+                                                       "nome": f"{_ico} {_t['origem']} → {_t['destino']}{_dt} "
+                                                               f"(travessia {_t['tipo']})"})
+                                if _pts_f:
                                     try:
-                                        _topk_u = st.session_state.get('alo_topk_completo') or {}
-                                        _cands_u = (_topk_u.get(_sel_map)
-                                                    or _topk_u.get(str(_sel_map).strip()) or [])
-                                        _vd_u = _num(_r.get(_cm('distancia')))
-                                        _uf_u = str(_r.get(_cm('uf') or _cm('uf origem') or '', '') or '')
-                                        _conhec = {}
-                                        if _venc_nome and _latd and _lond:
-                                            _conhec[_venc_nome.strip().lower()] = (_latd, _lond)
-                                        if _conc_nome and _latc and _lonc:
-                                            _conhec[_conc_nome.strip().lower()] = (_latc, _lonc)
-                                        _univ = _v322_universo_polos(
-                                            _cands_u, _vd_u, _venc_nome, _conc_nome, _conhec,
-                                            resolver=lambda _n: _v316_resolver_coord_alt(_n, uf_hint=_uf_u))
-                                        for _pu in _univ["polos"]:
-                                            if _pu["status"] in ("vencedor", "vice"):
-                                                continue  # já plotados com trajeto
-                                            _flag = " ⚠️coord aprox." if _pu["incerto"] else ""
-                                            _pts.append({
-                                                "nome": f"{_pu['rotulo']} · {_pu['nome']} (reta {_pu['reta']} km){_flag}",
-                                                "lat": _pu["lat"], "lon": _pu["lon"], "cor": _pu["cor"],
-                                                "raio": _raio(4200) * _pu["raio_mult"]})
-                                    except Exception as _e_univ:
-                                        logger.error(f"[V322-UNIVERSO] universo de polos falhou: {_e_univ}")
-                                        _univ = None
-                                try:
-                                    import pydeck as _pdk2
-                                    _dfp = pd.DataFrame(_pts)
-                                    _dfl = pd.DataFrame(_lns) if _lns else pd.DataFrame(
-                                        columns=["lon_o", "lat_o", "lon_d", "lat_d", "cor", "nome"])
-                                    _layers = []
-                                    _tracado_real = False
-                                    # [V329 · Geografia das rotas] TRAÇADO REAL da estrada (vencedor), quando a
-                                    # geometria estiver em session_state. Recai no conector reto se não houver
-                                    # (rotas muito longas não têm geometria embarcada, por salvaguarda de URL).
-                                    try:
-                                        _gv = (st.session_state.get('_geo_rotas_v329') or {}).get(
-                                            str(_sel_map).strip().lower())
-                                        _path = _v329_extrair_geometria(_gv) if _gv else []
-                                        if _path and len(_path) >= 2:
-                                            _pathll = [[_c[1], _c[0]] for _c in _path]  # geometria vem [lat,lon]→[lon,lat]
-                                            _layers.append(_pdk2.Layer(
-                                                "PathLayer", pd.DataFrame([{"path": _pathll,
-                                                    "nome": f"🛣️ {_onome_map} → {_venc_nome}{_dt_map} (estrada real)"}]),
-                                                get_path="path", get_color=[13, 148, 136], get_width=5,
-                                                width_min_pixels=3, pickable=True))
-                                            _tracado_real = True
+                                        import pydeck as _pdk3
+                                        _dfpf = pd.DataFrame(_pts_f)
+                                        _dflf = pd.DataFrame(_lns_f) if _lns_f else pd.DataFrame(
+                                            columns=["lon_o", "lat_o", "lon_d", "lat_d", "cor", "nome"])
+                                        _lyr_f = []
+                                        if len(_dflf):
+                                            _lyr_f.append(_pdk3.Layer(
+                                                "LineLayer", _dflf, get_source_position=["lon_o", "lat_o"],
+                                                get_target_position=["lon_d", "lat_d"], get_color="cor", get_width=4,
+                                                pickable=True))
+                                        _lyr_f.append(_pdk3.Layer(
+                                            "ScatterplotLayer", _dfpf, get_position=["lon", "lat"], get_color="cor",
+                                            get_radius="raio", pickable=True))
+                                        _vw_f = _pdk3.ViewState(latitude=float(_dfpf["lat"].mean()),
+                                                                longitude=float(_dfpf["lon"].mean()), zoom=4)
+                                        st.pydeck_chart(_pdk3.Deck(layers=_lyr_f, initial_view_state=_vw_f,
+                                                                   tooltip={"text": "{nome}"}, map_style=None))
                                     except Exception:
-                                        _tracado_real = False
-                                    if len(_dfl):
-                                        _layers.append(_pdk2.Layer(
-                                            "LineLayer", _dfl, get_source_position=["lon_o", "lat_o"],
-                                            get_target_position=["lon_d", "lat_d"], get_color="cor", get_width=4,
-                                            pickable=True))
-                                    _layers.append(_pdk2.Layer(
-                                        "ScatterplotLayer", _dfp, get_position=["lon", "lat"], get_color="cor",
-                                        get_radius="raio", pickable=True))
-                                    _view2 = _pdk2.ViewState(latitude=_lato, longitude=_lono, zoom=7)
-                                    st.pydeck_chart(_pdk2.Deck(layers=_layers, initial_view_state=_view2,
-                                                               tooltip={"text": "{nome}"}, map_style=None))
-                                    if _tracado_real:
-                                        st.caption("🛣️ A linha **teal** é o **traçado real da estrada** do vencedor "
-                                                   "(geometria do roteador), não uma reta — mostra o caminho que o "
-                                                   "candidato de fato percorre. As demais linhas são conectores.")
-                                except Exception:
-                                    st.map(pd.DataFrame([{"lat": _pp["lat"], "lon": _pp["lon"]}
-                                                         for _pp in _pts if _pp["lat"] and _pp["lon"]]), zoom=6)
-                                st.caption("📍 Azul = origem · 🏆 Verde = 1º colocado · 🥈 Laranja = 2º colocado"
-                                           + ("· 🛳️ Roxo = alternativa por balsa (não escolhida)" if _balsa_alt and _num(_balsa_alt.get('lat_balsa')) not in (None, 0.0) else "")
-                                           + ". Linha verde = trajeto ao vencedor · laranja = à alternativa"
-                                           + (" · roxa = à balsa mais curta" if _balsa_alt and _num(_balsa_alt.get('lat_balsa')) not in (None, 0.0) else "") + ".")
-                                if _ver_universo and _univ and _univ.get("n_total"):
-                                    st.caption(
-                                        f"🧭 **Universo da decisão:** {_univ['n_total']} polos no raio desta origem · "
-                                        f"🟢 verde-claro = {_univ['n_considerados']} podiam vencer (linha reta menor "
-                                        f"que a viária do vencedor) · ⚪ cinza = {_univ['n_podados']} descartados por "
-                                        f"limite inferior (linha reta já maior que a viária do vencedor — não poderiam "
-                                        f"vencer, nem foi preciso rotear). É a prova visual da otimalidade: o vencedor "
-                                        f"é o menor viária entre todos os que tinham chance.")
-                                    # [V327] Gráfico de RANKING: polos por linha reta, com a viária do vencedor
-                                    # como "linha de corte" (branch-and-bound). Torna VISÍVEL por que os
-                                    # distantes não podiam vencer. Read-only; reusa os dados do universo.
+                                        st.map(pd.DataFrame([{"lat": _p["lat"], "lon": _p["lon"]} for _p in _pts_f]),
+                                               zoom=3)
+                                    st.caption("🛶 Azul = município de acesso fluvial/isolado · ciano = travessia "
+                                               "fluvial · 🛳️ âmbar = travessia por balsa. As linhas ligam origem→destino "
+                                               "das rotas que cruzam água.")
+                                if _gf["por_uf"]:
+                                    st.markdown("**Concentração por UF**")
+                                    st.dataframe(pd.DataFrame([{
+                                        "UF": _u["uf"], "Locais fluviais/isolados": _u["isolados"],
+                                        "Rotas com travessia": _u["travessias"]} for _u in _gf["por_uf"]]),
+                                        use_container_width=True, hide_index=True)
+                                # [V366 · Aprimoramento3] ESTIMATIVA FLUVIAL rotulada por município isolado: o polo
+                                # mais próximo em linha reta (piso físico do trajeto por hidrovia), ao lado da
+                                # rodoviária real. NÃO substitui a menor viária; dá o número operacional honesto que
+                                # a referência usa (implicitamente), mas aqui EXPLICITAMENTE rotulado como estimativa.
+                                try:
+                                    _topk_flu = st.session_state.get('alo_topk_completo') or {}
+                                    _cm_flu = {str(c).strip().lower(): c for c in _dfp_alo.columns}
+                                    _c_org_f = _cm_flu.get('origem'); _c_dist_f = _cm_flu.get('distancia')
+                                    _c_cod_f = (_cm_flu.get('cod ibge origem') or _cm_flu.get('cod_ibge_origem')
+                                                or _cm_flu.get('codigo origem') or _cm_flu.get('co_municipio'))
+                                    _linhas_flu = []
+                                    _rotas_path_f = []
+                                    _grafo_flu_ok = False
                                     try:
-                                        _rk = _v327_ranking_universo(_univ["polos"], _num(_r.get(_cm('distancia'))))
-                                        if _rk["linhas"]:
-                                            _dfr = pd.DataFrame(_rk["linhas"])
-                                            _base = alt.Chart(_dfr).encode(
-                                                y=alt.Y("polo:N", sort=alt.SortField("reta", order="ascending"),
-                                                        title=None),
-                                                x=alt.X("reta:Q", title="Distância em linha reta (km)"))
-                                            _barras = _base.mark_bar().encode(
-                                                color=alt.Color("cor_hex:N", scale=None, legend=None),
-                                                tooltip=[alt.Tooltip("polo:N", title="Local de prova"),
-                                                         alt.Tooltip("reta:Q", title="Linha reta (km)"),
-                                                         alt.Tooltip("status:N", title="Situação")])
-                                            _camadas = [_barras]
-                                            if _rk["corte"] is not None:
-                                                _corte_df = pd.DataFrame({"corte": [_rk["corte"]]})
-                                                _regua = alt.Chart(_corte_df).mark_rule(
-                                                    color="#dc2626", strokeDash=[6, 4], size=2).encode(
-                                                    x="corte:Q",
-                                                    tooltip=[alt.Tooltip("corte:Q", title="Viária do vencedor (corte)")])
-                                                _camadas.append(_regua)
-                                            st.altair_chart(alt.layer(*_camadas).properties(height=min(360, 30 + 26 * len(_dfr))),
-                                                            use_container_width=True)
-                                            st.caption("Cada barra é a **linha reta** de um polo candidato. A linha "
-                                                       "tracejada vermelha é a **distância viária do vencedor** — todo "
-                                                       "polo cuja barra ultrapassa essa linha já estava longe demais em "
-                                                       "linha reta para vencer (por isso foi podado, sem nem ser roteado).")
-                                    except Exception as _e_rk:
-                                        logger.error(f"[V327-RANKING] gráfico de ranking do universo falhou: {_e_rk}")
-                                if _balsa_alt:
-                                    _ekm = _balsa_alt.get('economia_km'); _kmc = _balsa_alt.get('km_candidato')
-                                    _inc = " ⚠️ coordenada aproximada (homônimo/base)" if _balsa_alt.get('coord_incerta') else ""
-                                    st.warning(
-                                        f"🛳️ **Alternativa mais curta por balsa:** {_balsa_alt.get('destino_balsa','?')} "
-                                        f"— {(_num(_balsa_alt.get('dist_balsa')) or 0):.1f} km"
-                                        + (f" · {_balsa_alt.get('tempo_balsa')}" if _balsa_alt.get('tempo_balsa') else "")
-                                        + f". Economia potencial de **{(_ekm or 0):.1f} km**"
-                                        + (f" ({(_kmc or 0):.0f} km-candidato)" if _kmc else "")
-                                        + f". A terrestre foi mantida porque a metodologia evita balsa.{_inc}")
-                                _c_dist = _cm('distancia'); _c_reta = _cm('linha reta'); _c_tempo = _cm('tempo')
-                                _c_balsa = _cm('balsas'); _c_fonte = _cm('fonte da rota'); _c_acesso = _cm('modo/acesso')
-                                _c_distc = _cm('distancia concorrente'); _c_retac = _cm('linha reta concorrente')
-                                _c_tempoc = _cm('tempo concorrente'); _c_tipo = _cm('tipo de distancia'); _c_met = _cm('metodologia')
-                                _vd = _num(_r.get(_c_dist)) if _c_dist else None
-                                _cd = _num(_r.get(_c_distc)) if _c_distc else None
-                                _colA, _colB = st.columns(2)
-                                with _colA:
-                                    st.markdown(f"#### 🏆 1º colocado: {_venc_nome or '—'}")
-                                    st.markdown(_v315_fmt_detalhe(_r, _c_dist, _c_reta, _c_tempo, _c_balsa, _c_fonte, _c_acesso))
-                                with _colB:
-                                    st.markdown(f"#### 🥈 2º colocado: {_conc_nome or '—'}")
-                                    if _conc_nome:
-                                        st.markdown(_v315_fmt_detalhe(_r, _c_distc, _c_retac, _c_tempoc, None, None, None))
-                                        if _vd is not None and _cd is not None:
-                                            _dif = _cd - _vd
-                                            _kmc = (f" · impacto: {abs(_dif):.1f} × {int(_insc_v)} = "
-                                                    f"{abs(_dif)*_insc_v:.0f} km-candidato") if _insc_v else ""
-                                            st.caption(f"Fica {abs(_dif):.1f} km "
-                                                       f"{'atrás' if _dif > 0 else 'à frente'} do vencedor.{_kmc}")
-                                    else:
-                                        st.caption("Sem 2º colocado registrado para esta origem.")
-                                _geo_flag = False
-                                if _c_tipo or _c_fonte:
-                                    _geo_flag = ("geod" in str(_r.get(_c_tipo, "")).lower()
-                                                 or "linha reta" in str(_r.get(_c_fonte, "")).lower())
-                                st.markdown("##### 🧠 Leitura do Analista")
-                                st.info(_v315_leitura_analista({
-                                    "origem": _sel_map,
-                                    "uf": str(_r.get(_cm('uf') or _cm('uf origem') or '', '') or ''),
-                                    "inscritos": _insc_v, "venc_nome": _venc_nome, "venc_dist": _vd,
-                                    "venc_reta": _num(_r.get(_c_reta)) if _c_reta else None,
-                                    "venc_tempo": _r.get(_c_tempo) if _c_tempo else None,
-                                    "conc_nome": _conc_nome, "conc_dist": _cd,
-                                    "conc_reta": _num(_r.get(_c_retac)) if _c_retac else None,
-                                    "metodologia": (str(_r.get(_c_met, '') or '') if _c_met else 'Menor rota viária'),
-                                    "motor": str(_r.get(_c_fonte, '') or '') if _c_fonte else '',
-                                    "geodesica": _geo_flag}))
-                                with st.expander("❓ Como interpretar este mapa?"):
-                                    st.markdown(
-                                        "- 📍 **Origem**: onde estão os candidatos.\n"
-                                        "- 🏆 **1º colocado (verde)**: o local de prova escolhido — menor esforço na metodologia ativa.\n"
-                                        "- 🥈 **2º colocado (laranja)**: a melhor alternativa; a linha mostra o trajeto até ela.\n"
-                                        "- **Linhas**: ligam a origem a cada destino (conexão, não o traçado exato do asfalto).\n"
-                                        "- **Tamanho do marcador**: proporcional à quantidade de candidatos, quando ativado.\n"
-                                        "- **Divergência**: se o 2º tem linha reta menor porém viária maior, a escolha do 1º está correta na metodologia viária.")
-                    except Exception as _e_geo:
-                        logger.error(f"[V315-GEOMAP] Falha no mapa de análise geográfica: {_e_geo}")
-                        st.info("Não foi possível montar o mapa de análise geográfica para este estudo.")
-                # [V376 · M2 §31] MÉTRICAS DE OBSERVABILIDADE (read-only): agrega tempo por rota (p50/p95/p99),
-                # throughput, resgatadas e distribuição por fonte/status — de colunas já existentes. Não toca no
-                # fluxo; serve para descobrir gargalos com dados reais.
-                try:
-                    _mobs = _m2_metricas_observabilidade(
-                        _dfp_alo, tempo_total_s=st.session_state.get('alo_tempo_total'),
-                        resgatados=st.session_state.get('alo_resgatados'))
-                    with st.expander("📈 Métricas de processamento (observabilidade)", expanded=False):
-                        st.caption("Diagnóstico de desempenho do estudo, agregado das rotas já calculadas — para "
-                                   "identificar gargalos com dados reais. Não altera nenhum resultado.")
-                        _m1c = st.columns(4)
-                        _m1c[0].metric("Rotas", f"{_mobs.get('n_rotas', 0):,}".replace(",", "."))
-                        if _mobs.get("throughput_rotas_min") is not None:
-                            _m1c[1].metric("Throughput", f"{_mobs['throughput_rotas_min']:g} rotas/min")
-                        if _mobs.get("resgatadas_retry") is not None:
-                            _m1c[2].metric("Recuperadas (retry)", f"{_mobs['resgatadas_retry']:,}".replace(",", "."))
-                        if _mobs.get("pct_estimada") is not None:
-                            _m1c[3].metric("Rotas estimadas", f"{_mobs['pct_estimada']:g}%")
-                        _tr = _mobs.get("tempo_rota_s")
-                        if _tr:
-                            st.markdown("**Tempo por rota (s)**")
-                            _tc = st.columns(5)
-                            for _i2, (_lb, _kk) in enumerate([("média", "media"), ("p50", "p50"),
-                                                              ("p95", "p95"), ("p99", "p99"), ("máx", "max")]):
-                                _tc[_i2].metric(_lb, f"{_tr.get(_kk, 0):g}s")
-                        if _mobs.get("por_fonte"):
-                            st.markdown("**Rotas por fonte (motor/proveniência)**")
-                            st.dataframe(pd.DataFrame(_mobs["por_fonte"]).rename(
-                                columns={"fonte": "Fonte da rota", "n": "Rotas"}),
-                                use_container_width=True, hide_index=True)
-                        if _mobs.get("por_status"):
-                            st.dataframe(pd.DataFrame(_mobs["por_status"]).rename(
-                                columns={"status": "Status da rota", "n": "Rotas"}),
-                                use_container_width=True, hide_index=True)
-                        if _mobs.get("mais_lentas"):
-                            st.markdown("**Rotas mais lentas (investigar geocodificação/motor)**")
-                            _dfl_ob = pd.DataFrame(_mobs["mais_lentas"]).rename(columns={
-                                "origem": "Origem", "destino": "Destino", "fonte": "Fonte",
-                                "tempo_s": "Tempo (s)"})
-                            st.dataframe(_dfl_ob, use_container_width=True, hide_index=True)
-                            st.caption("São as rotas que puxam a cauda (p95/p99). Tempo alto costuma indicar "
-                                       "geocodificação difícil ou motor lento naquele trecho — bom ponto de "
-                                       "partida para auditar casos individuais.")
-                except Exception as _e_mobs:
-                    logger.error(f"[V376-MOBS] painel de métricas falhou: {_e_mobs}")
-                # [V328 · Geografia das rotas] MAPA FLUVIAL DEDICADO: locais fluviais/isolados + rotas que
-                # cruzam água (balsa/fluvial). Read-only, coords reais (§15/§19). Honesto: não nomeia o rio.
-                # [V425 · PAINEL BARREIRA HÍDRICA] Transparência sobre a correção fantasma-fluvial: lista as
-                # rotas em que a rodovia era inviável (o roteador contornou um rio) e a distância foi trocada
-                # pela fluvial realista — com origem, destino, km rodoviário original, km fluvial, economia e
-                # os RIOS atravessados. Read-only; só aparece se houve correção.
-                try:
-                    _dfp_bh = st.session_state.get('df_processado')
-                    if _dfp_bh is not None and not getattr(_dfp_bh, "empty", True):
-                        _cmodo_bh = next((c for c in _dfp_bh.columns
-                                          if str(c).strip().lower() in ('modo/acesso',
-                                          'forma de deslocamento ao local de prova')), None)
-                        _cvo_bh = 'Viaria Rodoviaria Original (km)' if 'Viaria Rodoviaria Original (km)' in _dfp_bh.columns else None
-                        if _cmodo_bh and _cvo_bh:
-                            _mask_bh = (_dfp_bh[_cmodo_bh].astype(str).str.contains("barreira hídrica", case=False, na=False)
-                                        & _dfp_bh[_cvo_bh].astype(str).ne("—") & _dfp_bh[_cvo_bh].astype(str).ne(""))
-                            _n_bh = int(_mask_bh.sum())
-                            if _n_bh > 0:
-                                with st.expander(f"🌊 Barreira hídrica — {_n_bh} rota(s) rodoviária(s) inviável(is) "
-                                                 f"corrigida(s) para deslocamento fluvial real", expanded=False):
-                                    st.caption("Nestes municípios ribeirinhos não há estrada: o roteador contornava "
-                                               "o rio gerando uma distância irreal (às vezes >2.000 km). O valor foi "
-                                               "substituído pelo deslocamento FLUVIAL realista (o candidato vai de "
-                                               "barco), espelhando o estudo de referência. A quilometragem rodoviária "
-                                               "original fica preservada para auditoria.")
-                                    _co_bh = next((c for c in _dfp_bh.columns if str(c).strip().lower() in
-                                                   ('municipio origem', 'município de origem do candidato')), None)
-                                    _cd_bh = next((c for c in _dfp_bh.columns if str(c).strip().lower() in
-                                                   ('municipio destino', 'local de aplicação da prova', 'destino')), None)
-                                    _cdist_bh = next((c for c in _dfp_bh.columns if str(c).strip().lower() in
-                                                      ('distancia', 'distância do candidato ao local de prova (km)')), None)
-                                    _crios_bh = next((c for c in _dfp_bh.columns if 'rios' in str(c).lower()), None)
-                                    _sub = _dfp_bh.loc[_mask_bh, [c for c in
-                                          (_co_bh, _cd_bh, _cvo_bh, _cdist_bh, _crios_bh) if c]].copy()
+                                        _grafo_flu_ok = _fluvial_grafo_disponivel()
+                                    except Exception:
+                                        _grafo_flu_ok = False
+                                    for _i in _gf["isolados"]:
+                                        _org = _i["origem"]
+                                        _cands_f = (_topk_flu.get(_org)
+                                                    or _topk_flu.get(str(_org).strip()) or [])
+                                        _dv_f = None; _cod_org_f = None
+                                        if _c_org_f:
+                                            _row_f = _dfp_alo[_dfp_alo[_c_org_f].astype(str) == str(_org)]
+                                            if len(_row_f):
+                                                if _c_dist_f:
+                                                    _dv_f = _num(_row_f.iloc[0][_c_dist_f])
+                                                if _c_cod_f:
+                                                    _cod_org_f = str(_row_f.iloc[0][_c_cod_f]).strip().split(".")[0]
+                                        _est = _apr3_fluvial_estimativa(_cands_f, dist_viaria_atual=_dv_f)
+                                        # [V367] rota fluvial da tabela REGIC embutida (offline, imediata)
+                                        _real = _apr3_fluvial_real(_cod_org_f)
+                                        # [V368] roteamento fluvial REAL SOB DEMANDA (QUALQUER município), quando o
+                                        # grafo estiver disponível (URL configurada): cobre além dos 18 REGIC e traz
+                                        # o traçado do rio. Ordem de preferência: on-demand > tabela REGIC > estimativa.
+                                        _rota_od = None
+                                        try:
+                                            if _grafo_flu_ok and _cands_f:
+                                                _rota_od = _apr3_melhor_fluvial(
+                                                    _i["lat"], _i["lon"], _cands_f, uf_hint=_i.get("uf", ""))
+                                        except Exception:
+                                            _rota_od = None
+                                        _km_real = (_rota_od["km"] if _rota_od else (_real["km"] if _real else None))
+                                        _rios_real = (_rota_od["rios"] if _rota_od else (_real["r"] if _real else None))
+                                        _hub_real = (_rota_od.get("hub") if _rota_od else None)
+                                        if _rota_od and _rota_od.get("path_lonlat"):
+                                            _rotas_path_f.append({
+                                                "path": _rota_od["path_lonlat"],
+                                                "nome": (f"🛶 {_org} → {_hub_real or '?'} · "
+                                                         f"{_km_real} km por hidrovia"
+                                                         + (f" · {' → '.join(_rios_real[:3])}" if _rios_real else ""))})
+                                        if _est or _km_real is not None:
+                                            _linha = {
+                                                "Município (fluvial)": f"{_org}/{_i['uf']}",
+                                                "Hub + próximo (reta)": (_est["hub"] if _est else "—"),
+                                                "Estimativa fluvial ≥ km": (_est["reta_km"] if _est else "—"),
+                                                "Rota fluvial REAL (km)": (_km_real if _km_real is not None else "—"),
+                                                "Rios (IBGE)": (" → ".join(_rios_real) if _rios_real else "—"),
+                                                "Rodoviária real (km)": (round(_dv_f, 1) if _dv_f else "—")}
+                                            _linhas_flu.append(_linha)
+                                    if _linhas_flu:
+                                        st.markdown("**🛶 Alternativa fluvial (estimada + rota REAL da hidrografia IBGE)**")
+                                        st.caption("Para municípios ribeirinhos, o deslocamento real costuma ser por "
+                                                   "barco. **Rota fluvial REAL (km)** e **Rios (IBGE)** são a distância "
+                                                   "**navegável roteada** na hidrografia oficial do IBGE (offline, "
+                                                   "seguindo a água) e os rios percorridos — número real, não estimativa. "
+                                                   "A **Estimativa ≥** (linha reta) aparece onde ainda não há rota "
+                                                   "roteada. Nada disso substitui a **menor viária real** (a rodoviária "
+                                                   "segue sendo a decisão); é a leitura honesta do trade-off "
+                                                   "rodoviária × hidrovia.")
+                                        st.dataframe(pd.DataFrame(_linhas_flu), use_container_width=True,
+                                                     hide_index=True)
+                                        # [V368] MAPA com o TRAÇADO REAL dos rios (roteado na hidrografia IBGE)
+                                        if _rotas_path_f:
+                                            try:
+                                                import pydeck as _pdk4
+                                                _flat = [pt for _d in _rotas_path_f for pt in _d["path"]]
+                                                if _flat:
+                                                    _dfpath = pd.DataFrame(_rotas_path_f)
+                                                    _lat_c = sum(p[1] for p in _flat) / len(_flat)
+                                                    _lon_c = sum(p[0] for p in _flat) / len(_flat)
+                                                    st.markdown("**🗺️ Traçado real das rotas fluviais (hidrografia IBGE)**")
+                                                    st.pydeck_chart(_pdk4.Deck(
+                                                        layers=[_pdk4.Layer(
+                                                            "PathLayer", _dfpath, get_path="path",
+                                                            get_color=[8, 145, 178], get_width=4, width_min_pixels=2,
+                                                            pickable=True)],
+                                                        initial_view_state=_pdk4.ViewState(
+                                                            latitude=_lat_c, longitude=_lon_c, zoom=6),
+                                                        tooltip={"text": "{nome}"}, map_style=None))
+                                                    st.caption("As linhas ciano seguem o **leito real dos rios** (não a "
+                                                               "linha reta), roteadas na hidrografia oficial do IBGE. "
+                                                               "Passe o mouse para ver **origem → hub · distância · rios**.")
+                                            except Exception as _e_pth:
+                                                logger.error(f"[V368-FLUVIAL-MAP] traçado fluvial falhou: {_e_pth}")
+                                        st.caption("⚠️ A conectividade hidroviária **não é verificada** (a app não tem "
+                                                   "base hidrográfica); o hub mais próximo em reta é um **candidato**, "
+                                                   "não garantia de rota navegável. Nomear o rio/lago e rotear a água "
+                                                   "de verdade exigiria uma base hidrográfica (shapefile IBGE/ANA).")
+                                except Exception as _e_fe:
+                                    logger.error(f"[V366-FLUVIAL-EST] estimativa fluvial falhou: {_e_fe}")
+                        except Exception as _e_gf:
+                            logger.error(f"[V328-FLUVIAL] mapa de geografia fluvial falhou: {_e_gf}")
+                            st.info("Não foi possível montar o mapa de geografia fluvial para este estudo.")
+                    with st.expander("🏆 Auditoria da Escolha do Local de Prova (recomendado × alternativa)", expanded=True):
+                        st.caption("Selecione um **município de candidatos** para ver **por que** o local de aplicação foi recomendado "
+                                   "e **quanto** a melhor alternativa ficou atrás — auditoria técnica da decisão.")
+                        _clientes = _dfp_alo['Origem'].dropna().astype(str).unique().tolist()
+                        _cli_sel = st.selectbox("Município de origem dos candidatos", options=_clientes, index=0 if _clientes else None, key="disputa_cli")
+                        # [V312 · §11] ÁRVORE DE DECISÃO DA ORIGEM — a BUSCA que levou ao vencedor (complementa a
+                        # decomposição de custo abaixo). Mostra todos os polos no raio, marcando os que foram
+                        # CONSIDERADOS e os PODADOS por limite inferior (linha reta já ≥ viária do vencedor → não
+                        # podiam vencer): a prova visual de otimalidade por branch-and-bound. READ-ONLY, defensivo,
+                        # funciona em qualquer modo (usa topk_completo e o runner-up já prontos em session_state).
+                        if _cli_sel:
+                            with st.container():
+                                try:
+                                    _topk_c11 = st.session_state.get('alo_topk_completo') or {}
+                                    _cands11 = (_topk_c11.get(_cli_sel)
+                                                or _topk_c11.get(str(_cli_sel).strip()) or [])
+                                    _venc11_nome, _venc11_dist = None, None
                                     try:
-                                        _orig_km = pd.to_numeric(_sub[_cvo_bh], errors='coerce')
-                                        _novo_km = pd.to_numeric(_sub[_cdist_bh], errors='coerce') if _cdist_bh else None
-                                        if _novo_km is not None:
-                                            _sub['Economia (km)'] = (_orig_km - _novo_km).round(0)
-                                            _eco_total = float((_orig_km - _novo_km).clip(lower=0).sum())
-                                            st.metric("Quilometragem irreal eliminada (total)",
-                                                      f"{_eco_total:,.0f} km".replace(",", "."))
+                                        _row11 = _dfp_alo[_dfp_alo['Origem'].astype(str) == str(_cli_sel)]
+                                        if len(_row11):
+                                            _r0 = _row11.iloc[0]
+                                            _venc11_nome = str(_r0.get('Destino', '') or '')
+                                            _venc11_dist = _num(_r0.get('Distancia'))
                                     except Exception:
                                         pass
-                                    _ren = {}
-                                    if _co_bh: _ren[_co_bh] = "Origem"
-                                    if _cd_bh: _ren[_cd_bh] = "Destino"
-                                    _ren[_cvo_bh] = "Rodoviária irreal (km)"
-                                    if _cdist_bh: _ren[_cdist_bh] = "Fluvial real (km)"
-                                    if _crios_bh: _ren[_crios_bh] = "Rios atravessados"
-                                    st.dataframe(_sub.rename(columns=_ren), use_container_width=True, hide_index=True)
-                except Exception as _e_bh:
-                    logger.error(f"[V425-PAINEL-BH] {_e_bh}")
-                with st.expander("🌊 Geografia fluvial das rotas — locais isolados e travessias de água",
-                                 expanded=False):
-                    st.caption("Mapa dedicado à dimensão fluvial do deslocamento: municípios de acesso "
-                               "fluvial/isolado e as rotas que dependem de travessia de água (balsa ou fluvial). "
-                               "Coordenadas reais do processamento.")
-                    st.info("ℹ️ A aplicação identifica **que** a rota cruza água (balsa/fluvial), mas **não nomeia "
-                            "o rio/lago específico** — isso exigiria uma base hidrográfica que a aplicação não "
-                            "possui hoje. O mapa mostra a classificação de travessia efetivamente calculada, sem "
-                            "inventar nomes de corpos d'água.")
-                    try:
-                        _gf = _v328_geografia_fluvial(_dfp_alo)
-                        if not (_gf.get("n_isolados") or _gf.get("n_travessias")):
-                            st.success("Nenhuma rota deste estudo depende de travessia de água — todos os "
-                                       "deslocamentos são terrestres.")
-                        else:
-                            _kf = st.columns(3)
-                            _kf[0].metric("Locais fluviais/isolados", _fmt_num(_gf["n_isolados"]))
-                            _kf[1].metric("Rotas que cruzam água", _fmt_num(_gf["n_travessias"]))
-                            _kf[2].metric("UFs afetadas", _fmt_num(len(_gf["por_uf"])))
-                            _mostrar_f = st.radio("Exibir", ["Ambos", "Só locais isolados", "Só travessias"],
-                                                  horizontal=True, key="geo_flu_modo")
-                            _pts_f, _lns_f = [], []
-                            # [V372] rótulo com distância + tempo (mostra "· X km · Y" quando disponíveis)
-                            def _lbl_dt(_d, _t):
-                                _p = []
-                                _ds = str(_d).strip() if _d not in (None, "") else ""
-                                _ts = str(_t).strip() if _t not in (None, "") else ""
-                                if _ds and _ds.lower() not in ("nan", "n/a", "none"):
-                                    _p.append(f"{_ds} km")
-                                if _ts and _ts.lower() not in ("nan", "n/a", "none"):
-                                    _p.append(_ts)
-                                return (" · " + " · ".join(_p)) if _p else ""
-                            if _mostrar_f in ("Ambos", "Só locais isolados"):
-                                for _i in _gf["isolados"]:
-                                    _pts_f.append({"nome": f"🛶 {_i['origem']}/{_i['uf']} (fluvial/isolado)"
-                                                           f"{_lbl_dt(_i.get('dist'), _i.get('tempo'))}",
-                                                   "lat": _i["lat"], "lon": _i["lon"], "cor": [37, 99, 235],
-                                                   "raio": 7000})
-                            if _mostrar_f in ("Ambos", "Só travessias"):
-                                for _t in _gf["travessias"]:
-                                    _cor_t = [8, 145, 178] if _t["tipo"] == "fluvial" else [217, 119, 6]
-                                    _ico = '🛶' if _t['tipo'] == 'fluvial' else '🛳️'
-                                    _dt = _lbl_dt(_t.get("dist"), _t.get("tempo"))
-                                    _pts_f.append({
-                                        "nome": f"{_ico} Destino: {_t['destino']} (travessia {_t['tipo']})",
-                                        "lat": _t["lat_d"], "lon": _t["lon_d"], "cor": _cor_t, "raio": 5000})
-                                    _lns_f.append({"lon_o": _t["lon_o"], "lat_o": _t["lat_o"],
-                                                   "lon_d": _t["lon_d"], "lat_d": _t["lat_d"], "cor": _cor_t,
-                                                   "nome": f"{_ico} {_t['origem']} → {_t['destino']}{_dt} "
-                                                           f"(travessia {_t['tipo']})"})
-                            if _pts_f:
-                                try:
-                                    import pydeck as _pdk3
-                                    _dfpf = pd.DataFrame(_pts_f)
-                                    _dflf = pd.DataFrame(_lns_f) if _lns_f else pd.DataFrame(
-                                        columns=["lon_o", "lat_o", "lon_d", "lat_d", "cor", "nome"])
-                                    _lyr_f = []
-                                    if len(_dflf):
-                                        _lyr_f.append(_pdk3.Layer(
-                                            "LineLayer", _dflf, get_source_position=["lon_o", "lat_o"],
-                                            get_target_position=["lon_d", "lat_d"], get_color="cor", get_width=4,
-                                            pickable=True))
-                                    _lyr_f.append(_pdk3.Layer(
-                                        "ScatterplotLayer", _dfpf, get_position=["lon", "lat"], get_color="cor",
-                                        get_radius="raio", pickable=True))
-                                    _vw_f = _pdk3.ViewState(latitude=float(_dfpf["lat"].mean()),
-                                                            longitude=float(_dfpf["lon"].mean()), zoom=4)
-                                    st.pydeck_chart(_pdk3.Deck(layers=_lyr_f, initial_view_state=_vw_f,
-                                                               tooltip={"text": "{nome}"}, map_style=None))
-                                except Exception:
-                                    st.map(pd.DataFrame([{"lat": _p["lat"], "lon": _p["lon"]} for _p in _pts_f]),
-                                           zoom=3)
-                                st.caption("🛶 Azul = município de acesso fluvial/isolado · ciano = travessia "
-                                           "fluvial · 🛳️ âmbar = travessia por balsa. As linhas ligam origem→destino "
-                                           "das rotas que cruzam água.")
-                            if _gf["por_uf"]:
-                                st.markdown("**Concentração por UF**")
-                                st.dataframe(pd.DataFrame([{
-                                    "UF": _u["uf"], "Locais fluviais/isolados": _u["isolados"],
-                                    "Rotas com travessia": _u["travessias"]} for _u in _gf["por_uf"]]),
-                                    use_container_width=True, hide_index=True)
-                            # [V366 · Aprimoramento3] ESTIMATIVA FLUVIAL rotulada por município isolado: o polo
-                            # mais próximo em linha reta (piso físico do trajeto por hidrovia), ao lado da
-                            # rodoviária real. NÃO substitui a menor viária; dá o número operacional honesto que
-                            # a referência usa (implicitamente), mas aqui EXPLICITAMENTE rotulado como estimativa.
-                            try:
-                                _topk_flu = st.session_state.get('alo_topk_completo') or {}
-                                _cm_flu = {str(c).strip().lower(): c for c in _dfp_alo.columns}
-                                _c_org_f = _cm_flu.get('origem'); _c_dist_f = _cm_flu.get('distancia')
-                                _c_cod_f = (_cm_flu.get('cod ibge origem') or _cm_flu.get('cod_ibge_origem')
-                                            or _cm_flu.get('codigo origem') or _cm_flu.get('co_municipio'))
-                                _linhas_flu = []
-                                _rotas_path_f = []
-                                _grafo_flu_ok = False
-                                try:
-                                    _grafo_flu_ok = _fluvial_grafo_disponivel()
-                                except Exception:
-                                    _grafo_flu_ok = False
-                                for _i in _gf["isolados"]:
-                                    _org = _i["origem"]
-                                    _cands_f = (_topk_flu.get(_org)
-                                                or _topk_flu.get(str(_org).strip()) or [])
-                                    _dv_f = None; _cod_org_f = None
-                                    if _c_org_f:
-                                        _row_f = _dfp_alo[_dfp_alo[_c_org_f].astype(str) == str(_org)]
-                                        if len(_row_f):
-                                            if _c_dist_f:
-                                                _dv_f = _num(_row_f.iloc[0][_c_dist_f])
-                                            if _c_cod_f:
-                                                _cod_org_f = str(_row_f.iloc[0][_c_cod_f]).strip().split(".")[0]
-                                    _est = _apr3_fluvial_estimativa(_cands_f, dist_viaria_atual=_dv_f)
-                                    # [V367] rota fluvial da tabela REGIC embutida (offline, imediata)
-                                    _real = _apr3_fluvial_real(_cod_org_f)
-                                    # [V368] roteamento fluvial REAL SOB DEMANDA (QUALQUER município), quando o
-                                    # grafo estiver disponível (URL configurada): cobre além dos 18 REGIC e traz
-                                    # o traçado do rio. Ordem de preferência: on-demand > tabela REGIC > estimativa.
-                                    _rota_od = None
-                                    try:
-                                        if _grafo_flu_ok and _cands_f:
-                                            _rota_od = _apr3_melhor_fluvial(
-                                                _i["lat"], _i["lon"], _cands_f, uf_hint=_i.get("uf", ""))
-                                    except Exception:
-                                        _rota_od = None
-                                    _km_real = (_rota_od["km"] if _rota_od else (_real["km"] if _real else None))
-                                    _rios_real = (_rota_od["rios"] if _rota_od else (_real["r"] if _real else None))
-                                    _hub_real = (_rota_od.get("hub") if _rota_od else None)
-                                    if _rota_od and _rota_od.get("path_lonlat"):
-                                        _rotas_path_f.append({
-                                            "path": _rota_od["path_lonlat"],
-                                            "nome": (f"🛶 {_org} → {_hub_real or '?'} · "
-                                                     f"{_km_real} km por hidrovia"
-                                                     + (f" · {' → '.join(_rios_real[:3])}" if _rios_real else ""))})
-                                    if _est or _km_real is not None:
-                                        _linha = {
-                                            "Município (fluvial)": f"{_org}/{_i['uf']}",
-                                            "Hub + próximo (reta)": (_est["hub"] if _est else "—"),
-                                            "Estimativa fluvial ≥ km": (_est["reta_km"] if _est else "—"),
-                                            "Rota fluvial REAL (km)": (_km_real if _km_real is not None else "—"),
-                                            "Rios (IBGE)": (" → ".join(_rios_real) if _rios_real else "—"),
-                                            "Rodoviária real (km)": (round(_dv_f, 1) if _dv_f else "—")}
-                                        _linhas_flu.append(_linha)
-                                if _linhas_flu:
-                                    st.markdown("**🛶 Alternativa fluvial (estimada + rota REAL da hidrografia IBGE)**")
-                                    st.caption("Para municípios ribeirinhos, o deslocamento real costuma ser por "
-                                               "barco. **Rota fluvial REAL (km)** e **Rios (IBGE)** são a distância "
-                                               "**navegável roteada** na hidrografia oficial do IBGE (offline, "
-                                               "seguindo a água) e os rios percorridos — número real, não estimativa. "
-                                               "A **Estimativa ≥** (linha reta) aparece onde ainda não há rota "
-                                               "roteada. Nada disso substitui a **menor viária real** (a rodoviária "
-                                               "segue sendo a decisão); é a leitura honesta do trade-off "
-                                               "rodoviária × hidrovia.")
-                                    st.dataframe(pd.DataFrame(_linhas_flu), use_container_width=True,
-                                                 hide_index=True)
-                                    # [V368] MAPA com o TRAÇADO REAL dos rios (roteado na hidrografia IBGE)
-                                    if _rotas_path_f:
-                                        try:
-                                            import pydeck as _pdk4
-                                            _flat = [pt for _d in _rotas_path_f for pt in _d["path"]]
-                                            if _flat:
-                                                _dfpath = pd.DataFrame(_rotas_path_f)
-                                                _lat_c = sum(p[1] for p in _flat) / len(_flat)
-                                                _lon_c = sum(p[0] for p in _flat) / len(_flat)
-                                                st.markdown("**🗺️ Traçado real das rotas fluviais (hidrografia IBGE)**")
-                                                st.pydeck_chart(_pdk4.Deck(
-                                                    layers=[_pdk4.Layer(
-                                                        "PathLayer", _dfpath, get_path="path",
-                                                        get_color=[8, 145, 178], get_width=4, width_min_pixels=2,
-                                                        pickable=True)],
-                                                    initial_view_state=_pdk4.ViewState(
-                                                        latitude=_lat_c, longitude=_lon_c, zoom=6),
-                                                    tooltip={"text": "{nome}"}, map_style=None))
-                                                st.caption("As linhas ciano seguem o **leito real dos rios** (não a "
-                                                           "linha reta), roteadas na hidrografia oficial do IBGE. "
-                                                           "Passe o mouse para ver **origem → hub · distância · rios**.")
-                                        except Exception as _e_pth:
-                                            logger.error(f"[V368-FLUVIAL-MAP] traçado fluvial falhou: {_e_pth}")
-                                    st.caption("⚠️ A conectividade hidroviária **não é verificada** (a app não tem "
-                                               "base hidrográfica); o hub mais próximo em reta é um **candidato**, "
-                                               "não garantia de rota navegável. Nomear o rio/lago e rotear a água "
-                                               "de verdade exigiria uma base hidrográfica (shapefile IBGE/ANA).")
-                            except Exception as _e_fe:
-                                logger.error(f"[V366-FLUVIAL-EST] estimativa fluvial falhou: {_e_fe}")
-                    except Exception as _e_gf:
-                        logger.error(f"[V328-FLUVIAL] mapa de geografia fluvial falhou: {_e_gf}")
-                        st.info("Não foi possível montar o mapa de geografia fluvial para este estudo.")
-                with st.expander("🏆 Auditoria da Escolha do Local de Prova (recomendado × alternativa)", expanded=True):
-                    st.caption("Selecione um **município de candidatos** para ver **por que** o local de aplicação foi recomendado "
-                               "e **quanto** a melhor alternativa ficou atrás — auditoria técnica da decisão.")
-                    _clientes = _dfp_alo['Origem'].dropna().astype(str).unique().tolist()
-                    _cli_sel = st.selectbox("Município de origem dos candidatos", options=_clientes, index=0 if _clientes else None, key="disputa_cli")
-                    # [V312 · §11] ÁRVORE DE DECISÃO DA ORIGEM — a BUSCA que levou ao vencedor (complementa a
-                    # decomposição de custo abaixo). Mostra todos os polos no raio, marcando os que foram
-                    # CONSIDERADOS e os PODADOS por limite inferior (linha reta já ≥ viária do vencedor → não
-                    # podiam vencer): a prova visual de otimalidade por branch-and-bound. READ-ONLY, defensivo,
-                    # funciona em qualquer modo (usa topk_completo e o runner-up já prontos em session_state).
-                    if _cli_sel:
-                        with st.container():
-                            try:
-                                _topk_c11 = st.session_state.get('alo_topk_completo') or {}
-                                _cands11 = (_topk_c11.get(_cli_sel)
-                                            or _topk_c11.get(str(_cli_sel).strip()) or [])
-                                _venc11_nome, _venc11_dist = None, None
-                                try:
-                                    _row11 = _dfp_alo[_dfp_alo['Origem'].astype(str) == str(_cli_sel)]
-                                    if len(_row11):
-                                        _r0 = _row11.iloc[0]
-                                        _venc11_nome = str(_r0.get('Destino', '') or '')
-                                        _venc11_dist = _num(_r0.get('Distancia'))
-                                except Exception:
-                                    pass
-                                _vice11 = None
-                                try:
-                                    _rm11 = (st.session_state.get('alo_runner_map') or {}).get(_cli_sel)
-                                    if isinstance(_rm11, (list, tuple)) and len(_rm11) >= 2:
-                                        _vice11 = str(_rm11[1])
-                                except Exception:
                                     _vice11 = None
-                                _arv11 = _v312_arvore_decisao_origem(
-                                    _cands11, _venc11_dist, _venc11_nome, nome_2o=_vice11)
-                                if _arv11["total"]:
-                                    st.markdown("##### 🌳 Árvore de decisão — a busca pelo melhor local "
-                                                "(por que os outros perderam)")
-                                    _df11 = pd.DataFrame([{"": _l["Ícone"], "Local de prova": _l["Polo"],
-                                                           "Linha reta (km)": _l["Linha reta (km)"],
-                                                           "Situação": _l["Situação"]}
-                                                          for _l in _arv11["linhas"]])
-                                    st.dataframe(_df11, use_container_width=True, hide_index=True,
-                                                 height=min(360, 60 + 32 * len(_df11)))
-                                    if _arv11["otimo_provado"]:
-                                        st.success("🔒 " + _arv11["resumo"])
-                                    else:
-                                        st.caption(_arv11["resumo"])
-                                    for _t11 in (st.session_state.get('alo_resgate') or {}).get('trocas') or []:
-                                        if str(_t11.get('origem', '')).strip().lower() == str(_cli_sel).strip().lower():
-                                            st.info("🧭 Esta origem foi **refinada pelo resgate por circuidade**: "
-                                                    + str(_t11.get('explicacao', '')))
-                                            break
-                            except Exception as _e_arv11:
-                                logger.error(f"[V312-ARVORE] árvore de decisão da origem falhou: {_e_arv11}")
-                    # [HUB-MCDA - 130ª geração] Decisão multicritério (quando o modo opt-in rodou): ranking por
-                    # CUSTO LOGÍSTICO EFETIVO (km-eq) + IGQ + justificativa XAI, para o cliente selecionado.
-                    _mcda_alo = st.session_state.get('alo_mcda') or {}
-                    _rmc = _mcda_alo.get(_cli_sel) if _cli_sel else None
-                    # [UI-ESTAVEL - 132ª geração] Bloco antes CONDICIONAL (aparecia/sumia ao trocar o cliente
-                    # no selectbox), deslocando os irmãos abaixo → removeChild. Agora o container é fixo.
-                    with st.container():
-                        if _rmc:
-                            # [PODA - 143ª geração] Transparência da economia de rede.
-                            _pd_i = st.session_state.get('alo_mc_poda') or {}
-                            if _pd_i.get("avaliadas"):
-                                _pct_p = 100.0 * _pd_i["podadas"] / max(1, _pd_i["avaliadas"])
-                                st.caption(f"⚡ **Poda por limite inferior:** de {_pd_i['avaliadas']} polos candidatos "
-                                           f"extras, **{_pd_i['podadas']} foram descartados sem consultar a API** "
-                                           f"({_pct_p:.0f}%) — a distância em linha reta deles já superava o custo real "
-                                           f"do polo mais próximo, então **não podiam vencer**. Só {_pd_i['roteadas']} "
-                                           "precisaram ser roteados. A decisão é idêntica; a rede é que foi poupada.")
-                            # [SENSIBILIDADE - 157ª geração] POR QUE ESTE POLO VENCEU — decomposição EXATA.
-                        # O custo é ADITIVO, então a contribuição de cada critério não é estimada: é
-                        # aritmética. "Distância 54,5% · Lentidão 27,3% · Balsa 18,2%" é um FATO.
-                        with st.container():
-                            _md = st.session_state.get('alo_mcda') or {}
-                            if _md:
-                                st.markdown("##### 🔬 Por que este polo venceu? (decomposição exata do custo)")
-                                _opts_d = sorted(_md.keys())[:400]
-                                _sel_d = st.selectbox("Município para inspecionar", _opts_d, key="dec_mun")
-                                _dd = _md.get(_sel_d) or {}
-                                _cands = _dd.get("candidatos") or []
-                                if not _cands:
-                                    st.caption("Sem candidatos registrados para este município.")
-                                if _cands:
-                                    _linhas_d = []
-                                    for _c in _cands:
-                                        if not isinstance(_c, dict):   # [V417] elemento None/estranho no ranking
-                                            continue                    # não pode derrubar o painel multicritério
-                                        _dec = _decompor_custo_hub(
-                                            _c.get("dist_viaria"), _c.get("dist_reta"),
-                                            _c.get("tempo_min"), _c.get("balsa"),
-                                            st.session_state.get('alo_params_custo'))
-                                        if not _dec:
-                                            continue
-                                        _linhas_d.append({
-                                            "Polo": _c.get("hub"),
-                                            "Esforço total (km-eq)": _dec["custo_efetivo_km"],
-                                            **{f"{k} (km)": v for k, v in _dec["parcelas_km"].items()},
-                                            "Critério determinante": _dec["criterio_determinante"],
-                                            "Peso do determinante": f"{_dec['peso_determinante_pct']}%",
-                                        })
-                                    if _linhas_d:
-                                        _df_d = pd.DataFrame(_linhas_d).sort_values("Esforço total (km-eq)")
-                                        st.dataframe(_df_d, use_container_width=True, hide_index=True)
-                                        _venc = _df_d.iloc[0]
-                                        _pior = _df_d.iloc[-1] if len(_df_d) > 1 else None
-                                        st.success(
-                                            f"🏆 **{_venc['Polo']}** venceu com **{_venc['Esforço total (km-eq)']} "
-                                            f"km-equivalentes**. Critério determinante: "
-                                            f"**{_venc['Critério determinante']}** "
-                                            f"({_venc['Peso do determinante']} do esforço).")
-                                        if _pior is not None and len(_df_d) > 1:
-                                            _dif = _pior["Esforço total (km-eq)"] - _venc["Esforço total (km-eq)"]
-                                            st.caption(
-                                                f"O pior candidato ({_pior['Polo']}) custaria "
-                                                f"**{_pior['Esforço total (km-eq)']} km-eq** — "
-                                                f"**{_fmt_num(_dif, 1)} km-eq a mais** por candidato. "
-                                                "As colunas mostram **exatamente** de onde vem cada quilômetro: "
-                                                "o modelo é ADITIVO, então isto é aritmética, não estimativa.")
-
-                        # [XAI-RANKING - 167ª geração] A DISPUTA, EXPOSTA.
-                        with st.container():
-                            _mdr = st.session_state.get('alo_mcda') or {}
-                            if _mdr:
-                                st.markdown("##### 🥇 O ranking completo — e onde o 2º colocado era MELHOR")
-                                st.caption(
-                                    "📖 **Por que este painel existe:** mostrar só os critérios em que o "
-                                    "vencedor ganhou seria **propaganda, não explicação**. Se o 2º colocado "
-                                    "chegava 40 min antes, ou não usava balsa, **você precisa saber** — é "
-                                    "exatamente aí que você pode discordar da máquina, **com razão**. Um "
-                                    "sistema que esconde os contra-argumentos não está apoiando a decisão: "
-                                    "está **manipulando**.")
-                                _op_rk = sorted(_mdr.keys())[:400]
-                                _sel_rk = st.selectbox("Município para inspecionar a disputa", _op_rk,
-                                                       key="rk_mun")
-                                _mm = _mdr.get(_sel_rk) or {}
-                                _pcx = st.session_state.get('alo_params_custo')
-                                # 1 município só (o selecionado) → barato, mas memoizo mesmo assim:
-                                # o painel roda a cada rerun e não há razão para recalcular.
-                                if st.session_state.get('rk_mun_cache') != _sel_rk:
-                                    st.session_state['rk_full'] = _preservar_ranking_polos(
-                                        _mm, top=5, params=_pcx)
-                                    st.session_state['rk_mun_cache'] = _sel_rk
-                                _rk_full = st.session_state['rk_full']
-                                if _rk_full:
-                                    st.dataframe(_rotular_colunas(pd.DataFrame(_rk_full)),
-                                                 use_container_width=True, hide_index=True)
-                                _rkl = _mm.get("ranking") or []
-                                if len(_rkl) >= 2:
-                                    _pqv = _por_que_venceu(_rkl[0], _rkl[1], _pcx)
-                                    (st.warning if _pqv["disputa_apertada"] else st.success)(_pqv["veredito"])
-                                    _c1, _c2 = st.columns(2)
-                                    with _c1:
-                                        st.markdown("**✔ A favor do vencedor**")
-                                        for _f in _pqv["a_favor"]:
-                                            st.markdown(f"- {_f}")
-                                        if not _pqv["a_favor"]:
-                                            st.caption("—")
-                                    with _c2:
-                                        st.markdown("**⚠️ Onde o 2º colocado era MELHOR**")
-                                        for _cc in _pqv["contra"]:
-                                            st.markdown(f"- {_cc}")
-                                        if not _pqv["contra"]:
-                                            st.caption("Nenhum — o vencedor domina em todos os critérios.")
-
-                            st.markdown("##### 🧭 Escolha do local de aplicação (esforço de deslocamento do candidato)")
-                            st.info(_justificar_escolha_hub(_rmc))
-                            try:
-                                _lin = []
-                                for _c in ((_rmc or {}).get('ranking') or []):
-                                    if not isinstance(_c, dict):
-                                        continue
-                                    _lin.append({"Pos": _c.get('posicao'), "Hub": _c.get('hub'),
-                                                 "Custo Efetivo (km-eq)": _c.get('custo_efetivo'), "IGQ": _c.get('igq'),
-                                                 "Viária (km)": _c.get('dist_viaria'),
-                                                 "Tempo (min)": round(_c['tempo_min']) if isinstance(_c.get('tempo_min'), (int, float)) else None,
-                                                 "Balsa": "Sim" if _c.get('balsa') else "Não", "Sinuosidade": _c.get('sinuosidade'),
-                                                 "+km-eq p/ vencer": round(_c['custo_efetivo'] - _rmc['custo_vencedor'], 1) if (isinstance(_c.get('custo_efetivo'), (int, float)) and isinstance((_rmc or {}).get('custo_vencedor'), (int, float))) else None})
-                                if _lin:
-                                    st.dataframe(pd.DataFrame(_lin), use_container_width=True, hide_index=True)
-                                _pa = (_rmc or {}).get('params') or {}
-                                st.caption(f"Parâmetros do custo: velocidade de referência {int(_pa.get('vel_ref_kmh', 60))} km/h · "
-                                           f"penalidade de balsa {int(_pa.get('balsa_km', 60))} km-equiv · "
-                                           f"sinuosidade penalizada acima de {_pa.get('limiar_sinuosidade', 1.3)}×. "
-                                           "Menor custo efetivo vence; empate → sem balsa → menor viária.")
-                            except Exception as _e_mp:
-                                logger.error(f"[HUB-MCDA] Falha no painel multicritério: {_e_mp}")
-                            st.divider()
-                    if _cli_sel:
-                        _row = _dfp_alo[_dfp_alo['Origem'].astype(str) == _cli_sel].iloc[0]
-                        def _num(v):
-                            try: return float(v)
-                            except Exception: return 0.0
-                        _venc_nome = str(_row.get('Destino', 'N/A'))
-                        _venc_dist = _num(_row.get('Distancia'))
-                        _venc_reta = _num(_row.get('Linha Reta'))
-                        _conc_nome = str(_row.get('Concorrente Analisado', 'N/A'))
-                        _conc_dist = _num(_row.get('Distancia Concorrente'))
-                        _tempo_v = _row.get('Tempo', 'N/A')
-                        _fonte_v = _row.get('Fonte da Rota', 'N/A')
-                        _score_v = _row.get('Score Final Global', _row.get('Score da Rota', 'N/A'))
-                        _razao_v = round(_venc_dist / _venc_reta, 2) if _venc_reta > 0 else 0.0
-
-                        if _conc_nome in ("N/A", "nan", "") or _conc_dist <= 0:
-                            st.info(f"🏆 Hub vencedor: **{_venc_nome}** ({_venc_dist:.1f} km). "
-                                    "Não há concorrente válido registrado para este cliente (hub único ou sem 2ª opção viável).")
-                        else:
-                            _dif_km = round(_conc_dist - _venc_dist, 2)
-                            _m = _metricas_divergencia(_venc_dist, _conc_dist)
-                            _dif_pct = _m['pct'] if _m else 0.0
-                            # [DISPUTA-FIX - 72ª geração] Linha reta PRÓPRIA do concorrente (não a do
-                            # vencedor). Razão V/R e diferenças agora usam a reta correta do concorrente.
-                            _conc_reta = _num(_row.get('Linha Reta Concorrente'))
-                            _dif_reta = round(_conc_reta - _venc_reta, 2)
-                            _razao_c = round(_conc_dist / _conc_reta, 2) if _conc_reta > 0 else 0.0
-                            _dif_razao = round(_razao_c - _razao_v, 2)
-                            # [CONC-COORD - 76ª geração] coordenadas próprias do concorrente.
-                            _conc_lat = _num(_row.get('Lat Concorrente'))
-                            _conc_lon = _num(_row.get('Lon Concorrente'))
-                            _conc_coord_txt = (f" · Coord: {_conc_lat:.5f}, {_conc_lon:.5f}"
-                                               if (_conc_lat != 0.0 or _conc_lon != 0.0) else "")
-                            # [CONC-AUDIT - 77ª geração] tempo + velocidade média do concorrente.
-                            _conc_tempo = _row.get('Tempo Concorrente', 'N/A')
-                            _conc_vel = _num(_row.get('Velocidade Media Concorrente'))
-                            _conc_extra = (f" · Tempo: {_conc_tempo}"
-                                           + (f" · Vel. média: {_conc_vel:.0f} km/h" if _conc_vel > 0 else ""))
-
-                            # Cabeçalho: vencedor × concorrente
-                            _cwin, _cconc = st.columns(2)
-                            with _cwin:
-                                st.markdown(f"##### 🥇 Hub Escolhido\n**{_venc_nome}**")
-                                st.metric("Distância viária", f"{_venc_dist:.1f} km")
-                                st.caption(f"Linha reta: {_venc_reta:.1f} km · Tempo: {_tempo_v} · Razão V/R: {_razao_v}× · Score: {_score_v} · Motor: {_fonte_v}")
-                            with _cconc:
-                                st.markdown(f"##### 🥈 Melhor Concorrente\n**{_conc_nome}**")
-                                st.metric("Distância viária", f"{_conc_dist:.1f} km", delta=f"+{_dif_km:.1f} km", delta_color="inverse")
-                                st.caption(f"Linha reta: {_conc_reta:.1f} km · Razão V/R: {_razao_c}× · Perde por {_dif_km:.1f} km ({_dif_pct}%){_conc_coord_txt}{_conc_extra}")
-                                # [CONC-IBGE - 78ª geração] identidade municipal oficial do concorrente.
-                                _conc_mun = _row.get('Municipio Concorrente', '—')
-                                _conc_uf = _row.get('UF Concorrente', '—')
-                                _conc_cod = _row.get('Cod IBGE Concorrente', '—')
-                                if _conc_cod not in ('—', 'N/A', '', None):
-                                    st.caption(f"🗺️ IBGE: **{_conc_mun}/{_conc_uf}** · Cód. `{_conc_cod}`")
-                                # [CONC-OSRM - 79ª geração] divergência Google×OSRM do concorrente.
-                                _conc_osrm = _num(_row.get('OSRM km Concorrente'))
-                                _conc_div_pct = _num(_row.get('Divergencia Motores Concorrente (%)'))
-                                if _conc_osrm > 0:
-                                    st.caption(f"🛰️ OSRM: {_conc_osrm:.1f} km · Divergência Google×OSRM: **{_conc_div_pct:.1f}%** "
-                                               f"(motor menor: {_row.get('Motor Vencedor Concorrente', 'N/A')})")
-
-                            # Tabela comparativa (com coluna de diferença Concorrente − Vencedor)
-                            st.markdown("**📊 Comparativo detalhado**")
-                            _tab_cmp = pd.DataFrame({
-                                "Indicador": ["Distância viária (km)", "Distância linha reta (km)", "Razão V/R", "Diferença p/ vencedor"],
-                                "🥇 Vencedor": [f"{_venc_dist:.1f}", f"{_venc_reta:.1f}", f"{_razao_v}×", "—"],
-                                "🥈 Concorrente": [f"{_conc_dist:.1f}", f"{_conc_reta:.1f}", f"{_razao_c}×", f"+{_dif_km:.1f} km viária / +{_dif_pct}%"],
-                                "Δ (Conc − Venc)": [f"+{_dif_km:.1f} km",
-                                                     f"{'+' if _dif_reta >= 0 else ''}{_dif_reta:.1f} km",
-                                                     f"{'+' if _dif_razao >= 0 else ''}{_dif_razao}×", "—"],
-                            })
-                            st.dataframe(_tab_cmp, use_container_width=True, hide_index=True)
-
-                            # [SSOT-DECISAO - 184ª geração] Sensibilidade pela diferença ABSOLUTA de viária — antes
-                            # usava _dif_km com sinal, e um _dif_km negativo (vencedor com viária MAIOR que a do
-                            # concorrente, caso fluvial) caía em "< 5" e rotulava um abismo de 2394 km como "empate
-                            # técnico". Agora usa abs().
-                            _dif_abs = abs(_dif_km)
-                            if _dif_abs < 5:
-                                _sens = ("🔴 Muito sensível", f"Apenas **{_dif_abs:.1f} km** separam os hubs — pequenas mudanças na malha viária podem **inverter** o resultado. Empate técnico.")
-                            elif _dif_abs < 20:
-                                _sens = ("🟡 Moderadamente sensível", f"Diferença de **{_dif_abs:.1f} km** — a escolha é consistente, mas não folgada.")
-                            else:
-                                _sens = ("🟢 Escolha robusta", f"Diferença de **{_dif_abs:.1f} km** — baixíssima probabilidade de inversão.")
-                            st.markdown(f"**🎯 Sensibilidade da Escolha:** {_sens[0]}")
-                            st.caption(_sens[1])
-
-                            # Índice de competitividade (quanto MAIS perto o concorrente, MAIOR a disputa)
-                            if _dif_pct < 5: _stars, _lbl = "★★★★★", "Muito Alta"
-                            elif _dif_pct < 15: _stars, _lbl = "★★★★☆", "Alta"
-                            elif _dif_pct < 30: _stars, _lbl = "★★★☆☆", "Média"
-                            elif _dif_pct < 50: _stars, _lbl = "★★☆☆☆", "Baixa"
-                            else: _stars, _lbl = "★☆☆☆☆", "Muito Baixa"
-                            st.markdown(f"**⚔️ Competitividade da Disputa:** {_stars} — {_lbl}")
-
-                            # Explicação automática (escolha do vencedor)
-                            st.markdown("**🧾 Justificativa automática da escolha**")
-                            # [SSOT-DECISAO - 184ª geração] PORTÃO DE COERÊNCIA (fonte única): a justificativa usa os
-                            # MESMOS valores exibidos e só afirma "menor distância viária" quando o vencedor REALMENTE
-                            # tem a menor viária. Antes era fixo — e num destino de acesso fluvial (sem rota rodoviária
-                            # viável) o vencedor podia ter viária MAIOR que a do concorrente, gerando a frase
-                            # matematicamente impossível "menor viária (2515 vs 120)". Agora, se o vencedor NÃO tem a
-                            # menor viária, dizemos a VERDADE e alertamos, em vez de afirmar o contrário do dado.
-                            if _venc_dist <= _conc_dist:
-                                _motivos = [f"menor distância viária ({_venc_dist:.1f} km vs {_conc_dist:.1f} km)"]
-                                if _razao_v <= _razao_c:
-                                    _motivos.append(f"menor Razão V/R ({_razao_v}× vs {_razao_c}×)")
-                                st.success(f"O hub **{_venc_nome}** foi escolhido por apresentar " + "; ".join(_motivos) +
-                                           f". O concorrente **{_conc_nome}** ficou atrás por **{_dif_abs:.1f} km** "
-                                           f"(+{_dif_pct}%) de distância viária" +
-                                           (", diferença pequena o suficiente para caracterizar empate técnico."
-                                            if _dif_abs < 5 else "."))
-                            else:
-                                st.error(
-                                    f"⚠️ **Inconsistência: a decisão NÃO foi por menor distância viária.** O hub "
-                                    f"escolhido **{_venc_nome}** tem viária de **{_venc_dist:.1f} km**, MAIOR que a do "
-                                    f"concorrente **{_conc_nome}** (**{_conc_dist:.1f} km**). Pelo critério de menor rota "
-                                    f"viária, **quem deveria vencer é {_conc_nome}**.\n\n"
-                                    f"🛟 **Causa provável:** o destino não tem rota rodoviária viável (**acesso "
-                                    f"fluvial/isolado** — razão V/R do vencedor **{_razao_v}×**), então a atribuição caiu "
-                                    f"na **proximidade em linha reta** ({_venc_reta:.1f} km vs {_conc_reta:.1f} km). "
-                                    f"**Reprocesse o estudo** para reavaliar por viária com as rotas recuperadas, ou trate "
-                                    f"este município como acesso fluvial.")
-
-                            # [DISPUTA-XAI - 74ª geração] "Por que o concorrente não venceu?" — motivos
-                            # estruturados a partir das diferenças já calculadas (viária, linha reta, razão).
-                            st.markdown(f"**🧠 Por que {_conc_nome} não venceu?**")
-                            _razoes = _explicar_derrota_concorrente(_dif_km, _dif_reta, _dif_razao)
-                            if _razoes:
-                                st.markdown("O concorrente ficou em 2º lugar porque:\n" +
-                                            "\n".join(f"- {r};" for r in _razoes))
-                            else:
-                                st.markdown("O concorrente empatou ou superou o vencedor nos indicadores medidos — "
-                                            "a escolha se deu pelo critério de **menor distância viária** (desempate mínimo).")
-                            # [PORQUE-NAO-2 - P5/§11] Explica a REGRA aplicada à decisão (política única §6/§7:
-                            # menor distância viária + preferência pela rota rodoviária sem balsa quando a
-                            # alternativa cabe na banda). Didático e auditável — não introduz dado novo, só
-                            # contextualiza os números já exibidos acima.
-                            _balsa_v_p5 = str(_row.get('Balsas', '')).strip().lower() in ('sim', 'yes', 'true', '1')
-                            st.caption("🛣️ **Regra da decisão (política única §6/§7):** vence a **menor distância "
-                                       "viária**, com **preferência pela rota rodoviária sem balsa** quando a "
-                                       "alternativa razoável cabe na banda admissível — `max(60 km, 5× a "
-                                       "travessia)` — sobre a melhor travessia do concorrente."
-                                       + (" A rota do vencedor **depende de balsa** classificada como "
-                                           "inevitável/estrutural (caso §6, ex.: São José do Norte)." if _balsa_v_p5 else "."))
-
-                            # [DISPUTA-XAI - 74ª geração] Gráfico comparativo vencedor × concorrente
-                            # (distâncias). Isolado em try/except — falha de render não afeta a auditoria.
-                            try:
-                                _df_disp = pd.DataFrame(
-                                    {"Viária (km)": [_venc_dist, _conc_dist],
-                                     "Linha Reta (km)": [_venc_reta, _conc_reta]},
-                                    index=[f"🥇 {_venc_nome}", f"🥈 {_conc_nome}"])
-                                st.markdown("**📊 Comparação visual (distâncias)**")
-                                st.bar_chart(_df_disp)
-                                _leitura_grafico(
-                                    como_ler="cada grupo de barras é um hub; compara a **distância viária** (estrada) "
-                                             "com a **linha reta** do candidato até cada um. Barras menores = mais perto.",
-                                    conclusao=f"o vencedor **{_venc_nome}** ({_venc_dist:.1f} km viária) fica "
-                                              f"**{_dif_km:.1f} km mais perto** que o 2º colocado **{_conc_nome}** "
-                                              f"({_conc_dist:.1f} km).")
-                            except Exception as _e_disp:
-                                logger.error(f"[DISPUTA-XAI] Falha no gráfico comparativo: {_e_disp}")
-
-                            # [DISPUTA-INDICES - 75ª geração] Radar comparativo vencedor × concorrente
-                            # (plotly já é dependência do app). Cada eixo é normalizado 0-100 (100 = melhor
-                            # no eixo). Isolado em try/except — falha de render não afeta a auditoria.
-                            try:
-                                _min_v = min(_venc_dist, _conc_dist)
-                                _min_r = min(_venc_reta, _conc_reta)
-                                _min_raz = min(_razao_v, _razao_c) if (_razao_v > 0 and _razao_c > 0) else 0.0
-                                def _norm_radar(_minv, _val):
-                                    return round(100.0 * _minv / _val, 1) if _val and _val > 0 else 0.0
-                                _eixos = ["Proximidade viária", "Proximidade linha reta", "Diretividade (V/R)"]
-                                _r_venc = [_norm_radar(_min_v, _venc_dist), _norm_radar(_min_r, _venc_reta), _norm_radar(_min_raz, _razao_v)]
-                                _r_conc = [_norm_radar(_min_v, _conc_dist), _norm_radar(_min_r, _conc_reta), _norm_radar(_min_raz, _razao_c)]
-                                _fig_radar = go.Figure()
-                                _fig_radar.add_trace(go.Scatterpolar(r=_r_venc + [_r_venc[0]], theta=_eixos + [_eixos[0]], fill='toself', name=f"🥇 {_venc_nome}"))
-                                _fig_radar.add_trace(go.Scatterpolar(r=_r_conc + [_r_conc[0]], theta=_eixos + [_eixos[0]], fill='toself', name=f"🥈 {_conc_nome}"))
-                                _fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
-                                                         showlegend=True, height=380, margin=dict(l=40, r=40, t=30, b=30))
-                                st.markdown("**🕸️ Radar comparativo (100 = melhor no eixo)**")
-                                st.plotly_chart(_fig_radar, use_container_width=True)
-                                _leitura_grafico(
-                                    como_ler="três eixos (proximidade viária, proximidade em linha reta e diretividade "
-                                             "V/R), cada um normalizado para **100 = o melhor dos dois hubs** naquele eixo — "
-                                             "polígono maior/mais preenchido significa melhor no conjunto.",
-                                    conclusao=f"**{_venc_nome}** atinge o máximo em proximidade viária (o critério de "
-                                              f"escolha); compare o preenchimento nos demais eixos com **{_conc_nome}**.")
-                                # Índices numéricos (também vão na planilha)
-                                _ic = _indice_competitividade(_dif_pct)
-                                _ir = _indice_robustez(_dif_km)
-                                _mi1, _mi2 = st.columns(2)
-                                _mi1.metric("⚔️ Índice de Competitividade", f"{_ic}/100", help="100 = disputa acirradíssima (empate).")
-                                _mi2.metric("🛡️ Índice de Robustez", f"{_ir}/100", help="100 = escolha folgada (≥200 km de vantagem).")
-                            except Exception as _e_radar:
-                                logger.error(f"[DISPUTA-INDICES] Falha no radar/índices: {_e_radar}")
-
-                            # [HUB-XAI - 118ª geração] Índices compostos (Acessibilidade / Eficiência /
-                            # Robustez), leitura em linguagem natural (estilo analista) e simulação de
-                            # indisponibilidade — tudo derivado de sinais JÁ medidos (custo ZERO, sem rede).
-                            # Isolado em try/except: falha de render não afeta a auditoria.
-                            try:
-                                _tem_balsa_v = str(_row.get('Balsas', '')).strip().lower() in ('sim', 'yes', 'true', '1')
-                                _modo_v = _row.get('Modo/Acesso', '')
-                                _score_v_num = _num(_score_v)
-                                _div_v = _num(_row.get('Divergencia Motores (%)', 0))
-                                _idx = _indices_compostos_hub(
-                                    razao_vr=_razao_v, tem_balsa=_tem_balsa_v, modo_acesso=_modo_v,
-                                    score_global=_score_v_num, divergencia_pct=_div_v,
-                                    dif_km=_dif_km, dif_pct=_dif_pct)
-                                st.markdown("**🧭 Índices Compostos do Hub (XAI)**")
-                                _cmp = _idx['componentes']
-                                _ix1, _ix2, _ix3 = st.columns(3)
-                                _ix1.metric("🧭 Acessibilidade", f"{_idx['acessibilidade']}/100",
-                                            help="Facilidade de chegar por estrada: continuidade viária, ausência de balsa e de barreira fluvial.")
-                                _ix1.caption(f"**{_idx['acessibilidade_lbl']}** · continuidade {_cmp['continuidade_viaria']:.0f} · "
-                                             f"balsa {_cmp['sem_balsa']:.0f} · barreira {_cmp['sem_barreira']:.0f}")
-                                _ix2.metric("⚙️ Eficiência Logística", f"{_idx['eficiencia']}/100",
-                                            help="Qualidade da escolha em rota: diretividade, vantagem sobre o 2º melhor e confiabilidade.")
-                                _ix2.caption(f"**{_idx['eficiencia_lbl']}** · diretividade {_cmp['continuidade_viaria']:.0f} · "
-                                             f"vantagem {_cmp['vantagem_sobre_2o']:.0f} · confiab. {_cmp['confiabilidade_geografica']:.0f}")
-                                _ix3.metric("🛡️ Robustez do Resultado", f"{_idx['robustez']}/100",
-                                            help="Estabilidade do dado/decisão: confiabilidade geográfica, estabilidade de roteamento e folga da decisão.")
-                                _ix3.caption(f"**{_idx['robustez_lbl']}** · confiab. {_cmp['confiabilidade_geografica']:.0f} · "
-                                             f"estab. rota {_cmp['estabilidade_roteamento']:.0f} · folga {_cmp['folga_decisao']:.0f}")
-                                st.caption("ℹ️ Índices compostos a partir de sinais já medidos (razão V/R, balsa, Modo/Acesso, "
-                                           "score geográfico, divergência Google×OSRM, folga p/ o 2º). A folga da decisão também "
-                                           "aparece isolada acima como Índice de Robustez.")
-
-                                st.markdown("**🗣️ Leitura do Analista**")
-                                st.info(_explicacao_analista_hub(
-                                    cliente=_cli_sel, hub_venc=_venc_nome, conc=_conc_nome,
-                                    dist_v=_venc_dist, dist_c=_conc_dist, dif_km=_dif_km, dif_pct=_dif_pct,
-                                    razao_vr=_razao_v, tem_balsa=_tem_balsa_v, modo_acesso=_modo_v,
-                                    score_global=_score_v_num, divergencia_pct=_div_v, indices=_idx))
-
-                                st.markdown("**🔄 Simulação — e se o hub vencedor ficar indisponível?**")
-                                _sim = _simulacao_hub_indisponivel(_venc_nome, _conc_nome, _venc_dist, _conc_dist)
-                                (st.warning if _sim.get("disponivel") else st.error)(_sim["texto"])
-                            except Exception as _e_xai:
-                                logger.error(f"[HUB-XAI] Falha no painel de índices/analista: {_e_xai}")
-
-                        # [RANK-NHUBS - 58ª geração / itens #7/#9] Ranking completo dos hubs candidatos
-                        # (linha reta) — atende "ranking completo" e "quais quase entraram" (item #9).
-                        # Usa o top-5 já calculado na matriz vetorizada (custo ZERO, sem rede). O hub
-                        # escolhido é por ROTA VIÁRIA; os demais vêm ordenados por proximidade em linha reta.
-                        _topk = st.session_state.get('alo_topk_map', {}).get(_cli_sel)
-                        if _topk:
-                            st.markdown("**🏅 Ranking dos hubs candidatos mais próximos (linha reta · top-5)**")
-                            _linhas_rk = []
-                            for _pos, (_dkm, _hnome) in enumerate(_topk, start=1):
-                                if _hnome == _venc_nome:
-                                    _marca = "🥇 escolhido (rota viária)"
-                                elif str(_hnome) == str(_conc_nome):
-                                    _marca = "🥈 concorrente roteado"
-                                else:
-                                    _marca = "•"
-                                _linhas_rk.append({"Posição": _pos, "Hub": str(_hnome).title(),
-                                                   "Linha Reta (km)": _dkm, "Situação": _marca})
-                            st.dataframe(pd.DataFrame(_linhas_rk), use_container_width=True, hide_index=True)
-                            st.caption("Ordenado por **distância em linha reta** (Haversine/IUGG, valor exibido via GeographicLib "
-                                       "no restante da planilha). O **hub escolhido** é definido pela **rota viária** — por isso pode "
-                                       "não ser o 1º da linha reta. Os demais mostram **quais quase entraram**. A seleção que roteia "
-                                       "**todos** os candidatos por via e escolhe o de menor distância viária é o próximo passo (itens #7/#9).")
-            _susp_df_alo, _susp_resumo_alo = _auditar_rotas_suspeitas(st.session_state['df_processado'])
-            # [UI-ESTAVEL - 132ª geração] Existência incondicional + rótulo estático (ver changelog 132ª).
-            _n_susp_alo = _susp_resumo_alo.get("suspeitas", 0) if _susp_resumo_alo else 0
-            with st.expander("🔍 Auditoria Automática de Rotas Suspeitas", expanded=False):
-                if not _susp_resumo_alo:
-                    st.caption("Auditoria de rotas suspeitas indisponível para este lote.")
-                if _susp_resumo_alo:
-                    st.caption(f"**{_n_susp_alo} rota(s)** sinalizada(s).")
-                    st.caption(f"Razão **distância viária ÷ linha reta**. Limiar: **{_susp_resumo_alo.get('limiar','—')}×** "
-                               f"(maior entre técnico 1,8× e estatístico Q3+1,5·IQR). Mediana: {_susp_resumo_alo.get('ratio_mediano','—')}× "
-                               f"em {_susp_resumo_alo.get('total',0)} rotas.")
-                    if _n_susp_alo == 0:
-                        st.success("✅ Nenhuma rota com razão viária/reta anômala — consistência espacial adequada.")
-                    else:
-                        st.warning(f"⚠️ {_n_susp_alo} rota(s) com razão elevada — possível erro de geocodificação, snap distante, "
-                                   "barreira física ou rota sinuosa. Recomenda-se auditoria manual.")
-                        _cols_a = [c for c in ['Origem', 'Destino', 'Distancia', 'Linha Reta', 'Fonte da Rota', 'Score Final Global'] if c in _susp_df_alo.columns]
-                        _tab_a = _susp_df_alo[_cols_a].copy()
-                        _tab_a['Razão (V/R)'] = _susp_df_alo['_ratio'].round(2)
-                        _tab_a['Diferença %'] = _susp_df_alo['_pct'].round(0)
-                        st.dataframe(_tab_a, use_container_width=True, hide_index=True, height=240)
-            # [HUBOPT - 121ª geração] Otimizador de Localização de Hub — "onde abrir o próximo hub?".
-            # Inverso da alocação: dada a distribuição de clientes (coordenadas JÁ calculadas), sugere onde
-            # posicionar p hub(s) para minimizar a distância. Reusa Lat/Lon Origem (custo ZERO, sem rede).
-            # Ranking por Haversine (mesmo critério de proximidade do app). Isolado em try/except.
-            try:
-                _dfp_opt = st.session_state['df_processado']
-                if {'Lat Origem', 'Lon Origem'}.issubset(_dfp_opt.columns):
-                    with st.expander("🎯 Otimizador de Localização — Onde abrir o próximo hub?", expanded=False):
-                        st.caption("O **inverso** da alocação: em vez de dizer qual hub atende cada cliente, sugere **onde "
-                                   "colocar** hub(s) para minimizar a distância aos clientes. Candidatos = as cidades dos seus "
-                                   "clientes; ranqueado por distância em linha reta (Haversine). Reusa as coordenadas já "
-                                   "calculadas — sem novas chamadas de API.")
-                        _cli_lat = pd.to_numeric(_dfp_opt['Lat Origem'], errors='coerce')
-                        _cli_lon = pd.to_numeric(_dfp_opt['Lon Origem'], errors='coerce')
-                        _mask_ok = _cli_lat.notna() & _cli_lon.notna() & ((_cli_lat != 0) | (_cli_lon != 0))
-                        _df_ok = _dfp_opt[_mask_ok]
-                        if len(_df_ok) < 2:
-                            st.info("São necessários ao menos 2 clientes com coordenadas válidas para otimizar.")
-                        else:
-                            _oc1, _oc2 = st.columns(2)
-                            _p_hubs = _oc1.slider("Quantos hubs posicionar?", 1, int(min(5, len(_df_ok))), 1, key="hubopt_p")
-                            _obj_lbl = _oc2.radio("Objetivo", ["Minimizar distância total", "Minimizar pior caso"], key="hubopt_obj")
-                            _objetivo = "max" if "pior" in _obj_lbl else "total"
-                            if st.button("🎯 Otimizar localização", key="hubopt_run", use_container_width=True):
-                                _lat_ok = _cli_lat[_mask_ok].tolist()
-                                _lon_ok = _cli_lon[_mask_ok].tolist()
-                                _cli_pts = list(zip(_lat_ok, _lon_ok))
-                                _nome_col = 'Municipio Origem' if 'Municipio Origem' in _df_ok.columns else 'Origem'
-                                _nomes_cli = _df_ok[_nome_col].astype(str).tolist()
-                                _cand = {}
-                                for _la, _lo, _nm in zip(_lat_ok, _lon_ok, _nomes_cli):
-                                    _key = _nm.strip() if (_nm and _nm.strip().lower() != 'nan') else f"{round(_la,4)},{round(_lo,4)}"
-                                    if _key not in _cand:
-                                        _cand[_key] = (_la, _lo)
-                                _cand_nomes = list(_cand.keys())
-                                _cand_pts = list(_cand.values())
-                                _res_opt = _otimizar_hubs(_cli_pts, _cand_pts, p=_p_hubs, objetivo=_objetivo)
-                                _escolhidos = _res_opt["escolhidos"]
-                                if not _escolhidos:
-                                    st.warning("Não foi possível otimizar com os dados disponíveis.")
-                                else:
-                                    _atual_media = None
-                                    if 'Linha Reta' in _df_ok.columns:
-                                        _lr = pd.to_numeric(_df_ok['Linha Reta'], errors='coerce')
-                                        _lr = _lr[_lr > 0]
-                                        if len(_lr) > 0:
-                                            _atual_media = round(float(_lr.mean()), 1)
-                                    st.success("✅ Otimização concluída.")
-                                    st.markdown("**🏢 Hub(s) recomendado(s):** " +
-                                                " · ".join(f"**{_cand_nomes[i]}**" for i in _escolhidos))
-                                    _mo1, _mo2, _mo3 = st.columns(3)
-                                    _mo1.metric("Distância média ao hub", f"{_res_opt['dist_media_km']} km",
-                                                delta=(f"{round(_res_opt['dist_media_km'] - _atual_media, 1)} km vs atual"
-                                                       if _atual_media is not None else None), delta_color="inverse")
-                                    _mo2.metric("Pior caso (máx.)", f"{_res_opt['dist_max_km']} km")
-                                    _mo3.metric("Soma total", f"{_res_opt['custo_total_km']:,.0f} km")
-                                    if _atual_media is not None:
-                                        _ganho = round(_atual_media - _res_opt['dist_media_km'], 1)
-                                        if _ganho > 0:
-                                            st.caption(f"📉 Redução de **{_ganho} km** na distância média em linha reta por cliente "
-                                                       f"vs. a distribuição atual ({_atual_media} km → {_res_opt['dist_media_km']} km). "
-                                                       "Comparação linha reta × linha reta (Haversine); a viária real seria confirmada roteando.")
-                                        else:
-                                            st.caption(f"ℹ️ A configuração atual já está próxima do ótimo "
-                                                       f"(média atual {_atual_media} km vs. {_res_opt['dist_media_km']} km sugerido).")
-                                    _atrib = _res_opt["atribuicao"]
-                                    _cont = {}
-                                    for _ih in _atrib:
-                                        _cont[_ih] = _cont.get(_ih, 0) + 1
-                                    st.dataframe(pd.DataFrame([
-                                        {"Hub sugerido": _cand_nomes[i],
-                                         "Coordenada": f"{round(_cand_pts[i][0], 5)}, {round(_cand_pts[i][1], 5)}",
-                                         "Clientes atendidos": _cont.get(i, 0)} for i in _escolhidos]),
-                                        use_container_width=True, hide_index=True)
                                     try:
-                                        _map_cli = pd.DataFrame({"lat": _lat_ok, "lon": _lon_ok})
-                                        _map_cli["color"] = "#3b82f6"
-                                        _map_cli["size"] = 30
-                                        _map_hub = pd.DataFrame({"lat": [_cand_pts[i][0] for i in _escolhidos],
-                                                                 "lon": [_cand_pts[i][1] for i in _escolhidos]})
-                                        _map_hub["color"] = "#ef4444"
-                                        _map_hub["size"] = 140
-                                        st.map(pd.concat([_map_cli, _map_hub], ignore_index=True), color="color", size="size")
-                                        st.caption("🔵 clientes · 🔴 hub(s) sugerido(s).")
-                                    except Exception as _e_map:
-                                        logger.error(f"[HUBOPT] Falha no mapa: {_e_map}")
-                                    st.caption("⚠️ Candidatos = cidades dos clientes; distância em linha reta. Para a decisão final, "
-                                               "confirme a distância viária roteando os cenários na aba de Alocação.")
-            except Exception as _e_hubopt:
-                logger.error(f"[HUBOPT] Falha no otimizador de localização: {_e_hubopt}")
-            st.dataframe(_tornar_arrow_safe(st.session_state['df_processado']), use_container_width=True, height=250)
-            # [FASE2-FLUXO - 184ª geração] Cabeçalho de fase: Exportação (aditivo, dentro do bloco de resultado).
-            st.markdown("#### ⬇️ Exportação")
-            # [RELATORIO-HTML - 184ª geração] Relatório autocontido (KPIs + distribuição + mapa + maiores
-            # deslocamentos) da alocação, num arquivo único que abre OFFLINE. Sob demanda, defensivo.
-            if st.button("📄 Gerar relatório HTML compartilhável", key="btn_relatorio_html_loc", use_container_width=True,
-                         help="Um arquivo HTML único (KPIs, distribuição, mapa e maiores deslocamentos) que abre "
-                              "offline em qualquer navegador — para enviar a quem decide e não usa a aplicação."):
-                with st.spinner("Gerando relatório..."):
-                    _rel_html_loc = _gerar_relatorio_html(st.session_state['df_processado'],
-                                                          titulo="Relatório de Locais de Aplicação",
-                                                          data_str=pd.Timestamp.now().strftime("%d/%m/%Y %H:%M"))
-                    if _rel_html_loc:
-                        st.session_state['relatorio_html_loc'] = _rel_html_loc.encode("utf-8")
-                    else:
-                        st.session_state.pop('relatorio_html_loc', None)
-                        st.warning("Não foi possível gerar o relatório.")
-            if st.session_state.get('relatorio_html_loc'):
-                st.download_button("⬇️ Baixar relatório HTML (.html)", data=st.session_state['relatorio_html_loc'],
-                                   file_name="relatorio_locais_aplicacao.html", mime="text/html",
-                                   use_container_width=True, key="dl_relatorio_html_loc")
-            # [PLANILHA-LAZY - 261ª geração] A planilha é 100% sob demanda. Três estados possíveis:
-            #  • já gerada  → botão de download direto;
-            #  • falhou     → aviso (resultados/relatório seguem disponíveis) + tentar de novo;
-            #  • ainda não  → botão "Gerar planilha" (a construção pesada só roda aqui, no clique do usuário).
-            # Em todos os casos a geração dispara a FASE 3b (sob demanda), sem reprocessar o estudo.
-            if st.session_state.get('alo_planilha_pronta'):
-                st.download_button(
-                    label="📥 Baixar Planilha de Alocação Competitiva (.xlsx)",
-                    data=st.session_state['alo_planilha_pronta'],
-                    file_name="matriz_alocacao_competitiva.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True)
-                if st.session_state.get('alo_planilha_auto'):
-                    st.caption("📊 Estudo pequeno: a planilha completa foi gerada **automaticamente** ao finalizar. "
-                               "(Estudos grandes/nacionais permanecem sob demanda, para manter a finalização "
-                               "instantânea e à prova de travamentos.)")
-            elif st.session_state.get('alo_planilha_erro'):
-                st.warning("⚠️ A planilha (.xlsx) não pôde ser gerada — mas seus **resultados estão completos "
-                           "acima** e o **relatório HTML** continua disponível. Você pode tentar de novo:")
-                if st.button("🔄 Tentar gerar a planilha novamente", use_container_width=True,
-                             key="retry_planilha_alo"):
-                    st.session_state['alo_em_andamento'] = True
-                    st.session_state['alo_fase'] = 'gerar_planilha'
-                    st.rerun()
-            else:
-                if st.button("📊 Gerar planilha completa (.xlsx)", use_container_width=True,
-                             key="gerar_planilha_alo",
-                             help="Monta a planilha competitiva completa (todas as abas analíticas, gráficos "
-                                  "nativos e o índice navegável). A construção pesada roda só agora, quando você "
-                                  "pede o arquivo — por isso os resultados apareceram na hora."):
-                    st.session_state['alo_em_andamento'] = True
-                    st.session_state['alo_fase'] = 'gerar_planilha'
-                    st.rerun()
-                st.caption("📊 A planilha completa é montada **sob demanda**: os resultados e o relatório HTML já "
-                           "estão prontos acima; o .xlsx (pesado) só é gerado quando você clicar — o que mantém a "
-                           "finalização instantânea e à prova de travamentos.")
+                                        _rm11 = (st.session_state.get('alo_runner_map') or {}).get(_cli_sel)
+                                        if isinstance(_rm11, (list, tuple)) and len(_rm11) >= 2:
+                                            _vice11 = str(_rm11[1])
+                                    except Exception:
+                                        _vice11 = None
+                                    _arv11 = _v312_arvore_decisao_origem(
+                                        _cands11, _venc11_dist, _venc11_nome, nome_2o=_vice11)
+                                    if _arv11["total"]:
+                                        st.markdown("##### 🌳 Árvore de decisão — a busca pelo melhor local "
+                                                    "(por que os outros perderam)")
+                                        _df11 = pd.DataFrame([{"": _l["Ícone"], "Local de prova": _l["Polo"],
+                                                               "Linha reta (km)": _l["Linha reta (km)"],
+                                                               "Situação": _l["Situação"]}
+                                                              for _l in _arv11["linhas"]])
+                                        st.dataframe(_df11, use_container_width=True, hide_index=True,
+                                                     height=min(360, 60 + 32 * len(_df11)))
+                                        if _arv11["otimo_provado"]:
+                                            st.success("🔒 " + _arv11["resumo"])
+                                        else:
+                                            st.caption(_arv11["resumo"])
+                                        for _t11 in (st.session_state.get('alo_resgate') or {}).get('trocas') or []:
+                                            if str(_t11.get('origem', '')).strip().lower() == str(_cli_sel).strip().lower():
+                                                st.info("🧭 Esta origem foi **refinada pelo resgate por circuidade**: "
+                                                        + str(_t11.get('explicacao', '')))
+                                                break
+                                except Exception as _e_arv11:
+                                    logger.error(f"[V312-ARVORE] árvore de decisão da origem falhou: {_e_arv11}")
+                        # [HUB-MCDA - 130ª geração] Decisão multicritério (quando o modo opt-in rodou): ranking por
+                        # CUSTO LOGÍSTICO EFETIVO (km-eq) + IGQ + justificativa XAI, para o cliente selecionado.
+                        _mcda_alo = st.session_state.get('alo_mcda') or {}
+                        _rmc = _mcda_alo.get(_cli_sel) if _cli_sel else None
+                        # [UI-ESTAVEL - 132ª geração] Bloco antes CONDICIONAL (aparecia/sumia ao trocar o cliente
+                        # no selectbox), deslocando os irmãos abaixo → removeChild. Agora o container é fixo.
+                        with st.container():
+                            if _rmc:
+                                # [PODA - 143ª geração] Transparência da economia de rede.
+                                _pd_i = st.session_state.get('alo_mc_poda') or {}
+                                if _pd_i.get("avaliadas"):
+                                    _pct_p = 100.0 * _pd_i["podadas"] / max(1, _pd_i["avaliadas"])
+                                    st.caption(f"⚡ **Poda por limite inferior:** de {_pd_i['avaliadas']} polos candidatos "
+                                               f"extras, **{_pd_i['podadas']} foram descartados sem consultar a API** "
+                                               f"({_pct_p:.0f}%) — a distância em linha reta deles já superava o custo real "
+                                               f"do polo mais próximo, então **não podiam vencer**. Só {_pd_i['roteadas']} "
+                                               "precisaram ser roteados. A decisão é idêntica; a rede é que foi poupada.")
+                                # [SENSIBILIDADE - 157ª geração] POR QUE ESTE POLO VENCEU — decomposição EXATA.
+                            # O custo é ADITIVO, então a contribuição de cada critério não é estimada: é
+                            # aritmética. "Distância 54,5% · Lentidão 27,3% · Balsa 18,2%" é um FATO.
+                            with st.container():
+                                _md = st.session_state.get('alo_mcda') or {}
+                                if _md:
+                                    st.markdown("##### 🔬 Por que este polo venceu? (decomposição exata do custo)")
+                                    _opts_d = sorted(_md.keys())[:400]
+                                    _sel_d = st.selectbox("Município para inspecionar", _opts_d, key="dec_mun")
+                                    _dd = _md.get(_sel_d) or {}
+                                    _cands = _dd.get("candidatos") or []
+                                    if not _cands:
+                                        st.caption("Sem candidatos registrados para este município.")
+                                    if _cands:
+                                        _linhas_d = []
+                                        for _c in _cands:
+                                            if not isinstance(_c, dict):   # [V417] elemento None/estranho no ranking
+                                                continue                    # não pode derrubar o painel multicritério
+                                            _dec = _decompor_custo_hub(
+                                                _c.get("dist_viaria"), _c.get("dist_reta"),
+                                                _c.get("tempo_min"), _c.get("balsa"),
+                                                st.session_state.get('alo_params_custo'))
+                                            if not _dec:
+                                                continue
+                                            _linhas_d.append({
+                                                "Polo": _c.get("hub"),
+                                                "Esforço total (km-eq)": _dec["custo_efetivo_km"],
+                                                **{f"{k} (km)": v for k, v in _dec["parcelas_km"].items()},
+                                                "Critério determinante": _dec["criterio_determinante"],
+                                                "Peso do determinante": f"{_dec['peso_determinante_pct']}%",
+                                            })
+                                        if _linhas_d:
+                                            _df_d = pd.DataFrame(_linhas_d).sort_values("Esforço total (km-eq)")
+                                            st.dataframe(_df_d, use_container_width=True, hide_index=True)
+                                            _venc = _df_d.iloc[0]
+                                            _pior = _df_d.iloc[-1] if len(_df_d) > 1 else None
+                                            st.success(
+                                                f"🏆 **{_venc['Polo']}** venceu com **{_venc['Esforço total (km-eq)']} "
+                                                f"km-equivalentes**. Critério determinante: "
+                                                f"**{_venc['Critério determinante']}** "
+                                                f"({_venc['Peso do determinante']} do esforço).")
+                                            if _pior is not None and len(_df_d) > 1:
+                                                _dif = _pior["Esforço total (km-eq)"] - _venc["Esforço total (km-eq)"]
+                                                st.caption(
+                                                    f"O pior candidato ({_pior['Polo']}) custaria "
+                                                    f"**{_pior['Esforço total (km-eq)']} km-eq** — "
+                                                    f"**{_fmt_num(_dif, 1)} km-eq a mais** por candidato. "
+                                                    "As colunas mostram **exatamente** de onde vem cada quilômetro: "
+                                                    "o modelo é ADITIVO, então isto é aritmética, não estimativa.")
 
-            # [DUPLO-CENARIO-COMPARADOR - 221ª geração] Export do ESTUDO 2 (Puramente Viário) como planilha
-            # INDEPENDENTE — recarregável no Comparador de Estudos como base de referência. Só aparece quando
-            # há municípios que mudaram de vencedor (senão o Estudo 2 é idêntico ao Oficial). Gerado sob demanda.
-            try:
-                _cmp_e2 = st.session_state.get('alo_comparacao_estrategias')
-                _n_mud_e2 = (_cmp_e2 or {}).get("resumo", {}).get("n_mudaram", 0) if _cmp_e2 else 0
-                if _n_mud_e2 > 0:
-                    if st.button(f"📐 Gerar Planilha do Estudo Puramente Viário ({_n_mud_e2} município(s) alterado(s))",
-                                 key="btn_gerar_estudo2", use_container_width=True):
-                        with st.spinner("Gerando a planilha do Estudo Puramente Viário..."):
-                            _df_e2 = _df_estudo_puramente_viaria(st.session_state['df_processado'], _cmp_e2)
-                            _buf_e2 = io.BytesIO()
-                            with pd.ExcelWriter(_buf_e2, engine="xlsxwriter") as _wr_e2:
-                                _dev_escrever_aba_excel(_wr_e2)  # [DEV-ABOUT] aba institucional (idempotente, defensiva)
-                                _df_e2.to_excel(_wr_e2, index=False, sheet_name="Estudo Puramente Viario")
+                            # [XAI-RANKING - 167ª geração] A DISPUTA, EXPOSTA.
+                            with st.container():
+                                _mdr = st.session_state.get('alo_mcda') or {}
+                                if _mdr:
+                                    st.markdown("##### 🥇 O ranking completo — e onde o 2º colocado era MELHOR")
+                                    st.caption(
+                                        "📖 **Por que este painel existe:** mostrar só os critérios em que o "
+                                        "vencedor ganhou seria **propaganda, não explicação**. Se o 2º colocado "
+                                        "chegava 40 min antes, ou não usava balsa, **você precisa saber** — é "
+                                        "exatamente aí que você pode discordar da máquina, **com razão**. Um "
+                                        "sistema que esconde os contra-argumentos não está apoiando a decisão: "
+                                        "está **manipulando**.")
+                                    _op_rk = sorted(_mdr.keys())[:400]
+                                    _sel_rk = st.selectbox("Município para inspecionar a disputa", _op_rk,
+                                                           key="rk_mun")
+                                    _mm = _mdr.get(_sel_rk) or {}
+                                    _pcx = st.session_state.get('alo_params_custo')
+                                    # 1 município só (o selecionado) → barato, mas memoizo mesmo assim:
+                                    # o painel roda a cada rerun e não há razão para recalcular.
+                                    if st.session_state.get('rk_mun_cache') != _sel_rk:
+                                        st.session_state['rk_full'] = _preservar_ranking_polos(
+                                            _mm, top=5, params=_pcx)
+                                        st.session_state['rk_mun_cache'] = _sel_rk
+                                    _rk_full = st.session_state['rk_full']
+                                    if _rk_full:
+                                        st.dataframe(_rotular_colunas(pd.DataFrame(_rk_full)),
+                                                     use_container_width=True, hide_index=True)
+                                    _rkl = _mm.get("ranking") or []
+                                    if len(_rkl) >= 2:
+                                        _pqv = _por_que_venceu(_rkl[0], _rkl[1], _pcx)
+                                        (st.warning if _pqv["disputa_apertada"] else st.success)(_pqv["veredito"])
+                                        _c1, _c2 = st.columns(2)
+                                        with _c1:
+                                            st.markdown("**✔ A favor do vencedor**")
+                                            for _f in _pqv["a_favor"]:
+                                                st.markdown(f"- {_f}")
+                                            if not _pqv["a_favor"]:
+                                                st.caption("—")
+                                        with _c2:
+                                            st.markdown("**⚠️ Onde o 2º colocado era MELHOR**")
+                                            for _cc in _pqv["contra"]:
+                                                st.markdown(f"- {_cc}")
+                                            if not _pqv["contra"]:
+                                                st.caption("Nenhum — o vencedor domina em todos os critérios.")
+
+                                st.markdown("##### 🧭 Escolha do local de aplicação (esforço de deslocamento do candidato)")
+                                st.info(_justificar_escolha_hub(_rmc))
                                 try:
-                                    _aba_comparacao_estrategias(_wr_e2, _cmp_e2)
-                                except Exception:
-                                    pass
-                            st.session_state['alo_planilha_estudo2'] = _buf_e2.getvalue()
-                    if st.session_state.get('alo_planilha_estudo2'):
-                        st.download_button(
-                            label="📥 Baixar Planilha do Estudo Puramente Viário (.xlsx)",
-                            data=st.session_state['alo_planilha_estudo2'],
-                            file_name="estudo_puramente_viario.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            use_container_width=True, key="dl_estudo2")
-                        st.caption("💡 Esta planilha reflete o cenário em que cada município alterado usa o polo de "
-                                   "**menor rota viária**. Você pode recarregá-la no **Comparador de Estudos** como "
-                                   "base de referência para confrontá-la com o resultado oficial.")
-            except Exception as _e_e2:
-                logger.error(f"[DUPLO-CENARIO-COMPARADOR] Falha no export do Estudo 2: {_e_e2}")
+                                    _lin = []
+                                    for _c in ((_rmc or {}).get('ranking') or []):
+                                        if not isinstance(_c, dict):
+                                            continue
+                                        _lin.append({"Pos": _c.get('posicao'), "Hub": _c.get('hub'),
+                                                     "Custo Efetivo (km-eq)": _c.get('custo_efetivo'), "IGQ": _c.get('igq'),
+                                                     "Viária (km)": _c.get('dist_viaria'),
+                                                     "Tempo (min)": round(_c['tempo_min']) if isinstance(_c.get('tempo_min'), (int, float)) else None,
+                                                     "Balsa": "Sim" if _c.get('balsa') else "Não", "Sinuosidade": _c.get('sinuosidade'),
+                                                     "+km-eq p/ vencer": round(_c['custo_efetivo'] - _rmc['custo_vencedor'], 1) if (isinstance(_c.get('custo_efetivo'), (int, float)) and isinstance((_rmc or {}).get('custo_vencedor'), (int, float))) else None})
+                                    if _lin:
+                                        st.dataframe(pd.DataFrame(_lin), use_container_width=True, hide_index=True)
+                                    _pa = (_rmc or {}).get('params') or {}
+                                    st.caption(f"Parâmetros do custo: velocidade de referência {int(_pa.get('vel_ref_kmh', 60))} km/h · "
+                                               f"penalidade de balsa {int(_pa.get('balsa_km', 60))} km-equiv · "
+                                               f"sinuosidade penalizada acima de {_pa.get('limiar_sinuosidade', 1.3)}×. "
+                                               "Menor custo efetivo vence; empate → sem balsa → menor viária.")
+                                except Exception as _e_mp:
+                                    logger.error(f"[HUB-MCDA] Falha no painel multicritério: {_e_mp}")
+                                st.divider()
+                        if _cli_sel:
+                            _row = _dfp_alo[_dfp_alo['Origem'].astype(str) == _cli_sel].iloc[0]
+                            def _num(v):
+                                try: return float(v)
+                                except Exception: return 0.0
+                            _venc_nome = str(_row.get('Destino', 'N/A'))
+                            _venc_dist = _num(_row.get('Distancia'))
+                            _venc_reta = _num(_row.get('Linha Reta'))
+                            _conc_nome = str(_row.get('Concorrente Analisado', 'N/A'))
+                            _conc_dist = _num(_row.get('Distancia Concorrente'))
+                            _tempo_v = _row.get('Tempo', 'N/A')
+                            _fonte_v = _row.get('Fonte da Rota', 'N/A')
+                            _score_v = _row.get('Score Final Global', _row.get('Score da Rota', 'N/A'))
+                            _razao_v = round(_venc_dist / _venc_reta, 2) if _venc_reta > 0 else 0.0
 
-            # [PARQUET-LOTE - 67ª geração / item #6] Export Parquet da alocação (mesmo capability-check).
-            _peng_alo = _parquet_engine_disponivel()
-            if _peng_alo:
+                            if _conc_nome in ("N/A", "nan", "") or _conc_dist <= 0:
+                                st.info(f"🏆 Hub vencedor: **{_venc_nome}** ({_venc_dist:.1f} km). "
+                                        "Não há concorrente válido registrado para este cliente (hub único ou sem 2ª opção viável).")
+                            else:
+                                _dif_km = round(_conc_dist - _venc_dist, 2)
+                                _m = _metricas_divergencia(_venc_dist, _conc_dist)
+                                _dif_pct = _m['pct'] if _m else 0.0
+                                # [DISPUTA-FIX - 72ª geração] Linha reta PRÓPRIA do concorrente (não a do
+                                # vencedor). Razão V/R e diferenças agora usam a reta correta do concorrente.
+                                _conc_reta = _num(_row.get('Linha Reta Concorrente'))
+                                _dif_reta = round(_conc_reta - _venc_reta, 2)
+                                _razao_c = round(_conc_dist / _conc_reta, 2) if _conc_reta > 0 else 0.0
+                                _dif_razao = round(_razao_c - _razao_v, 2)
+                                # [CONC-COORD - 76ª geração] coordenadas próprias do concorrente.
+                                _conc_lat = _num(_row.get('Lat Concorrente'))
+                                _conc_lon = _num(_row.get('Lon Concorrente'))
+                                _conc_coord_txt = (f" · Coord: {_conc_lat:.5f}, {_conc_lon:.5f}"
+                                                   if (_conc_lat != 0.0 or _conc_lon != 0.0) else "")
+                                # [CONC-AUDIT - 77ª geração] tempo + velocidade média do concorrente.
+                                _conc_tempo = _row.get('Tempo Concorrente', 'N/A')
+                                _conc_vel = _num(_row.get('Velocidade Media Concorrente'))
+                                _conc_extra = (f" · Tempo: {_conc_tempo}"
+                                               + (f" · Vel. média: {_conc_vel:.0f} km/h" if _conc_vel > 0 else ""))
+
+                                # Cabeçalho: vencedor × concorrente
+                                _cwin, _cconc = st.columns(2)
+                                with _cwin:
+                                    st.markdown(f"##### 🥇 Hub Escolhido\n**{_venc_nome}**")
+                                    st.metric("Distância viária", f"{_venc_dist:.1f} km")
+                                    st.caption(f"Linha reta: {_venc_reta:.1f} km · Tempo: {_tempo_v} · Razão V/R: {_razao_v}× · Score: {_score_v} · Motor: {_fonte_v}")
+                                with _cconc:
+                                    st.markdown(f"##### 🥈 Melhor Concorrente\n**{_conc_nome}**")
+                                    st.metric("Distância viária", f"{_conc_dist:.1f} km", delta=f"+{_dif_km:.1f} km", delta_color="inverse")
+                                    st.caption(f"Linha reta: {_conc_reta:.1f} km · Razão V/R: {_razao_c}× · Perde por {_dif_km:.1f} km ({_dif_pct}%){_conc_coord_txt}{_conc_extra}")
+                                    # [CONC-IBGE - 78ª geração] identidade municipal oficial do concorrente.
+                                    _conc_mun = _row.get('Municipio Concorrente', '—')
+                                    _conc_uf = _row.get('UF Concorrente', '—')
+                                    _conc_cod = _row.get('Cod IBGE Concorrente', '—')
+                                    if _conc_cod not in ('—', 'N/A', '', None):
+                                        st.caption(f"🗺️ IBGE: **{_conc_mun}/{_conc_uf}** · Cód. `{_conc_cod}`")
+                                    # [CONC-OSRM - 79ª geração] divergência Google×OSRM do concorrente.
+                                    _conc_osrm = _num(_row.get('OSRM km Concorrente'))
+                                    _conc_div_pct = _num(_row.get('Divergencia Motores Concorrente (%)'))
+                                    if _conc_osrm > 0:
+                                        st.caption(f"🛰️ OSRM: {_conc_osrm:.1f} km · Divergência Google×OSRM: **{_conc_div_pct:.1f}%** "
+                                                   f"(motor menor: {_row.get('Motor Vencedor Concorrente', 'N/A')})")
+
+                                # Tabela comparativa (com coluna de diferença Concorrente − Vencedor)
+                                st.markdown("**📊 Comparativo detalhado**")
+                                _tab_cmp = pd.DataFrame({
+                                    "Indicador": ["Distância viária (km)", "Distância linha reta (km)", "Razão V/R", "Diferença p/ vencedor"],
+                                    "🥇 Vencedor": [f"{_venc_dist:.1f}", f"{_venc_reta:.1f}", f"{_razao_v}×", "—"],
+                                    "🥈 Concorrente": [f"{_conc_dist:.1f}", f"{_conc_reta:.1f}", f"{_razao_c}×", f"+{_dif_km:.1f} km viária / +{_dif_pct}%"],
+                                    "Δ (Conc − Venc)": [f"+{_dif_km:.1f} km",
+                                                         f"{'+' if _dif_reta >= 0 else ''}{_dif_reta:.1f} km",
+                                                         f"{'+' if _dif_razao >= 0 else ''}{_dif_razao}×", "—"],
+                                })
+                                st.dataframe(_tab_cmp, use_container_width=True, hide_index=True)
+
+                                # [SSOT-DECISAO - 184ª geração] Sensibilidade pela diferença ABSOLUTA de viária — antes
+                                # usava _dif_km com sinal, e um _dif_km negativo (vencedor com viária MAIOR que a do
+                                # concorrente, caso fluvial) caía em "< 5" e rotulava um abismo de 2394 km como "empate
+                                # técnico". Agora usa abs().
+                                _dif_abs = abs(_dif_km)
+                                if _dif_abs < 5:
+                                    _sens = ("🔴 Muito sensível", f"Apenas **{_dif_abs:.1f} km** separam os hubs — pequenas mudanças na malha viária podem **inverter** o resultado. Empate técnico.")
+                                elif _dif_abs < 20:
+                                    _sens = ("🟡 Moderadamente sensível", f"Diferença de **{_dif_abs:.1f} km** — a escolha é consistente, mas não folgada.")
+                                else:
+                                    _sens = ("🟢 Escolha robusta", f"Diferença de **{_dif_abs:.1f} km** — baixíssima probabilidade de inversão.")
+                                st.markdown(f"**🎯 Sensibilidade da Escolha:** {_sens[0]}")
+                                st.caption(_sens[1])
+
+                                # Índice de competitividade (quanto MAIS perto o concorrente, MAIOR a disputa)
+                                if _dif_pct < 5: _stars, _lbl = "★★★★★", "Muito Alta"
+                                elif _dif_pct < 15: _stars, _lbl = "★★★★☆", "Alta"
+                                elif _dif_pct < 30: _stars, _lbl = "★★★☆☆", "Média"
+                                elif _dif_pct < 50: _stars, _lbl = "★★☆☆☆", "Baixa"
+                                else: _stars, _lbl = "★☆☆☆☆", "Muito Baixa"
+                                st.markdown(f"**⚔️ Competitividade da Disputa:** {_stars} — {_lbl}")
+
+                                # Explicação automática (escolha do vencedor)
+                                st.markdown("**🧾 Justificativa automática da escolha**")
+                                # [SSOT-DECISAO - 184ª geração] PORTÃO DE COERÊNCIA (fonte única): a justificativa usa os
+                                # MESMOS valores exibidos e só afirma "menor distância viária" quando o vencedor REALMENTE
+                                # tem a menor viária. Antes era fixo — e num destino de acesso fluvial (sem rota rodoviária
+                                # viável) o vencedor podia ter viária MAIOR que a do concorrente, gerando a frase
+                                # matematicamente impossível "menor viária (2515 vs 120)". Agora, se o vencedor NÃO tem a
+                                # menor viária, dizemos a VERDADE e alertamos, em vez de afirmar o contrário do dado.
+                                if _venc_dist <= _conc_dist:
+                                    _motivos = [f"menor distância viária ({_venc_dist:.1f} km vs {_conc_dist:.1f} km)"]
+                                    if _razao_v <= _razao_c:
+                                        _motivos.append(f"menor Razão V/R ({_razao_v}× vs {_razao_c}×)")
+                                    st.success(f"O hub **{_venc_nome}** foi escolhido por apresentar " + "; ".join(_motivos) +
+                                               f". O concorrente **{_conc_nome}** ficou atrás por **{_dif_abs:.1f} km** "
+                                               f"(+{_dif_pct}%) de distância viária" +
+                                               (", diferença pequena o suficiente para caracterizar empate técnico."
+                                                if _dif_abs < 5 else "."))
+                                else:
+                                    st.error(
+                                        f"⚠️ **Inconsistência: a decisão NÃO foi por menor distância viária.** O hub "
+                                        f"escolhido **{_venc_nome}** tem viária de **{_venc_dist:.1f} km**, MAIOR que a do "
+                                        f"concorrente **{_conc_nome}** (**{_conc_dist:.1f} km**). Pelo critério de menor rota "
+                                        f"viária, **quem deveria vencer é {_conc_nome}**.\n\n"
+                                        f"🛟 **Causa provável:** o destino não tem rota rodoviária viável (**acesso "
+                                        f"fluvial/isolado** — razão V/R do vencedor **{_razao_v}×**), então a atribuição caiu "
+                                        f"na **proximidade em linha reta** ({_venc_reta:.1f} km vs {_conc_reta:.1f} km). "
+                                        f"**Reprocesse o estudo** para reavaliar por viária com as rotas recuperadas, ou trate "
+                                        f"este município como acesso fluvial.")
+
+                                # [DISPUTA-XAI - 74ª geração] "Por que o concorrente não venceu?" — motivos
+                                # estruturados a partir das diferenças já calculadas (viária, linha reta, razão).
+                                st.markdown(f"**🧠 Por que {_conc_nome} não venceu?**")
+                                _razoes = _explicar_derrota_concorrente(_dif_km, _dif_reta, _dif_razao)
+                                if _razoes:
+                                    st.markdown("O concorrente ficou em 2º lugar porque:\n" +
+                                                "\n".join(f"- {r};" for r in _razoes))
+                                else:
+                                    st.markdown("O concorrente empatou ou superou o vencedor nos indicadores medidos — "
+                                                "a escolha se deu pelo critério de **menor distância viária** (desempate mínimo).")
+                                # [PORQUE-NAO-2 - P5/§11] Explica a REGRA aplicada à decisão (política única §6/§7:
+                                # menor distância viária + preferência pela rota rodoviária sem balsa quando a
+                                # alternativa cabe na banda). Didático e auditável — não introduz dado novo, só
+                                # contextualiza os números já exibidos acima.
+                                _balsa_v_p5 = str(_row.get('Balsas', '')).strip().lower() in ('sim', 'yes', 'true', '1')
+                                st.caption("🛣️ **Regra da decisão (política única §6/§7):** vence a **menor distância "
+                                           "viária**, com **preferência pela rota rodoviária sem balsa** quando a "
+                                           "alternativa razoável cabe na banda admissível — `max(60 km, 5× a "
+                                           "travessia)` — sobre a melhor travessia do concorrente."
+                                           + (" A rota do vencedor **depende de balsa** classificada como "
+                                               "inevitável/estrutural (caso §6, ex.: São José do Norte)." if _balsa_v_p5 else "."))
+
+                                # [DISPUTA-XAI - 74ª geração] Gráfico comparativo vencedor × concorrente
+                                # (distâncias). Isolado em try/except — falha de render não afeta a auditoria.
+                                try:
+                                    _df_disp = pd.DataFrame(
+                                        {"Viária (km)": [_venc_dist, _conc_dist],
+                                         "Linha Reta (km)": [_venc_reta, _conc_reta]},
+                                        index=[f"🥇 {_venc_nome}", f"🥈 {_conc_nome}"])
+                                    st.markdown("**📊 Comparação visual (distâncias)**")
+                                    st.bar_chart(_df_disp)
+                                    _leitura_grafico(
+                                        como_ler="cada grupo de barras é um hub; compara a **distância viária** (estrada) "
+                                                 "com a **linha reta** do candidato até cada um. Barras menores = mais perto.",
+                                        conclusao=f"o vencedor **{_venc_nome}** ({_venc_dist:.1f} km viária) fica "
+                                                  f"**{_dif_km:.1f} km mais perto** que o 2º colocado **{_conc_nome}** "
+                                                  f"({_conc_dist:.1f} km).")
+                                except Exception as _e_disp:
+                                    logger.error(f"[DISPUTA-XAI] Falha no gráfico comparativo: {_e_disp}")
+
+                                # [DISPUTA-INDICES - 75ª geração] Radar comparativo vencedor × concorrente
+                                # (plotly já é dependência do app). Cada eixo é normalizado 0-100 (100 = melhor
+                                # no eixo). Isolado em try/except — falha de render não afeta a auditoria.
+                                try:
+                                    _min_v = min(_venc_dist, _conc_dist)
+                                    _min_r = min(_venc_reta, _conc_reta)
+                                    _min_raz = min(_razao_v, _razao_c) if (_razao_v > 0 and _razao_c > 0) else 0.0
+                                    def _norm_radar(_minv, _val):
+                                        return round(100.0 * _minv / _val, 1) if _val and _val > 0 else 0.0
+                                    _eixos = ["Proximidade viária", "Proximidade linha reta", "Diretividade (V/R)"]
+                                    _r_venc = [_norm_radar(_min_v, _venc_dist), _norm_radar(_min_r, _venc_reta), _norm_radar(_min_raz, _razao_v)]
+                                    _r_conc = [_norm_radar(_min_v, _conc_dist), _norm_radar(_min_r, _conc_reta), _norm_radar(_min_raz, _razao_c)]
+                                    _fig_radar = go.Figure()
+                                    _fig_radar.add_trace(go.Scatterpolar(r=_r_venc + [_r_venc[0]], theta=_eixos + [_eixos[0]], fill='toself', name=f"🥇 {_venc_nome}"))
+                                    _fig_radar.add_trace(go.Scatterpolar(r=_r_conc + [_r_conc[0]], theta=_eixos + [_eixos[0]], fill='toself', name=f"🥈 {_conc_nome}"))
+                                    _fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
+                                                             showlegend=True, height=380, margin=dict(l=40, r=40, t=30, b=30))
+                                    st.markdown("**🕸️ Radar comparativo (100 = melhor no eixo)**")
+                                    st.plotly_chart(_fig_radar, use_container_width=True)
+                                    _leitura_grafico(
+                                        como_ler="três eixos (proximidade viária, proximidade em linha reta e diretividade "
+                                                 "V/R), cada um normalizado para **100 = o melhor dos dois hubs** naquele eixo — "
+                                                 "polígono maior/mais preenchido significa melhor no conjunto.",
+                                        conclusao=f"**{_venc_nome}** atinge o máximo em proximidade viária (o critério de "
+                                                  f"escolha); compare o preenchimento nos demais eixos com **{_conc_nome}**.")
+                                    # Índices numéricos (também vão na planilha)
+                                    _ic = _indice_competitividade(_dif_pct)
+                                    _ir = _indice_robustez(_dif_km)
+                                    _mi1, _mi2 = st.columns(2)
+                                    _mi1.metric("⚔️ Índice de Competitividade", f"{_ic}/100", help="100 = disputa acirradíssima (empate).")
+                                    _mi2.metric("🛡️ Índice de Robustez", f"{_ir}/100", help="100 = escolha folgada (≥200 km de vantagem).")
+                                except Exception as _e_radar:
+                                    logger.error(f"[DISPUTA-INDICES] Falha no radar/índices: {_e_radar}")
+
+                                # [HUB-XAI - 118ª geração] Índices compostos (Acessibilidade / Eficiência /
+                                # Robustez), leitura em linguagem natural (estilo analista) e simulação de
+                                # indisponibilidade — tudo derivado de sinais JÁ medidos (custo ZERO, sem rede).
+                                # Isolado em try/except: falha de render não afeta a auditoria.
+                                try:
+                                    _tem_balsa_v = str(_row.get('Balsas', '')).strip().lower() in ('sim', 'yes', 'true', '1')
+                                    _modo_v = _row.get('Modo/Acesso', '')
+                                    _score_v_num = _num(_score_v)
+                                    _div_v = _num(_row.get('Divergencia Motores (%)', 0))
+                                    _idx = _indices_compostos_hub(
+                                        razao_vr=_razao_v, tem_balsa=_tem_balsa_v, modo_acesso=_modo_v,
+                                        score_global=_score_v_num, divergencia_pct=_div_v,
+                                        dif_km=_dif_km, dif_pct=_dif_pct)
+                                    st.markdown("**🧭 Índices Compostos do Hub (XAI)**")
+                                    _cmp = _idx['componentes']
+                                    _ix1, _ix2, _ix3 = st.columns(3)
+                                    _ix1.metric("🧭 Acessibilidade", f"{_idx['acessibilidade']}/100",
+                                                help="Facilidade de chegar por estrada: continuidade viária, ausência de balsa e de barreira fluvial.")
+                                    _ix1.caption(f"**{_idx['acessibilidade_lbl']}** · continuidade {_cmp['continuidade_viaria']:.0f} · "
+                                                 f"balsa {_cmp['sem_balsa']:.0f} · barreira {_cmp['sem_barreira']:.0f}")
+                                    _ix2.metric("⚙️ Eficiência Logística", f"{_idx['eficiencia']}/100",
+                                                help="Qualidade da escolha em rota: diretividade, vantagem sobre o 2º melhor e confiabilidade.")
+                                    _ix2.caption(f"**{_idx['eficiencia_lbl']}** · diretividade {_cmp['continuidade_viaria']:.0f} · "
+                                                 f"vantagem {_cmp['vantagem_sobre_2o']:.0f} · confiab. {_cmp['confiabilidade_geografica']:.0f}")
+                                    _ix3.metric("🛡️ Robustez do Resultado", f"{_idx['robustez']}/100",
+                                                help="Estabilidade do dado/decisão: confiabilidade geográfica, estabilidade de roteamento e folga da decisão.")
+                                    _ix3.caption(f"**{_idx['robustez_lbl']}** · confiab. {_cmp['confiabilidade_geografica']:.0f} · "
+                                                 f"estab. rota {_cmp['estabilidade_roteamento']:.0f} · folga {_cmp['folga_decisao']:.0f}")
+                                    st.caption("ℹ️ Índices compostos a partir de sinais já medidos (razão V/R, balsa, Modo/Acesso, "
+                                               "score geográfico, divergência Google×OSRM, folga p/ o 2º). A folga da decisão também "
+                                               "aparece isolada acima como Índice de Robustez.")
+
+                                    st.markdown("**🗣️ Leitura do Analista**")
+                                    st.info(_explicacao_analista_hub(
+                                        cliente=_cli_sel, hub_venc=_venc_nome, conc=_conc_nome,
+                                        dist_v=_venc_dist, dist_c=_conc_dist, dif_km=_dif_km, dif_pct=_dif_pct,
+                                        razao_vr=_razao_v, tem_balsa=_tem_balsa_v, modo_acesso=_modo_v,
+                                        score_global=_score_v_num, divergencia_pct=_div_v, indices=_idx))
+
+                                    st.markdown("**🔄 Simulação — e se o hub vencedor ficar indisponível?**")
+                                    _sim = _simulacao_hub_indisponivel(_venc_nome, _conc_nome, _venc_dist, _conc_dist)
+                                    (st.warning if _sim.get("disponivel") else st.error)(_sim["texto"])
+                                except Exception as _e_xai:
+                                    logger.error(f"[HUB-XAI] Falha no painel de índices/analista: {_e_xai}")
+
+                            # [RANK-NHUBS - 58ª geração / itens #7/#9] Ranking completo dos hubs candidatos
+                            # (linha reta) — atende "ranking completo" e "quais quase entraram" (item #9).
+                            # Usa o top-5 já calculado na matriz vetorizada (custo ZERO, sem rede). O hub
+                            # escolhido é por ROTA VIÁRIA; os demais vêm ordenados por proximidade em linha reta.
+                            _topk = st.session_state.get('alo_topk_map', {}).get(_cli_sel)
+                            if _topk:
+                                st.markdown("**🏅 Ranking dos hubs candidatos mais próximos (linha reta · top-5)**")
+                                _linhas_rk = []
+                                for _pos, (_dkm, _hnome) in enumerate(_topk, start=1):
+                                    if _hnome == _venc_nome:
+                                        _marca = "🥇 escolhido (rota viária)"
+                                    elif str(_hnome) == str(_conc_nome):
+                                        _marca = "🥈 concorrente roteado"
+                                    else:
+                                        _marca = "•"
+                                    _linhas_rk.append({"Posição": _pos, "Hub": str(_hnome).title(),
+                                                       "Linha Reta (km)": _dkm, "Situação": _marca})
+                                st.dataframe(pd.DataFrame(_linhas_rk), use_container_width=True, hide_index=True)
+                                st.caption("Ordenado por **distância em linha reta** (Haversine/IUGG, valor exibido via GeographicLib "
+                                           "no restante da planilha). O **hub escolhido** é definido pela **rota viária** — por isso pode "
+                                           "não ser o 1º da linha reta. Os demais mostram **quais quase entraram**. A seleção que roteia "
+                                           "**todos** os candidatos por via e escolhe o de menor distância viária é o próximo passo (itens #7/#9).")
+                _susp_df_alo, _susp_resumo_alo = _auditar_rotas_suspeitas(st.session_state['df_processado'])
+                # [UI-ESTAVEL - 132ª geração] Existência incondicional + rótulo estático (ver changelog 132ª).
+                _n_susp_alo = _susp_resumo_alo.get("suspeitas", 0) if _susp_resumo_alo else 0
+            with _tab_diag_alo:
+                with st.expander("🔍 Auditoria Automática de Rotas Suspeitas", expanded=False):
+                    if not _susp_resumo_alo:
+                        st.caption("Auditoria de rotas suspeitas indisponível para este lote.")
+                    if _susp_resumo_alo:
+                        st.caption(f"**{_n_susp_alo} rota(s)** sinalizada(s).")
+                        st.caption(f"Razão **distância viária ÷ linha reta**. Limiar: **{_susp_resumo_alo.get('limiar','—')}×** "
+                                   f"(maior entre técnico 1,8× e estatístico Q3+1,5·IQR). Mediana: {_susp_resumo_alo.get('ratio_mediano','—')}× "
+                                   f"em {_susp_resumo_alo.get('total',0)} rotas.")
+                        if _n_susp_alo == 0:
+                            st.success("✅ Nenhuma rota com razão viária/reta anômala — consistência espacial adequada.")
+                        else:
+                            st.warning(f"⚠️ {_n_susp_alo} rota(s) com razão elevada — possível erro de geocodificação, snap distante, "
+                                       "barreira física ou rota sinuosa. Recomenda-se auditoria manual.")
+                            _cols_a = [c for c in ['Origem', 'Destino', 'Distancia', 'Linha Reta', 'Fonte da Rota', 'Score Final Global'] if c in _susp_df_alo.columns]
+                            _tab_a = _susp_df_alo[_cols_a].copy()
+                            _tab_a['Razão (V/R)'] = _susp_df_alo['_ratio'].round(2)
+                            _tab_a['Diferença %'] = _susp_df_alo['_pct'].round(0)
+                            st.dataframe(_tab_a, use_container_width=True, hide_index=True, height=240)
+                # [HUBOPT - 121ª geração] Otimizador de Localização de Hub — "onde abrir o próximo hub?".
+                # Inverso da alocação: dada a distribuição de clientes (coordenadas JÁ calculadas), sugere onde
+                # posicionar p hub(s) para minimizar a distância. Reusa Lat/Lon Origem (custo ZERO, sem rede).
+                # Ranking por Haversine (mesmo critério de proximidade do app). Isolado em try/except.
+            with _tab_sim_alo:
                 try:
-                    _pqb_alo = _gerar_parquet_bytes(st.session_state['df_processado'], _peng_alo)
-                    st.download_button("📦 Baixar Parquet (.parquet)", data=_pqb_alo,
-                                       file_name="matriz_alocacao_competitiva.parquet", mime="application/octet-stream",
-                                       use_container_width=True)
-                except Exception as _e_pqa:
-                    logger.error(f"[PARQUET-LOTE] Falha ao gerar Parquet da alocação: {_e_pqa}")
-                    st.caption("⚠️ Parquet indisponível para esta alocação no momento.")
-            else:
-                st.caption("💡 **Parquet** (colunar, ideal p/ Power BI/pandas): instale `pyarrow` no requirements para habilitar.")
+                    _dfp_opt = st.session_state['df_processado']
+                    if {'Lat Origem', 'Lon Origem'}.issubset(_dfp_opt.columns):
+                        with st.expander("🎯 Otimizador de Localização — Onde abrir o próximo hub?", expanded=False):
+                            st.caption("O **inverso** da alocação: em vez de dizer qual hub atende cada cliente, sugere **onde "
+                                       "colocar** hub(s) para minimizar a distância aos clientes. Candidatos = as cidades dos seus "
+                                       "clientes; ranqueado por distância em linha reta (Haversine). Reusa as coordenadas já "
+                                       "calculadas — sem novas chamadas de API.")
+                            _cli_lat = pd.to_numeric(_dfp_opt['Lat Origem'], errors='coerce')
+                            _cli_lon = pd.to_numeric(_dfp_opt['Lon Origem'], errors='coerce')
+                            _mask_ok = _cli_lat.notna() & _cli_lon.notna() & ((_cli_lat != 0) | (_cli_lon != 0))
+                            _df_ok = _dfp_opt[_mask_ok]
+                            if len(_df_ok) < 2:
+                                st.info("São necessários ao menos 2 clientes com coordenadas válidas para otimizar.")
+                            else:
+                                _oc1, _oc2 = st.columns(2)
+                                _p_hubs = _oc1.slider("Quantos hubs posicionar?", 1, int(min(5, len(_df_ok))), 1, key="hubopt_p")
+                                _obj_lbl = _oc2.radio("Objetivo", ["Minimizar distância total", "Minimizar pior caso"], key="hubopt_obj")
+                                _objetivo = "max" if "pior" in _obj_lbl else "total"
+                                if st.button("🎯 Otimizar localização", key="hubopt_run", use_container_width=True):
+                                    _lat_ok = _cli_lat[_mask_ok].tolist()
+                                    _lon_ok = _cli_lon[_mask_ok].tolist()
+                                    _cli_pts = list(zip(_lat_ok, _lon_ok))
+                                    _nome_col = 'Municipio Origem' if 'Municipio Origem' in _df_ok.columns else 'Origem'
+                                    _nomes_cli = _df_ok[_nome_col].astype(str).tolist()
+                                    _cand = {}
+                                    for _la, _lo, _nm in zip(_lat_ok, _lon_ok, _nomes_cli):
+                                        _key = _nm.strip() if (_nm and _nm.strip().lower() != 'nan') else f"{round(_la,4)},{round(_lo,4)}"
+                                        if _key not in _cand:
+                                            _cand[_key] = (_la, _lo)
+                                    _cand_nomes = list(_cand.keys())
+                                    _cand_pts = list(_cand.values())
+                                    _res_opt = _otimizar_hubs(_cli_pts, _cand_pts, p=_p_hubs, objetivo=_objetivo)
+                                    _escolhidos = _res_opt["escolhidos"]
+                                    if not _escolhidos:
+                                        st.warning("Não foi possível otimizar com os dados disponíveis.")
+                                    else:
+                                        _atual_media = None
+                                        if 'Linha Reta' in _df_ok.columns:
+                                            _lr = pd.to_numeric(_df_ok['Linha Reta'], errors='coerce')
+                                            _lr = _lr[_lr > 0]
+                                            if len(_lr) > 0:
+                                                _atual_media = round(float(_lr.mean()), 1)
+                                        st.success("✅ Otimização concluída.")
+                                        st.markdown("**🏢 Hub(s) recomendado(s):** " +
+                                                    " · ".join(f"**{_cand_nomes[i]}**" for i in _escolhidos))
+                                        _mo1, _mo2, _mo3 = st.columns(3)
+                                        _mo1.metric("Distância média ao hub", f"{_res_opt['dist_media_km']} km",
+                                                    delta=(f"{round(_res_opt['dist_media_km'] - _atual_media, 1)} km vs atual"
+                                                           if _atual_media is not None else None), delta_color="inverse")
+                                        _mo2.metric("Pior caso (máx.)", f"{_res_opt['dist_max_km']} km")
+                                        _mo3.metric("Soma total", f"{_res_opt['custo_total_km']:,.0f} km")
+                                        if _atual_media is not None:
+                                            _ganho = round(_atual_media - _res_opt['dist_media_km'], 1)
+                                            if _ganho > 0:
+                                                st.caption(f"📉 Redução de **{_ganho} km** na distância média em linha reta por cliente "
+                                                           f"vs. a distribuição atual ({_atual_media} km → {_res_opt['dist_media_km']} km). "
+                                                           "Comparação linha reta × linha reta (Haversine); a viária real seria confirmada roteando.")
+                                            else:
+                                                st.caption(f"ℹ️ A configuração atual já está próxima do ótimo "
+                                                           f"(média atual {_atual_media} km vs. {_res_opt['dist_media_km']} km sugerido).")
+                                        _atrib = _res_opt["atribuicao"]
+                                        _cont = {}
+                                        for _ih in _atrib:
+                                            _cont[_ih] = _cont.get(_ih, 0) + 1
+                                        st.dataframe(pd.DataFrame([
+                                            {"Hub sugerido": _cand_nomes[i],
+                                             "Coordenada": f"{round(_cand_pts[i][0], 5)}, {round(_cand_pts[i][1], 5)}",
+                                             "Clientes atendidos": _cont.get(i, 0)} for i in _escolhidos]),
+                                            use_container_width=True, hide_index=True)
+                                        try:
+                                            _map_cli = pd.DataFrame({"lat": _lat_ok, "lon": _lon_ok})
+                                            _map_cli["color"] = "#3b82f6"
+                                            _map_cli["size"] = 30
+                                            _map_hub = pd.DataFrame({"lat": [_cand_pts[i][0] for i in _escolhidos],
+                                                                     "lon": [_cand_pts[i][1] for i in _escolhidos]})
+                                            _map_hub["color"] = "#ef4444"
+                                            _map_hub["size"] = 140
+                                            st.map(pd.concat([_map_cli, _map_hub], ignore_index=True), color="color", size="size")
+                                            st.caption("🔵 clientes · 🔴 hub(s) sugerido(s).")
+                                        except Exception as _e_map:
+                                            logger.error(f"[HUBOPT] Falha no mapa: {_e_map}")
+                                        st.caption("⚠️ Candidatos = cidades dos clientes; distância em linha reta. Para a decisão final, "
+                                                   "confirme a distância viária roteando os cenários na aba de Alocação.")
+                except Exception as _e_hubopt:
+                    logger.error(f"[HUBOPT] Falha no otimizador de localização: {_e_hubopt}")
+                st.dataframe(_tornar_arrow_safe(st.session_state['df_processado']), use_container_width=True, height=250)
+                # [FASE2-FLUXO - 184ª geração] Cabeçalho de fase: Exportação (aditivo, dentro do bloco de resultado).
+                st.markdown("#### ⬇️ Exportação")
+                # [RELATORIO-HTML - 184ª geração] Relatório autocontido (KPIs + distribuição + mapa + maiores
+                # deslocamentos) da alocação, num arquivo único que abre OFFLINE. Sob demanda, defensivo.
+            with _tab_exp_alo:
+                if st.button("📄 Gerar relatório HTML compartilhável", key="btn_relatorio_html_loc", use_container_width=True,
+                             help="Um arquivo HTML único (KPIs, distribuição, mapa e maiores deslocamentos) que abre "
+                                  "offline em qualquer navegador — para enviar a quem decide e não usa a aplicação."):
+                    with st.spinner("Gerando relatório..."):
+                        _rel_html_loc = _gerar_relatorio_html(st.session_state['df_processado'],
+                                                              titulo="Relatório de Locais de Aplicação",
+                                                              data_str=pd.Timestamp.now().strftime("%d/%m/%Y %H:%M"))
+                        if _rel_html_loc:
+                            st.session_state['relatorio_html_loc'] = _rel_html_loc.encode("utf-8")
+                        else:
+                            st.session_state.pop('relatorio_html_loc', None)
+                            st.warning("Não foi possível gerar o relatório.")
+                if st.session_state.get('relatorio_html_loc'):
+                    st.download_button("⬇️ Baixar relatório HTML (.html)", data=st.session_state['relatorio_html_loc'],
+                                       file_name="relatorio_locais_aplicacao.html", mime="text/html",
+                                       use_container_width=True, key="dl_relatorio_html_loc")
+                # [PLANILHA-LAZY - 261ª geração] A planilha é 100% sob demanda. Três estados possíveis:
+                #  • já gerada  → botão de download direto;
+                #  • falhou     → aviso (resultados/relatório seguem disponíveis) + tentar de novo;
+                #  • ainda não  → botão "Gerar planilha" (a construção pesada só roda aqui, no clique do usuário).
+                # Em todos os casos a geração dispara a FASE 3b (sob demanda), sem reprocessar o estudo.
+                if st.session_state.get('alo_planilha_pronta'):
+                    st.download_button(
+                        label="📥 Baixar Planilha de Alocação Competitiva (.xlsx)",
+                        data=st.session_state['alo_planilha_pronta'],
+                        file_name="matriz_alocacao_competitiva.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True)
+                    if st.session_state.get('alo_planilha_auto'):
+                        st.caption("📊 Estudo pequeno: a planilha completa foi gerada **automaticamente** ao finalizar. "
+                                   "(Estudos grandes/nacionais permanecem sob demanda, para manter a finalização "
+                                   "instantânea e à prova de travamentos.)")
+                elif st.session_state.get('alo_planilha_erro'):
+                    st.warning("⚠️ A planilha (.xlsx) não pôde ser gerada — mas seus **resultados estão completos "
+                               "acima** e o **relatório HTML** continua disponível. Você pode tentar de novo:")
+                    if st.button("🔄 Tentar gerar a planilha novamente", use_container_width=True,
+                                 key="retry_planilha_alo"):
+                        st.session_state['alo_em_andamento'] = True
+                        st.session_state['alo_fase'] = 'gerar_planilha'
+                        st.rerun()
+                else:
+                    if st.button("📊 Gerar planilha completa (.xlsx)", use_container_width=True,
+                                 key="gerar_planilha_alo",
+                                 help="Monta a planilha competitiva completa (todas as abas analíticas, gráficos "
+                                      "nativos e o índice navegável). A construção pesada roda só agora, quando você "
+                                      "pede o arquivo — por isso os resultados apareceram na hora."):
+                        st.session_state['alo_em_andamento'] = True
+                        st.session_state['alo_fase'] = 'gerar_planilha'
+                        st.rerun()
+                    st.caption("📊 A planilha completa é montada **sob demanda**: os resultados e o relatório HTML já "
+                               "estão prontos acima; o .xlsx (pesado) só é gerado quando você clicar — o que mantém a "
+                               "finalização instantânea e à prova de travamentos.")
+
+                # [DUPLO-CENARIO-COMPARADOR - 221ª geração] Export do ESTUDO 2 (Puramente Viário) como planilha
+                # INDEPENDENTE — recarregável no Comparador de Estudos como base de referência. Só aparece quando
+                # há municípios que mudaram de vencedor (senão o Estudo 2 é idêntico ao Oficial). Gerado sob demanda.
+                try:
+                    _cmp_e2 = st.session_state.get('alo_comparacao_estrategias')
+                    _n_mud_e2 = (_cmp_e2 or {}).get("resumo", {}).get("n_mudaram", 0) if _cmp_e2 else 0
+                    if _n_mud_e2 > 0:
+                        if st.button(f"📐 Gerar Planilha do Estudo Puramente Viário ({_n_mud_e2} município(s) alterado(s))",
+                                     key="btn_gerar_estudo2", use_container_width=True):
+                            with st.spinner("Gerando a planilha do Estudo Puramente Viário..."):
+                                _df_e2 = _df_estudo_puramente_viaria(st.session_state['df_processado'], _cmp_e2)
+                                _buf_e2 = io.BytesIO()
+                                with pd.ExcelWriter(_buf_e2, engine="xlsxwriter") as _wr_e2:
+                                    _dev_escrever_aba_excel(_wr_e2)  # [DEV-ABOUT] aba institucional (idempotente, defensiva)
+                                    _df_e2.to_excel(_wr_e2, index=False, sheet_name="Estudo Puramente Viario")
+                                    try:
+                                        _aba_comparacao_estrategias(_wr_e2, _cmp_e2)
+                                    except Exception:
+                                        pass
+                                st.session_state['alo_planilha_estudo2'] = _buf_e2.getvalue()
+                        if st.session_state.get('alo_planilha_estudo2'):
+                            st.download_button(
+                                label="📥 Baixar Planilha do Estudo Puramente Viário (.xlsx)",
+                                data=st.session_state['alo_planilha_estudo2'],
+                                file_name="estudo_puramente_viario.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                use_container_width=True, key="dl_estudo2")
+                            st.caption("💡 Esta planilha reflete o cenário em que cada município alterado usa o polo de "
+                                       "**menor rota viária**. Você pode recarregá-la no **Comparador de Estudos** como "
+                                       "base de referência para confrontá-la com o resultado oficial.")
+                except Exception as _e_e2:
+                    logger.error(f"[DUPLO-CENARIO-COMPARADOR] Falha no export do Estudo 2: {_e_e2}")
+
+                # [PARQUET-LOTE - 67ª geração / item #6] Export Parquet da alocação (mesmo capability-check).
+                _peng_alo = _parquet_engine_disponivel()
+                if _peng_alo:
+                    try:
+                        _pqb_alo = _gerar_parquet_bytes(st.session_state['df_processado'], _peng_alo)
+                        st.download_button("📦 Baixar Parquet (.parquet)", data=_pqb_alo,
+                                           file_name="matriz_alocacao_competitiva.parquet", mime="application/octet-stream",
+                                           use_container_width=True)
+                    except Exception as _e_pqa:
+                        logger.error(f"[PARQUET-LOTE] Falha ao gerar Parquet da alocação: {_e_pqa}")
+                        st.caption("⚠️ Parquet indisponível para esta alocação no momento.")
+                else:
+                    st.caption("💡 **Parquet** (colunar, ideal p/ Power BI/pandas): instale `pyarrow` no requirements para habilitar.")
 
 
 if _secao == _SECOES[3]:   # tab_comparador
