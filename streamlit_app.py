@@ -739,6 +739,17 @@ st.markdown("""
         display: flex; align-items: center; justify-content: center;
     }
 
+    /* ---------- ESTADO VAZIO PADRONIZADO (Rodada 5 UI/UX — mission §6) ---------- */
+    .ds-empty {
+        display: flex; align-items: flex-start; gap: var(--sp-3);
+        background: var(--sf-2); border: 1px dashed var(--sf-3);
+        border-radius: var(--r-md); padding: var(--sp-4);
+        margin: var(--sp-2) 0 var(--sp-4) 0;
+    }
+    .ds-empty-icon { font-size: 22px; line-height: 1; }
+    .ds-empty-msg { margin: 0; color: var(--tx-2); font-size: var(--fs-md); }
+    .ds-empty-dica { margin: var(--sp-1) 0 0 0; color: var(--tx-3); font-size: var(--fs-sm); }
+
     /* ---------- BREADCRUMB "ONDE ESTOU" (Rodada 3 UI/UX — mission §5) ---------- */
     .nav-breadcrumb {
         font-size: var(--fs-sm); color: var(--tx-3);
@@ -1298,6 +1309,21 @@ def renderizar_guia_aba(chave_aba: str):
         **✅ Dicas e boas práticas**
         {g['dicas']}
         """)
+
+# [UI-REENGENHARIA - Rodada 5] ESTADO VAZIO CONSISTENTE (mission UI/UX §6 — "primeiro passo").
+# Algumas abas de análise (Painel Estratégico, Calculadora) mostravam um st.warning() cru quando
+# ainda não havia estudo processado — funcional, mas sem apontar O QUE fazer a seguir, e visualmente
+# desconectado do cartão "Comece por aqui" (ds-onboard) que já existe para as 3 abas de entrada.
+# Este helper reusa o MESMO design system (tokens --sf-2/--tx-2/--tx-3/--sp-*) para um estado vazio
+# que também diz o próximo passo. Puramente aditivo — chamadas antigas de st.warning continuam
+# funcionando em qualquer lugar que não use este helper.
+def _ds_empty_state(mensagem: str, dica: str = ""):
+    """Estado vazio padronizado: mensagem + (opcional) uma dica de próximo passo."""
+    _dica_html = f'<p class="ds-empty-dica">{dica}</p>' if dica else ""
+    st.markdown(
+        f'<div class="ds-empty"><div class="ds-empty-icon">📭</div>'
+        f'<div><p class="ds-empty-msg">{mensagem}</p>{_dica_html}</div></div>',
+        unsafe_allow_html=True)
 
 def _formatar_duracao(segundos: float) -> str:
     """Formata segundos em texto legível: 'X minuto(s) e Y segundo(s)'."""
@@ -53616,7 +53642,9 @@ if _secao == _SECOES[4]:   # tab_analytics
                 else: 
                     st.success(" Excelente! Nenhuma anomalia geodésica ou operacional encontrada no recorte atual.")
     else:
-        st.warning("Aguardando processamento de planilha corporativa na aba de Lotes (⚙️) para ativar e renderizar o Enterprise Data Analytics Engine.")
+        _ds_empty_state(
+            "Aguardando processamento de uma planilha para ativar este painel.",
+            "Vá em <b>⚙️ Estudo em Lote</b> (grupo 🔍 Consultar) e envie sua planilha — os indicadores aparecem aqui automaticamente depois.")
 
 # [CF-FONTE - 354a geração] Auto-suficiência das abas Calculadora/Classificação: montam a base a partir de
 # qualquer resultado (alocação/lote/processado) e expõem um seletor de fonte explícito. Aditivo, defensivo.
@@ -53964,7 +53992,9 @@ Gerado pelo Motor Nacional de Inteligência Logística para Exames v4.36
             except Exception as e:
                 st.error(f"⚠️ Impossível realizar o cálculo solicitado. A operação estatística '{calc_op}' falhou. Verifique se o campo '{calc_campo}' contém números válidos. Erro: {e}")
     else:
-        st.warning("Os dados ainda não foram processados ou o filtro global está muito restrito. Processe um lote na Aba 'Processamento em Lote'.")
+        _ds_empty_state(
+            "Nenhum dado disponível para calcular — o estudo ainda não foi processado, ou o filtro atual está restringindo demais os resultados.",
+            "Vá em <b>⚙️ Estudo em Lote</b> para processar sua planilha, ou ajuste os filtros acima.")
 
     # [CALC-COMPARADOR - 353a geração] Cruzamento com o Comparador de Estudos: calculadora de agregações
     # sobre as divergências (Aplicação × Referência). Aditivo, isolado, aparece só se houver comparação.
