@@ -913,18 +913,6 @@ st.markdown("""
         background: var(--sf-2) !important;
     }
 
-    /* ---------- MÉTRICAS: hierarquia legível ---------- */
-    [data-testid="stMetricValue"] {
-        font-size: var(--fs-xl) !important;
-        color: var(--tx-1) !important;
-        font-weight: 600 !important;
-    }
-    [data-testid="stMetricLabel"] {
-        font-size: var(--fs-sm) !important;
-        color: var(--tx-3) !important;
-    }
-
-    
     html, body, [class*="css"]  {
         font-family: 'Inter', sans-serif !important;
     }
@@ -996,19 +984,25 @@ st.markdown("""
         box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.15), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
     }
     
+    /* [REDESIGN TOTAL - Rodada 10] Estas duas regras existiam DUPLICADAS no arquivo (uma versão aqui,
+       outra logo depois do botão secundário, de uma geração anterior) com valores DIFERENTES e
+       nenhum !important nesta cópia — silenciosamente nunca tinha efeito algum: a cópia com
+       !important sempre vencia (font-size real: --fs-xl/22px e peso 600 no valor, --fs-sm/13px no
+       rótulo). Consolidado num único lugar, com os valores que já eram os efetivamente exibidos
+       (mission redesign §7/§52 — "gambiarra visual", CSS morto/duplicado). */
     [data-testid="stMetricLabel"] {
         color: var(--tx-3) !important;
         font-weight: 500;
-        font-size: 0.95rem;
+        font-size: var(--fs-sm) !important;
         margin-bottom: 0.5rem;
     }
-    
+
     [data-testid="stMetricValue"] {
         color: var(--tx-1) !important;
-        font-weight: 700;
-        font-size: 1.8rem;
+        font-weight: 600 !important;
+        font-size: var(--fs-xl) !important;
     }
-    
+
     [data-testid="stMetricDelta"] {
         font-size: 0.85rem;
     }
