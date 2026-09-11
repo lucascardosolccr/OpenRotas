@@ -57595,24 +57595,41 @@ if _secao == _SECOES[15]:   # tab_route_intel
             # projetar/exibir — tabela, KPIs, gráficos e mapas abaixo já refletem o filtro
             # escolhido. Usa só colunas que já existem em df_processado (nenhuma consulta nova).
             with st.expander("🔍 Filtros inteligentes", expanded=False):
+                # [FILTROS-INTELIGENTES-RESET - Redesign Total Rodada 13] O botão precisa de uma
+                # key NOVA por geração (não apagar a antiga) porque checkbox/multiselect do Streamlit,
+                # ao contrário do selectbox, não re-renderizam visualmente como desmarcados quando sua
+                # key é removida de session_state + st.rerun() — o valor interno já fica correto
+                # (False/[]), mas o componente na tela continua mostrando o estado antigo (verificado
+                # via Playwright, comparado lado a lado com o mesmo padrão aplicado a um selectbox, que
+                # reseta normalmente). Sufixar a key com um contador ("geração") força o Streamlit a
+                # montar um widget novo do zero a cada clique em Limpar, sempre com o visual correto.
+                _fi_gen = st.session_state.get("_filtro_intel_gen", 0)
+                _fich1, _fich2 = st.columns([82, 18])
+                with _fich1:
+                    st.caption("Combine os filtros abaixo (aplicados em conjunto) para focar o recorte exibido em toda esta aba.")
+                with _fich2:
+                    if st.button("🧹 Limpar filtros", key="btn_limpar_filtros_intel", use_container_width=True):
+                        st.session_state["_filtro_intel_gen"] = _fi_gen + 1
+                        st.rerun()
+                _fk_intel = lambda _base: f"{_base}_g{_fi_gen}"
                 _fc1, _fc2, _fc3, _fc4 = st.columns(4)
                 with _fc1:
-                    _filtro_rio = st.checkbox("Só rotas com rio/córrego", key="filtro_rio_intel")
-                    _filtro_balsa = st.checkbox("Só rotas com balsa/travessia", key="filtro_balsa_intel")
+                    _filtro_rio = st.checkbox("Só rotas com rio/córrego", key=_fk_intel("filtro_rio_intel"))
+                    _filtro_balsa = st.checkbox("Só rotas com balsa/travessia", key=_fk_intel("filtro_balsa_intel"))
                 with _fc2:
-                    _filtro_ponte = st.checkbox("Só rotas com ponte confirmada", key="filtro_ponte_intel")
-                    _filtro_sem_ponte = st.checkbox("Só cruzamento SEM ponte/travessia", key="filtro_sem_ponte_intel")
+                    _filtro_ponte = st.checkbox("Só rotas com ponte confirmada", key=_fk_intel("filtro_ponte_intel"))
+                    _filtro_sem_ponte = st.checkbox("Só cruzamento SEM ponte/travessia", key=_fk_intel("filtro_sem_ponte_intel"))
                 with _fc3:
-                    _filtro_rodovia = st.checkbox("Só rotas com rodovia identificada", key="filtro_rodovia_intel")
-                    _filtro_anomalia = st.checkbox("Só rotas com anomalia", key="filtro_anomalia_intel")
+                    _filtro_rodovia = st.checkbox("Só rotas com rodovia identificada", key=_fk_intel("filtro_rodovia_intel"))
+                    _filtro_anomalia = st.checkbox("Só rotas com anomalia", key=_fk_intel("filtro_anomalia_intel"))
                 with _fc4:
                     _uf_col_f = _col_existente(_rotas_proc, "UF", "UF_Sintetica_Origem")
                     _bacia_col_f = _col_existente(_rotas_proc, "Bacia Hidrografica", "Bacia")
                     _ufs_disp = sorted(_rotas_proc[_uf_col_f].dropna().astype(str).unique()) if _uf_col_f else []
-                    _uf_sel_f = st.multiselect("UF", _ufs_disp, key="filtro_uf_intel")
+                    _uf_sel_f = st.multiselect("UF", _ufs_disp, key=_fk_intel("filtro_uf_intel"))
                     _bacias_disp = (sorted(b for b in _rotas_proc[_bacia_col_f].dropna().astype(str).unique() if b)
                                     if _bacia_col_f else [])
-                    _bacia_sel_f = st.multiselect("Bacia hidrográfica", _bacias_disp, key="filtro_bacia_intel")
+                    _bacia_sel_f = st.multiselect("Bacia hidrográfica", _bacias_disp, key=_fk_intel("filtro_bacia_intel"))
 
                 try:
                     _mask_f = pd.Series(True, index=_rotas_proc.index)
