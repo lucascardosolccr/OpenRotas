@@ -44100,1136 +44100,1148 @@ if _secao == _SECOES[0]:   # tab_individual
                     res_ind = executar_pipeline_unificado(orig_ind, dest_ind)
                 
             if res_ind and res_ind[28] != "Falha na leitura da célula (Campo Vazio)." and "FALHA INTERNA" not in res_ind[28]:
-                # [INTEGRIDADE - 133ª geração / RFC-001 §15/§16/§20] VEREDITO condicionado à INTEGRIDADE.
-                # Antes o app afirmava "✅ sucesso · score 96.5" AO MESMO TEMPO em que reportava
-                # "Consistência Física: ❌ INCONSISTENTE" (caso Barra: viária 210 km < reta 406 km). Detectar
-                # e aprovar ao mesmo tempo é pior que não detectar. Agora a impossibilidade física ou a
-                # colisão de entidade REPROVAM a rota — um único elemento em cada ramo (UI estável, 132ª).
-                try:
-                    _integ = _integridade_de_rota(
-                        res_ind[0] if len(res_ind) > 0 else None,
-                        res_ind[4] if len(res_ind) > 4 else None,
-                        orig_ind, dest_ind,
-                        res_ind[10] if len(res_ind) > 10 else "",
-                        res_ind[16] if len(res_ind) > 16 else "")
-                except Exception as _e_ig:
-                    logger.error(f"[INTEGRIDADE] Falha ao avaliar integridade da rota: {_e_ig}")
-                    _integ = {"indice": 100, "ok": True, "problemas": []}
-                if _integ["ok"]:
-                    st.success(f"✅ Rota estabelecida com sucesso na malha viária! · 🛡️ **Integridade Geográfica "
-                               f"{_integ['indice']}/100**")
-                else:
-                    st.error("⛔ **Rota REPROVADA na validação de integridade geográfica** — 🛡️ Integridade "
-                             f"**{_integ['indice']}/100**. O resultado NÃO é confiável e não deve ser usado.\n\n"
-                             + "\n\n".join(f"• {_p}" for _p in _integ["problemas"])
-                             + "\n\n💡 Informe a **UF** (ex.: “Barra, BA”) ou o **Código IBGE** do município para "
-                               "travar a identidade oficial e recalcular.")
-                # [IBGE-INPUT - 113ª geração] Banner de ROTA TRAVADA: só afirma "travada" quando o ponto
-                # foi REALMENTE resolvido pelo Código IBGE (fonte IBGE_CODIGO_OFICIAL) — evita mensagem
-                # contraditória caso a resolução falhe.
-                _cod_ori_lock = _e_codigo_ibge(orig_ind)
-                _cod_des_lock = _e_codigo_ibge(dest_ind)
-                _fonte_o_lk = str(res_ind[11] if len(res_ind) > 11 else "")
-                _fonte_d_lk = str(res_ind[17] if len(res_ind) > 17 else "")
-                _partes_lock = []
-                if _cod_ori_lock and _fonte_o_lk == "IBGE_CODIGO_OFICIAL":
-                    _partes_lock.append(f"**Origem** travada no código `{_cod_ori_lock}`")
-                if _cod_des_lock and _fonte_d_lk == "IBGE_CODIGO_OFICIAL":
-                    _partes_lock.append(f"**Destino** travado no código `{_cod_des_lock}`")
-                if _partes_lock:
-                    st.info("🔒 **Rota travada na identidade oficial do IBGE.** " + " · ".join(_partes_lock)
-                            + ". O município, a UF e a coordenada oficial da sede foram resgatados da base "
-                            "e adotados como identidade definitiva (sem substituição por fallback/consenso). "
-                            "Veja os detalhes oficiais no painel *Identificação Municipal* e *Validação "
-                            "Oficial pelo Código IBGE* abaixo.")
-                # [FASE2-RESUMO - 184ª geração] RESUMO EXECUTIVO no topo do resultado: a resposta em 5
-                # segundos (origem→destino, km viário, tempo e score) ANTES de todo o detalhamento e das
-                # auditorias abaixo. score_g é calculado aqui em cima (depende só de res_ind) para alimentar
-                # tanto o veredito quanto o card de Score — sem recomputar. Mudança LOCAL e aditiva: não move
-                # a navegação nem as auditorias, não re-indenta as métricas (zero risco de removeChild).
-                score_g = round((0.35 * res_ind[8]) + (0.35 * res_ind[14]) + (0.30 * res_ind[6]), 2)
-                st.markdown("#### 📋 Resumo Executivo")
-                _mun_o_rs = res_ind[10] if len(res_ind) > 10 and res_ind[10] else orig_ind
-                _mun_d_rs = res_ind[16] if len(res_ind) > 16 and res_ind[16] else dest_ind
-                _km_rs = f"{res_ind[0]} km" if isinstance(res_ind[0], float) else str(res_ind[0])
-                st.markdown(f"🧭 De **{_mun_o_rs}** até **{_mun_d_rs}** — **{_km_rs}** por estrada, "
-                            f"tempo estimado **{res_ind[1]}**, score global **{score_g:.0f}/100**.")
-                m_dist_via, m_dist_reta, m_time, m_balsa, m_score = st.columns(5)
-                m_dist_via.metric("Distância Viária", f"{res_ind[0]} km" if isinstance(res_ind[0], float) else res_ind[0], help="Quilometragem real rodada por asfalto, do provedor vencedor (Google Maps ou OSRM — menor distância). Se nenhum responder, é estimada por projeção geodésica.")
-                m_dist_reta.metric("Distância Linha Reta", f"{res_ind[4]} km" if isinstance(res_ind[4], float) else res_ind[4], help="Voo de pássaro entre os pontos (geodésica WGS-84). Serve de árbitro contra fretes inflados.")
-                m_time.metric("Tempo Estimado", res_ind[1], help="Duração estimada da viagem de carro.")
-                m_balsa.metric("Uso de Balsas", res_ind[3], help="Indica se a rota obrigatoriamente cruza travessia aquática.")
-                m_score.metric("Score Global", f"{score_g} / 100", help="Índice combinado de confiança da geocodificação de origem, destino e da rota.")
-                # [GOLDEN - 120ª geração] Guarda a última rota calculada em session_state para a Caderneta de
-                # Rotas Douradas — a captura sobrevive ao rerun do botão de salvar (que fica fora deste bloco).
-                try:
-                    st.session_state['ultima_rota_individual'] = {
-                        "origem": orig_ind, "destino": dest_ind,
-                        "km": res_ind[0] if isinstance(res_ind[0], (int, float)) else None,
-                        "tempo": res_ind[1], "balsa": res_ind[3],
-                        "linha_reta": res_ind[4] if isinstance(res_ind[4], (int, float)) else None,
-                        "fonte_rota": res_ind[5] if len(res_ind) > 5 else "",
-                        "score_global": score_g,
-                        "lat_origem": res_ind[19] if len(res_ind) > 22 else None,
-                        "lon_origem": res_ind[20] if len(res_ind) > 22 else None,
-                        "lat_destino": res_ind[21] if len(res_ind) > 22 else None,
-                        "lon_destino": res_ind[22] if len(res_ind) > 22 else None,
-                    }
-                except Exception as _e_cap:
-                    logger.error(f"[GOLDEN] Falha ao capturar última rota individual: {_e_cap}")
+                # [UI-REENGENHARIA - Rodada 7] Resultado agrupado em abas (mission UI/UX §9 —
+                # "esta é uma das prioridades máximas", elimina a "parede de informações"):
+                # nada de lógica mudou aqui — cada painel abaixo é EXATAMENTE o mesmo código de antes,
+                # só passou a renderizar dentro de uma aba em vez de empilhado verticalmente.
+                _tab_resumo_ind, _tab_ctx_ind, _tab_diag_ind, _tab_mapa_ind = st.tabs([
+                    "\U0001F4CB Resumo", "\U0001F30D Contexto Geogr\u00e1fico",
+                    "\U0001F50D Diagn\u00f3stico & Auditoria", "\U0001F5FA\uFE0F Mapa"])
+                with _tab_resumo_ind:
+                    # [INTEGRIDADE - 133ª geração / RFC-001 §15/§16/§20] VEREDITO condicionado à INTEGRIDADE.
+                    # Antes o app afirmava "✅ sucesso · score 96.5" AO MESMO TEMPO em que reportava
+                    # "Consistência Física: ❌ INCONSISTENTE" (caso Barra: viária 210 km < reta 406 km). Detectar
+                    # e aprovar ao mesmo tempo é pior que não detectar. Agora a impossibilidade física ou a
+                    # colisão de entidade REPROVAM a rota — um único elemento em cada ramo (UI estável, 132ª).
+                    try:
+                        _integ = _integridade_de_rota(
+                            res_ind[0] if len(res_ind) > 0 else None,
+                            res_ind[4] if len(res_ind) > 4 else None,
+                            orig_ind, dest_ind,
+                            res_ind[10] if len(res_ind) > 10 else "",
+                            res_ind[16] if len(res_ind) > 16 else "")
+                    except Exception as _e_ig:
+                        logger.error(f"[INTEGRIDADE] Falha ao avaliar integridade da rota: {_e_ig}")
+                        _integ = {"indice": 100, "ok": True, "problemas": []}
+                    if _integ["ok"]:
+                        st.success(f"✅ Rota estabelecida com sucesso na malha viária! · 🛡️ **Integridade Geográfica "
+                                   f"{_integ['indice']}/100**")
+                    else:
+                        st.error("⛔ **Rota REPROVADA na validação de integridade geográfica** — 🛡️ Integridade "
+                                 f"**{_integ['indice']}/100**. O resultado NÃO é confiável e não deve ser usado.\n\n"
+                                 + "\n\n".join(f"• {_p}" for _p in _integ["problemas"])
+                                 + "\n\n💡 Informe a **UF** (ex.: “Barra, BA”) ou o **Código IBGE** do município para "
+                                   "travar a identidade oficial e recalcular.")
+                    # [IBGE-INPUT - 113ª geração] Banner de ROTA TRAVADA: só afirma "travada" quando o ponto
+                    # foi REALMENTE resolvido pelo Código IBGE (fonte IBGE_CODIGO_OFICIAL) — evita mensagem
+                    # contraditória caso a resolução falhe.
+                    _cod_ori_lock = _e_codigo_ibge(orig_ind)
+                    _cod_des_lock = _e_codigo_ibge(dest_ind)
+                    _fonte_o_lk = str(res_ind[11] if len(res_ind) > 11 else "")
+                    _fonte_d_lk = str(res_ind[17] if len(res_ind) > 17 else "")
+                    _partes_lock = []
+                    if _cod_ori_lock and _fonte_o_lk == "IBGE_CODIGO_OFICIAL":
+                        _partes_lock.append(f"**Origem** travada no código `{_cod_ori_lock}`")
+                    if _cod_des_lock and _fonte_d_lk == "IBGE_CODIGO_OFICIAL":
+                        _partes_lock.append(f"**Destino** travado no código `{_cod_des_lock}`")
+                    if _partes_lock:
+                        st.info("🔒 **Rota travada na identidade oficial do IBGE.** " + " · ".join(_partes_lock)
+                                + ". O município, a UF e a coordenada oficial da sede foram resgatados da base "
+                                "e adotados como identidade definitiva (sem substituição por fallback/consenso). "
+                                "Veja os detalhes oficiais no painel *Identificação Municipal* e *Validação "
+                                "Oficial pelo Código IBGE* abaixo.")
+                    # [FASE2-RESUMO - 184ª geração] RESUMO EXECUTIVO no topo do resultado: a resposta em 5
+                    # segundos (origem→destino, km viário, tempo e score) ANTES de todo o detalhamento e das
+                    # auditorias abaixo. score_g é calculado aqui em cima (depende só de res_ind) para alimentar
+                    # tanto o veredito quanto o card de Score — sem recomputar. Mudança LOCAL e aditiva: não move
+                    # a navegação nem as auditorias, não re-indenta as métricas (zero risco de removeChild).
+                    score_g = round((0.35 * res_ind[8]) + (0.35 * res_ind[14]) + (0.30 * res_ind[6]), 2)
+                    st.markdown("#### 📋 Resumo Executivo")
+                    _mun_o_rs = res_ind[10] if len(res_ind) > 10 and res_ind[10] else orig_ind
+                    _mun_d_rs = res_ind[16] if len(res_ind) > 16 and res_ind[16] else dest_ind
+                    _km_rs = f"{res_ind[0]} km" if isinstance(res_ind[0], float) else str(res_ind[0])
+                    st.markdown(f"🧭 De **{_mun_o_rs}** até **{_mun_d_rs}** — **{_km_rs}** por estrada, "
+                                f"tempo estimado **{res_ind[1]}**, score global **{score_g:.0f}/100**.")
+                    m_dist_via, m_dist_reta, m_time, m_balsa, m_score = st.columns(5)
+                    m_dist_via.metric("Distância Viária", f"{res_ind[0]} km" if isinstance(res_ind[0], float) else res_ind[0], help="Quilometragem real rodada por asfalto, do provedor vencedor (Google Maps ou OSRM — menor distância). Se nenhum responder, é estimada por projeção geodésica.")
+                    m_dist_reta.metric("Distância Linha Reta", f"{res_ind[4]} km" if isinstance(res_ind[4], float) else res_ind[4], help="Voo de pássaro entre os pontos (geodésica WGS-84). Serve de árbitro contra fretes inflados.")
+                    m_time.metric("Tempo Estimado", res_ind[1], help="Duração estimada da viagem de carro.")
+                    m_balsa.metric("Uso de Balsas", res_ind[3], help="Indica se a rota obrigatoriamente cruza travessia aquática.")
+                    m_score.metric("Score Global", f"{score_g} / 100", help="Índice combinado de confiança da geocodificação de origem, destino e da rota.")
+                    # [GOLDEN - 120ª geração] Guarda a última rota calculada em session_state para a Caderneta de
+                    # Rotas Douradas — a captura sobrevive ao rerun do botão de salvar (que fica fora deste bloco).
+                    try:
+                        st.session_state['ultima_rota_individual'] = {
+                            "origem": orig_ind, "destino": dest_ind,
+                            "km": res_ind[0] if isinstance(res_ind[0], (int, float)) else None,
+                            "tempo": res_ind[1], "balsa": res_ind[3],
+                            "linha_reta": res_ind[4] if isinstance(res_ind[4], (int, float)) else None,
+                            "fonte_rota": res_ind[5] if len(res_ind) > 5 else "",
+                            "score_global": score_g,
+                            "lat_origem": res_ind[19] if len(res_ind) > 22 else None,
+                            "lon_origem": res_ind[20] if len(res_ind) > 22 else None,
+                            "lat_destino": res_ind[21] if len(res_ind) > 22 else None,
+                            "lon_destino": res_ind[22] if len(res_ind) > 22 else None,
+                        }
+                    except Exception as _e_cap:
+                        logger.error(f"[GOLDEN] Falha ao capturar última rota individual: {_e_cap}")
                 
-                # [UX-07] Barra visual de confiança global — leitura instantânea da qualidade
-                st.markdown(f"**Confiança Global do Resultado:** {score_g:.0f}/100", help="Quanto mais cheia e verde a barra, mais confiável é a localização encontrada.")
-                st.markdown(ds_barra_confianca(score_g), unsafe_allow_html=True)
-                st.write("")
+                    # [UX-07] Barra visual de confiança global — leitura instantânea da qualidade
+                    st.markdown(f"**Confiança Global do Resultado:** {score_g:.0f}/100", help="Quanto mais cheia e verde a barra, mais confiável é a localização encontrada.")
+                    st.markdown(ds_barra_confianca(score_g), unsafe_allow_html=True)
+                    st.write("")
                 
-                st.info(f"🧭 **Estratégia de Roteamento (XAI):** {res_ind[28]}")
-                st.caption(f"📏 **Status da Linha Reta:** {res_ind[30] if len(res_ind) > 30 else 'Não Mapeado'}")
+                    st.info(f"🧭 **Estratégia de Roteamento (XAI):** {res_ind[28]}")
+                    st.caption(f"📏 **Status da Linha Reta:** {res_ind[30] if len(res_ind) > 30 else 'Não Mapeado'}")
 
-                # [METODO-TELA - 57ª geração / item #8] Método utilizado, EXPLÍCITO na tela (spec):
-                # ✓ Distância viária (Google Maps) / (OSRM - fallback) OU ✓ Linha reta (GeographicLib).
-                # Derivado da 'Fonte da Rota' (res_ind[5]) já calculada — custo zero, sem chamada nova.
-                _metodo_tela = _rotulo_metodo_rota(res_ind[5] if len(res_ind) > 5 else "")
-                if _metodo_tela.startswith("Linha reta"):
-                    st.info(f"📐 **Método utilizado:** ✓ {_metodo_tela} — estimativa (nenhum motor viário respondeu).")
-                elif _metodo_tela != "N/A":
-                    st.success(f"✅ **Método utilizado:** ✓ {_metodo_tela}")
+                    # [METODO-TELA - 57ª geração / item #8] Método utilizado, EXPLÍCITO na tela (spec):
+                    # ✓ Distância viária (Google Maps) / (OSRM - fallback) OU ✓ Linha reta (GeographicLib).
+                    # Derivado da 'Fonte da Rota' (res_ind[5]) já calculada — custo zero, sem chamada nova.
+                    _metodo_tela = _rotulo_metodo_rota(res_ind[5] if len(res_ind) > 5 else "")
+                    if _metodo_tela.startswith("Linha reta"):
+                        st.info(f"📐 **Método utilizado:** ✓ {_metodo_tela} — estimativa (nenhum motor viário respondeu).")
+                    elif _metodo_tela != "N/A":
+                        st.success(f"✅ **Método utilizado:** ✓ {_metodo_tela}")
 
-                # [GEO-INTEL-AUTO] Contexto geográfico automático da rota (rios, bacia, pontes,
-                # travessias, dependência aquaviária) — aditivo. Sempre que a aplicação calcula
-                # uma rota, ela passa automaticamente por esta análise (sem exigir que o usuário
-                # entre na aba Inteligência). Reaproveita as mesmas coordenadas já resolvidas para
-                # a Caderneta de Rotas Douradas, sem nenhuma consulta de rede adicional.
-                try:
-                    _lat_o_gi = res_ind[19] if len(res_ind) > 22 else None
-                    _lon_o_gi = res_ind[20] if len(res_ind) > 22 else None
-                    _lat_d_gi = res_ind[21] if len(res_ind) > 22 else None
-                    _lon_d_gi = res_ind[22] if len(res_ind) > 22 else None
-                    if (_geo_route_context is not None and _lat_o_gi is not None and _lon_o_gi is not None
-                            and _lat_d_gi is not None and _lon_d_gi is not None):
-                        _dist_gi = res_ind[0] if isinstance(res_ind[0], (int, float)) else None
-                        _ctx_gi = _geo_route_context.analisar_rota(
-                            (float(_lat_o_gi), float(_lon_o_gi)), (float(_lat_d_gi), float(_lon_d_gi)),
-                            distancia_km=_dist_gi)
-                        st.session_state['ultima_rota_individual_geo'] = _ctx_gi
-                        with st.expander("🧠 Contexto Geográfico da Rota (rios, bacia, pontes, travessias)",
-                                         expanded=bool(_ctx_gi.rios_detectados or _ctx_gi.corpos_dagua)):
-                            st.markdown(f"**{_ctx_gi.motivo_decisao}**")
-                            if _ctx_gi.rodovias:
-                                st.caption("🛣️ Rodovias identificadas: " + ", ".join(
-                                    r.sigla for r in _ctx_gi.rodovias))
-                            if _ctx_gi.ferrovias:
-                                st.caption("🚆 Ferrovias próximas: " + ", ".join(
-                                    f.nome for f in _ctx_gi.ferrovias))
-                            if _ctx_gi.rios_detectados:
-                                st.caption("🌊 Rios/córregos cruzados: " + ", ".join(
-                                    r.nome + (f" (bacia {r.bacia})" if r.bacia else "") for r in _ctx_gi.rios_detectados))
-                            if _ctx_gi.sub_bacia:
-                                st.caption(f"🔖 Sub-bacia (código oficial SNIRH, sem nome catalogado nesta base): {_ctx_gi.sub_bacia}")
-                            if _ctx_gi.pontes:
-                                st.caption("🌉 Pontes no cruzamento: " + ", ".join(p.nome for p in _ctx_gi.pontes))
-                            if _ctx_gi.travessias:
-                                st.caption("⛴️ Travessias aquaviárias próximas: " + ", ".join(t.nome for t in _ctx_gi.travessias))
-                            if _ctx_gi.hidrovias_proximas:
-                                st.caption("🚢 Hidrovia próxima: " + _ctx_gi.hidrovias_proximas[0].nome)
-                            if _ctx_gi.dependencia_aquaviaria is not None:
-                                st.caption(f"📊 Dependência aquaviária: {_ctx_gi.dependencia_aquaviaria}/100 · "
-                                          f"Complexidade geográfica: {_ctx_gi.complexidade_geografica}/100 · "
-                                          f"Confiança geográfica: {_ctx_gi.confianca_geral}/100 ({_ctx_gi.confianca_nivel})")
-                            for _av in _ctx_gi.avisos:
-                                st.caption(f"⚠️ {_av}")
-                            if _ctx_gi.anomalias:
-                                # [ANOMALIAS - Rodada 9/Missão 2] §25-26 da missão: alertas
-                                # categorizados/filtráveis (não só texto solto) — cada um mostra
-                                # categoria + severidade, nunca uma anomalia fabricada sem motivo.
-                                _icone_sev = {"alta": "🔴", "media": "🟠", "baixa": "🟡"}
-                                with st.expander(f"🚩 {len(_ctx_gi.anomalias)} anomalia(s) detectada(s)", expanded=False):
-                                    for _an in _ctx_gi.anomalias:
-                                        st.caption(f"{_icone_sev.get(_an.severidade, '•')} **{_an.categoria}** "
-                                                  f"({_an.severidade}): {_an.descricao}")
-                            # [GEO-MAPA - Rodada 9] Mapa com camadas ativáveis (rios, pontes,
-                            # travessias, hidrovias, portos) — só desenhado se houver ao menos
-                            # uma feição com coordenada conhecida (nunca um mapa vazio).
-                            _tem_feicoes_mapa = any([
-                                _ctx_gi.rios_detectados, _ctx_gi.corpos_dagua, _ctx_gi.pontes,
-                                _ctx_gi.travessias, _ctx_gi.hidrovias_proximas, _ctx_gi.portos_terminais,
-                                _ctx_gi.rodovias, _ctx_gi.ferrovias])
-                            if _tem_feicoes_mapa:
+                with _tab_ctx_ind:
+                    # [GEO-INTEL-AUTO] Contexto geográfico automático da rota (rios, bacia, pontes,
+                    # travessias, dependência aquaviária) — aditivo. Sempre que a aplicação calcula
+                    # uma rota, ela passa automaticamente por esta análise (sem exigir que o usuário
+                    # entre na aba Inteligência). Reaproveita as mesmas coordenadas já resolvidas para
+                    # a Caderneta de Rotas Douradas, sem nenhuma consulta de rede adicional.
+                    try:
+                        _lat_o_gi = res_ind[19] if len(res_ind) > 22 else None
+                        _lon_o_gi = res_ind[20] if len(res_ind) > 22 else None
+                        _lat_d_gi = res_ind[21] if len(res_ind) > 22 else None
+                        _lon_d_gi = res_ind[22] if len(res_ind) > 22 else None
+                        if (_geo_route_context is not None and _lat_o_gi is not None and _lon_o_gi is not None
+                                and _lat_d_gi is not None and _lon_d_gi is not None):
+                            _dist_gi = res_ind[0] if isinstance(res_ind[0], (int, float)) else None
+                            _ctx_gi = _geo_route_context.analisar_rota(
+                                (float(_lat_o_gi), float(_lon_o_gi)), (float(_lat_d_gi), float(_lon_d_gi)),
+                                distancia_km=_dist_gi)
+                            st.session_state['ultima_rota_individual_geo'] = _ctx_gi
+                            with st.expander("🧠 Contexto Geográfico da Rota (rios, bacia, pontes, travessias)",
+                                             expanded=bool(_ctx_gi.rios_detectados or _ctx_gi.corpos_dagua)):
+                                st.markdown(f"**{_ctx_gi.motivo_decisao}**")
+                                if _ctx_gi.rodovias:
+                                    st.caption("🛣️ Rodovias identificadas: " + ", ".join(
+                                        r.sigla for r in _ctx_gi.rodovias))
+                                if _ctx_gi.ferrovias:
+                                    st.caption("🚆 Ferrovias próximas: " + ", ".join(
+                                        f.nome for f in _ctx_gi.ferrovias))
+                                if _ctx_gi.rios_detectados:
+                                    st.caption("🌊 Rios/córregos cruzados: " + ", ".join(
+                                        r.nome + (f" (bacia {r.bacia})" if r.bacia else "") for r in _ctx_gi.rios_detectados))
+                                if _ctx_gi.sub_bacia:
+                                    st.caption(f"🔖 Sub-bacia (código oficial SNIRH, sem nome catalogado nesta base): {_ctx_gi.sub_bacia}")
+                                if _ctx_gi.pontes:
+                                    st.caption("🌉 Pontes no cruzamento: " + ", ".join(p.nome for p in _ctx_gi.pontes))
+                                if _ctx_gi.travessias:
+                                    st.caption("⛴️ Travessias aquaviárias próximas: " + ", ".join(t.nome for t in _ctx_gi.travessias))
+                                if _ctx_gi.hidrovias_proximas:
+                                    st.caption("🚢 Hidrovia próxima: " + _ctx_gi.hidrovias_proximas[0].nome)
+                                if _ctx_gi.dependencia_aquaviaria is not None:
+                                    st.caption(f"📊 Dependência aquaviária: {_ctx_gi.dependencia_aquaviaria}/100 · "
+                                              f"Complexidade geográfica: {_ctx_gi.complexidade_geografica}/100 · "
+                                              f"Confiança geográfica: {_ctx_gi.confianca_geral}/100 ({_ctx_gi.confianca_nivel})")
+                                for _av in _ctx_gi.avisos:
+                                    st.caption(f"⚠️ {_av}")
+                                if _ctx_gi.anomalias:
+                                    # [ANOMALIAS - Rodada 9/Missão 2] §25-26 da missão: alertas
+                                    # categorizados/filtráveis (não só texto solto) — cada um mostra
+                                    # categoria + severidade, nunca uma anomalia fabricada sem motivo.
+                                    _icone_sev = {"alta": "🔴", "media": "🟠", "baixa": "🟡"}
+                                    with st.expander(f"🚩 {len(_ctx_gi.anomalias)} anomalia(s) detectada(s)", expanded=False):
+                                        for _an in _ctx_gi.anomalias:
+                                            st.caption(f"{_icone_sev.get(_an.severidade, '•')} **{_an.categoria}** "
+                                                      f"({_an.severidade}): {_an.descricao}")
+                                # [GEO-MAPA - Rodada 9] Mapa com camadas ativáveis (rios, pontes,
+                                # travessias, hidrovias, portos) — só desenhado se houver ao menos
+                                # uma feição com coordenada conhecida (nunca um mapa vazio).
+                                _tem_feicoes_mapa = any([
+                                    _ctx_gi.rios_detectados, _ctx_gi.corpos_dagua, _ctx_gi.pontes,
+                                    _ctx_gi.travessias, _ctx_gi.hidrovias_proximas, _ctx_gi.portos_terminais,
+                                    _ctx_gi.rodovias, _ctx_gi.ferrovias])
+                                if _tem_feicoes_mapa:
+                                    try:
+                                        _mapa_geo_uri = _mapa_leaflet_contexto_geografico(
+                                            _ctx_gi, float(_lat_o_gi), float(_lon_o_gi),
+                                            float(_lat_d_gi), float(_lon_d_gi), orig_ind, dest_ind)
+                                        import base64 as _b64geo
+                                        components.html(
+                                            _b64geo.b64decode(_mapa_geo_uri.split(",", 1)[1]).decode("utf-8"),
+                                            height=440, scrolling=False)
+                                        st.caption("🗺️ Use o controle de camadas no canto do mapa para ativar/desativar "
+                                                  "rios, pontes, travessias, hidrovias e portos.")
+                                    except Exception:
+                                        logger.debug("[GEO-MAPA] Falha ao renderizar mapa de contexto (aditivo).", exc_info=True)
+                    except Exception:
+                        logger.debug("[GEO-INTEL-AUTO] Falha no contexto geográfico individual (aditivo).", exc_info=True)
+
+                    # [IBGE-SINGLESHOT - 59ª geração / item #2] Identificação municipal oficial (IBGE) na
+                    # TELA, origem E destino: Município + UF + Cód IBGE + Fonte da identificação + Confiança.
+                    # Reaproveita a resolução da planilha (54ª) via _resolver_identidade_ibge — base IBGE em
+                    # memória (sem rede). Índices: origem mun=10/fonte=11/end=12/conf=7/score=8;
+                    # destino mun=16/fonte=17/end=18/conf=13/score=14. Leitura defensiva por tamanho.
+                    _id_o = _resolver_identidade_ibge(res_ind[10] if len(res_ind) > 10 else "",
+                                                      res_ind[12] if len(res_ind) > 12 else "")
+                    _id_d = _resolver_identidade_ibge(res_ind[16] if len(res_ind) > 16 else "",
+                                                      res_ind[18] if len(res_ind) > 18 else "")
+                    with st.container(border=True):
+                        st.markdown("##### 🗺️ Identificação Municipal Oficial (IBGE)")
+                        st.caption("Código IBGE como **identificador oficial** da localidade, com a **fonte** da "
+                                   "geocodificação vencedora e o **nível de confiança** — para origem e destino.")
+                        _ci_o, _ci_d = st.columns(2)
+                        with _ci_o:
+                            st.markdown(
+                                f"**📍 Origem**  \n"
+                                f"Município: **{_id_o['municipio'].title()}**  \n"
+                                f"UF: **{_id_o['uf']}**  \n"
+                                f"Cód. IBGE: `{_id_o['cod_ibge']}`  \n"
+                                f"Fonte da identificação: {res_ind[11] if len(res_ind) > 11 else '—'}  \n"
+                                f"Confiança: **{res_ind[7] if len(res_ind) > 7 else '—'}** "
+                                f"(score {res_ind[8] if len(res_ind) > 8 else '—'}/100)"
+                            )
+                            _diag_o = _diagnostico_ibge(_id_o['cod_ibge'], _id_o['municipio'], _id_o['uf'])
+                            if _diag_o:
+                                st.caption(f"ℹ️ {_diag_o}")
+                            # [IBGE-MALHAS - 108ª geração] Validação por polígono oficial (gated): a coordenada
+                            # roteada cai dentro do município? Só aparece com IBGE_MALHAS_ATIVO + malha obtida.
+                            if IBGE_MALHAS_ATIVO:
                                 try:
-                                    _mapa_geo_uri = _mapa_leaflet_contexto_geografico(
-                                        _ctx_gi, float(_lat_o_gi), float(_lon_o_gi),
-                                        float(_lat_d_gi), float(_lon_d_gi), orig_ind, dest_ind)
-                                    import base64 as _b64geo
-                                    components.html(
-                                        _b64geo.b64decode(_mapa_geo_uri.split(",", 1)[1]).decode("utf-8"),
-                                        height=440, scrolling=False)
-                                    st.caption("🗺️ Use o controle de camadas no canto do mapa para ativar/desativar "
-                                              "rios, pontes, travessias, hidrovias e portos.")
-                                except Exception:
-                                    logger.debug("[GEO-MAPA] Falha ao renderizar mapa de contexto (aditivo).", exc_info=True)
-                except Exception:
-                    logger.debug("[GEO-INTEL-AUTO] Falha no contexto geográfico individual (aditivo).", exc_info=True)
-
-                # [IBGE-SINGLESHOT - 59ª geração / item #2] Identificação municipal oficial (IBGE) na
-                # TELA, origem E destino: Município + UF + Cód IBGE + Fonte da identificação + Confiança.
-                # Reaproveita a resolução da planilha (54ª) via _resolver_identidade_ibge — base IBGE em
-                # memória (sem rede). Índices: origem mun=10/fonte=11/end=12/conf=7/score=8;
-                # destino mun=16/fonte=17/end=18/conf=13/score=14. Leitura defensiva por tamanho.
-                _id_o = _resolver_identidade_ibge(res_ind[10] if len(res_ind) > 10 else "",
-                                                  res_ind[12] if len(res_ind) > 12 else "")
-                _id_d = _resolver_identidade_ibge(res_ind[16] if len(res_ind) > 16 else "",
-                                                  res_ind[18] if len(res_ind) > 18 else "")
-                with st.container(border=True):
-                    st.markdown("##### 🗺️ Identificação Municipal Oficial (IBGE)")
-                    st.caption("Código IBGE como **identificador oficial** da localidade, com a **fonte** da "
-                               "geocodificação vencedora e o **nível de confiança** — para origem e destino.")
-                    _ci_o, _ci_d = st.columns(2)
-                    with _ci_o:
-                        st.markdown(
-                            f"**📍 Origem**  \n"
-                            f"Município: **{_id_o['municipio'].title()}**  \n"
-                            f"UF: **{_id_o['uf']}**  \n"
-                            f"Cód. IBGE: `{_id_o['cod_ibge']}`  \n"
-                            f"Fonte da identificação: {res_ind[11] if len(res_ind) > 11 else '—'}  \n"
-                            f"Confiança: **{res_ind[7] if len(res_ind) > 7 else '—'}** "
-                            f"(score {res_ind[8] if len(res_ind) > 8 else '—'}/100)"
-                        )
-                        _diag_o = _diagnostico_ibge(_id_o['cod_ibge'], _id_o['municipio'], _id_o['uf'])
-                        if _diag_o:
-                            st.caption(f"ℹ️ {_diag_o}")
-                        # [IBGE-MALHAS - 108ª geração] Validação por polígono oficial (gated): a coordenada
-                        # roteada cai dentro do município? Só aparece com IBGE_MALHAS_ATIVO + malha obtida.
-                        if IBGE_MALHAS_ATIVO:
-                            try:
-                                _vpm_o = _validar_ponto_no_municipio(
-                                    float(res_ind[19]) if len(res_ind) > 19 else 0.0,
-                                    float(res_ind[20]) if len(res_ind) > 20 else 0.0, _id_o['cod_ibge'])
-                                if _vpm_o.get("disponivel"):
-                                    st.caption("✅ Coordenada **dentro** do polígono oficial do município (IBGE)."
-                                               if _vpm_o["dentro"] else
-                                               "⚠️ Coordenada **fora** do polígono oficial do município (IBGE) — "
-                                               "possível erro de geocodificação.")
-                            except Exception as _e_vpo:
-                                logger.error(f"[IBGE-MALHAS] Falha na validação da origem: {_e_vpo}")
-                    with _ci_d:
-                        st.markdown(
-                            f"**🎯 Destino**  \n"
-                            f"Município: **{_id_d['municipio'].title()}**  \n"
-                            f"UF: **{_id_d['uf']}**  \n"
-                            f"Cód. IBGE: `{_id_d['cod_ibge']}`  \n"
-                            f"Fonte da identificação: {res_ind[17] if len(res_ind) > 17 else '—'}  \n"
-                            f"Confiança: **{res_ind[13] if len(res_ind) > 13 else '—'}** "
-                            f"(score {res_ind[14] if len(res_ind) > 14 else '—'}/100)"
-                        )
-                        _diag_d = _diagnostico_ibge(_id_d['cod_ibge'], _id_d['municipio'], _id_d['uf'])
-                        if _diag_d:
-                            st.caption(f"ℹ️ {_diag_d}")
-                        if IBGE_MALHAS_ATIVO:
-                            try:
-                                _vpm_d = _validar_ponto_no_municipio(
-                                    float(res_ind[21]) if len(res_ind) > 21 else 0.0,
-                                    float(res_ind[22]) if len(res_ind) > 22 else 0.0, _id_d['cod_ibge'])
-                                if _vpm_d.get("disponivel"):
-                                    st.caption("✅ Coordenada **dentro** do polígono oficial do município (IBGE)."
-                                               if _vpm_d["dentro"] else
-                                               "⚠️ Coordenada **fora** do polígono oficial do município (IBGE) — "
-                                               "possível erro de geocodificação.")
-                            except Exception as _e_vpd:
-                                logger.error(f"[IBGE-MALHAS] Falha na validação do destino: {_e_vpd}")
-                    # [IBGE-INPUT - 99ª geração] AUDITORIA "Validação Oficial pelo Código IBGE": compara o
-                    # código INFORMADO (quando o usuário digita um) com o IDENTIFICADO, reportando
-                    # confirmação/divergência/correção — fecha o ciclo de rastreabilidade do código.
-                    try:
-                        _av_o = _auditoria_validacao_ibge(orig_ind, _id_o['cod_ibge'], _id_o['municipio'],
-                                                          _id_o['uf'], res_ind[11] if len(res_ind) > 11 else '—')
-                        _av_d = _auditoria_validacao_ibge(dest_ind, _id_d['cod_ibge'], _id_d['municipio'],
-                                                          _id_d['uf'], res_ind[17] if len(res_ind) > 17 else '—')
-                        _expandir_av = _av_o['entrada_por_codigo'] or _av_d['entrada_por_codigo']
-                        with st.expander("🏛️ Validação Oficial pelo Código IBGE", expanded=_expandir_av):
-                            st.caption("Compara o Código IBGE **informado** (quando a entrada é um código) "
-                                       "com o **identificado**, confirmando o município oficial ou apontando "
-                                       "divergência e correção sugerida.")
-                            _cav_o, _cav_d = st.columns(2)
-                            for _cav, _av, _lbl in [(_cav_o, _av_o, "📍 Origem"), (_cav_d, _av_d, "🎯 Destino")]:
-                                with _cav:
-                                    st.markdown(
-                                        f"**{_lbl}** — {_av['status']}  \n"
-                                        f"Código informado: `{_av['codigo_informado']}`  \n"
-                                        f"Código identificado: `{_av['codigo_identificado']}`  \n"
-                                        f"Município/UF: **{_av['municipio']}/{_av['uf']}**  \n"
-                                        f"Fonte: {_av['fonte']}  \n"
-                                        f"Revisão manual: **{_av['revisao_manual']}**")
-                                    st.caption(_av['divergencia'])
-                    except Exception as _e_av:
-                        logger.error(f"[IBGE-INPUT] Falha na auditoria de validação IBGE: {_e_av}")
-                    # [INTEL-TERRITORIAL - 112ª geração] Sinalização de ACESSO FLUVIAL/ISOLADO (base oficial
-                    # IBGE REGIC 2018): se origem e/ou destino é um município sem ligação rodoviária, a rota
-                    # terrestre é inviável — aviso de auditoria + XAI. Gated por FLUVIAL_LISTA_ATIVA.
-                    try:
-                        _fl_o = _municipio_acesso_fluvial(_id_o.get('cod_ibge', ''))
-                        _fl_d = _municipio_acesso_fluvial(_id_d.get('cod_ibge', ''))
-                        if _fl_o or _fl_d:
-                            _quais_fl = []
-                            if _fl_o:
-                                _quais_fl.append(f"a **origem** ({str(_id_o['municipio']).title()}/{_id_o['uf']})")
-                            if _fl_d:
-                                _quais_fl.append(f"o **destino** ({str(_id_d['municipio']).title()}/{_id_d['uf']})")
-                            st.warning("🛶 **Acesso fluvial/isolado (base oficial IBGE REGIC):** " + " e ".join(_quais_fl)
-                                       + " não possui ligação rodoviária — o acesso é por via **fluvial** (ou aérea). A "
-                                       "distância rodoviária **não representa uma viagem viável** por estrada; considere o "
-                                       "transporte hidroviário/aéreo. *(Fonte: IBGE REGIC 2018 — Ligações Rodoviárias e "
-                                       "Hidroviárias.)*")
-                    except Exception as _e_fl:
-                        logger.error(f"[INTEL-TERRITORIAL] Falha na sinalização de acesso fluvial: {_e_fl}")
-                    # [AQUAVIARIA - 116ª geração] Distância aquaviária (matriz pré-calculada, gated): quando
-                    # a matriz tem o par de Códigos IBGE, mostra a km por água. Inerte enquanto AQUAVIARIA_ATIVA
-                    # estiver desligada / matriz ausente (impacto zero).
-                    if AQUAVIARIA_ATIVA:
+                                    _vpm_o = _validar_ponto_no_municipio(
+                                        float(res_ind[19]) if len(res_ind) > 19 else 0.0,
+                                        float(res_ind[20]) if len(res_ind) > 20 else 0.0, _id_o['cod_ibge'])
+                                    if _vpm_o.get("disponivel"):
+                                        st.caption("✅ Coordenada **dentro** do polígono oficial do município (IBGE)."
+                                                   if _vpm_o["dentro"] else
+                                                   "⚠️ Coordenada **fora** do polígono oficial do município (IBGE) — "
+                                                   "possível erro de geocodificação.")
+                                except Exception as _e_vpo:
+                                    logger.error(f"[IBGE-MALHAS] Falha na validação da origem: {_e_vpo}")
+                        with _ci_d:
+                            st.markdown(
+                                f"**🎯 Destino**  \n"
+                                f"Município: **{_id_d['municipio'].title()}**  \n"
+                                f"UF: **{_id_d['uf']}**  \n"
+                                f"Cód. IBGE: `{_id_d['cod_ibge']}`  \n"
+                                f"Fonte da identificação: {res_ind[17] if len(res_ind) > 17 else '—'}  \n"
+                                f"Confiança: **{res_ind[13] if len(res_ind) > 13 else '—'}** "
+                                f"(score {res_ind[14] if len(res_ind) > 14 else '—'}/100)"
+                            )
+                            _diag_d = _diagnostico_ibge(_id_d['cod_ibge'], _id_d['municipio'], _id_d['uf'])
+                            if _diag_d:
+                                st.caption(f"ℹ️ {_diag_d}")
+                            if IBGE_MALHAS_ATIVO:
+                                try:
+                                    _vpm_d = _validar_ponto_no_municipio(
+                                        float(res_ind[21]) if len(res_ind) > 21 else 0.0,
+                                        float(res_ind[22]) if len(res_ind) > 22 else 0.0, _id_d['cod_ibge'])
+                                    if _vpm_d.get("disponivel"):
+                                        st.caption("✅ Coordenada **dentro** do polígono oficial do município (IBGE)."
+                                                   if _vpm_d["dentro"] else
+                                                   "⚠️ Coordenada **fora** do polígono oficial do município (IBGE) — "
+                                                   "possível erro de geocodificação.")
+                                except Exception as _e_vpd:
+                                    logger.error(f"[IBGE-MALHAS] Falha na validação do destino: {_e_vpd}")
+                        # [IBGE-INPUT - 99ª geração] AUDITORIA "Validação Oficial pelo Código IBGE": compara o
+                        # código INFORMADO (quando o usuário digita um) com o IDENTIFICADO, reportando
+                        # confirmação/divergência/correção — fecha o ciclo de rastreabilidade do código.
                         try:
-                            _km_aqua = _distancia_aquaviaria(_id_o.get('cod_ibge', ''), _id_d.get('cod_ibge', ''))
-                            if _km_aqua is not None:
-                                st.info(f"🚢 **Distância aquaviária:** {_km_aqua:.1f} km (matriz oficial pré-calculada "
-                                        "a partir dos shapes ANTAQ/BIT). Estimativa por via navegável — sujeita à "
-                                        "sazonalidade dos rios.")
-                        except Exception as _e_aq:
-                            logger.error(f"[AQUAVIARIA] Falha ao consultar distância aquaviária: {_e_aq}")
-                    # [GRANULARIDADE - 85ª geração] IDENTIDADE GEOGRÁFICA (endereço + coordenadas
-                    # efetivamente ROTEADAS), SEPARADA da identidade administrativa (município/IBGE)
-                    # acima. Mede a granularidade pela distância do ponto roteado ao centróide do
-                    # município (≈ 0 km ⇒ foi reduzido ao município). Revela se a rota usa o ponto
-                    # específico (ex.: 'Samambaia Sul') ou o centróide municipal ('Brasília').
-                    try:
-                        _lat_o_g = float(res_ind[19]) if len(res_ind) > 19 else 0.0
-                        _lon_o_g = float(res_ind[20]) if len(res_ind) > 20 else 0.0
-                        _lat_d_g = float(res_ind[21]) if len(res_ind) > 21 else 0.0
-                        _lon_d_g = float(res_ind[22]) if len(res_ind) > 22 else 0.0
-                        _end_o_g = res_ind[12] if len(res_ind) > 12 else "—"
-                        _end_d_g = res_ind[18] if len(res_ind) > 18 else "—"
-                        def _linha_geo(_lat, _lon, _end, _texto, _mun, _uf):
-                            _idc = _identidade_por_coordenada(_lat, _lon)
-                            _gtxt = ""
-                            if _idc:
-                                _, _gtxt = _rotulo_granularidade(_idc.get('dist_km', 0.0), _idc.get('municipio', ''))
-                            # [GRANULARIDADE - 87ª geração] nível espacial reconhecido (Rua/Bairro/RA/…)
-                            _niv = _nivel_espacial(_texto, None, _mun, _uf)
-                            return (f"Nível espacial: **{_niv}**  \nEndereço: {_end}  \n"
-                                    f"Coord. da rota: `{_lat:.5f}, {_lon:.5f}`"
-                                    + (f"  \n{_gtxt}" if _gtxt else ""))
-                        _mun_o_g = res_ind[10] if len(res_ind) > 10 else ""
-                        _mun_d_g = res_ind[16] if len(res_ind) > 16 else ""
-                        _uf_o_g = _id_o['uf'] if isinstance(_id_o, dict) else ""
-                        _uf_d_g = _id_d['uf'] if isinstance(_id_d, dict) else ""
-                        st.divider()
-                        st.markdown("**🌐 Identidade Geográfica (ponto exato usado na ROTA)**")
-                        st.caption("Distinta da identidade administrativa acima: aqui está o **nível espacial** "
-                                   "reconhecido, o **endereço** e as **coordenadas** efetivamente roteadas. A "
-                                   "granularidade é medida pela distância ao centróide do município — **≈ 0 km** "
-                                   "indica que o ponto foi reduzido ao município.")
-                        _cg_o, _cg_d = st.columns(2)
-                        with _cg_o:
-                            st.markdown(f"**📍 Origem**  \n{_linha_geo(_lat_o_g, _lon_o_g, _end_o_g, orig_ind, _mun_o_g, _uf_o_g)}")
-                        with _cg_d:
-                            st.markdown(f"**🎯 Destino**  \n{_linha_geo(_lat_d_g, _lon_d_g, _end_d_g, dest_ind, _mun_d_g, _uf_d_g)}")
-                        # [CONSENSO-MULTIFONTE - 89ª geração] Diagnóstico OPT-IN (gated pela flag —
-                        # invisível em produção). Mostra o consenso multi-fonte lado a lado, sem alterar
-                        # nada da rota: serve para AVALIAR o resolvedor isolado antes de qualquer adoção.
-                        if CONSENSO_MULTIFONTE_ATIVO:
-                            st.divider()
-                            st.markdown("**🔬 Consenso Multi-Fonte (experimental — não afeta a rota)**")
-                            def _sc_num(v):
-                                try:
-                                    return float(v)
-                                except (TypeError, ValueError):
-                                    return 0.0
-                            for _lbl_c, _txt_c, _uf_c, _sc_c in [("📍 Origem", orig_ind, _uf_o_g, _sc_num(res_ind[8]) if len(res_ind) > 8 else 0.0),
-                                                                 ("🎯 Destino", dest_ind, _uf_d_g, _sc_num(res_ind[14]) if len(res_ind) > 14 else 0.0)]:
-                                _rc = resolver_consenso_geografico(_txt_c, _uf_c, _sc_c)
-                                _cs = _rc.get("consenso")
-                                if _cs:
-                                    _det_c = _cs.get("score_detalhes", {})
-                                    _det_txt = (f" · componentes: txt {_det_c.get('textual','?')} / consenso "
-                                                f"{_det_c.get('consenso','?')} / uf {_det_c.get('uf','?')} / nível "
-                                                f"{_det_c.get('nivel','?')}") if _det_c else ""
-                                    st.caption(f"{_lbl_c}: **{_cs['nome']}** ({_cs['nivel']}) · votos: {_cs['votos']} "
-                                               f"[{', '.join(_cs['fontes'])}] · score {_cs['score_consenso']} · "
-                                               f"`{_cs['lat']:.5f}, {_cs['lon']:.5f}`"
-                                               + ("  ·  ✅ **assumiria** (melhor que o atual)" if _rc['assume'] else "  ·  mantém o atual")
-                                               + _det_txt)
-                                else:
-                                    st.caption(f"{_lbl_c}: sem consenso ({_rc.get('n_candidatos', 0)} candidato(s))")
-                    except Exception as _e_geo:
-                        logger.error(f"[GRANULARIDADE] Falha no painel de identidade geográfica: {_e_geo}")
-                    # [AMBIGUIDADE-HOMONIMOS - 63ª geração / item #3] Em quantas UFs o nome do município
-                    # se repete na base IBGE (offline, em memória) — mede o risco de homônimo.
-                    _amb_o = _grau_ambiguidade_homonimos(_id_o['municipio'])
-                    _amb_d = _grau_ambiguidade_homonimos(_id_d['municipio'])
-                    _frases_amb = []
-                    for _lbl, _amb, _iddict in (("Origem", _amb_o, _id_o), ("Destino", _amb_d, _id_d)):
-                        _nome = _iddict['municipio'].title() if _iddict['municipio'] != "—" else "—"
-                        if _amb['n_ufs'] > 1:
-                            _frases_amb.append(f"⚠️ **{_lbl}** (“{_nome}”): homônimo em **{_amb['n_ufs']} UFs** — {', '.join(_amb['ufs'])}")
-                        elif _amb['n_ufs'] == 1:
-                            _frases_amb.append(f"✓ **{_lbl}** (“{_nome}”): nome exclusivo (1 UF)")
-                        else:
-                            _frases_amb.append(f"• **{_lbl}** (“{_nome}”): não identificado na base IBGE")
-                    st.markdown("**⚖️ Grau de ambiguidade (homônimos)**")
-                    st.caption("  \n".join(_frases_amb) +
-                               "  \nQuanto mais UFs compartilham o nome, mais crítico é informar a UF para "
-                               "desambiguar — o motor faz isso automaticamente ao priorizar a sigla do estado.")
-
-                # [HIERARQUIA-IBGE - 62ª geração / item #3] Hierarquia territorial oficial (Região /
-                # Meso / Micro / Imediata / Intermediária) por código IBGE, origem E destino. Região
-                # deriva da UF (instantâneo); os níveis finos vêm do mapa oficial do IBGE, baixado uma
-                # única vez e cacheado em DiskCache — degradam para "—" se a base ainda não respondeu.
-                _reg_o = _UF_PARA_REGIAO.get(_id_o['uf'], "—") if _id_o['uf'] not in ("—", "") else "—"
-                _reg_d = _UF_PARA_REGIAO.get(_id_d['uf'], "—") if _id_d['uf'] not in ("—", "") else "—"
-                _hz_o = _hierarquia_territorial(_id_o['cod_ibge'])
-                _hz_d = _hierarquia_territorial(_id_d['cod_ibge'])
-                with st.container(border=True):
-                    st.markdown("##### 🌎 Hierarquia Territorial Oficial (IBGE)")
-                    st.caption("Divisão administrativa do IBGE pelo código do município. **Região** deriva da UF; "
-                               "**mesorregião/microrregião/imediata/intermediária** vêm da base oficial do IBGE "
-                               "(carregada uma única vez e cacheada). Campos aparecem como “—” se a base ainda não respondeu.")
-                    _ho, _hd = st.columns(2)
-                    with _ho:
-                        st.markdown(
-                            f"**📍 Origem**  \n"
-                            f"Região: **{_reg_o}**  \n"
-                            f"Mesorregião: {_hz_o['meso']}  \n"
-                            f"Microrregião: {_hz_o['micro']}  \n"
-                            f"Região Imediata: {_hz_o['imediata']}  \n"
-                            f"Região Intermediária: {_hz_o['intermediaria']}"
-                        )
-                    with _hd:
-                        st.markdown(
-                            f"**🎯 Destino**  \n"
-                            f"Região: **{_reg_d}**  \n"
-                            f"Mesorregião: {_hz_d['meso']}  \n"
-                            f"Microrregião: {_hz_d['micro']}  \n"
-                            f"Região Imediata: {_hz_d['imediata']}  \n"
-                            f"Região Intermediária: {_hz_d['intermediaria']}"
-                        )
-
-                # [ARQ-HIBRIDO - 26ª geração] Painel de consistência para os 3 cenários:
-                # Google vence (tudo do Google, auditável pelo link), OSRM vence (distância/
-                # tempo/mapa do OSRM com geometria exata + download do traçado), ou Projeção
-                # Geodésica (Google não respondeu — estimativa por linha reta).
-                fonte_rota_exibida = res_ind[5] if len(res_ind) > 5 else "N/A"
-                _eh_geodesico = "GEOD" in str(fonte_rota_exibida).upper()
-                _eh_osrm_vencedor = "OSRM" in str(fonte_rota_exibida).upper()
-                with st.container(border=True):
-                    cc1, cc2, cc3 = st.columns(3)
-                    cc1.metric("Fonte da Rota", fonte_rota_exibida,
-                               help="Provedor vencedor (menor distância) que forneceu distância, tempo e mapa.")
-                    if _eh_geodesico:
-                        cc2.metric("Tipo de Estimativa", "📐 Geodésica",
-                                   help="Nenhum motor viário respondeu. A distância foi estimada pela linha reta × fator de desvio rodoviário.")
-                        cc3.metric("Recomendação", "Reprocessar",
-                                   help="Reprocesse para obter o valor viário oficial quando os motores responderem.")
-                        st.warning("📐 **Projeção Geodésica Adaptativa (motores viários indisponíveis):** a distância foi **estimada** pela linha "
-                                   "reta entre os pontos multiplicada por um fator de desvio rodoviário — **não** é uma rota viária medida. "
-                                   "Recomenda-se **reprocessar** quando os motores responderem, para obter a quilometragem oficial.")
-                        # [INTEL-TERRITORIAL - 111ª geração] Detecção DINÂMICA de acesso fluvial/isolado:
-                        # se a geocodificação teve sucesso (coordenadas válidas) mas NENHUM motor rodoviário
-                        # retornou trajeto, pode ser um município SEM acesso rodoviário (ex.: ~43 dos 62 no
-                        # Amazonas). Sem dados externos — usa apenas o comportamento dos motores.
+                            _av_o = _auditoria_validacao_ibge(orig_ind, _id_o['cod_ibge'], _id_o['municipio'],
+                                                              _id_o['uf'], res_ind[11] if len(res_ind) > 11 else '—')
+                            _av_d = _auditoria_validacao_ibge(dest_ind, _id_d['cod_ibge'], _id_d['municipio'],
+                                                              _id_d['uf'], res_ind[17] if len(res_ind) > 17 else '—')
+                            _expandir_av = _av_o['entrada_por_codigo'] or _av_d['entrada_por_codigo']
+                            with st.expander("🏛️ Validação Oficial pelo Código IBGE", expanded=_expandir_av):
+                                st.caption("Compara o Código IBGE **informado** (quando a entrada é um código) "
+                                           "com o **identificado**, confirmando o município oficial ou apontando "
+                                           "divergência e correção sugerida.")
+                                _cav_o, _cav_d = st.columns(2)
+                                for _cav, _av, _lbl in [(_cav_o, _av_o, "📍 Origem"), (_cav_d, _av_d, "🎯 Destino")]:
+                                    with _cav:
+                                        st.markdown(
+                                            f"**{_lbl}** — {_av['status']}  \n"
+                                            f"Código informado: `{_av['codigo_informado']}`  \n"
+                                            f"Código identificado: `{_av['codigo_identificado']}`  \n"
+                                            f"Município/UF: **{_av['municipio']}/{_av['uf']}**  \n"
+                                            f"Fonte: {_av['fonte']}  \n"
+                                            f"Revisão manual: **{_av['revisao_manual']}**")
+                                        st.caption(_av['divergencia'])
+                        except Exception as _e_av:
+                            logger.error(f"[IBGE-INPUT] Falha na auditoria de validação IBGE: {_e_av}")
+                        # [INTEL-TERRITORIAL - 112ª geração] Sinalização de ACESSO FLUVIAL/ISOLADO (base oficial
+                        # IBGE REGIC 2018): se origem e/ou destino é um município sem ligação rodoviária, a rota
+                        # terrestre é inviável — aviso de auditoria + XAI. Gated por FLUVIAL_LISTA_ATIVA.
+                        try:
+                            _fl_o = _municipio_acesso_fluvial(_id_o.get('cod_ibge', ''))
+                            _fl_d = _municipio_acesso_fluvial(_id_d.get('cod_ibge', ''))
+                            if _fl_o or _fl_d:
+                                _quais_fl = []
+                                if _fl_o:
+                                    _quais_fl.append(f"a **origem** ({str(_id_o['municipio']).title()}/{_id_o['uf']})")
+                                if _fl_d:
+                                    _quais_fl.append(f"o **destino** ({str(_id_d['municipio']).title()}/{_id_d['uf']})")
+                                st.warning("🛶 **Acesso fluvial/isolado (base oficial IBGE REGIC):** " + " e ".join(_quais_fl)
+                                           + " não possui ligação rodoviária — o acesso é por via **fluvial** (ou aérea). A "
+                                           "distância rodoviária **não representa uma viagem viável** por estrada; considere o "
+                                           "transporte hidroviário/aéreo. *(Fonte: IBGE REGIC 2018 — Ligações Rodoviárias e "
+                                           "Hidroviárias.)*")
+                        except Exception as _e_fl:
+                            logger.error(f"[INTEL-TERRITORIAL] Falha na sinalização de acesso fluvial: {_e_fl}")
+                        # [AQUAVIARIA - 116ª geração] Distância aquaviária (matriz pré-calculada, gated): quando
+                        # a matriz tem o par de Códigos IBGE, mostra a km por água. Inerte enquanto AQUAVIARIA_ATIVA
+                        # estiver desligada / matriz ausente (impacto zero).
+                        if AQUAVIARIA_ATIVA:
+                            try:
+                                _km_aqua = _distancia_aquaviaria(_id_o.get('cod_ibge', ''), _id_d.get('cod_ibge', ''))
+                                if _km_aqua is not None:
+                                    st.info(f"🚢 **Distância aquaviária:** {_km_aqua:.1f} km (matriz oficial pré-calculada "
+                                            "a partir dos shapes ANTAQ/BIT). Estimativa por via navegável — sujeita à "
+                                            "sazonalidade dos rios.")
+                            except Exception as _e_aq:
+                                logger.error(f"[AQUAVIARIA] Falha ao consultar distância aquaviária: {_e_aq}")
+                        # [GRANULARIDADE - 85ª geração] IDENTIDADE GEOGRÁFICA (endereço + coordenadas
+                        # efetivamente ROTEADAS), SEPARADA da identidade administrativa (município/IBGE)
+                        # acima. Mede a granularidade pela distância do ponto roteado ao centróide do
+                        # município (≈ 0 km ⇒ foi reduzido ao município). Revela se a rota usa o ponto
+                        # específico (ex.: 'Samambaia Sul') ou o centróide municipal ('Brasília').
                         try:
                             _lat_o_g = float(res_ind[19]) if len(res_ind) > 19 else 0.0
                             _lon_o_g = float(res_ind[20]) if len(res_ind) > 20 else 0.0
                             _lat_d_g = float(res_ind[21]) if len(res_ind) > 21 else 0.0
                             _lon_d_g = float(res_ind[22]) if len(res_ind) > 22 else 0.0
-                            _geo_ok_iso = bool((_lat_o_g or _lon_o_g) and (_lat_d_g or _lon_d_g))
-                        except (ValueError, TypeError):
-                            _geo_ok_iso = False
-                        if _geo_ok_iso:
-                            st.caption("🛶 **Possível acesso fluvial/isolado:** a localização foi encontrada, mas nenhum motor "
-                                       "rodoviário traçou trajeto. Se isso **persistir** após reprocessar, é provável que um dos pontos "
-                                       "seja um **município de acesso fluvial ou isolado** (sem ligação rodoviária) — comum na Amazônia. "
-                                       "Nesses casos, a estimativa geodésica não representa uma viagem rodoviária real.")
-                    elif _eh_osrm_vencedor:
-                        cc2.metric("Critério", "🏆 Menor Distância",
-                                   help="O OSRM encontrou um trajeto mais curto que o Google (acima da tolerância de 2%).")
-                        cc3.metric("Mapa", "✅ Geometria OSRM",
-                                   help="O mapa desenha a geometria exata da rota OSRM. Há download do traçado em HTML autocontido.")
-                        st.caption("ℹ️ **OSRM venceu (menor distância):** distância, tempo e o **mapa** (que desenha a **geometria exata** da rota) "
-                                   "são do **OSRM**. O **link de navegação** abre a rota no **Google Maps** (forma estável de navegar), e você pode "
-                                   "**baixar o mapa HTML** com o traçado exato do OSRM (abre offline em qualquer navegador). Veja o **comparativo** "
-                                   "abaixo para entender a diferença entre os provedores.")
-                    else:
-                        cc2.metric("Auditável pelo Link", "✅ Sim",
-                                   help="Distância, tempo e link são do Google Maps. Ao abrir o link (pelos nomes), você confere a mesma rota.")
-                        cc3.metric("Critério", "🏆 Menor Distância",
-                                   help="O Google teve a menor distância (ou empate técnico ≤2%, preferido por ser auditável pelo link).")
-                        st.caption("ℹ️ **Google Maps venceu (menor distância):** distância, tempo e link de navegação são do "
-                                   "**Google Maps**. O **mapa desenha o traçado da rota** (do Google quando disponível, ou o traçado de "
-                                   "referência do OSRM — praticamente idêntico) com origem/destino **pelo nome**. Ao clicar em **Abrir rota no "
-                                   "Google Maps**, você visualiza a rota oficial pelos nomes das localidades. Veja o **comparativo** abaixo.")
-                
-                # [COMP-PROV + ARQ-HIBRIDO] Painel comparativo Google × OSRM (rico e visual).
-                # Apresentado SEMPRE que ambos os motores responderam — obrigatório quando o
-                # OSRM vence, opcional/informativo quando o Google vence. Cards lado a lado,
-                # selo do vencedor, diferenças absolutas/percentuais e leitura automática.
-                # [FASE2-FLUXO - 184ª geração] Cabeçalho de seção (nível ####, aditivo — não move código):
-                # agrupa o bloco de análise/rastreabilidade que vem a seguir (comparativo de provedores,
-                # auditorias de geocodificação/consenso/motores e barreiras físicas) numa fase clara do fluxo
-                # de resultado, logo após a identidade. Só markdown estático — zero risco de removeChild.
-                st.markdown("#### 🔍 Diagnóstico & Auditoria")
-                st.caption("Como a rota foi medida, a comparação entre provedores, as barreiras físicas e a "
-                           "rastreabilidade completa das consultas aos motores de rota.")
-                _comp_str = res_ind[35] if len(res_ind) > 35 else ""
-                _comp = _parsear_comparativo_provedores(_comp_str)
-                if _comp:
-                    _osrm_venceu_painel = _eh_osrm_vencedor
-                    with st.expander("⚖️ Comparativo entre Provedores (Google Maps × OSRM)", expanded=_osrm_venceu_painel):
-                        km_g = _comp["km_google"]; km_o = _comp["km_osrm"]
-                        # [METRICA-UNICA - 50ª geração] Usa a função centralizada (denominador = MAIOR
-                        # valor). Corrige o bug que usava min() e explodia o % (220/347/1342).
-                        _m_div = _metricas_divergencia(km_g, km_o)
-                        diff_abs = _m_div["abs_km"] if _m_div else abs(km_g - km_o)
-                        diff_pct = _m_div["pct"] if _m_div else 0.0
-                        _vencedor_nome = _comp.get("fonte_vencedora", "Google")
-                        cgA, cgB = st.columns(2)
-                        with cgA:
-                            _selo_g = "🏆 Vencedor" if _vencedor_nome == "Google" else "Referência"
-                            st.markdown(f"#### {'🟢' if _vencedor_nome == 'Google' else '🔵'} Google Maps")
-                            st.metric(f"Distância · {_selo_g}", f"{km_g:.2f} km")
-                            st.metric("Tempo", _comp["tempo_google"] or "—")
-                            if _vencedor_nome == "Google":
-                                st.success("🏆 **Menor distância** — fonte adotada (auditável pelo link).")
+                            _end_o_g = res_ind[12] if len(res_ind) > 12 else "—"
+                            _end_d_g = res_ind[18] if len(res_ind) > 18 else "—"
+                            def _linha_geo(_lat, _lon, _end, _texto, _mun, _uf):
+                                _idc = _identidade_por_coordenada(_lat, _lon)
+                                _gtxt = ""
+                                if _idc:
+                                    _, _gtxt = _rotulo_granularidade(_idc.get('dist_km', 0.0), _idc.get('municipio', ''))
+                                # [GRANULARIDADE - 87ª geração] nível espacial reconhecido (Rua/Bairro/RA/…)
+                                _niv = _nivel_espacial(_texto, None, _mun, _uf)
+                                return (f"Nível espacial: **{_niv}**  \nEndereço: {_end}  \n"
+                                        f"Coord. da rota: `{_lat:.5f}, {_lon:.5f}`"
+                                        + (f"  \n{_gtxt}" if _gtxt else ""))
+                            _mun_o_g = res_ind[10] if len(res_ind) > 10 else ""
+                            _mun_d_g = res_ind[16] if len(res_ind) > 16 else ""
+                            _uf_o_g = _id_o['uf'] if isinstance(_id_o, dict) else ""
+                            _uf_d_g = _id_d['uf'] if isinstance(_id_d, dict) else ""
+                            st.divider()
+                            st.markdown("**🌐 Identidade Geográfica (ponto exato usado na ROTA)**")
+                            st.caption("Distinta da identidade administrativa acima: aqui está o **nível espacial** "
+                                       "reconhecido, o **endereço** e as **coordenadas** efetivamente roteadas. A "
+                                       "granularidade é medida pela distância ao centróide do município — **≈ 0 km** "
+                                       "indica que o ponto foi reduzido ao município.")
+                            _cg_o, _cg_d = st.columns(2)
+                            with _cg_o:
+                                st.markdown(f"**📍 Origem**  \n{_linha_geo(_lat_o_g, _lon_o_g, _end_o_g, orig_ind, _mun_o_g, _uf_o_g)}")
+                            with _cg_d:
+                                st.markdown(f"**🎯 Destino**  \n{_linha_geo(_lat_d_g, _lon_d_g, _end_d_g, dest_ind, _mun_d_g, _uf_d_g)}")
+                            # [CONSENSO-MULTIFONTE - 89ª geração] Diagnóstico OPT-IN (gated pela flag —
+                            # invisível em produção). Mostra o consenso multi-fonte lado a lado, sem alterar
+                            # nada da rota: serve para AVALIAR o resolvedor isolado antes de qualquer adoção.
+                            if CONSENSO_MULTIFONTE_ATIVO:
+                                st.divider()
+                                st.markdown("**🔬 Consenso Multi-Fonte (experimental — não afeta a rota)**")
+                                def _sc_num(v):
+                                    try:
+                                        return float(v)
+                                    except (TypeError, ValueError):
+                                        return 0.0
+                                for _lbl_c, _txt_c, _uf_c, _sc_c in [("📍 Origem", orig_ind, _uf_o_g, _sc_num(res_ind[8]) if len(res_ind) > 8 else 0.0),
+                                                                     ("🎯 Destino", dest_ind, _uf_d_g, _sc_num(res_ind[14]) if len(res_ind) > 14 else 0.0)]:
+                                    _rc = resolver_consenso_geografico(_txt_c, _uf_c, _sc_c)
+                                    _cs = _rc.get("consenso")
+                                    if _cs:
+                                        _det_c = _cs.get("score_detalhes", {})
+                                        _det_txt = (f" · componentes: txt {_det_c.get('textual','?')} / consenso "
+                                                    f"{_det_c.get('consenso','?')} / uf {_det_c.get('uf','?')} / nível "
+                                                    f"{_det_c.get('nivel','?')}") if _det_c else ""
+                                        st.caption(f"{_lbl_c}: **{_cs['nome']}** ({_cs['nivel']}) · votos: {_cs['votos']} "
+                                                   f"[{', '.join(_cs['fontes'])}] · score {_cs['score_consenso']} · "
+                                                   f"`{_cs['lat']:.5f}, {_cs['lon']:.5f}`"
+                                                   + ("  ·  ✅ **assumiria** (melhor que o atual)" if _rc['assume'] else "  ·  mantém o atual")
+                                                   + _det_txt)
+                                    else:
+                                        st.caption(f"{_lbl_c}: sem consenso ({_rc.get('n_candidatos', 0)} candidato(s))")
+                        except Exception as _e_geo:
+                            logger.error(f"[GRANULARIDADE] Falha no painel de identidade geográfica: {_e_geo}")
+                        # [AMBIGUIDADE-HOMONIMOS - 63ª geração / item #3] Em quantas UFs o nome do município
+                        # se repete na base IBGE (offline, em memória) — mede o risco de homônimo.
+                        _amb_o = _grau_ambiguidade_homonimos(_id_o['municipio'])
+                        _amb_d = _grau_ambiguidade_homonimos(_id_d['municipio'])
+                        _frases_amb = []
+                        for _lbl, _amb, _iddict in (("Origem", _amb_o, _id_o), ("Destino", _amb_d, _id_d)):
+                            _nome = _iddict['municipio'].title() if _iddict['municipio'] != "—" else "—"
+                            if _amb['n_ufs'] > 1:
+                                _frases_amb.append(f"⚠️ **{_lbl}** (“{_nome}”): homônimo em **{_amb['n_ufs']} UFs** — {', '.join(_amb['ufs'])}")
+                            elif _amb['n_ufs'] == 1:
+                                _frases_amb.append(f"✓ **{_lbl}** (“{_nome}”): nome exclusivo (1 UF)")
                             else:
-                                st.caption("Referência comparativa.")
-                        with cgB:
-                            _selo_o = "🏆 Vencedor" if _vencedor_nome == "OSRM" else "Referência"
-                            st.markdown(f"#### {'🟢' if _vencedor_nome == 'OSRM' else '🔵'} OSRM")
-                            st.metric(f"Distância · {_selo_o}", f"{km_o:.2f} km")
-                            st.metric("Tempo", _comp["tempo_osrm"] or "—")
-                            if _vencedor_nome == "OSRM":
-                                st.success("🏆 **Menor distância** — fonte adotada (mapa com geometria exata).")
-                            else:
-                                st.caption("Referência comparativa.")
-                        st.divider()
-                        d1, d2, d3 = st.columns(3)
-                        d1.metric("Diferença de Distância", f"{diff_abs:.2f} km",
-                                  help="Diferença absoluta entre as distâncias dos dois provedores.")
-                        d2.metric("Diferença Percentual", f"{diff_pct:.1f}%",
-                                  help="Diferença relativa (sobre a menor das duas distâncias).")
-                        d3.metric("Provedor Vencedor", _vencedor_nome,
-                                  help="Provedor com a menor distância — adotado para os valores principais.")
-                        if diff_pct < 2.0:
-                            st.success(f"✅ **Convergência alta:** os dois motores praticamente concordam "
-                                       f"(diferença de apenas {diff_pct:.1f}%). Resultado muito robusto — adotado o **{_vencedor_nome}**.")
-                        elif diff_pct < 10.0:
-                            st.info(f"ℹ️ **Divergência moderada:** os motores diferem em {diff_pct:.1f}% ({diff_abs:.1f} km), "
-                                    f"o que reflete escolhas diferentes de vias. Adotada a **menor distância** ({_vencedor_nome}).")
-                        else:
-                            st.warning(f"⚠️ **Divergência alta:** {diff_pct:.1f}% de diferença ({diff_abs:.1f} km). "
-                                       f"Pode indicar rota alternativa significativa (balsa, pedágio, via não pavimentada) ou diferença "
-                                       f"de malha entre os motores. Adotada a **menor distância** ({_vencedor_nome}) — vale conferir o trajeto.")
-                        st.caption("📊 A aplicação executa **ambos** os motores e adota sempre a **menor distância**. Este comparativo é a "
-                                   "auditoria da escolha — mostra exatamente por que um provedor foi selecionado em vez do outro.")
+                                _frases_amb.append(f"• **{_lbl}** (“{_nome}”): não identificado na base IBGE")
+                        st.markdown("**⚖️ Grau de ambiguidade (homônimos)**")
+                        st.caption("  \n".join(_frases_amb) +
+                                   "  \nQuanto mais UFs compartilham o nome, mais crítico é informar a UF para "
+                                   "desambiguar — o motor faz isso automaticamente ao priorizar a sigla do estado.")
 
-                # [GRAPHHOPPER-PARIDADE-FIX - 221ª geração] Bloco do GraphHopper no Diagnóstico & Auditoria, em
-                # paridade com Google/OSRM: lê os dados PRÓPRIOS do GraphHopper (bloco dedicado da auditoria),
-                # nunca mais confundidos com o OSRM. Só aparece quando o GraphHopper respondeu.
-                try:
-                    _aud_gh = res_ind[39] if len(res_ind) > 39 and isinstance(res_ind[39], dict) else None
-                    _gh_bloco = (_aud_gh or {}).get("graphhopper") if _aud_gh else None
-                except Exception:
-                    _gh_bloco = None
-                if _gh_bloco and _gh_bloco.get("distancia_km") is not None:
-                    with st.expander("🚗 Rota do GraphHopper (motor com chave, em paridade)", expanded=False):
-                        _ghd = _gh_bloco.get("distancia_km")
-                        _ght = _gh_bloco.get("tempo_min")
-                        _ghb = _gh_bloco.get("balsa")
-                        _gq1, _gq2, _gq3 = st.columns(3)
-                        try:
-                            _gq1.metric("Distância · GraphHopper", f"{float(_ghd):.2f} km")
-                        except (ValueError, TypeError):
-                            _gq1.metric("Distância · GraphHopper", f"{_ghd} km")
-                        try:
-                            _ght_i = int(float(_ght)) if _ght not in (None, "") else None
-                            _gq2.metric("Tempo", ("—" if _ght_i is None else
-                                                  (f"{_ght_i} min" if _ght_i < 60 else f"{_ght_i//60} h {_ght_i%60} min")))
-                        except (ValueError, TypeError):
-                            _gq2.metric("Tempo", "—")
-                        _gq3.metric("Balsa", _ghb or "Não")
-                        # comparação GraphHopper × Google (divergência), como se faz p/ OSRM
-                        try:
-                            if _comp and _comp.get("km_google") is not None:
-                                _mdg = _metricas_divergencia(_comp["km_google"], float(_ghd))
-                                if _mdg:
-                                    st.caption(f"↔️ Divergência GraphHopper × Google: **{_mdg['abs_km']:.1f} km** "
-                                               f"({_mdg['pct']:.1f}%).")
-                        except Exception:
-                            pass
-                        if _gh_bloco.get("url"):
-                            st.markdown(f"🧭 [Abrir esta rota no mapa do GraphHopper]({_gh_bloco['url']})")
-                        st.caption("O **GraphHopper** participa da disputa pela menor rota em igualdade com Google e "
-                                   "OSRM. Estes são os valores **dele** — medidos, não estimados.")
+                    # [HIERARQUIA-IBGE - 62ª geração / item #3] Hierarquia territorial oficial (Região /
+                    # Meso / Micro / Imediata / Intermediária) por código IBGE, origem E destino. Região
+                    # deriva da UF (instantâneo); os níveis finos vêm do mapa oficial do IBGE, baixado uma
+                    # única vez e cacheado em DiskCache — degradam para "—" se a base ainda não respondeu.
+                    _reg_o = _UF_PARA_REGIAO.get(_id_o['uf'], "—") if _id_o['uf'] not in ("—", "") else "—"
+                    _reg_d = _UF_PARA_REGIAO.get(_id_d['uf'], "—") if _id_d['uf'] not in ("—", "") else "—"
+                    _hz_o = _hierarquia_territorial(_id_o['cod_ibge'])
+                    _hz_d = _hierarquia_territorial(_id_d['cod_ibge'])
+                    with st.container(border=True):
+                        st.markdown("##### 🌎 Hierarquia Territorial Oficial (IBGE)")
+                        st.caption("Divisão administrativa do IBGE pelo código do município. **Região** deriva da UF; "
+                                   "**mesorregião/microrregião/imediata/intermediária** vêm da base oficial do IBGE "
+                                   "(carregada uma única vez e cacheada). Campos aparecem como “—” se a base ainda não respondeu.")
+                        _ho, _hd = st.columns(2)
+                        with _ho:
+                            st.markdown(
+                                f"**📍 Origem**  \n"
+                                f"Região: **{_reg_o}**  \n"
+                                f"Mesorregião: {_hz_o['meso']}  \n"
+                                f"Microrregião: {_hz_o['micro']}  \n"
+                                f"Região Imediata: {_hz_o['imediata']}  \n"
+                                f"Região Intermediária: {_hz_o['intermediaria']}"
+                            )
+                        with _hd:
+                            st.markdown(
+                                f"**🎯 Destino**  \n"
+                                f"Região: **{_reg_d}**  \n"
+                                f"Mesorregião: {_hz_d['meso']}  \n"
+                                f"Microrregião: {_hz_d['micro']}  \n"
+                                f"Região Imediata: {_hz_d['imediata']}  \n"
+                                f"Região Intermediária: {_hz_d['intermediaria']}"
+                            )
 
-                # [VALHALLA-PARIDADE-EXIBIÇÃO - 264ª geração] Seção "Rota do Valhalla" no Validador Rápido, em
-                # paridade com Google/OSRM/GraphHopper: lê os dados PRÓPRIOS do Valhalla (campo dados_valhalla,
-                # índice 42). Só aparece quando o Valhalla respondeu. Espelha a seção do GraphHopper acima.
-                try:
-                    _vlh_raw_vr = res_ind[42] if len(res_ind) > 42 and res_ind[42] else None
-                    _vlh_bloco_vr = _parsear_dados_valhalla(_vlh_raw_vr) if _vlh_raw_vr else None
-                except Exception:
-                    _vlh_bloco_vr = None
-                if _vlh_bloco_vr and _vlh_bloco_vr.get("km") is not None:
-                    with st.expander("🧭 Rota do Valhalla (motor sem chave, em paridade)", expanded=False):
-                        _vld_vr = _vlh_bloco_vr.get("km")
-                        _vlt_vr = _vlh_bloco_vr.get("tempo_min")
-                        _vlb_vr = _vlh_bloco_vr.get("balsa")
-                        _vv1, _vv2, _vv3 = st.columns(3)
-                        try:
-                            _vv1.metric("Distância · Valhalla", f"{float(_vld_vr):.2f} km")
-                        except (ValueError, TypeError):
-                            _vv1.metric("Distância · Valhalla", f"{_vld_vr} km")
-                        try:
-                            _vlt_vr_i = int(float(_vlt_vr)) if _vlt_vr not in (None, "") else None
-                            _vv2.metric("Tempo", ("—" if _vlt_vr_i is None else
-                                                  (f"{_vlt_vr_i} min" if _vlt_vr_i < 60 else f"{_vlt_vr_i//60} h {_vlt_vr_i%60} min")))
-                        except (ValueError, TypeError):
-                            _vv2.metric("Tempo", "—")
-                        _vv3.metric("Balsa", _vlb_vr or "Não")
-                        # comparação Valhalla × Google (divergência), como se faz p/ OSRM e GraphHopper
-                        try:
-                            if _comp and _comp.get("km_google") is not None:
-                                _mdv_vr = _metricas_divergencia(_comp["km_google"], float(_vld_vr))
-                                if _mdv_vr:
-                                    st.caption(f"↔️ Divergência Valhalla × Google: **{_mdv_vr['abs_km']:.1f} km** "
-                                               f"({_mdv_vr['pct']:.1f}%).")
-                        except Exception:
-                            pass
-                        if _vlh_bloco_vr.get("link_maps"):
-                            st.markdown(f"🧭 [Abrir o trajeto no mapa (navegação)]({_vlh_bloco_vr['link_maps']})")
-                        st.caption("O **Valhalla** (open-source, dados OSM) participa da disputa pela menor rota em "
-                                   "igualdade com Google, OSRM e GraphHopper. Estes são os valores **dele** — medidos, "
-                                   "não estimados. Numa instância própria, participa de toda rota como o OSRM.")
-
-                # nacional (rodoviária SEDE-a-SEDE) por par de Códigos IBGE. GATED pela flag + base
-                # disponível — não aparece enquanto o DistBrasil não estiver configurado (impacto zero).
-
-                with st.expander("🔍 Auditoria Detalhada da Geocodificação e Consenso", expanded=False):
-                    st.caption(f"Status da Base IBGE Local: {'Ativa e Carregada' if len(IBGE_MUNICIPIOS) > 1000 else '⚠️ CORROMPIDA/FALHA DE API'}")
-                    col_aud1, col_aud2 = st.columns(2)
-                    with col_aud1:
-                        st.markdown("**📍 Origem (Ponto A)**")
-                        st.write(f"**Endereço Oficial:** {res_ind[12]}")
-                        st.write(f"**Coordenadas:** {res_ind[19]}, {res_ind[20]}")
-                        st.write(f"**Motor Vencedor:** {res_ind[11]}")
-                        st.write(f"**Confiança & Score:** {res_ind[7]} ({res_ind[8]}/100)")
-                        st.markdown(ds_barra_confianca(res_ind[8]), unsafe_allow_html=True)
-                        st.write("**Justificativa Espacial:**")
-                        for just in res_ind[26]: 
-                            st.caption(f"• {just}")
-                    with col_aud2:
-                        st.markdown("**🏁 Destino (Ponto B)**")
-                        st.write(f"**Endereço Oficial:** {res_ind[18]}")
-                        st.write(f"**Coordenadas:** {res_ind[21]}, {res_ind[22]}")
-                        st.write(f"**Motor Vencedor:** {res_ind[17]}")
-                        st.write(f"**Confiança & Score:** {res_ind[13]} ({res_ind[14]}/100)")
-                        st.markdown(ds_barra_confianca(res_ind[14]), unsafe_allow_html=True)
-                        st.write("**Justificativa Espacial:**")
-                        for just in res_ind[27]: 
-                            st.caption(f"• {just}")
-
-                # [BARREIRA-SINGLE - 48ª geração] Painel de indicadores territoriais no Validador Rápido
-                # (antes só na planilha em lote): fator de sinuosidade, barreira física provável e
-                # consistência física — COM interpretações, origem do cálculo, justificativa e confiança.
-                try:
-                    _comp_ind = res_ind[35] if len(res_ind) > 35 else None
-                    _km_osrm_ind = _comp_ind.get("km_osrm") if isinstance(_comp_ind, dict) else None
-                    _ind = _montar_indicadores_territoriais(res_ind[0], res_ind[4], res_ind[3], dist_osrm=_km_osrm_ind)
-                    with st.expander("🌍 Análise Territorial e Barreiras Físicas", expanded=False):
-                        st.caption("Indicadores derivados da relação entre a **distância viária** e a **linha reta** "
-                                   "(geodésica de Karney). Servem para explicar por que uma rota é mais longa e sinalizar inconsistências.")
-                        _ic1, _ic2, _ic3 = st.columns(3)
-                        _ic1.metric("Fator de Sinuosidade", f"{_ind['fator_sinuosidade']}×",
-                                    help="Distância viária ÷ linha reta. Quanto maior, mais a estrada 'contorna'.")
-                        _ic2.metric("Consistência Física", _ind['consistencia_status'].split(' ', 1)[-1] if ' ' in _ind['consistencia_status'] else _ind['consistencia_status'])
-                        _ic3.metric("Confiança da Inferência", _ind['barreira_confianca'])
-                        _base_lbl = "OSRM — coordenada validada" if _ind.get('base_coord') else "distância adotada"
-                        st.markdown(f"**Origem do cálculo:** viária ({_base_lbl}) = **{_ind['distancia_viaria']} km**, "
-                                    f"linha reta (Karney/WGS-84) = **{_ind['linha_reta']} km** → sinuosidade = "
-                                    f"viária ÷ reta = **{_ind['fator_sinuosidade']}×**.")
-                        if _ind.get('nota_adotada'):
-                            st.info(f"ℹ️ {_ind['nota_adotada']}")
-                        # [DIST-RETA-FIX - 92ª geração] Validação cruzada da geodésica: Karney × Haversine
-                        # sobre as MESMAS coordenadas roteadas. Confirma que a linha reta está correta (o
-                        # erro, quando há, está nas COORDENADAS, não no algoritmo geodésico).
-                        try:
-                            _lat_o_v, _lon_o_v = float(res_ind[19]), float(res_ind[20])
-                            _lat_d_v, _lon_d_v = float(res_ind[21]), float(res_ind[22])
-                            if all(abs(_c) > 0 for _c in (_lat_o_v, _lon_o_v, _lat_d_v, _lon_d_v)):
-                                _hav = _haversine_km_consenso(_lat_o_v, _lon_o_v, _lat_d_v, _lon_d_v)
-                                _kar = float(_ind['linha_reta'])
-                                _div = abs(_hav - _kar)
-                                _div_pct = (_div / _kar * 100) if _kar > 0 else 0.0
-                                if _div_pct <= 1.0:
-                                    st.caption(f"🔎 Validação cruzada da geodésica: Karney = {_kar:.3f} km · "
-                                               f"Haversine = {_hav:.3f} km · divergência {_div_pct:.2f}% → linha reta **confirmada**.")
-                                else:
-                                    st.warning(f"🔎 Validação cruzada: Karney = {_kar:.3f} km × Haversine = {_hav:.3f} km "
-                                               f"divergem {_div_pct:.2f}% (> 1%). Verificar coordenadas/datum.")
-                        except Exception:
-                            pass
-                        st.markdown(f"**Interpretação da sinuosidade:** {_ind['interp_sinuosidade']}")
-                        if _ind['consistencia_status'].startswith("❌"):
-                            st.error(f"**Consistência física:** {_ind['consistencia_explicacao']}")
-                        else:
-                            st.success(f"**Consistência física:** {_ind['consistencia_explicacao']}")
-                        st.markdown(f"**🚧 Barreira física provável:** {_ind['barreira']}")
-                        st.caption(f"↳ {_ind['barreira_explicacao']} (grau de confiança: {_ind['barreira_confianca']}).")
-                        st.caption("ℹ️ A barreira é uma **inferência** a partir do desvio da rota (não usa mapa de "
-                                   "rios/relevo). É transparente e serve de guia para auditoria; para confirmação, consulte o mapa da rota.")
-                except Exception as _e_ind:
-                    logger.error(f"[BARREIRA-SINGLE] Falha ao montar indicadores territoriais (isolada): {_e_ind}")
-
-                # [AUDIT-MOTORES - 39ª geração] Painel de auditoria das consultas aos motores de rota.
-                # Mostra o rastro completo: texto original → normalizado → validado → coordenada →
-                # parâmetros/URLs enviados a Google e OSRM → consenso. Evidencia que ambos os motores
-                # partem da MESMA geocodificação validada (camada única de identificação).
-                _aud = res_ind[39] if len(res_ind) > 39 else None
-                if isinstance(_aud, dict) and _aud:
-                    with st.expander("🔎 Auditoria das Consultas aos Motores de Rota", expanded=False):
-                        st.caption("Rastreabilidade total: do texto informado até os parâmetros efetivamente enviados a cada motor. "
-                                   "Todos os motores partem da **mesma** origem/destino validados (camada única de identificação).")
-                        _o = _aud.get("origem", {}); _d = _aud.get("destino", {})
-                        st.markdown("##### 1️⃣ Identificação unificada (normalização → validação)")
-                        _ca, _cb = st.columns(2)
-                        with _ca:
-                            st.markdown("**📍 Origem**")
-                            st.write(f"**Texto original:** {_o.get('texto_original','—')}")
-                            st.write(f"**Normalizado:** {_o.get('normalizado','—')}")
-                            st.write(f"**Validado (oficial):** {_o.get('validado_oficial','—')}")
-                            st.write(f"**Coordenada validada:** {_o.get('coordenada','—')}")
-                            st.caption(f"Fonte: {_o.get('fonte_geocodificacao','—')} · Score: {_o.get('score_confianca','—')}/100")
-                            st.caption(f"🏷️ Tipo de ponto: **{_o.get('tipo_ponto','—')}**")
-                        with _cb:
-                            st.markdown("**🏁 Destino**")
-                            st.write(f"**Texto original:** {_d.get('texto_original','—')}")
-                            st.write(f"**Normalizado:** {_d.get('normalizado','—')}")
-                            st.write(f"**Validado (oficial):** {_d.get('validado_oficial','—')}")
-                            st.write(f"**Coordenada validada:** {_d.get('coordenada','—')}")
-                            st.caption(f"Fonte: {_d.get('fonte_geocodificacao','—')} · Score: {_d.get('score_confianca','—')}/100")
-                            st.caption(f"🏷️ Tipo de ponto: **{_d.get('tipo_ponto','—')}**")
-                        st.divider()
-                        _g = _aud.get("google_maps", {}); _os = _aud.get("osrm", {})
-                        st.markdown("##### 2️⃣ Consulta enviada ao **Google Maps**")
-                        st.write(f"**Origem enviada:** {_g.get('origem_enviada','—')}  ·  **Destino enviado:** {_g.get('destino_enviada','—')}")
-                        st.caption(f"Tipo de entrada: {_g.get('tipo_entrada','—')} · Distância retornada: {_g.get('distancia_km','—')} km")
-                        if _g.get("url"):
-                            st.code(_g["url"], language="text")
-                        st.markdown("##### 3️⃣ Consulta enviada ao **OSRM**")
-                        st.write(f"**Origem enviada (coord):** {_os.get('origem_enviada','—')}  ·  **Destino enviado (coord):** {_os.get('destino_enviada','—')}")
-                        st.caption(f"Tipo de entrada: {_os.get('tipo_entrada','—')} · Distância retornada: {_os.get('distancia_km','—')} km")
-                        if _os.get("url"):
-                            st.code(_os["url"], language="text")
-                        # [OSRM-SNAP] Coordenada ENVIADA × coordenada USADA (após snap à malha viária)
-                        if _os.get("origem_usada_pos_snap") is not None:
-                            st.markdown("**📌 Snap do OSRM (projeção na malha viária OSM)**")
-                            _sc1, _sc2 = st.columns(2)
-                            with _sc1:
-                                st.write(f"**Origem — enviada:** {_os.get('origem_enviada','—')}")
-                                st.write(f"**Origem — usada (pós-snap):** {_os.get('origem_usada_pos_snap','—')}")
-                                _od = _os.get('origem_snap_dist_m')
-                                st.caption(f"Deslocamento do snap: **{_od:.0f} m** — {_os.get('origem_snap_nivel','—')}" if isinstance(_od, (int, float)) else "Deslocamento: —")
-                            with _sc2:
-                                st.write(f"**Destino — enviada:** {_os.get('destino_enviada','—')}")
-                                st.write(f"**Destino — usada (pós-snap):** {_os.get('destino_usada_pos_snap','—')}")
-                                _dd = _os.get('destino_snap_dist_m')
-                                st.caption(f"Deslocamento do snap: **{_dd:.0f} m** — {_os.get('destino_snap_nivel','—')}" if isinstance(_dd, (int, float)) else "Deslocamento: —")
-                            st.caption("ℹ️ O OSRM **projeta** a coordenada enviada na via mais próxima da malha OpenStreetMap. "
-                                       "Um deslocamento grande indica malha esparsa na região — é a **causa raiz** de origem/destino "
-                                       "aparecerem alguns km afastados no OSRM (o Google re-resolve o nome na própria malha).")
-                        # [VALID-ESPACIAL] Resultado da validação espacial da rota
-                        _val = _aud.get("validacao_espacial")
-                        if isinstance(_val, dict):
-                            st.markdown("**🛡️ Validação espacial da rota**")
-                            def _fmt_dentro(v):
-                                return "✅ dentro da UF" if v is True else ("❌ FORA da UF" if v is False else "— (sem UF p/ validar)")
-                            st.caption(f"Origem: {_fmt_dentro(_val.get('origem_dentro_uf'))} · "
-                                       f"Destino: {_fmt_dentro(_val.get('destino_dentro_uf'))} · "
-                                       f"limiar de snap: {_val.get('limiar_snap_m',0):.0f} m")
-                            if _val.get("alertas"):
-                                for _al in _val["alertas"]:
-                                    st.warning(f"⚠️ {_al}")
-                            else:
-                                st.success("✅ Sem inconsistências: origem e destino dentro dos limites esperados e snap dentro do limiar.")
-                        # [SNAP-MITIGA] Mitigação de snap excessivo (quando acionada)
-                        _mit = _aud.get("mitigacao_snap")
-                        if isinstance(_mit, dict):
-                            st.markdown("**🎯 Mitigação de snap excessivo**")
-                            if _mit.get("aplicada"):
-                                _oa, _oq = _mit.get("snap_origem_antes_m"), _mit.get("snap_origem_depois_m")
-                                _da, _dq = _mit.get("snap_destino_antes_m"), _mit.get("snap_destino_depois_m")
-                                _ka, _kq = _mit.get("km_antes"), _mit.get("km_depois")
-                                _mc1, _mc2 = st.columns(2)
-                                with _mc1:
-                                    if _mit.get("origem_melhorada") and _oa is not None and _oq is not None:
-                                        st.write(f"**Origem — snap:** {_oa:.0f} m → **{_oq:.0f} m**")
-                                    if _mit.get("destino_melhorado") and _da is not None and _dq is not None:
-                                        st.write(f"**Destino — snap:** {_da:.0f} m → **{_dq:.0f} m**")
-                                with _mc2:
-                                    if _ka is not None and _kq is not None:
-                                        st.write(f"**Rota OSRM:** {_ka} km → **{_kq} km**")
-                                    st.caption(f"Coord. OSRM origem: {_mit.get('coord_osrm_origem','—')}")
-                                    st.caption(f"Coord. OSRM destino: {_mit.get('coord_osrm_destino','—')}")
-                                st.success("✅ Coordenada road-adjacent mais representativa selecionada (menor snap dentro da UF) e OSRM re-roteado.")
-                            else:
-                                st.info(f"ℹ️ Mitigação tentada, sem melhora: {_mit.get('motivo','—')}")
-                            # Candidatos considerados (transparência total)
-                            def _tabela_cand(_lst, _titulo):
-                                if _lst:
-                                    st.caption(f"**{_titulo}** — candidatos avaliados (por provedor):")
-                                    _linhas = [{"Fonte": c.get("fonte","—"),
-                                                "Coordenada": f"{round(c.get('lat',0),5)}, {round(c.get('lon',0),5)}",
-                                                "Snap (m)": c.get("snap_m"),
-                                                "Dist. da validada (m)": c.get("dist_da_validada_m")} for c in _lst]
-                                    st.dataframe(_linhas, use_container_width=True, hide_index=True)
-                            _tabela_cand(_mit.get("candidatos_origem"), "Origem")
-                            _tabela_cand(_mit.get("candidatos_destino"), "Destino")
-                        st.divider()
-                        _cons = _aud.get("consenso", {})
-                        st.markdown("##### 4️⃣ Consenso e divergência entre motores")
-                        _cc1, _cc2, _cc3 = st.columns(3)
-                        _cc1.metric("Motor vencedor", _cons.get("vencedor", "—"))
-                        _cc2.metric("Divergência (km)", f"{_cons.get('divergencia_km')}" if _cons.get('divergencia_km') is not None else "—")
-                        _cc3.metric("Divergência (%)", f"{_cons.get('divergencia_pct')}%" if _cons.get('divergencia_pct') is not None else "—")
-                        st.caption("💡 As coordenadas enviadas ao OSRM são **idênticas** às coordenadas validadas acima; o Google recebe o "
-                                   "**nome oficial** correspondente à mesma geocodificação. Ambos operam sobre a mesma localidade validada — "
-                                   "a diferença remanescente vem do **snap** do OSRM à malha viária, agora medido e validado acima.")
-
-                # [FASE2-FLUXO - 184ª geração] Cabeçalho de seção (nível ####, aditivo): marca o mapa como uma
-                # fase própria do fluxo (o payoff visual), depois do diagnóstico. Só markdown estático.
-                st.markdown("#### 🗺️ Mapa da Rota")
-                url_iframe = res_ind[29]
-                _fonte_rota_ui = res_ind[5] if len(res_ind) > 5 else "N/A"
-                _link_osrm_viewer = res_ind[36] if len(res_ind) > 36 else ""
-                _eh_geodesico_ui = "GEOD" in str(_fonte_rota_ui).upper()
-                # [GRAPHHOPPER-PARIDADE-FIX - 221ª] o vencedor pode ser QUALQUER motor contendor (OSRM,
-                # GraphHopper, ORS). Antes, só "OSRM" era reconhecido — quando o GraphHopper vencia, a fonte
-                # ("GraphHopper (Menor Distância)") não continha "OSRM" nem "GEOD", então o app tratava como se
-                # o GOOGLE tivesse vencido (mostrava o mapa do Google como principal e rotulava errado o
-                # comparativo). Agora reconhecemos os motores viários por geometria própria (Leaflet).
-                _fonte_up = str(_fonte_rota_ui).upper()
-                _eh_osrm_ui = "OSRM" in _fonte_up
-                _eh_contendor_ui = (not _eh_geodesico_ui) and any(
-                    _m in _fonte_up for _m in ("OSRM", "GRAPHHOPPER", "ORS", "VALHALLA"))
-                # nome do motor vencedor para rotular corretamente (Google, OSRM, GraphHopper, ...)
-                if _eh_geodesico_ui:
-                    _nome_vencedor_ui = "Projeção Geodésica"
-                elif "GRAPHHOPPER" in _fonte_up:
-                    _nome_vencedor_ui = "GraphHopper"
-                elif "VALHALLA" in _fonte_up:
-                    _nome_vencedor_ui = "Valhalla"
-                elif "OSRM" in _fonte_up:
-                    _nome_vencedor_ui = "OSRM"
-                elif "ORS" in _fonte_up or "OPENROUTE" in _fonte_up:
-                    _nome_vencedor_ui = "OpenRouteService"
-                else:
-                    _nome_vencedor_ui = "Google Maps"
-                # _eh_google_ui = Google venceu de fato (nenhum contendor viário nem geodésico)
-                _eh_google_ui = (not _eh_geodesico_ui) and (not _eh_contendor_ui)
-                # [MAPA-VENCEDOR-FIX 293a] Bug 2: se GraphHopper/Valhalla venceu, o mapa principal deve ser a
-                # geometria DELE (o pipeline preenche link_embed com a do OSRM). Reconstroi do vencedor; se ele
-                # nao tiver geometria propria, mantem o atual (nao fabrica).
-                _mv = _mapa_vencedor_singleshot(res_ind, _nome_vencedor_ui) if _eh_contendor_ui else None
-                if _mv and _mv.get("uri"):
-                    url_iframe = _mv["uri"]
-                    if _mv.get("viewer"):
-                        _link_osrm_viewer = _mv["viewer"]
-                _eh_mapa_leaflet = isinstance(url_iframe, str) and url_iframe.startswith("data:text/html;base64,")
-                # [VIS-DINAMICA - 30ª geração] APRESENTAÇÃO DINÂMICA POR PROVEDOR VENCEDOR:
-                #   • GOOGLE vence → mapa embarcado EXCLUSIVAMENTE do Google (iframe http) + 1 link (Google).
-                #   • OSRM vence   → mapa embarcado EXCLUSIVAMENTE do OSRM (Leaflet) + 2 links (Google + visualizador OSRM).
-                #   • Geodésico    → ligação direta estimada (Leaflet) + 1 link + aviso.
-                # Mapa e link sempre representam a MESMA rota (construídos dos mesmos parâmetros).
-                if _eh_google_ui and not _eh_mapa_leaflet:
-                    # ---------- CENÁRIO 1: GOOGLE VENCE (mapa do PRÓPRIO Google, 1 link) ----------
-                    # [VIS-GOOGLE-EMBED - 32ª geração] Renderiza o embed do Google num <iframe>
-                    # com os atributos OFICIALMENTE recomendados pela doc da Maps Embed API:
-                    # referrerpolicy (p/ a restrição de chave por referrer funcionar), allowfullscreen
-                    # (usuário pode expandir o mapa) e loading="lazy" (carrega só quando visível).
-                    try:
-                        _src_embed = str(url_iframe).replace("&", "&amp;")
-                        components.html(
-                            f'<iframe src="{_src_embed}" width="100%" height="470" '
-                            f'style="border:0;display:block" allowfullscreen loading="lazy" '
-                            f'referrerpolicy="strict-origin-when-cross-origin"></iframe>',
-                            height=476)
-                    except Exception:
-                        st.warning("Renderização de mapa bloqueada pelas políticas de segurança do navegador.")
-                    st.caption("🗺️ Mapa acima: **Google Maps** — rota traçada, origem e destino pelo nome.")
-                    st.markdown(f"🧭 [Abrir rota no Google Maps]({res_ind[2]})")
-                    _aviso_chave = "" if GOOGLE_MAPS_EMBED_API_KEY else (
-                        " _(Dica: configure `GOOGLE_MAPS_EMBED_API_KEY` nos secrets para usar a Maps Embed API oficial — garante 100% o traçado da rota.)_")
-                    st.caption("ℹ️ **Google Maps venceu (menor distância).** O **mapa embarcado** e o **link** são ambos do "
-                               "**Google** e representam exatamente a **mesma rota** (abrem pelos **nomes** de origem e destino) — "
-                               "100% auditável. Há um **único link**, do Google." + _aviso_chave)
-                elif _eh_mapa_leaflet:
-                    # ---------- CENÁRIOS 2 e 3: OSRM vence / Geodésico (Leaflet autocontido) ----------
-                    try:
-                        import base64 as _b64dec
-                        _html_mapa = _b64dec.b64decode(url_iframe.split(",", 1)[1]).decode("utf-8")
-                        components.html(_html_mapa, height=470, scrolling=False)
-                    except Exception:
-                        st.warning("Renderização de mapa localmente bloqueada pelas políticas de segurança do navegador.")
-                    if _eh_geodesico_ui:
-                        _prov_nome, _arq_nome = "Projeção Geodésica", "rota_estimada.html"
-                        st.caption(f"🗺️ Mapa acima: **{_prov_nome}** — ligação direta origem→destino (estimativa), identificadas pelo nome.")
-                    else:
-                        _prov_nome, _arq_nome = _nome_vencedor_ui, f"rota_{_nome_vencedor_ui.lower().replace(' ','_')}_tracada.html"
-                        st.caption(f"🗺️ Mapa acima: **{_prov_nome}** com o **traçado da rota desenhado** — origem e destino pelo nome.")
-                    if _eh_contendor_ui:
-                        # DOIS links: (1) Google comparativo, (2) visualizador do motor vencedor (reproduz este mapa).
-                        cbtn1, cbtn2 = st.columns(2)
-                        with cbtn1:
-                            st.markdown(f"🧭 [Google Maps (comparação)]({res_ind[2]})")
-                        with cbtn2:
-                            if _link_osrm_viewer:
-                                st.markdown(f'<a href="{_link_osrm_viewer}" target="_blank" rel="noopener" '
-                                            f'style="text-decoration:none">🛰️ <b>Visualizador {_prov_nome}</b> (mesma rota)</a>',
-                                            unsafe_allow_html=True)
-                            else:
-                                st.caption(f"🛰️ Rota muito longa p/ link — use o **download** abaixo (traçado exato {_prov_nome}).")
-                        try:
-                            import base64 as _b64dl
-                            _html_dl = _b64dl.b64decode(url_iframe.split(",", 1)[1]).decode("utf-8")
-                            st.download_button(f"⬇️ Baixar mapa ({_prov_nome}) — HTML", data=_html_dl,
-                                               file_name=_arq_nome, mime="text/html",
-                                               help=f"Mapa autocontido com o traçado exato do {_prov_nome}. Abre offline em qualquer navegador.",
-                                               use_container_width=True)
-                        except Exception:
-                            pass
-                        st.caption(f"ℹ️ **{_prov_nome} venceu (menor distância).** Mapa embarcado **exclusivamente do {_prov_nome}** (geometria exata, nomes). "
-                                   f"**Dois links:** o **Google Maps** (comparação) e o **Visualizador {_prov_nome}** — que abre num link próprio do app e "
-                                   "reproduz **fielmente este mesmo mapa** (mesma geometria, mesmos nomes). Veja também o **comparativo** abaixo.")
-                    else:
-                        # Geodésico: 1 link + download + aviso.
-                        cbtn1, cbtn2 = st.columns(2)
-                        with cbtn1:
-                            st.markdown(f"🧭 [Abrir rota no Google Maps]({res_ind[2]})")
-                        with cbtn2:
+                with _tab_diag_ind:
+                    # [ARQ-HIBRIDO - 26ª geração] Painel de consistência para os 3 cenários:
+                    # Google vence (tudo do Google, auditável pelo link), OSRM vence (distância/
+                    # tempo/mapa do OSRM com geometria exata + download do traçado), ou Projeção
+                    # Geodésica (Google não respondeu — estimativa por linha reta).
+                    fonte_rota_exibida = res_ind[5] if len(res_ind) > 5 else "N/A"
+                    _eh_geodesico = "GEOD" in str(fonte_rota_exibida).upper()
+                    _eh_osrm_vencedor = "OSRM" in str(fonte_rota_exibida).upper()
+                    with st.container(border=True):
+                        cc1, cc2, cc3 = st.columns(3)
+                        cc1.metric("Fonte da Rota", fonte_rota_exibida,
+                                   help="Provedor vencedor (menor distância) que forneceu distância, tempo e mapa.")
+                        if _eh_geodesico:
+                            cc2.metric("Tipo de Estimativa", "📐 Geodésica",
+                                       help="Nenhum motor viário respondeu. A distância foi estimada pela linha reta × fator de desvio rodoviário.")
+                            cc3.metric("Recomendação", "Reprocessar",
+                                       help="Reprocesse para obter o valor viário oficial quando os motores responderem.")
+                            st.warning("📐 **Projeção Geodésica Adaptativa (motores viários indisponíveis):** a distância foi **estimada** pela linha "
+                                       "reta entre os pontos multiplicada por um fator de desvio rodoviário — **não** é uma rota viária medida. "
+                                       "Recomenda-se **reprocessar** quando os motores responderem, para obter a quilometragem oficial.")
+                            # [INTEL-TERRITORIAL - 111ª geração] Detecção DINÂMICA de acesso fluvial/isolado:
+                            # se a geocodificação teve sucesso (coordenadas válidas) mas NENHUM motor rodoviário
+                            # retornou trajeto, pode ser um município SEM acesso rodoviário (ex.: ~43 dos 62 no
+                            # Amazonas). Sem dados externos — usa apenas o comportamento dos motores.
                             try:
-                                import base64 as _b64dl2
-                                _html_dl2 = _b64dl2.b64decode(url_iframe.split(",", 1)[1]).decode("utf-8")
-                                st.download_button(f"⬇️ Baixar mapa (estimativa) — HTML", data=_html_dl2,
+                                _lat_o_g = float(res_ind[19]) if len(res_ind) > 19 else 0.0
+                                _lon_o_g = float(res_ind[20]) if len(res_ind) > 20 else 0.0
+                                _lat_d_g = float(res_ind[21]) if len(res_ind) > 21 else 0.0
+                                _lon_d_g = float(res_ind[22]) if len(res_ind) > 22 else 0.0
+                                _geo_ok_iso = bool((_lat_o_g or _lon_o_g) and (_lat_d_g or _lon_d_g))
+                            except (ValueError, TypeError):
+                                _geo_ok_iso = False
+                            if _geo_ok_iso:
+                                st.caption("🛶 **Possível acesso fluvial/isolado:** a localização foi encontrada, mas nenhum motor "
+                                           "rodoviário traçou trajeto. Se isso **persistir** após reprocessar, é provável que um dos pontos "
+                                           "seja um **município de acesso fluvial ou isolado** (sem ligação rodoviária) — comum na Amazônia. "
+                                           "Nesses casos, a estimativa geodésica não representa uma viagem rodoviária real.")
+                        elif _eh_osrm_vencedor:
+                            cc2.metric("Critério", "🏆 Menor Distância",
+                                       help="O OSRM encontrou um trajeto mais curto que o Google (acima da tolerância de 2%).")
+                            cc3.metric("Mapa", "✅ Geometria OSRM",
+                                       help="O mapa desenha a geometria exata da rota OSRM. Há download do traçado em HTML autocontido.")
+                            st.caption("ℹ️ **OSRM venceu (menor distância):** distância, tempo e o **mapa** (que desenha a **geometria exata** da rota) "
+                                       "são do **OSRM**. O **link de navegação** abre a rota no **Google Maps** (forma estável de navegar), e você pode "
+                                       "**baixar o mapa HTML** com o traçado exato do OSRM (abre offline em qualquer navegador). Veja o **comparativo** "
+                                       "abaixo para entender a diferença entre os provedores.")
+                        else:
+                            cc2.metric("Auditável pelo Link", "✅ Sim",
+                                       help="Distância, tempo e link são do Google Maps. Ao abrir o link (pelos nomes), você confere a mesma rota.")
+                            cc3.metric("Critério", "🏆 Menor Distância",
+                                       help="O Google teve a menor distância (ou empate técnico ≤2%, preferido por ser auditável pelo link).")
+                            st.caption("ℹ️ **Google Maps venceu (menor distância):** distância, tempo e link de navegação são do "
+                                       "**Google Maps**. O **mapa desenha o traçado da rota** (do Google quando disponível, ou o traçado de "
+                                       "referência do OSRM — praticamente idêntico) com origem/destino **pelo nome**. Ao clicar em **Abrir rota no "
+                                       "Google Maps**, você visualiza a rota oficial pelos nomes das localidades. Veja o **comparativo** abaixo.")
+                
+                    # [COMP-PROV + ARQ-HIBRIDO] Painel comparativo Google × OSRM (rico e visual).
+                    # Apresentado SEMPRE que ambos os motores responderam — obrigatório quando o
+                    # OSRM vence, opcional/informativo quando o Google vence. Cards lado a lado,
+                    # selo do vencedor, diferenças absolutas/percentuais e leitura automática.
+                    # [FASE2-FLUXO - 184ª geração] Cabeçalho de seção (nível ####, aditivo — não move código):
+                    # agrupa o bloco de análise/rastreabilidade que vem a seguir (comparativo de provedores,
+                    # auditorias de geocodificação/consenso/motores e barreiras físicas) numa fase clara do fluxo
+                    # de resultado, logo após a identidade. Só markdown estático — zero risco de removeChild.
+                    st.markdown("#### 🔍 Diagnóstico & Auditoria")
+                    st.caption("Como a rota foi medida, a comparação entre provedores, as barreiras físicas e a "
+                               "rastreabilidade completa das consultas aos motores de rota.")
+                    _comp_str = res_ind[35] if len(res_ind) > 35 else ""
+                    _comp = _parsear_comparativo_provedores(_comp_str)
+                    if _comp:
+                        _osrm_venceu_painel = _eh_osrm_vencedor
+                        with st.expander("⚖️ Comparativo entre Provedores (Google Maps × OSRM)", expanded=_osrm_venceu_painel):
+                            km_g = _comp["km_google"]; km_o = _comp["km_osrm"]
+                            # [METRICA-UNICA - 50ª geração] Usa a função centralizada (denominador = MAIOR
+                            # valor). Corrige o bug que usava min() e explodia o % (220/347/1342).
+                            _m_div = _metricas_divergencia(km_g, km_o)
+                            diff_abs = _m_div["abs_km"] if _m_div else abs(km_g - km_o)
+                            diff_pct = _m_div["pct"] if _m_div else 0.0
+                            _vencedor_nome = _comp.get("fonte_vencedora", "Google")
+                            cgA, cgB = st.columns(2)
+                            with cgA:
+                                _selo_g = "🏆 Vencedor" if _vencedor_nome == "Google" else "Referência"
+                                st.markdown(f"#### {'🟢' if _vencedor_nome == 'Google' else '🔵'} Google Maps")
+                                st.metric(f"Distância · {_selo_g}", f"{km_g:.2f} km")
+                                st.metric("Tempo", _comp["tempo_google"] or "—")
+                                if _vencedor_nome == "Google":
+                                    st.success("🏆 **Menor distância** — fonte adotada (auditável pelo link).")
+                                else:
+                                    st.caption("Referência comparativa.")
+                            with cgB:
+                                _selo_o = "🏆 Vencedor" if _vencedor_nome == "OSRM" else "Referência"
+                                st.markdown(f"#### {'🟢' if _vencedor_nome == 'OSRM' else '🔵'} OSRM")
+                                st.metric(f"Distância · {_selo_o}", f"{km_o:.2f} km")
+                                st.metric("Tempo", _comp["tempo_osrm"] or "—")
+                                if _vencedor_nome == "OSRM":
+                                    st.success("🏆 **Menor distância** — fonte adotada (mapa com geometria exata).")
+                                else:
+                                    st.caption("Referência comparativa.")
+                            st.divider()
+                            d1, d2, d3 = st.columns(3)
+                            d1.metric("Diferença de Distância", f"{diff_abs:.2f} km",
+                                      help="Diferença absoluta entre as distâncias dos dois provedores.")
+                            d2.metric("Diferença Percentual", f"{diff_pct:.1f}%",
+                                      help="Diferença relativa (sobre a menor das duas distâncias).")
+                            d3.metric("Provedor Vencedor", _vencedor_nome,
+                                      help="Provedor com a menor distância — adotado para os valores principais.")
+                            if diff_pct < 2.0:
+                                st.success(f"✅ **Convergência alta:** os dois motores praticamente concordam "
+                                           f"(diferença de apenas {diff_pct:.1f}%). Resultado muito robusto — adotado o **{_vencedor_nome}**.")
+                            elif diff_pct < 10.0:
+                                st.info(f"ℹ️ **Divergência moderada:** os motores diferem em {diff_pct:.1f}% ({diff_abs:.1f} km), "
+                                        f"o que reflete escolhas diferentes de vias. Adotada a **menor distância** ({_vencedor_nome}).")
+                            else:
+                                st.warning(f"⚠️ **Divergência alta:** {diff_pct:.1f}% de diferença ({diff_abs:.1f} km). "
+                                           f"Pode indicar rota alternativa significativa (balsa, pedágio, via não pavimentada) ou diferença "
+                                           f"de malha entre os motores. Adotada a **menor distância** ({_vencedor_nome}) — vale conferir o trajeto.")
+                            st.caption("📊 A aplicação executa **ambos** os motores e adota sempre a **menor distância**. Este comparativo é a "
+                                       "auditoria da escolha — mostra exatamente por que um provedor foi selecionado em vez do outro.")
+
+                    # [GRAPHHOPPER-PARIDADE-FIX - 221ª geração] Bloco do GraphHopper no Diagnóstico & Auditoria, em
+                    # paridade com Google/OSRM: lê os dados PRÓPRIOS do GraphHopper (bloco dedicado da auditoria),
+                    # nunca mais confundidos com o OSRM. Só aparece quando o GraphHopper respondeu.
+                    try:
+                        _aud_gh = res_ind[39] if len(res_ind) > 39 and isinstance(res_ind[39], dict) else None
+                        _gh_bloco = (_aud_gh or {}).get("graphhopper") if _aud_gh else None
+                    except Exception:
+                        _gh_bloco = None
+                    if _gh_bloco and _gh_bloco.get("distancia_km") is not None:
+                        with st.expander("🚗 Rota do GraphHopper (motor com chave, em paridade)", expanded=False):
+                            _ghd = _gh_bloco.get("distancia_km")
+                            _ght = _gh_bloco.get("tempo_min")
+                            _ghb = _gh_bloco.get("balsa")
+                            _gq1, _gq2, _gq3 = st.columns(3)
+                            try:
+                                _gq1.metric("Distância · GraphHopper", f"{float(_ghd):.2f} km")
+                            except (ValueError, TypeError):
+                                _gq1.metric("Distância · GraphHopper", f"{_ghd} km")
+                            try:
+                                _ght_i = int(float(_ght)) if _ght not in (None, "") else None
+                                _gq2.metric("Tempo", ("—" if _ght_i is None else
+                                                      (f"{_ght_i} min" if _ght_i < 60 else f"{_ght_i//60} h {_ght_i%60} min")))
+                            except (ValueError, TypeError):
+                                _gq2.metric("Tempo", "—")
+                            _gq3.metric("Balsa", _ghb or "Não")
+                            # comparação GraphHopper × Google (divergência), como se faz p/ OSRM
+                            try:
+                                if _comp and _comp.get("km_google") is not None:
+                                    _mdg = _metricas_divergencia(_comp["km_google"], float(_ghd))
+                                    if _mdg:
+                                        st.caption(f"↔️ Divergência GraphHopper × Google: **{_mdg['abs_km']:.1f} km** "
+                                                   f"({_mdg['pct']:.1f}%).")
+                            except Exception:
+                                pass
+                            if _gh_bloco.get("url"):
+                                st.markdown(f"🧭 [Abrir esta rota no mapa do GraphHopper]({_gh_bloco['url']})")
+                            st.caption("O **GraphHopper** participa da disputa pela menor rota em igualdade com Google e "
+                                       "OSRM. Estes são os valores **dele** — medidos, não estimados.")
+
+                    # [VALHALLA-PARIDADE-EXIBIÇÃO - 264ª geração] Seção "Rota do Valhalla" no Validador Rápido, em
+                    # paridade com Google/OSRM/GraphHopper: lê os dados PRÓPRIOS do Valhalla (campo dados_valhalla,
+                    # índice 42). Só aparece quando o Valhalla respondeu. Espelha a seção do GraphHopper acima.
+                    try:
+                        _vlh_raw_vr = res_ind[42] if len(res_ind) > 42 and res_ind[42] else None
+                        _vlh_bloco_vr = _parsear_dados_valhalla(_vlh_raw_vr) if _vlh_raw_vr else None
+                    except Exception:
+                        _vlh_bloco_vr = None
+                    if _vlh_bloco_vr and _vlh_bloco_vr.get("km") is not None:
+                        with st.expander("🧭 Rota do Valhalla (motor sem chave, em paridade)", expanded=False):
+                            _vld_vr = _vlh_bloco_vr.get("km")
+                            _vlt_vr = _vlh_bloco_vr.get("tempo_min")
+                            _vlb_vr = _vlh_bloco_vr.get("balsa")
+                            _vv1, _vv2, _vv3 = st.columns(3)
+                            try:
+                                _vv1.metric("Distância · Valhalla", f"{float(_vld_vr):.2f} km")
+                            except (ValueError, TypeError):
+                                _vv1.metric("Distância · Valhalla", f"{_vld_vr} km")
+                            try:
+                                _vlt_vr_i = int(float(_vlt_vr)) if _vlt_vr not in (None, "") else None
+                                _vv2.metric("Tempo", ("—" if _vlt_vr_i is None else
+                                                      (f"{_vlt_vr_i} min" if _vlt_vr_i < 60 else f"{_vlt_vr_i//60} h {_vlt_vr_i%60} min")))
+                            except (ValueError, TypeError):
+                                _vv2.metric("Tempo", "—")
+                            _vv3.metric("Balsa", _vlb_vr or "Não")
+                            # comparação Valhalla × Google (divergência), como se faz p/ OSRM e GraphHopper
+                            try:
+                                if _comp and _comp.get("km_google") is not None:
+                                    _mdv_vr = _metricas_divergencia(_comp["km_google"], float(_vld_vr))
+                                    if _mdv_vr:
+                                        st.caption(f"↔️ Divergência Valhalla × Google: **{_mdv_vr['abs_km']:.1f} km** "
+                                                   f"({_mdv_vr['pct']:.1f}%).")
+                            except Exception:
+                                pass
+                            if _vlh_bloco_vr.get("link_maps"):
+                                st.markdown(f"🧭 [Abrir o trajeto no mapa (navegação)]({_vlh_bloco_vr['link_maps']})")
+                            st.caption("O **Valhalla** (open-source, dados OSM) participa da disputa pela menor rota em "
+                                       "igualdade com Google, OSRM e GraphHopper. Estes são os valores **dele** — medidos, "
+                                       "não estimados. Numa instância própria, participa de toda rota como o OSRM.")
+
+                    # nacional (rodoviária SEDE-a-SEDE) por par de Códigos IBGE. GATED pela flag + base
+                    # disponível — não aparece enquanto o DistBrasil não estiver configurado (impacto zero).
+
+                    with st.expander("🔍 Auditoria Detalhada da Geocodificação e Consenso", expanded=False):
+                        st.caption(f"Status da Base IBGE Local: {'Ativa e Carregada' if len(IBGE_MUNICIPIOS) > 1000 else '⚠️ CORROMPIDA/FALHA DE API'}")
+                        col_aud1, col_aud2 = st.columns(2)
+                        with col_aud1:
+                            st.markdown("**📍 Origem (Ponto A)**")
+                            st.write(f"**Endereço Oficial:** {res_ind[12]}")
+                            st.write(f"**Coordenadas:** {res_ind[19]}, {res_ind[20]}")
+                            st.write(f"**Motor Vencedor:** {res_ind[11]}")
+                            st.write(f"**Confiança & Score:** {res_ind[7]} ({res_ind[8]}/100)")
+                            st.markdown(ds_barra_confianca(res_ind[8]), unsafe_allow_html=True)
+                            st.write("**Justificativa Espacial:**")
+                            for just in res_ind[26]: 
+                                st.caption(f"• {just}")
+                        with col_aud2:
+                            st.markdown("**🏁 Destino (Ponto B)**")
+                            st.write(f"**Endereço Oficial:** {res_ind[18]}")
+                            st.write(f"**Coordenadas:** {res_ind[21]}, {res_ind[22]}")
+                            st.write(f"**Motor Vencedor:** {res_ind[17]}")
+                            st.write(f"**Confiança & Score:** {res_ind[13]} ({res_ind[14]}/100)")
+                            st.markdown(ds_barra_confianca(res_ind[14]), unsafe_allow_html=True)
+                            st.write("**Justificativa Espacial:**")
+                            for just in res_ind[27]: 
+                                st.caption(f"• {just}")
+
+                    # [BARREIRA-SINGLE - 48ª geração] Painel de indicadores territoriais no Validador Rápido
+                    # (antes só na planilha em lote): fator de sinuosidade, barreira física provável e
+                    # consistência física — COM interpretações, origem do cálculo, justificativa e confiança.
+                    try:
+                        _comp_ind = res_ind[35] if len(res_ind) > 35 else None
+                        _km_osrm_ind = _comp_ind.get("km_osrm") if isinstance(_comp_ind, dict) else None
+                        _ind = _montar_indicadores_territoriais(res_ind[0], res_ind[4], res_ind[3], dist_osrm=_km_osrm_ind)
+                        with st.expander("🌍 Análise Territorial e Barreiras Físicas", expanded=False):
+                            st.caption("Indicadores derivados da relação entre a **distância viária** e a **linha reta** "
+                                       "(geodésica de Karney). Servem para explicar por que uma rota é mais longa e sinalizar inconsistências.")
+                            _ic1, _ic2, _ic3 = st.columns(3)
+                            _ic1.metric("Fator de Sinuosidade", f"{_ind['fator_sinuosidade']}×",
+                                        help="Distância viária ÷ linha reta. Quanto maior, mais a estrada 'contorna'.")
+                            _ic2.metric("Consistência Física", _ind['consistencia_status'].split(' ', 1)[-1] if ' ' in _ind['consistencia_status'] else _ind['consistencia_status'])
+                            _ic3.metric("Confiança da Inferência", _ind['barreira_confianca'])
+                            _base_lbl = "OSRM — coordenada validada" if _ind.get('base_coord') else "distância adotada"
+                            st.markdown(f"**Origem do cálculo:** viária ({_base_lbl}) = **{_ind['distancia_viaria']} km**, "
+                                        f"linha reta (Karney/WGS-84) = **{_ind['linha_reta']} km** → sinuosidade = "
+                                        f"viária ÷ reta = **{_ind['fator_sinuosidade']}×**.")
+                            if _ind.get('nota_adotada'):
+                                st.info(f"ℹ️ {_ind['nota_adotada']}")
+                            # [DIST-RETA-FIX - 92ª geração] Validação cruzada da geodésica: Karney × Haversine
+                            # sobre as MESMAS coordenadas roteadas. Confirma que a linha reta está correta (o
+                            # erro, quando há, está nas COORDENADAS, não no algoritmo geodésico).
+                            try:
+                                _lat_o_v, _lon_o_v = float(res_ind[19]), float(res_ind[20])
+                                _lat_d_v, _lon_d_v = float(res_ind[21]), float(res_ind[22])
+                                if all(abs(_c) > 0 for _c in (_lat_o_v, _lon_o_v, _lat_d_v, _lon_d_v)):
+                                    _hav = _haversine_km_consenso(_lat_o_v, _lon_o_v, _lat_d_v, _lon_d_v)
+                                    _kar = float(_ind['linha_reta'])
+                                    _div = abs(_hav - _kar)
+                                    _div_pct = (_div / _kar * 100) if _kar > 0 else 0.0
+                                    if _div_pct <= 1.0:
+                                        st.caption(f"🔎 Validação cruzada da geodésica: Karney = {_kar:.3f} km · "
+                                                   f"Haversine = {_hav:.3f} km · divergência {_div_pct:.2f}% → linha reta **confirmada**.")
+                                    else:
+                                        st.warning(f"🔎 Validação cruzada: Karney = {_kar:.3f} km × Haversine = {_hav:.3f} km "
+                                                   f"divergem {_div_pct:.2f}% (> 1%). Verificar coordenadas/datum.")
+                            except Exception:
+                                pass
+                            st.markdown(f"**Interpretação da sinuosidade:** {_ind['interp_sinuosidade']}")
+                            if _ind['consistencia_status'].startswith("❌"):
+                                st.error(f"**Consistência física:** {_ind['consistencia_explicacao']}")
+                            else:
+                                st.success(f"**Consistência física:** {_ind['consistencia_explicacao']}")
+                            st.markdown(f"**🚧 Barreira física provável:** {_ind['barreira']}")
+                            st.caption(f"↳ {_ind['barreira_explicacao']} (grau de confiança: {_ind['barreira_confianca']}).")
+                            st.caption("ℹ️ A barreira é uma **inferência** a partir do desvio da rota (não usa mapa de "
+                                       "rios/relevo). É transparente e serve de guia para auditoria; para confirmação, consulte o mapa da rota.")
+                    except Exception as _e_ind:
+                        logger.error(f"[BARREIRA-SINGLE] Falha ao montar indicadores territoriais (isolada): {_e_ind}")
+
+                    # [AUDIT-MOTORES - 39ª geração] Painel de auditoria das consultas aos motores de rota.
+                    # Mostra o rastro completo: texto original → normalizado → validado → coordenada →
+                    # parâmetros/URLs enviados a Google e OSRM → consenso. Evidencia que ambos os motores
+                    # partem da MESMA geocodificação validada (camada única de identificação).
+                    _aud = res_ind[39] if len(res_ind) > 39 else None
+                    if isinstance(_aud, dict) and _aud:
+                        with st.expander("🔎 Auditoria das Consultas aos Motores de Rota", expanded=False):
+                            st.caption("Rastreabilidade total: do texto informado até os parâmetros efetivamente enviados a cada motor. "
+                                       "Todos os motores partem da **mesma** origem/destino validados (camada única de identificação).")
+                            _o = _aud.get("origem", {}); _d = _aud.get("destino", {})
+                            st.markdown("##### 1️⃣ Identificação unificada (normalização → validação)")
+                            _ca, _cb = st.columns(2)
+                            with _ca:
+                                st.markdown("**📍 Origem**")
+                                st.write(f"**Texto original:** {_o.get('texto_original','—')}")
+                                st.write(f"**Normalizado:** {_o.get('normalizado','—')}")
+                                st.write(f"**Validado (oficial):** {_o.get('validado_oficial','—')}")
+                                st.write(f"**Coordenada validada:** {_o.get('coordenada','—')}")
+                                st.caption(f"Fonte: {_o.get('fonte_geocodificacao','—')} · Score: {_o.get('score_confianca','—')}/100")
+                                st.caption(f"🏷️ Tipo de ponto: **{_o.get('tipo_ponto','—')}**")
+                            with _cb:
+                                st.markdown("**🏁 Destino**")
+                                st.write(f"**Texto original:** {_d.get('texto_original','—')}")
+                                st.write(f"**Normalizado:** {_d.get('normalizado','—')}")
+                                st.write(f"**Validado (oficial):** {_d.get('validado_oficial','—')}")
+                                st.write(f"**Coordenada validada:** {_d.get('coordenada','—')}")
+                                st.caption(f"Fonte: {_d.get('fonte_geocodificacao','—')} · Score: {_d.get('score_confianca','—')}/100")
+                                st.caption(f"🏷️ Tipo de ponto: **{_d.get('tipo_ponto','—')}**")
+                            st.divider()
+                            _g = _aud.get("google_maps", {}); _os = _aud.get("osrm", {})
+                            st.markdown("##### 2️⃣ Consulta enviada ao **Google Maps**")
+                            st.write(f"**Origem enviada:** {_g.get('origem_enviada','—')}  ·  **Destino enviado:** {_g.get('destino_enviada','—')}")
+                            st.caption(f"Tipo de entrada: {_g.get('tipo_entrada','—')} · Distância retornada: {_g.get('distancia_km','—')} km")
+                            if _g.get("url"):
+                                st.code(_g["url"], language="text")
+                            st.markdown("##### 3️⃣ Consulta enviada ao **OSRM**")
+                            st.write(f"**Origem enviada (coord):** {_os.get('origem_enviada','—')}  ·  **Destino enviado (coord):** {_os.get('destino_enviada','—')}")
+                            st.caption(f"Tipo de entrada: {_os.get('tipo_entrada','—')} · Distância retornada: {_os.get('distancia_km','—')} km")
+                            if _os.get("url"):
+                                st.code(_os["url"], language="text")
+                            # [OSRM-SNAP] Coordenada ENVIADA × coordenada USADA (após snap à malha viária)
+                            if _os.get("origem_usada_pos_snap") is not None:
+                                st.markdown("**📌 Snap do OSRM (projeção na malha viária OSM)**")
+                                _sc1, _sc2 = st.columns(2)
+                                with _sc1:
+                                    st.write(f"**Origem — enviada:** {_os.get('origem_enviada','—')}")
+                                    st.write(f"**Origem — usada (pós-snap):** {_os.get('origem_usada_pos_snap','—')}")
+                                    _od = _os.get('origem_snap_dist_m')
+                                    st.caption(f"Deslocamento do snap: **{_od:.0f} m** — {_os.get('origem_snap_nivel','—')}" if isinstance(_od, (int, float)) else "Deslocamento: —")
+                                with _sc2:
+                                    st.write(f"**Destino — enviada:** {_os.get('destino_enviada','—')}")
+                                    st.write(f"**Destino — usada (pós-snap):** {_os.get('destino_usada_pos_snap','—')}")
+                                    _dd = _os.get('destino_snap_dist_m')
+                                    st.caption(f"Deslocamento do snap: **{_dd:.0f} m** — {_os.get('destino_snap_nivel','—')}" if isinstance(_dd, (int, float)) else "Deslocamento: —")
+                                st.caption("ℹ️ O OSRM **projeta** a coordenada enviada na via mais próxima da malha OpenStreetMap. "
+                                           "Um deslocamento grande indica malha esparsa na região — é a **causa raiz** de origem/destino "
+                                           "aparecerem alguns km afastados no OSRM (o Google re-resolve o nome na própria malha).")
+                            # [VALID-ESPACIAL] Resultado da validação espacial da rota
+                            _val = _aud.get("validacao_espacial")
+                            if isinstance(_val, dict):
+                                st.markdown("**🛡️ Validação espacial da rota**")
+                                def _fmt_dentro(v):
+                                    return "✅ dentro da UF" if v is True else ("❌ FORA da UF" if v is False else "— (sem UF p/ validar)")
+                                st.caption(f"Origem: {_fmt_dentro(_val.get('origem_dentro_uf'))} · "
+                                           f"Destino: {_fmt_dentro(_val.get('destino_dentro_uf'))} · "
+                                           f"limiar de snap: {_val.get('limiar_snap_m',0):.0f} m")
+                                if _val.get("alertas"):
+                                    for _al in _val["alertas"]:
+                                        st.warning(f"⚠️ {_al}")
+                                else:
+                                    st.success("✅ Sem inconsistências: origem e destino dentro dos limites esperados e snap dentro do limiar.")
+                            # [SNAP-MITIGA] Mitigação de snap excessivo (quando acionada)
+                            _mit = _aud.get("mitigacao_snap")
+                            if isinstance(_mit, dict):
+                                st.markdown("**🎯 Mitigação de snap excessivo**")
+                                if _mit.get("aplicada"):
+                                    _oa, _oq = _mit.get("snap_origem_antes_m"), _mit.get("snap_origem_depois_m")
+                                    _da, _dq = _mit.get("snap_destino_antes_m"), _mit.get("snap_destino_depois_m")
+                                    _ka, _kq = _mit.get("km_antes"), _mit.get("km_depois")
+                                    _mc1, _mc2 = st.columns(2)
+                                    with _mc1:
+                                        if _mit.get("origem_melhorada") and _oa is not None and _oq is not None:
+                                            st.write(f"**Origem — snap:** {_oa:.0f} m → **{_oq:.0f} m**")
+                                        if _mit.get("destino_melhorado") and _da is not None and _dq is not None:
+                                            st.write(f"**Destino — snap:** {_da:.0f} m → **{_dq:.0f} m**")
+                                    with _mc2:
+                                        if _ka is not None and _kq is not None:
+                                            st.write(f"**Rota OSRM:** {_ka} km → **{_kq} km**")
+                                        st.caption(f"Coord. OSRM origem: {_mit.get('coord_osrm_origem','—')}")
+                                        st.caption(f"Coord. OSRM destino: {_mit.get('coord_osrm_destino','—')}")
+                                    st.success("✅ Coordenada road-adjacent mais representativa selecionada (menor snap dentro da UF) e OSRM re-roteado.")
+                                else:
+                                    st.info(f"ℹ️ Mitigação tentada, sem melhora: {_mit.get('motivo','—')}")
+                                # Candidatos considerados (transparência total)
+                                def _tabela_cand(_lst, _titulo):
+                                    if _lst:
+                                        st.caption(f"**{_titulo}** — candidatos avaliados (por provedor):")
+                                        _linhas = [{"Fonte": c.get("fonte","—"),
+                                                    "Coordenada": f"{round(c.get('lat',0),5)}, {round(c.get('lon',0),5)}",
+                                                    "Snap (m)": c.get("snap_m"),
+                                                    "Dist. da validada (m)": c.get("dist_da_validada_m")} for c in _lst]
+                                        st.dataframe(_linhas, use_container_width=True, hide_index=True)
+                                _tabela_cand(_mit.get("candidatos_origem"), "Origem")
+                                _tabela_cand(_mit.get("candidatos_destino"), "Destino")
+                            st.divider()
+                            _cons = _aud.get("consenso", {})
+                            st.markdown("##### 4️⃣ Consenso e divergência entre motores")
+                            _cc1, _cc2, _cc3 = st.columns(3)
+                            _cc1.metric("Motor vencedor", _cons.get("vencedor", "—"))
+                            _cc2.metric("Divergência (km)", f"{_cons.get('divergencia_km')}" if _cons.get('divergencia_km') is not None else "—")
+                            _cc3.metric("Divergência (%)", f"{_cons.get('divergencia_pct')}%" if _cons.get('divergencia_pct') is not None else "—")
+                            st.caption("💡 As coordenadas enviadas ao OSRM são **idênticas** às coordenadas validadas acima; o Google recebe o "
+                                       "**nome oficial** correspondente à mesma geocodificação. Ambos operam sobre a mesma localidade validada — "
+                                       "a diferença remanescente vem do **snap** do OSRM à malha viária, agora medido e validado acima.")
+
+                with _tab_mapa_ind:
+                    # [FASE2-FLUXO - 184ª geração] Cabeçalho de seção (nível ####, aditivo): marca o mapa como uma
+                    # fase própria do fluxo (o payoff visual), depois do diagnóstico. Só markdown estático.
+                    st.markdown("#### 🗺️ Mapa da Rota")
+                    url_iframe = res_ind[29]
+                    _fonte_rota_ui = res_ind[5] if len(res_ind) > 5 else "N/A"
+                    _link_osrm_viewer = res_ind[36] if len(res_ind) > 36 else ""
+                    _eh_geodesico_ui = "GEOD" in str(_fonte_rota_ui).upper()
+                    # [GRAPHHOPPER-PARIDADE-FIX - 221ª] o vencedor pode ser QUALQUER motor contendor (OSRM,
+                    # GraphHopper, ORS). Antes, só "OSRM" era reconhecido — quando o GraphHopper vencia, a fonte
+                    # ("GraphHopper (Menor Distância)") não continha "OSRM" nem "GEOD", então o app tratava como se
+                    # o GOOGLE tivesse vencido (mostrava o mapa do Google como principal e rotulava errado o
+                    # comparativo). Agora reconhecemos os motores viários por geometria própria (Leaflet).
+                    _fonte_up = str(_fonte_rota_ui).upper()
+                    _eh_osrm_ui = "OSRM" in _fonte_up
+                    _eh_contendor_ui = (not _eh_geodesico_ui) and any(
+                        _m in _fonte_up for _m in ("OSRM", "GRAPHHOPPER", "ORS", "VALHALLA"))
+                    # nome do motor vencedor para rotular corretamente (Google, OSRM, GraphHopper, ...)
+                    if _eh_geodesico_ui:
+                        _nome_vencedor_ui = "Projeção Geodésica"
+                    elif "GRAPHHOPPER" in _fonte_up:
+                        _nome_vencedor_ui = "GraphHopper"
+                    elif "VALHALLA" in _fonte_up:
+                        _nome_vencedor_ui = "Valhalla"
+                    elif "OSRM" in _fonte_up:
+                        _nome_vencedor_ui = "OSRM"
+                    elif "ORS" in _fonte_up or "OPENROUTE" in _fonte_up:
+                        _nome_vencedor_ui = "OpenRouteService"
+                    else:
+                        _nome_vencedor_ui = "Google Maps"
+                    # _eh_google_ui = Google venceu de fato (nenhum contendor viário nem geodésico)
+                    _eh_google_ui = (not _eh_geodesico_ui) and (not _eh_contendor_ui)
+                    # [MAPA-VENCEDOR-FIX 293a] Bug 2: se GraphHopper/Valhalla venceu, o mapa principal deve ser a
+                    # geometria DELE (o pipeline preenche link_embed com a do OSRM). Reconstroi do vencedor; se ele
+                    # nao tiver geometria propria, mantem o atual (nao fabrica).
+                    _mv = _mapa_vencedor_singleshot(res_ind, _nome_vencedor_ui) if _eh_contendor_ui else None
+                    if _mv and _mv.get("uri"):
+                        url_iframe = _mv["uri"]
+                        if _mv.get("viewer"):
+                            _link_osrm_viewer = _mv["viewer"]
+                    _eh_mapa_leaflet = isinstance(url_iframe, str) and url_iframe.startswith("data:text/html;base64,")
+                    # [VIS-DINAMICA - 30ª geração] APRESENTAÇÃO DINÂMICA POR PROVEDOR VENCEDOR:
+                    #   • GOOGLE vence → mapa embarcado EXCLUSIVAMENTE do Google (iframe http) + 1 link (Google).
+                    #   • OSRM vence   → mapa embarcado EXCLUSIVAMENTE do OSRM (Leaflet) + 2 links (Google + visualizador OSRM).
+                    #   • Geodésico    → ligação direta estimada (Leaflet) + 1 link + aviso.
+                    # Mapa e link sempre representam a MESMA rota (construídos dos mesmos parâmetros).
+                    if _eh_google_ui and not _eh_mapa_leaflet:
+                        # ---------- CENÁRIO 1: GOOGLE VENCE (mapa do PRÓPRIO Google, 1 link) ----------
+                        # [VIS-GOOGLE-EMBED - 32ª geração] Renderiza o embed do Google num <iframe>
+                        # com os atributos OFICIALMENTE recomendados pela doc da Maps Embed API:
+                        # referrerpolicy (p/ a restrição de chave por referrer funcionar), allowfullscreen
+                        # (usuário pode expandir o mapa) e loading="lazy" (carrega só quando visível).
+                        try:
+                            _src_embed = str(url_iframe).replace("&", "&amp;")
+                            components.html(
+                                f'<iframe src="{_src_embed}" width="100%" height="470" '
+                                f'style="border:0;display:block" allowfullscreen loading="lazy" '
+                                f'referrerpolicy="strict-origin-when-cross-origin"></iframe>',
+                                height=476)
+                        except Exception:
+                            st.warning("Renderização de mapa bloqueada pelas políticas de segurança do navegador.")
+                        st.caption("🗺️ Mapa acima: **Google Maps** — rota traçada, origem e destino pelo nome.")
+                        st.markdown(f"🧭 [Abrir rota no Google Maps]({res_ind[2]})")
+                        _aviso_chave = "" if GOOGLE_MAPS_EMBED_API_KEY else (
+                            " _(Dica: configure `GOOGLE_MAPS_EMBED_API_KEY` nos secrets para usar a Maps Embed API oficial — garante 100% o traçado da rota.)_")
+                        st.caption("ℹ️ **Google Maps venceu (menor distância).** O **mapa embarcado** e o **link** são ambos do "
+                                   "**Google** e representam exatamente a **mesma rota** (abrem pelos **nomes** de origem e destino) — "
+                                   "100% auditável. Há um **único link**, do Google." + _aviso_chave)
+                    elif _eh_mapa_leaflet:
+                        # ---------- CENÁRIOS 2 e 3: OSRM vence / Geodésico (Leaflet autocontido) ----------
+                        try:
+                            import base64 as _b64dec
+                            _html_mapa = _b64dec.b64decode(url_iframe.split(",", 1)[1]).decode("utf-8")
+                            components.html(_html_mapa, height=470, scrolling=False)
+                        except Exception:
+                            st.warning("Renderização de mapa localmente bloqueada pelas políticas de segurança do navegador.")
+                        if _eh_geodesico_ui:
+                            _prov_nome, _arq_nome = "Projeção Geodésica", "rota_estimada.html"
+                            st.caption(f"🗺️ Mapa acima: **{_prov_nome}** — ligação direta origem→destino (estimativa), identificadas pelo nome.")
+                        else:
+                            _prov_nome, _arq_nome = _nome_vencedor_ui, f"rota_{_nome_vencedor_ui.lower().replace(' ','_')}_tracada.html"
+                            st.caption(f"🗺️ Mapa acima: **{_prov_nome}** com o **traçado da rota desenhado** — origem e destino pelo nome.")
+                        if _eh_contendor_ui:
+                            # DOIS links: (1) Google comparativo, (2) visualizador do motor vencedor (reproduz este mapa).
+                            cbtn1, cbtn2 = st.columns(2)
+                            with cbtn1:
+                                st.markdown(f"🧭 [Google Maps (comparação)]({res_ind[2]})")
+                            with cbtn2:
+                                if _link_osrm_viewer:
+                                    st.markdown(f'<a href="{_link_osrm_viewer}" target="_blank" rel="noopener" '
+                                                f'style="text-decoration:none">🛰️ <b>Visualizador {_prov_nome}</b> (mesma rota)</a>',
+                                                unsafe_allow_html=True)
+                                else:
+                                    st.caption(f"🛰️ Rota muito longa p/ link — use o **download** abaixo (traçado exato {_prov_nome}).")
+                            try:
+                                import base64 as _b64dl
+                                _html_dl = _b64dl.b64decode(url_iframe.split(",", 1)[1]).decode("utf-8")
+                                st.download_button(f"⬇️ Baixar mapa ({_prov_nome}) — HTML", data=_html_dl,
                                                    file_name=_arq_nome, mime="text/html",
-                                                   help="Mapa autocontido. Abre offline em qualquer navegador.",
+                                                   help=f"Mapa autocontido com o traçado exato do {_prov_nome}. Abre offline em qualquer navegador.",
                                                    use_container_width=True)
                             except Exception:
                                 pass
-                        st.warning("📐 **Distância estimada (Projeção Geodésica):** nenhum motor viário retornou a rota no momento, então "
-                                   "a quilometragem foi **estimada** pela linha reta × fator de desvio rodoviário (o mapa mostra a ligação "
-                                   "direta). Recomenda-se **reprocessar** quando os motores responderem, para obter a rota viária oficial.")
-                else:
-                    # Rede de segurança rara: link_embed http inesperado. Usa iframe + link Google.
-                    try:
-                        components.iframe(url_iframe, height=470, scrolling=True)
-                    except Exception:
-                        st.warning("Renderização de mapa localmente bloqueada pelas políticas de segurança do navegador.")
-                    st.markdown(f"🗺️ [Abrir rota no Google Maps]({res_ind[2]})")
-
-                # [VIS-DUAL - 37ª geração] BLOCO COMPARATIVO — sempre exibe o MAPA + LINK do
-                # OUTRO provedor, para que as DUAS rotas (Google e OSRM) sejam sempre visíveis.
-                # Atende ao pedido: "independentemente de quem vencer, sempre visualizar as duas
-                # rotas". Aditivo (não altera o bloco do vencedor acima). Não aparece no fallback
-                # geodésico (só há uma estimativa, sem segundo motor para comparar).
-                _mapa_comp = res_ind[37] if len(res_ind) > 37 else ""
-                _link_comp = res_ind[38] if len(res_ind) > 38 else ""
-                if _mapa_comp and not _eh_geodesico_ui:
-                    # Google venceu → comparativo é o motor viário (OSRM, o 2º); contendor venceu → comparativo é Google.
-                    _win_prov = "Google Maps" if _eh_google_ui else _nome_vencedor_ui
-                    _comp_prov = "OSRM" if _eh_google_ui else "Google Maps"
-                    st.write("")
-                    with st.container(border=True):
-                        st.markdown(f"##### 🔀 Rota comparativa — **{_comp_prov}** _(motor não vencedor)_")
-                        st.caption(f"O mapa principal acima é do vencedor (**{_win_prov}**). Abaixo, a MESMA origem e destino "
-                                   f"traçados pelo **{_comp_prov}**, para comparação lado a lado — assim você audita as **duas** rotas.")
-                        _comp_eh_leaflet = isinstance(_mapa_comp, str) and _mapa_comp.startswith("data:text/html;base64,")
-                        if _comp_eh_leaflet:
-                            # Comparativo com geometria própria (Leaflet autocontido) — motor viário (OSRM/contendor)
-                            try:
-                                import base64 as _b64c
-                                components.html(_b64c.b64decode(_mapa_comp.split(",", 1)[1]).decode("utf-8"),
-                                                height=420, scrolling=False)
-                            except Exception:
-                                st.warning("Renderização do mapa comparativo bloqueada pelo navegador.")
-                            st.caption(f"🗺️ Mapa comparativo: **{_comp_prov}** — geometria exata da rota, origem/destino pelo nome.")
-                            _cbc1, _cbc2 = st.columns(2)
-                            with _cbc1:
-                                if _link_comp:
-                                    st.markdown(f'<a href="{_link_comp}" target="_blank" rel="noopener" '
-                                                f'style="text-decoration:none">🛰️ <b>Visualizador {_comp_prov}</b> (rota comparativa)</a>',
-                                                unsafe_allow_html=True)
-                                else:
-                                    st.caption("🛰️ Rota longa p/ link — use o **download** ao lado.")
-                            with _cbc2:
+                            st.caption(f"ℹ️ **{_prov_nome} venceu (menor distância).** Mapa embarcado **exclusivamente do {_prov_nome}** (geometria exata, nomes). "
+                                       f"**Dois links:** o **Google Maps** (comparação) e o **Visualizador {_prov_nome}** — que abre num link próprio do app e "
+                                       "reproduz **fielmente este mesmo mapa** (mesma geometria, mesmos nomes). Veja também o **comparativo** abaixo.")
+                        else:
+                            # Geodésico: 1 link + download + aviso.
+                            cbtn1, cbtn2 = st.columns(2)
+                            with cbtn1:
+                                st.markdown(f"🧭 [Abrir rota no Google Maps]({res_ind[2]})")
+                            with cbtn2:
                                 try:
-                                    import base64 as _b64cd
-                                    st.download_button(f"⬇️ Baixar mapa comparativo ({_comp_prov}) — HTML",
-                                                       data=_b64cd.b64decode(_mapa_comp.split(",", 1)[1]).decode("utf-8"),
-                                                       file_name="rota_comparativa.html", mime="text/html",
-                                                       use_container_width=True,
-                                                       help=f"Mapa autocontido com o traçado exato do {_comp_prov}. Abre offline em qualquer navegador.")
+                                    import base64 as _b64dl2
+                                    _html_dl2 = _b64dl2.b64decode(url_iframe.split(",", 1)[1]).decode("utf-8")
+                                    st.download_button(f"⬇️ Baixar mapa (estimativa) — HTML", data=_html_dl2,
+                                                       file_name=_arq_nome, mime="text/html",
+                                                       help="Mapa autocontido. Abre offline em qualquer navegador.",
+                                                       use_container_width=True)
                                 except Exception:
                                     pass
-                        else:
-                            # Comparativo = Google (embed URL, rota traçada pelos nomes)
-                            try:
-                                _src_c = str(_mapa_comp).replace("&", "&amp;")
-                                components.html(f'<iframe src="{_src_c}" width="100%" height="420" '
-                                                f'style="border:0;display:block" allowfullscreen loading="lazy" '
-                                                f'referrerpolicy="strict-origin-when-cross-origin"></iframe>', height=426)
-                            except Exception:
-                                st.warning("Renderização do mapa comparativo bloqueada pelo navegador.")
-                            st.caption("🗺️ Mapa comparativo: **Google Maps** — rota traçada, origem/destino pelo nome.")
-                            if _link_comp:
-                                st.markdown(f"🧭 [Abrir rota comparativa no Google Maps]({_link_comp})")
-                        st.caption(f"⚖️ Consulte o painel **Comparativo entre Provedores** (acima) para as métricas de "
-                                   f"distância, tempo e divergência entre **{_win_prov}** (vencedor) e **{_comp_prov}** (comparativo).")
+                            st.warning("📐 **Distância estimada (Projeção Geodésica):** nenhum motor viário retornou a rota no momento, então "
+                                       "a quilometragem foi **estimada** pela linha reta × fator de desvio rodoviário (o mapa mostra a ligação "
+                                       "direta). Recomenda-se **reprocessar** quando os motores responderem, para obter a rota viária oficial.")
+                    else:
+                        # Rede de segurança rara: link_embed http inesperado. Usa iframe + link Google.
+                        try:
+                            components.iframe(url_iframe, height=470, scrolling=True)
+                        except Exception:
+                            st.warning("Renderização de mapa localmente bloqueada pelas políticas de segurança do navegador.")
+                        st.markdown(f"🗺️ [Abrir rota no Google Maps]({res_ind[2]})")
 
-                # [GRAPHHOPPER-PARIDADE - 220ª geração] Seção do GraphHopper em PARIDADE com Google/OSRM:
-                # valores próprios (km, tempo, balsa) + mapa da geometria + link de navegação. Só aparece quando
-                # o GraphHopper respondeu (chave configurada e rota retornada). Aditivo — não altera nada acima.
-                try:
-                    _gh_raw = res_ind[41] if len(res_ind) > 41 else ""
-                    _gh = _parsear_dados_graphhopper(_gh_raw) if _gh_raw else None
-                except Exception:
-                    _gh = None
-                if _gh:
-                    st.write("")
-                    with st.container(border=True):
-                        st.markdown("##### 🚗 Rota do **GraphHopper** _(motor com chave, em paridade)_")
-                        _ghc1, _ghc2, _ghc3 = st.columns(3)
-                        _gh_tmin_txt = _gh.get("tempo_min", "")
-                        try:
-                            _gh_tmin_i = int(float(_gh_tmin_txt)) if _gh_tmin_txt not in ("", None) else None
-                            _gh_tempo_fmt = ("—" if _gh_tmin_i is None else
-                                             (f"{_gh_tmin_i} min" if _gh_tmin_i < 60 else f"{_gh_tmin_i // 60} h {_gh_tmin_i % 60} min"))
-                        except (ValueError, TypeError):
-                            _gh_tempo_fmt = "—"
-                        _ghc1.metric("Distância (GraphHopper)", f"{_gh['km']:.1f} km",
-                                     help="Distância viária calculada pelo motor GraphHopper para esta mesma origem e destino.")
-                        _ghc2.metric("Tempo estimado", _gh_tempo_fmt,
-                                     help="Tempo de percurso estimado pelo GraphHopper.")
-                        _ghc3.metric("Travessia por balsa", _gh.get("balsa", "Não") or "Não",
-                                     help="Se a rota do GraphHopper envolve travessia fluvial/balsa.")
-                        # mapa da geometria do GraphHopper (Leaflet autocontido, mesma abordagem do OSRM)
-                        _gh_geo = _gh.get("geo_poly", "")
-                        _gh_mapa_ok = False
-                        if _gh_geo:
+                    # [VIS-DUAL - 37ª geração] BLOCO COMPARATIVO — sempre exibe o MAPA + LINK do
+                    # OUTRO provedor, para que as DUAS rotas (Google e OSRM) sejam sempre visíveis.
+                    # Atende ao pedido: "independentemente de quem vencer, sempre visualizar as duas
+                    # rotas". Aditivo (não altera o bloco do vencedor acima). Não aparece no fallback
+                    # geodésico (só há uma estimativa, sem segundo motor para comparar).
+                    _mapa_comp = res_ind[37] if len(res_ind) > 37 else ""
+                    _link_comp = res_ind[38] if len(res_ind) > 38 else ""
+                    if _mapa_comp and not _eh_geodesico_ui:
+                        # Google venceu → comparativo é o motor viário (OSRM, o 2º); contendor venceu → comparativo é Google.
+                        _win_prov = "Google Maps" if _eh_google_ui else _nome_vencedor_ui
+                        _comp_prov = "OSRM" if _eh_google_ui else "Google Maps"
+                        st.write("")
+                        with st.container(border=True):
+                            st.markdown(f"##### 🔀 Rota comparativa — **{_comp_prov}** _(motor não vencedor)_")
+                            st.caption(f"O mapa principal acima é do vencedor (**{_win_prov}**). Abaixo, a MESMA origem e destino "
+                                       f"traçados pelo **{_comp_prov}**, para comparação lado a lado — assim você audita as **duas** rotas.")
+                            _comp_eh_leaflet = isinstance(_mapa_comp, str) and _mapa_comp.startswith("data:text/html;base64,")
+                            if _comp_eh_leaflet:
+                                # Comparativo com geometria própria (Leaflet autocontido) — motor viário (OSRM/contendor)
+                                try:
+                                    import base64 as _b64c
+                                    components.html(_b64c.b64decode(_mapa_comp.split(",", 1)[1]).decode("utf-8"),
+                                                    height=420, scrolling=False)
+                                except Exception:
+                                    st.warning("Renderização do mapa comparativo bloqueada pelo navegador.")
+                                st.caption(f"🗺️ Mapa comparativo: **{_comp_prov}** — geometria exata da rota, origem/destino pelo nome.")
+                                _cbc1, _cbc2 = st.columns(2)
+                                with _cbc1:
+                                    if _link_comp:
+                                        st.markdown(f'<a href="{_link_comp}" target="_blank" rel="noopener" '
+                                                    f'style="text-decoration:none">🛰️ <b>Visualizador {_comp_prov}</b> (rota comparativa)</a>',
+                                                    unsafe_allow_html=True)
+                                    else:
+                                        st.caption("🛰️ Rota longa p/ link — use o **download** ao lado.")
+                                with _cbc2:
+                                    try:
+                                        import base64 as _b64cd
+                                        st.download_button(f"⬇️ Baixar mapa comparativo ({_comp_prov}) — HTML",
+                                                           data=_b64cd.b64decode(_mapa_comp.split(",", 1)[1]).decode("utf-8"),
+                                                           file_name="rota_comparativa.html", mime="text/html",
+                                                           use_container_width=True,
+                                                           help=f"Mapa autocontido com o traçado exato do {_comp_prov}. Abre offline em qualquer navegador.")
+                                    except Exception:
+                                        pass
+                            else:
+                                # Comparativo = Google (embed URL, rota traçada pelos nomes)
+                                try:
+                                    _src_c = str(_mapa_comp).replace("&", "&amp;")
+                                    components.html(f'<iframe src="{_src_c}" width="100%" height="420" '
+                                                    f'style="border:0;display:block" allowfullscreen loading="lazy" '
+                                                    f'referrerpolicy="strict-origin-when-cross-origin"></iframe>', height=426)
+                                except Exception:
+                                    st.warning("Renderização do mapa comparativo bloqueada pelo navegador.")
+                                st.caption("🗺️ Mapa comparativo: **Google Maps** — rota traçada, origem/destino pelo nome.")
+                                if _link_comp:
+                                    st.markdown(f"🧭 [Abrir rota comparativa no Google Maps]({_link_comp})")
+                            st.caption(f"⚖️ Consulte o painel **Comparativo entre Provedores** (acima) para as métricas de "
+                                       f"distância, tempo e divergência entre **{_win_prov}** (vencedor) e **{_comp_prov}** (comparativo).")
+
+                    # [GRAPHHOPPER-PARIDADE - 220ª geração] Seção do GraphHopper em PARIDADE com Google/OSRM:
+                    # valores próprios (km, tempo, balsa) + mapa da geometria + link de navegação. Só aparece quando
+                    # o GraphHopper respondeu (chave configurada e rota retornada). Aditivo — não altera nada acima.
+                    try:
+                        _gh_raw = res_ind[41] if len(res_ind) > 41 else ""
+                        _gh = _parsear_dados_graphhopper(_gh_raw) if _gh_raw else None
+                    except Exception:
+                        _gh = None
+                    if _gh:
+                        st.write("")
+                        with st.container(border=True):
+                            st.markdown("##### 🚗 Rota do **GraphHopper** _(motor com chave, em paridade)_")
+                            _ghc1, _ghc2, _ghc3 = st.columns(3)
+                            _gh_tmin_txt = _gh.get("tempo_min", "")
                             try:
-                                _gh_html_mapa = _gerar_mapa_leaflet_rota(
-                                    _gh_geo, float(res_ind[19]), float(res_ind[20]),
-                                    float(res_ind[21]), float(res_ind[22]),
-                                    nome_origem=str(res_ind[10]) if len(res_ind) > 10 else "",
-                                    nome_destino=str(res_ind[16]) if len(res_ind) > 16 else "",
-                                    distancia_km=f"{_gh['km']:.1f}", tempo_str=_gh_tempo_fmt,
-                                    provedor="GraphHopper", cor="#7c3aed") if "_gerar_mapa_leaflet_rota" in globals() else ""
-                                if _gh_html_mapa:
-                                    components.html(_decodificar_mapa_datauri(_gh_html_mapa), height=420, scrolling=False)
-                                    _gh_mapa_ok = True
-                                    st.caption("🗺️ Mapa: **geometria exata** da rota calculada pelo GraphHopper.")
-                            except Exception:
-                                _gh_mapa_ok = False
-                        if not _gh_mapa_ok:
-                            st.caption("🗺️ O GraphHopper retornou distância e tempo; o traçado detalhado pode não estar disponível para esta rota.")
-                        if _gh.get("link_maps"):
-                            st.markdown(f"🧭 [Abrir esta rota no mapa do GraphHopper]({_gh['link_maps']})")
-                        st.caption("ℹ️ O **GraphHopper** é um motor de roteamento com chave que participa da disputa pela menor rota "
-                                   "viária, em igualdade com Google e OSRM. Estes são os valores que **ele** encontrou para esta rota.")
-                # [VALHALLA-PARIDADE-EXIBIÇÃO - 264ª geração] Seção do Valhalla em PARIDADE com Google/OSRM/GraphHopper:
-                # valores próprios (km, tempo, balsa) + mapa da geometria PRÓPRIA (Leaflet autocontido) + link de
-                # navegação. Só aparece quando o Valhalla respondeu. Lê o campo dados_valhalla (índice 42) — o mesmo
-                # que alimenta as colunas da planilha. Aditivo, mesmo padrão do bloco do GraphHopper acima.
-                try:
-                    _vlh_raw = res_ind[42] if len(res_ind) > 42 else ""
-                    _vlh = _parsear_dados_valhalla(_vlh_raw) if _vlh_raw else None
-                except Exception:
-                    _vlh = None
-                if _vlh:
-                    st.write("")
-                    with st.container(border=True):
-                        st.markdown("##### 🧭 Rota do **Valhalla** _(motor sem chave, em paridade)_")
-                        _vlc1, _vlc2, _vlc3 = st.columns(3)
-                        _vl_tmin_txt = _vlh.get("tempo_min", "")
-                        try:
-                            _vl_tmin_i = int(float(_vl_tmin_txt)) if _vl_tmin_txt not in ("", None) else None
-                            _vl_tempo_fmt = ("—" if _vl_tmin_i is None else
-                                             (f"{_vl_tmin_i} min" if _vl_tmin_i < 60 else f"{_vl_tmin_i // 60} h {_vl_tmin_i % 60} min"))
-                        except (ValueError, TypeError):
-                            _vl_tempo_fmt = "—"
-                        _vlc1.metric("Distância (Valhalla)", f"{_vlh['km']:.1f} km",
-                                     help="Distância viária calculada pelo motor Valhalla (open-source, dados OSM) para esta mesma origem e destino.")
-                        _vlc2.metric("Tempo estimado", _vl_tempo_fmt,
-                                     help="Tempo de percurso estimado pelo Valhalla.")
-                        _vlc3.metric("Travessia por balsa", _vlh.get("balsa", "Não") or "Não",
-                                     help="Se a rota do Valhalla envolve travessia fluvial/balsa.")
-                        # mapa da geometria PRÓPRIA do Valhalla (Leaflet autocontido, mesma abordagem do OSRM/GraphHopper)
-                        _vl_geo = _vlh.get("geo_poly", "")
-                        _vl_mapa_ok = False
-                        if _vl_geo:
+                                _gh_tmin_i = int(float(_gh_tmin_txt)) if _gh_tmin_txt not in ("", None) else None
+                                _gh_tempo_fmt = ("—" if _gh_tmin_i is None else
+                                                 (f"{_gh_tmin_i} min" if _gh_tmin_i < 60 else f"{_gh_tmin_i // 60} h {_gh_tmin_i % 60} min"))
+                            except (ValueError, TypeError):
+                                _gh_tempo_fmt = "—"
+                            _ghc1.metric("Distância (GraphHopper)", f"{_gh['km']:.1f} km",
+                                         help="Distância viária calculada pelo motor GraphHopper para esta mesma origem e destino.")
+                            _ghc2.metric("Tempo estimado", _gh_tempo_fmt,
+                                         help="Tempo de percurso estimado pelo GraphHopper.")
+                            _ghc3.metric("Travessia por balsa", _gh.get("balsa", "Não") or "Não",
+                                         help="Se a rota do GraphHopper envolve travessia fluvial/balsa.")
+                            # mapa da geometria do GraphHopper (Leaflet autocontido, mesma abordagem do OSRM)
+                            _gh_geo = _gh.get("geo_poly", "")
+                            _gh_mapa_ok = False
+                            if _gh_geo:
+                                try:
+                                    _gh_html_mapa = _gerar_mapa_leaflet_rota(
+                                        _gh_geo, float(res_ind[19]), float(res_ind[20]),
+                                        float(res_ind[21]), float(res_ind[22]),
+                                        nome_origem=str(res_ind[10]) if len(res_ind) > 10 else "",
+                                        nome_destino=str(res_ind[16]) if len(res_ind) > 16 else "",
+                                        distancia_km=f"{_gh['km']:.1f}", tempo_str=_gh_tempo_fmt,
+                                        provedor="GraphHopper", cor="#7c3aed") if "_gerar_mapa_leaflet_rota" in globals() else ""
+                                    if _gh_html_mapa:
+                                        components.html(_decodificar_mapa_datauri(_gh_html_mapa), height=420, scrolling=False)
+                                        _gh_mapa_ok = True
+                                        st.caption("🗺️ Mapa: **geometria exata** da rota calculada pelo GraphHopper.")
+                                except Exception:
+                                    _gh_mapa_ok = False
+                            if not _gh_mapa_ok:
+                                st.caption("🗺️ O GraphHopper retornou distância e tempo; o traçado detalhado pode não estar disponível para esta rota.")
+                            if _gh.get("link_maps"):
+                                st.markdown(f"🧭 [Abrir esta rota no mapa do GraphHopper]({_gh['link_maps']})")
+                            st.caption("ℹ️ O **GraphHopper** é um motor de roteamento com chave que participa da disputa pela menor rota "
+                                       "viária, em igualdade com Google e OSRM. Estes são os valores que **ele** encontrou para esta rota.")
+                    # [VALHALLA-PARIDADE-EXIBIÇÃO - 264ª geração] Seção do Valhalla em PARIDADE com Google/OSRM/GraphHopper:
+                    # valores próprios (km, tempo, balsa) + mapa da geometria PRÓPRIA (Leaflet autocontido) + link de
+                    # navegação. Só aparece quando o Valhalla respondeu. Lê o campo dados_valhalla (índice 42) — o mesmo
+                    # que alimenta as colunas da planilha. Aditivo, mesmo padrão do bloco do GraphHopper acima.
+                    try:
+                        _vlh_raw = res_ind[42] if len(res_ind) > 42 else ""
+                        _vlh = _parsear_dados_valhalla(_vlh_raw) if _vlh_raw else None
+                    except Exception:
+                        _vlh = None
+                    if _vlh:
+                        st.write("")
+                        with st.container(border=True):
+                            st.markdown("##### 🧭 Rota do **Valhalla** _(motor sem chave, em paridade)_")
+                            _vlc1, _vlc2, _vlc3 = st.columns(3)
+                            _vl_tmin_txt = _vlh.get("tempo_min", "")
                             try:
-                                _vl_html_mapa = _gerar_mapa_leaflet_rota(
-                                    _vl_geo, float(res_ind[19]), float(res_ind[20]),
-                                    float(res_ind[21]), float(res_ind[22]),
-                                    nome_origem=str(res_ind[10]) if len(res_ind) > 10 else "",
-                                    nome_destino=str(res_ind[16]) if len(res_ind) > 16 else "",
-                                    distancia_km=f"{_vlh['km']:.1f}", tempo_str=_vl_tempo_fmt,
-                                    provedor="Valhalla", cor="#0891b2") if "_gerar_mapa_leaflet_rota" in globals() else ""
-                                if _vl_html_mapa:
-                                    components.html(_decodificar_mapa_datauri(_vl_html_mapa), height=420, scrolling=False)
-                                    _vl_mapa_ok = True
-                                    st.caption("🗺️ Mapa: **geometria exata** da rota calculada pelo Valhalla.")
-                            except Exception:
-                                _vl_mapa_ok = False
-                        if not _vl_mapa_ok:
-                            st.caption("🗺️ O Valhalla retornou distância e tempo; o traçado detalhado pode não estar disponível para esta rota.")
-                        if _vlh.get("link_maps"):
-                            st.markdown(f"🧭 [Abrir o trajeto no mapa (navegação por coordenadas)]({_vlh['link_maps']})")
-                        st.caption("ℹ️ O **Valhalla** é um motor de roteamento sem chave (open-source, dados OSM) que participa da disputa "
-                                   "pela menor rota viária, em igualdade com Google, OSRM e GraphHopper. Numa instância própria, participa "
-                                   "de toda rota como o OSRM. Estes são os valores que **ele** encontrou para esta rota.")
-                # [FONTE-VERDADE-R(UI) 290a] Painel "Fonte da Verdade" (§22/§25) — read-only, isolado, aditivo.
-                try:
-                    _fv = _fonte_verdade_singleshot(res_ind)
-                    if _fv and _fv.get("motores"):
-                        with st.expander("🔍 Fonte da Verdade — cada dado com seu motor de origem (§25)", expanded=False):
-                            _fve = _fv.get("entrada") or {}
-                            st.caption(f"**Entrada comum a todos os motores** · Origem: {_fve.get('origem','—')} · "
-                                       f"Destino: {_fve.get('destino','—')} · Coords O ({_fve.get('lat_o','—')}, {_fve.get('lon_o','—')}) "
-                                       f"→ D ({_fve.get('lat_d','—')}, {_fve.get('lon_d','—')}).")
-                            st.dataframe(pd.DataFrame(_fv["motores"]), use_container_width=True, hide_index=True)
-                            st.caption("📖 Cada linha traz os dados **exclusivamente** do seu motor. "
-                                       "'Não retornado pela fonte' = aquele motor não forneceu o dado; **nunca** é preenchido com o "
-                                       "de outro (§17). Link e geometria de cada linha pertencem só àquele motor (§25).")
-                            if _fv.get("comparacao"):
-                                st.markdown("**📊 Comparação (só depois da separação, §24):**")
-                                st.dataframe(pd.DataFrame(_fv["comparacao"]), use_container_width=True, hide_index=True)
-                                st.caption("Comparação lado a lado — não altera nem mistura os resultados originais (§24).")
-                            _fvcs = _fv_concordancia_sanidade(res_ind)
-                            if _fvcs:
-                                _conc = _fvcs.get("concordancia")
-                                if _conc:
-                                    st.markdown(f"**🤝 Concordância entre motores:** {_conc['nivel']} — "
-                                                f"amplitude {_conc['amplitude_km']} km ({_conc['amplitude_pct']}%) entre "
-                                                f"{_conc['n_motores']} motores · menor {_conc['min']} km · mediana {_conc['mediana']} km · maior {_conc['max']} km.")
-                                if _fvcs.get("sanidade"):
-                                    st.markdown("**🩺 Sanidade viária × linha reta:**")
-                                    st.dataframe(pd.DataFrame(_fvcs["sanidade"]), use_container_width=True, hide_index=True)
-                                    st.caption("Regra: a distância viária **nunca** pode ser menor que a linha reta (voo de pássaro). "
-                                               "🔴 Suspeita = viária < linha reta (impossível); 🟠 Atenção = viária > 3× a linha reta (sinuosidade extrema).")
-                            _fvvel = _fv_velocidade_plausibilidade(res_ind)
-                            if _fvvel:
-                                st.markdown("**⏱️ Plausibilidade de velocidade (tempo × distância):**")
-                                st.dataframe(pd.DataFrame(_fvvel), use_container_width=True, hide_index=True)
-                                st.caption("Velocidade média implícita = distância ÷ tempo. 🔴 Suspeita = acima de 130 km/h "
-                                           "(tempo ou distância provavelmente quebrado); 🟠 Atenção = abaixo de 8 km/h (pode ser balsa/tráfego urbano).")
-                except Exception:
-                    logger.error("[FONTE-VERDADE-UI] Falha ao renderizar (isolada).", exc_info=True)
+                                _vl_tmin_i = int(float(_vl_tmin_txt)) if _vl_tmin_txt not in ("", None) else None
+                                _vl_tempo_fmt = ("—" if _vl_tmin_i is None else
+                                                 (f"{_vl_tmin_i} min" if _vl_tmin_i < 60 else f"{_vl_tmin_i // 60} h {_vl_tmin_i % 60} min"))
+                            except (ValueError, TypeError):
+                                _vl_tempo_fmt = "—"
+                            _vlc1.metric("Distância (Valhalla)", f"{_vlh['km']:.1f} km",
+                                         help="Distância viária calculada pelo motor Valhalla (open-source, dados OSM) para esta mesma origem e destino.")
+                            _vlc2.metric("Tempo estimado", _vl_tempo_fmt,
+                                         help="Tempo de percurso estimado pelo Valhalla.")
+                            _vlc3.metric("Travessia por balsa", _vlh.get("balsa", "Não") or "Não",
+                                         help="Se a rota do Valhalla envolve travessia fluvial/balsa.")
+                            # mapa da geometria PRÓPRIA do Valhalla (Leaflet autocontido, mesma abordagem do OSRM/GraphHopper)
+                            _vl_geo = _vlh.get("geo_poly", "")
+                            _vl_mapa_ok = False
+                            if _vl_geo:
+                                try:
+                                    _vl_html_mapa = _gerar_mapa_leaflet_rota(
+                                        _vl_geo, float(res_ind[19]), float(res_ind[20]),
+                                        float(res_ind[21]), float(res_ind[22]),
+                                        nome_origem=str(res_ind[10]) if len(res_ind) > 10 else "",
+                                        nome_destino=str(res_ind[16]) if len(res_ind) > 16 else "",
+                                        distancia_km=f"{_vlh['km']:.1f}", tempo_str=_vl_tempo_fmt,
+                                        provedor="Valhalla", cor="#0891b2") if "_gerar_mapa_leaflet_rota" in globals() else ""
+                                    if _vl_html_mapa:
+                                        components.html(_decodificar_mapa_datauri(_vl_html_mapa), height=420, scrolling=False)
+                                        _vl_mapa_ok = True
+                                        st.caption("🗺️ Mapa: **geometria exata** da rota calculada pelo Valhalla.")
+                                except Exception:
+                                    _vl_mapa_ok = False
+                            if not _vl_mapa_ok:
+                                st.caption("🗺️ O Valhalla retornou distância e tempo; o traçado detalhado pode não estar disponível para esta rota.")
+                            if _vlh.get("link_maps"):
+                                st.markdown(f"🧭 [Abrir o trajeto no mapa (navegação por coordenadas)]({_vlh['link_maps']})")
+                            st.caption("ℹ️ O **Valhalla** é um motor de roteamento sem chave (open-source, dados OSM) que participa da disputa "
+                                       "pela menor rota viária, em igualdade com Google, OSRM e GraphHopper. Numa instância própria, participa "
+                                       "de toda rota como o OSRM. Estes são os valores que **ele** encontrou para esta rota.")
+                with _tab_diag_ind:
+                    # [FONTE-VERDADE-R(UI) 290a] Painel "Fonte da Verdade" (§22/§25) — read-only, isolado, aditivo.
+                    try:
+                        _fv = _fonte_verdade_singleshot(res_ind)
+                        if _fv and _fv.get("motores"):
+                            with st.expander("🔍 Fonte da Verdade — cada dado com seu motor de origem (§25)", expanded=False):
+                                _fve = _fv.get("entrada") or {}
+                                st.caption(f"**Entrada comum a todos os motores** · Origem: {_fve.get('origem','—')} · "
+                                           f"Destino: {_fve.get('destino','—')} · Coords O ({_fve.get('lat_o','—')}, {_fve.get('lon_o','—')}) "
+                                           f"→ D ({_fve.get('lat_d','—')}, {_fve.get('lon_d','—')}).")
+                                st.dataframe(pd.DataFrame(_fv["motores"]), use_container_width=True, hide_index=True)
+                                st.caption("📖 Cada linha traz os dados **exclusivamente** do seu motor. "
+                                           "'Não retornado pela fonte' = aquele motor não forneceu o dado; **nunca** é preenchido com o "
+                                           "de outro (§17). Link e geometria de cada linha pertencem só àquele motor (§25).")
+                                if _fv.get("comparacao"):
+                                    st.markdown("**📊 Comparação (só depois da separação, §24):**")
+                                    st.dataframe(pd.DataFrame(_fv["comparacao"]), use_container_width=True, hide_index=True)
+                                    st.caption("Comparação lado a lado — não altera nem mistura os resultados originais (§24).")
+                                _fvcs = _fv_concordancia_sanidade(res_ind)
+                                if _fvcs:
+                                    _conc = _fvcs.get("concordancia")
+                                    if _conc:
+                                        st.markdown(f"**🤝 Concordância entre motores:** {_conc['nivel']} — "
+                                                    f"amplitude {_conc['amplitude_km']} km ({_conc['amplitude_pct']}%) entre "
+                                                    f"{_conc['n_motores']} motores · menor {_conc['min']} km · mediana {_conc['mediana']} km · maior {_conc['max']} km.")
+                                    if _fvcs.get("sanidade"):
+                                        st.markdown("**🩺 Sanidade viária × linha reta:**")
+                                        st.dataframe(pd.DataFrame(_fvcs["sanidade"]), use_container_width=True, hide_index=True)
+                                        st.caption("Regra: a distância viária **nunca** pode ser menor que a linha reta (voo de pássaro). "
+                                                   "🔴 Suspeita = viária < linha reta (impossível); 🟠 Atenção = viária > 3× a linha reta (sinuosidade extrema).")
+                                _fvvel = _fv_velocidade_plausibilidade(res_ind)
+                                if _fvvel:
+                                    st.markdown("**⏱️ Plausibilidade de velocidade (tempo × distância):**")
+                                    st.dataframe(pd.DataFrame(_fvvel), use_container_width=True, hide_index=True)
+                                    st.caption("Velocidade média implícita = distância ÷ tempo. 🔴 Suspeita = acima de 130 km/h "
+                                               "(tempo ou distância provavelmente quebrado); 🟠 Atenção = abaixo de 8 km/h (pode ser balsa/tráfego urbano).")
+                    except Exception:
+                        logger.error("[FONTE-VERDADE-UI] Falha ao renderizar (isolada).", exc_info=True)
             else:
                 st.error("Falha na validação de consistência geodésica unificada.")
         else:
