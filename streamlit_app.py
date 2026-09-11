@@ -10379,7 +10379,8 @@ def _alo_painel_equivalencia():
                 if _rep["exemplos"]:
                     st.write("Exemplos de divergência (até 10):")
                     st.dataframe([{"par": str(_e["par"]), "clássico (km,motor)": str(_e["a"]),
-                                   "background (km,motor)": str(_e["b"])} for _e in _rep["exemplos"]])
+                                   "background (km,motor)": str(_e["b"])} for _e in _rep["exemplos"]],
+                                 hide_index=True)
     except Exception:
         logger.error("[R5-VALIDACAO] Falha no painel de equivalência (isolada).", exc_info=True)
 
@@ -38634,20 +38635,20 @@ def _tabela_planilha_curada(df, contexto):
     try:
         _avancadas = [c for c in _COLS_AVANCADAS_PLANILHA if c in df.columns]
         if not _avancadas:
-            st.dataframe(_tornar_arrow_safe(df), use_container_width=True, height=250)
+            st.dataframe(_tornar_arrow_safe(df), use_container_width=True, height=250, hide_index=True)
             return
         _mostrar_tudo = st.checkbox(
             f"Mostrar todas as colunas (+{len(_avancadas)} avançadas: geocoding interno, scores "
             "decompostos, dados do concorrente)",
             value=False, key=f"planilha_full_cols_{contexto}")
         _df_show = df if _mostrar_tudo else df.drop(columns=_avancadas)
-        st.dataframe(_tornar_arrow_safe(_df_show), use_container_width=True, height=250)
+        st.dataframe(_tornar_arrow_safe(_df_show), use_container_width=True, height=250, hide_index=True)
         if not _mostrar_tudo:
             st.caption(f"📋 Mostrando {len(_df_show.columns)} de {len(df.columns)} colunas — marque a caixa "
                        "acima para ver as colunas avançadas.")
     except Exception:
         logger.debug("[TABELA-CURADA] Falha ao curar colunas (aditivo, isolado).", exc_info=True)
-        st.dataframe(_tornar_arrow_safe(df), use_container_width=True, height=250)
+        st.dataframe(_tornar_arrow_safe(df), use_container_width=True, height=250, hide_index=True)
 
 
 # [FIX-ARROW-GLOBAL - 219ª geração] GUARDA CENTRAL: roteia TODA chamada st.dataframe(...) por _tornar_arrow_safe
@@ -53970,9 +53971,9 @@ if _secao == _SECOES[4]:   # tab_analytics
             st.markdown("#### 🏆 Rankings e Extremos Logísticos da Seleção Atual (Top 10)")
             with st.container(border=True):
                 tab_dist_max, tab_dist_min, tab_tempo = st.tabs(["Maiores Distâncias (+)", "Menores Distâncias (-)", "Maiores Tempos (Gargalos)"])
-                with tab_dist_max: st.dataframe(df_cf.nlargest(10, 'Distancia')[['Origem', 'Destino', 'Distancia', 'Tempo', 'Status da Rota']], use_container_width=True)
-                with tab_dist_min: st.dataframe(df_cf.nsmallest(10, 'Distancia')[['Origem', 'Destino', 'Distancia', 'Tempo', 'Status da Rota']], use_container_width=True)
-                with tab_tempo: st.dataframe(df_cf.nlargest(10, 'Tempo_Minutos')[['Origem', 'Destino', 'Tempo', 'Distancia', 'Status da Rota']], use_container_width=True)
+                with tab_dist_max: st.dataframe(df_cf.nlargest(10, 'Distancia')[['Origem', 'Destino', 'Distancia', 'Tempo', 'Status da Rota']], use_container_width=True, hide_index=True)
+                with tab_dist_min: st.dataframe(df_cf.nsmallest(10, 'Distancia')[['Origem', 'Destino', 'Distancia', 'Tempo', 'Status da Rota']], use_container_width=True, hide_index=True)
+                with tab_tempo: st.dataframe(df_cf.nlargest(10, 'Tempo_Minutos')[['Origem', 'Destino', 'Tempo', 'Distancia', 'Status da Rota']], use_container_width=True, hide_index=True)
                 
             st.markdown("#### 🔎 Matriz de Dados Drill-Down da Seleção (Data Explorer)")
             with st.container(border=True):
@@ -53984,7 +53985,7 @@ if _secao == _SECOES[4]:   # tab_analytics
                 df_suspeitas = df_cf[(df_cf['Score Final Global'] < 70) | (df_cf['Status da Rota'] == "Erro") | (df_cf['Confianca Origem'] == "BAIXA") | ((df_cf['Linha Reta'] <= 0.01) & (df_cf['Origem'] != df_cf['Destino']))]
                 if not df_suspeitas.empty:
                     st.warning(f"Atenção: Identificadas {len(df_suspeitas)} rotas requerendo revisão humana dentro do seu recorte atual.")
-                    st.dataframe(df_suspeitas[['Origem', 'Destino', 'Linha Reta', 'Status Linha Reta', 'Score Final Global', 'Confianca Origem', 'Motivo Roteamento']], use_container_width=True)
+                    st.dataframe(df_suspeitas[['Origem', 'Destino', 'Linha Reta', 'Status Linha Reta', 'Score Final Global', 'Confianca Origem', 'Motivo Roteamento']], use_container_width=True, hide_index=True)
                 else: 
                     st.success(" Excelente! Nenhuma anomalia geodésica ou operacional encontrada no recorte atual.")
     else:
@@ -56703,7 +56704,7 @@ if _secao == _SECOES[10]:   # tab_motores
             "Total de Pings Realizados": dados["calls"]
         })
         
-    st.dataframe(pd.DataFrame(health_data), use_container_width=True)
+    st.dataframe(pd.DataFrame(health_data), use_container_width=True, hide_index=True)
 
     # [EVENTOS-API - 432ª geração] Últimas falhas no TEMPO (§16 do Melhoria4 — diagnóstico do momento).
     # Complementa os contadores agregados: mostrar a SEQUÊNCIA (quando ocorreu, qual API, em qual UF)
@@ -56715,7 +56716,7 @@ if _secao == _SECOES[10]:   # tab_motores
             st.markdown("#### 📉 Últimas falhas de API no tempo")
             st.caption("Sequência das falhas recentes gravadas pelo próprio processamento — útil para "
                        "correlacionar um surto de erros com horário/região (limpo só ao reexecutar o lote).")
-            st.dataframe(pd.DataFrame(_falhas_ev), use_container_width=True)
+            st.dataframe(pd.DataFrame(_falhas_ev), use_container_width=True, hide_index=True)
     except Exception:
         pass
 
@@ -56868,7 +56869,7 @@ if _secao == _SECOES[10]:   # tab_motores
         "Cálculos/hora": round(total_calc / uptime_h, 1),
     }
     df_metricas_lr = pd.DataFrame([metricas_display])
-    st.dataframe(df_metricas_lr, use_container_width=True)
+    st.dataframe(df_metricas_lr, use_container_width=True, hide_index=True)
 
 if _secao == _SECOES[11]:   # tab_auditoria
     st.info("🔍 **Objetivo desta aba:** Auditoria da aplicação — transparência total e explicabilidade (XAI). Verifique em detalhes como cada município de origem e cada local de prova foi identificado, e por que o sistema descartou as demais alternativas.")
@@ -57062,7 +57063,7 @@ if _secao == _SECOES[11]:   # tab_auditoria
                 else:
                     _n = len(_ledger)
                     st.caption(f"{_n:,} rotas no livro-razao.".replace(",", "."))
-                    st.dataframe(_ledger.head(50), use_container_width=True)
+                    st.dataframe(_ledger.head(50), use_container_width=True, hide_index=True)
                     st.download_button("📥 Baixar Livro-Razão (.csv)", data=_livro_razao_csv_bytes(_ledger),
                                        file_name="livro_razao_rastreabilidade.csv", mime="text/csv",
                                        key="dl_livro_razao_rastreabilidade")
@@ -57076,14 +57077,14 @@ if _secao == _SECOES[11]:   # tab_auditoria
     with tab_aud_lote:
         if 'logs_auditoria' in st.session_state and st.session_state['logs_auditoria']:
             st.write("Abaixo consta a árvore de decisões algorítmicas explicáveis tomada pelo motor durante o cálculo do Lote:")
-            st.dataframe(pd.DataFrame(st.session_state['logs_auditoria']), use_container_width=True)
+            st.dataframe(pd.DataFrame(st.session_state['logs_auditoria']), use_container_width=True, hide_index=True)
         else:
             st.info("Nenhum registro de auditoria em memória cache. Processe uma nova planilha corporativa na aba de Processamento em Lote (⚙️) para gerar o relatório XAI.")
             
     with tab_aud_hub:
         if 'logs_auditoria_alocacao' in st.session_state and st.session_state['logs_auditoria_alocacao']:
             st.write("Abaixo constam as inferências espaciais estritas feitas individualmente para cada Base (Destino) e Endereço (Origem) na leitura e mapeamento da Matriz Geográfica:")
-            st.dataframe(pd.DataFrame(st.session_state['logs_auditoria_alocacao']), use_container_width=True)
+            st.dataframe(pd.DataFrame(st.session_state['logs_auditoria_alocacao']), use_container_width=True, hide_index=True)
         else:
             st.info("Nenhuma árvore de decisão persistida. Processe o cálculo de matrizes matemáticas na aba de Alocação de Hubs () para carregar as justificativas competitivas.")
 
