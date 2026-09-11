@@ -750,6 +750,17 @@ st.markdown("""
     .ds-empty-msg { margin: 0; color: var(--tx-2); font-size: var(--fs-md); }
     .ds-empty-dica { margin: var(--sp-1) 0 0 0; color: var(--tx-3); font-size: var(--fs-sm); }
 
+    /* ---------- JORNADA DO PROCESSAMENTO (Rodada 6 UI/UX — mission §7) ---------- */
+    .ds-jornada { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: 0 0 var(--sp-4) 0; }
+    .ds-jornada-passo {
+        display: flex; align-items: center; gap: 6px;
+        padding: 4px 10px; border-radius: 999px;
+        font-size: var(--fs-sm); color: var(--tx-3);
+        background: var(--sf-2); border: 1px solid var(--sf-3);
+    }
+    .ds-jornada-passo.feito { color: var(--ok); border-color: var(--ok); }
+    .ds-jornada-passo.atual { color: var(--on-brand); background: var(--brand); border-color: var(--brand); font-weight: 600; }
+
     /* ---------- BREADCRUMB "ONDE ESTOU" (Rodada 3 UI/UX — mission §5) ---------- */
     .nav-breadcrumb {
         font-size: var(--fs-sm); color: var(--tx-3);
@@ -42670,6 +42681,45 @@ _FIN_ETAPAS = [
     ("downloads", "Disponibilizar downloads"),
 ]
 
+# [UI-REENGENHARIA - Rodada 6] JORNADA DO PROCESSAMENTO EM LOTE (mission UI/UX §7 — "o processamento
+# deve parecer uma jornada"). Os ESTÁGIOS abaixo são os REAIS do pipeline de 'estudo_lote' — nunca
+# inventamos etapas que essa aba não tem (ex.: não existe "Inteligência" nem "Comparação" no lote; isso
+# são conceitos de OUTRAS abas). "Pré-aquecimento" é pulado quando o próprio pipeline decide pulá-lo
+# (_houve_preaquecimento=False) — o stepper reflete exatamente essa decisão, nunca uma etapa fantasma.
+_JORNADA_LOTE = [
+    ("dados", "📥 Dados"),
+    ("preaquecer", "🔥 Pré-aquecimento"),
+    ("processar", "🗺️ Calculando rotas"),
+    ("finalizar", "📊 Finalizando"),
+    ("resultado", "✅ Resultado"),
+]
+
+
+def _render_jornada_lote(fase_atual, com_preaquecimento=True):
+    """[UI-REENGENHARIA - Rodada 6] Stepper horizontal mostrando em que etapa da jornada o
+    estudo em lote está agora (✓ concluída / ● atual / ○ pendente). Puramente informativo —
+    não lê nem grava nenhum estado além do que já foi passado. Defensivo: nunca levanta;
+    pior caso, simplesmente não desenha nada."""
+    try:
+        _passos = [(k, l) for k, l in _JORNADA_LOTE if com_preaquecimento or k != "preaquecer"]
+        try:
+            _i_atual = [k for k, _ in _passos].index(fase_atual)
+        except ValueError:
+            _i_atual = 0
+        _html = ['<div class="ds-jornada">']
+        for _j, (_k, _l) in enumerate(_passos):
+            if _j < _i_atual:
+                _cls, _ic = "feito", "✓"
+            elif _j == _i_atual:
+                _cls, _ic = "atual", "●"
+            else:
+                _cls, _ic = "", "○"
+            _html.append(f'<div class="ds-jornada-passo {_cls}">{_ic} {_l}</div>')
+        _html.append('</div>')
+        st.markdown("".join(_html), unsafe_allow_html=True)
+    except Exception:
+        pass
+
 
 def _mem_rss_mb():
     """Memória residente (RSS) do processo em MB, ou None se indisponível. Só stdlib
@@ -45550,6 +45600,7 @@ if _secao == _SECOES[1]:   # tab_processamento
                 _pidx = st.session_state['lote_preaq_idx']
                 _ptotal = len(_eps)
                 _ppct = (_pidx / _ptotal) if _ptotal else 1.0
+                _render_jornada_lote('preaquecer', com_preaquecimento=True)
                 st.markdown("#### 🔥 Pré-aquecendo a Geocodificação (etapa 1 de 2)")
                 st.progress(min(1.0, _ppct))
                 st.caption(f"Geocodificando **{_ptotal:,}** endpoints únicos para acelerar o roteamento — "
@@ -45651,6 +45702,8 @@ if _secao == _SECOES[1]:   # tab_processamento
                 # finalização roda —, mostramos o CHECKLIST de encerramento. Enquanto ainda há rotas, mantém-se
                 # o monitor ao vivo idêntico ao anterior.
                 _lote_finalizando_ui = bool(_total > 0 and _feitos >= _total)
+                _render_jornada_lote('finalizar' if _lote_finalizando_ui else 'processar',
+                                     com_preaquecimento=bool(st.session_state.get('lote_preaquecido', True)))
                 if _lote_finalizando_ui:
                     _render_checklist_finalizacao(passo_atual="consolidar",
                                                   degradado=bool(st.session_state.get('lote_finalizacao_degradada')))
@@ -46046,6 +46099,7 @@ if _secao == _SECOES[1]:   # tab_processamento
             # ---- FASE 3b: GERAÇÃO DA PLANILHA DO LOTE (desacoplada; roda no auto p/ estudos pequenos ou no
             # clique para grandes). A falha aqui NUNCA impede os resultados nem o relatório HTML. ----
             if st.session_state.get('lote_em_andamento', False) and st.session_state.get('lote_fase') == 'gerar_planilha':
+                _render_jornada_lote('finalizar', com_preaquecimento=bool(st.session_state.get('lote_preaquecido', True)))
                 with st.container(border=True):
                     st.markdown("#### ✅ Lote concluído — preparando a planilha")
                     st.caption("✔ Rotas calculadas  ·  ✔ Resultados consolidados")
@@ -46076,6 +46130,7 @@ if _secao == _SECOES[1]:   # tab_processamento
         # FASE 3a), não mais da planilha estar pronta — os resultados aparecem na hora; o .xlsx é desacoplado.
         # Marcador ESPECÍFICO do Lote (evita render cruzado com df_processado de outra aba).
         if st.session_state.get('lote_resultado_pronto') and 'df_processado' in st.session_state:
+            _render_jornada_lote('resultado', com_preaquecimento=bool(st.session_state.get('lote_preaquecido', True)))
             # [FINALIZACAO-ROBUSTA - 267ª geração] Painel de conclusão elegante (checklist + números do estudo).
             try:
                 _lote_degradado = bool(st.session_state.get('lote_finalizacao_degradada'))
