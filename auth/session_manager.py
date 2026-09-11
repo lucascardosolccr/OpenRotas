@@ -356,9 +356,18 @@ def _tela_perfil():
 
 
 def _renderizar_tela_autenticacao():
+    # [UI-REENGENHARIA - Rodada 17] Mission UI/UX §49 ("regra dos 5 segundos" — ao abrir, o
+    # usuário deve responder em poucos segundos "para que serve a aplicação?"). Esta é a
+    # PRIMEIRA tela que todo usuário vê, e ela só dizia "entre ou crie sua conta" — nenhuma
+    # explicação do que a ferramenta faz. Um visitante novo não tinha como saber se valia a
+    # pena criar a conta. Adicionada uma frase de propósito, com a mesma linguagem já usada no
+    # cartão "Comece por aqui" (onboarding pós-login) — não inventa uma descrição nova.
     st.markdown(
         "<div style='max-width:440px;margin:40px auto 0;text-align:center'>"
         "<h1 style='margin-bottom:0'>🗺️ Motor Nacional de Inteligência Logística</h1>"
+        "<p style='color:var(--tx-2, #E5E7EB);margin:10px 0 2px'>Analisa quanto cada candidato "
+        "precisa se deslocar até seu local de prova e ajuda a decidir onde ela deve ser "
+        "aplicada.</p>"
         "<p style='color:var(--tx-3, #9CA3AF)'>Entre ou crie sua conta para continuar.</p>"
         "</div>", unsafe_allow_html=True)
     _col_esq, _col_mid, _col_dir = st.columns([1, 2, 1])
