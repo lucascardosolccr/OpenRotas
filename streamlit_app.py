@@ -42528,7 +42528,12 @@ _GRUPOS_NAV = {
     "📊 Analisar":  [4, 5, 6, 14],  # Painel · Calculadora · Classificação · Análise Geográfica
     "📚 Aprender":  [8, 9, 13],    # Enciclopédia · Manual · Sobre o Desenvolvedor
     "⚙️ Sistema":   [10, 11, 12],  # Monitor APIs · Auditoria · Satisfação
-    "🧠 Inteligência": [15, 16, 17, 18, 19, 20, 21, 22],  # Centro Inteligência · Fontes · Hidrografia · Rotas Balsa · Rotas Terra · Derrotas · Auditoria · Geoespacial IBGE
+    # [UI-REENGENHARIA - Rodada 2] O grupo "Inteligência" original (8 seções) misturava dado GENÉRICO
+    # de infraestrutura nacional (biblioteca de referência, independente de qualquer estudo processado)
+    # com análise ESPECÍFICA do estudo do usuário — o achado #1 da auditoria de UX/UI (mistura de
+    # conceitos no mesmo nível de menu). Dividido em dois grupos SEM mexer em nenhuma seção/código:
+    "🧠 Inteligência": [16, 17, 22],       # Fontes de Dados · Hidrografia · Geoespacial IBGE (referência nacional)
+    "📈 Resultado do Estudo": [15, 18, 19, 20, 21],  # Centro Inteligência · Rotas Balsa · Rotas Terra · Derrotas · Auditoria (do MEU estudo)
 }
 assert sorted(_i for _v in _GRUPOS_NAV.values() for _i in _v) == list(range(len(_SECOES))), \
     "toda seção precisa estar em exatamente um grupo"
