@@ -45473,6 +45473,35 @@ if _secao == _SECOES[0]:   # tab_individual
         else:
             st.warning("Preencha origem e destino para inicializar o cálculo.")
 
+@st.cache_data(show_spinner=False)
+def _gerar_planilha_modelo_lote():
+    """[REDESIGN TOTAL - Rodada 7] Modelo de planilha para o Estudo em Lote (mission redesign §7/§57
+    — um usuário novo deve conseguir "carregar/processar os dados... sem precisar receber um manual").
+    Antes, a única orientação de formato era o texto de ajuda do file_uploader — quem nunca usou a
+    app tinha que adivinhar o layout exato. Modelo mínimo (2 colunas obrigatórias + exemplos reais
+    nos 3 formatos aceitos: endereço, município/UF, Código IBGE) — o mesmo texto já documentado no
+    help do uploader, só que como arquivo pronto para editar. Cacheado (conteúdo estático, sem
+    parâmetros). Retorna bytes; nunca levanta (usado num botão de download, sem tela de erro própria)."""
+    try:
+        _df_modelo = pd.DataFrame({
+            "Origem": ["Ribeirão Cascalheira, MT", "3550308", "Av. Paulista, 1000, São Paulo, SP"],
+            "Destino": ["Cuiabá, MT", "3106200", "Belo Horizonte, MG"],
+        })
+        _buf = io.BytesIO()
+        with pd.ExcelWriter(_buf, engine="xlsxwriter") as _w:
+            _df_modelo.to_excel(_w, index=False, sheet_name="Planilha")
+            _wb_mod = _w.book
+            _ws_mod = _w.sheets["Planilha"]
+            _ws_mod.set_column("A:B", 32)
+            _fmt_nota = _wb_mod.add_format({"italic": True, "font_color": "#5B6B76"})
+            _ws_mod.write(5, 0, "Cada célula pode ser um endereço, um Município/UF ou o Código IBGE "
+                                "(7 dígitos) — o tipo é detectado automaticamente.", _fmt_nota)
+        return _buf.getvalue()
+    except Exception:
+        logger.error("[MODELO-LOTE] Falha ao montar a planilha-modelo (isolada).", exc_info=True)
+        return None
+
+
 if _secao == _SECOES[1]:   # tab_processamento
     st.info("⚙️ **Objetivo desta aba:** Estudo de deslocamento em massa. Envie uma planilha com milhares de **municípios de origem dos candidatos** e seus **locais de aplicação**. O sistema calcula todos os deslocamentos simultaneamente e devolve a planilha preenchida e auditável.")
     renderizar_guia_aba("processamento")
@@ -45537,6 +45566,21 @@ if _secao == _SECOES[1]:   # tab_processamento
         - A **estimativa de tempo (ETA)** fica progressivamente mais precisa conforme mede o ritmo real.
         - Ao final, confira o **Scorecard**, a **Auditoria de Rotas Suspeitas** e as colunas de auditoria na planilha.
         """)
+    # [REDESIGN TOTAL - Rodada 7] Modelo de planilha pronto para editar, ao lado do uploader — quem
+    # nunca usou a app não precisa mais adivinhar o layout a partir só do texto de ajuda.
+    try:
+        _modelo_lote_bytes = _gerar_planilha_modelo_lote()
+        if _modelo_lote_bytes:
+            st.download_button("📥 Baixar modelo de planilha (.xlsx)", data=_modelo_lote_bytes,
+                               file_name="modelo_estudo_em_lote.xlsx",
+                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                               key="dl_modelo_lote",
+                               help="Planilha de exemplo com as colunas Origem/Destino já nomeadas "
+                                    "corretamente e uma linha de cada formato aceito (endereço, "
+                                    "Município/UF, Código IBGE) — só apagar os exemplos e preencher.")
+    except Exception:
+        logger.error("[MODELO-LOTE-UI] Falha ao exibir o botão de modelo (aditiva, não bloqueia o upload).",
+                     exc_info=True)
     arquivo_carregado = st.file_uploader("Selecionar Arquivo Excel", type=["xlsx"], key="lote_std", help="A planilha deve conter as colunas 'Origem' e 'Destino'. Cada célula pode ser um endereço, uma localidade, coordenadas OU o Código IBGE do município (7 dígitos) — o tipo é detectado automaticamente. O resultado traz as colunas Cód IBGE Origem e Cód IBGE Destino.")
     if arquivo_carregado is not None:
         # [PERF-LOTE - 185ª geração] Parse CACHEADO por conteúdo, reaproveitando o helper _ler_planilha_upload
