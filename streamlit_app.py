@@ -663,7 +663,12 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+    /* [REDESIGN TOTAL - Rodada 4] 'Space Grotesk' era referenciada em 7 lugares nos cartões .mnil
+       (font-family:'Space Grotesk','Inter',...) como fonte de destaque para KPIs/títulos, mas nunca
+       era carregada — caía sempre no fallback 'Inter' silenciosamente. Import adicionado para que a
+       hierarquia tipográfica pretendida (display font nos números grandes, Inter no corpo) realmente
+       apareça, em vez de ficar como uma declaração morta (mission redesign §35/§52). */
 
     /* ================================================================================
        [DESIGN-SYSTEM - 148ª geração] CAMADA DE TOKENS.
