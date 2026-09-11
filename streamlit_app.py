@@ -52474,949 +52474,963 @@ if _secao == _SECOES[3]:   # tab_comparador
                 escolha logística legítima (evitar uma balsa, por exemplo). Mas **merecem uma olhada**.
                 """)
 
-            st.markdown("### 📊 Painel Executivo da Comparação")
-            # [CMP-SIGNIF-SELO - 396ª geração] Selo de confiança: a vantagem da comparação é robusta ou ruído?
-            try:
-                _sig_selo = _geodiv_significancia(_geodiv_dataset(
-                    (st.session_state.get("cmp_diag_divergencias") or {}).get("analises") or []))
-                if _sig_selo.get("ok"):
-                    _rz_selo = _geodiv_signif_resumo(_sig_selo)
-                    _fn_selo = {"robusta": st.success, "provavel": st.info, "ruido": st.warning}.get(_rz_selo["nivel"], st.info)
-                    _fn_selo("%s **Selo de robustez da comparação:** %s "
-                             "_(pareado por município · IC95%% bootstrap — detalhes nas Divergências)._"
-                             % (_rz_selo["emoji"], _rz_selo["frase"]))
-            except Exception:
-                pass
-            st.caption("Os 4 números de cima respondem **“quem venceu”** (contagem de **municípios**, regra "
-                       "**menor distância** — leia suas réguas no help de cada KPI). Os 4 de baixo respondem "
-                       "**“qual o tamanho disso”** (ponderado por **candidatos**).")
-            _lim_m5_ui = float(st.session_state.get('cmp_limiar_empate', 1.0) or 1.0)
-            _k1, _k2, _k3, _k4 = st.columns(4)
-            _k1.metric("Aplicação venceu", f"{_br['pct_venceu_app']}%",
-                       help=f"Contagem de municípios em que o deslocamento da aplicação é MENOR "
-                            f"(diferença ≥ {_lim_m5_ui:g} km — régua configurada no controle acima).")
-            _k2.metric("Referência venceu", f"{_br['pct_venceu_ref']}%",
-                       help=f"Contagem de municípios em que a referência é MENOR "
-                            f"(diferença ≤ −{_lim_m5_ui:g} km — régua configurada acima).")
-            _k3.metric("Empate técnico", f"{_br['pct_empate']}%",
-                       help=f"Diferença < {_lim_m5_ui:g} km (régua configurada acima) — menor que isso é ruído de "
-                            "geocodificação, não vitória.")
-            _k4.metric("Mesmo local de prova", f"{_br['pct_convergencia']}%",
-                       help="Parcela dos municípios em que os dois estudos escolheram o MESMO destino. "
-                            "Denominador: SÓ municípios com destino válido dos dois lados (linhas '—' ficam fora).")
-            _k5, _k6, _k7, _k8 = st.columns(4)
-            _k5.metric("Economia ponderada", f"{_fmt_num(_br['economia_ponderada_km'])} km-cand.",
-                       help="Σ (km economizados × inscritos). É o indicador que importa: pondera pelo nº de candidatos.")
-            _k6.metric("Por candidato", f"{_fmt_num(_br['economia_km_por_candidato'], 2)} km")
-            _k7.metric("Candidatos beneficiados", _fmt_num(_br['candidatos_beneficiados']),
-                       help=f"Candidatos em municípios com diferença > {_lim_m5_ui:g} km a favor da aplicação "
-                            "(mesma régua configurada acima).")
-            _k8.metric("Candidatos prejudicados", _fmt_num(_br['candidatos_prejudicados']),
-                       help=f"Candidatos em municípios com diferença < −{_lim_m5_ui:g} km contra a aplicação "
-                            "(mesma régua configurada acima).")
-            st.caption(f"Base: **{_br['municipios']} municípios** conciliados · **{_fmt_num(_br['inscritos'])} candidatos**.")
-
-            # [M5 - ROBUSTEZ] Varredura do limiar de empate técnico: um vencedor estável mantém a
-            # vantagem em qualquer régua; maioria virando "empate" ao subir 1 km = ruído, não vitória.
-            try:
-                _estab = _estabilidade_limiar_empate(_cmp)
-                if _estab:
-                    _df_estab = pd.DataFrame(_estab)
-                    with st.expander("🧪 Robustez ao limiar de empate técnico", expanded=False):
-                        st.caption("O que muda no placar se você redefinir o **empate técnico**? Compare a régua "
-                                   "**1 km** (padrão) com **2–5 km** (ruído comum entre matriz oficial e roteamento "
-                                   "ao vivo). Se as vitórias da aplicação evaporarem entre 1 e 2 km, a vantagem é "
-                                   "fina; se persistirem até 5 km, é estrutural.")
-                        st.dataframe(_df_estab, use_container_width=True, hide_index=True)
-            except Exception:
-                logger.error("[CMP-ROBUSTEZ] Falha na varredura do limiar (isolada).", exc_info=True)
-
-            _df_c = pd.DataFrame(_cmp)
-            with st.expander("📈 Gráficos da comparação", expanded=True):
+            # [REDESIGN TOTAL - Rodada 2] Resultado do comparador de DOIS estudos agrupado em
+            # abas (mission redesign §11/§13/§38 — hierarquia por camadas): nada de lógica mudou
+            # aqui, cada painel abaixo é EXATAMENTE o mesmo código de antes, só passou a renderizar
+            # dentro de uma aba em vez de empilhado verticalmente.
+            _tab_cmp_resumo, _tab_cmp_faixas, _tab_cmp_rank, _tab_cmp_aud, _tab_cmp_xai, _tab_cmp_exp = st.tabs([
+                "\U0001F4CA Resumo", "\U0001F4C8 Faixas & Diverg\u00eancias",
+                "\U0001F3C6 Rankings & Diagn\u00f3stico", "\U0001F50E Auditoria & Metodologia",
+                "\U0001F52C An\u00e1lise Inteligente", "\u2B07\uFE0F Relat\u00f3rio & Exporta\u00e7\u00e3o"])
+            with _tab_cmp_resumo:
+                st.markdown("### 📊 Painel Executivo da Comparação")
+                # [CMP-SIGNIF-SELO - 396ª geração] Selo de confiança: a vantagem da comparação é robusta ou ruído?
                 try:
-                    _gc1, _gc2 = st.columns(2)
-                    with _gc1:
-                        st.markdown("**Quem venceu (contagem de municípios)**")
-                        _vc = _df_c["Vencedor Distancia"].value_counts()
-                        st.bar_chart(_vc)
-                        st.caption(
-                            "📖 **Como ler:** conta **MUNICÍPIOS**, não candidatos. Um município com 5 mil "
-                            "candidatos conta o mesmo que um com 10 aqui — por isso este gráfico responde "
-                            "*“onde”*, e o KPI **Economia ponderada** responde *“quanto”*.")
-                        st.caption(f"🔎 **O que este gráfico diz:** a aplicação venceu em "
-                                   f"**{int(_vc.get('Aplicação', 0))}** município(s); a referência em "
-                                   f"**{int(_vc.get('Referência', 0))}**; **{int(_vc.get('Empate', 0))}** "
-                                   "**empataram** (diferença < 1 km — ruído de geocodificação, não vitória).")
-                    with _gc2:
-                        st.markdown("**Economia ponderada por UF (km-candidato)**")
-                        _eu = (_df_c.groupby("UF")["Economia km x Inscritos"].sum().sort_values(ascending=False))
-                        st.bar_chart(_eu)
-                        if len(_eu):
-                            _neg = _eu[_eu < 0]
-                            st.caption(
-                                "📖 **Como ler:** cada barra é uma UF. **Altura = km-candidato poupados** "
-                                "(km economizados × nº de candidatos). "
-                                "**Barra para CIMA = a sua aplicação ganhou** ali. "
-                                "**Barra para BAIXO = a referência ganhou** — a sua levou o candidato mais longe.")
-                            st.caption(
-                                f"🔎 **O que este gráfico diz:** **{_eu.index[0]}** é onde você mais ganha "
-                                f"(**{_fmt_num(_eu.iloc[0])} km-candidato**). "
-                                + (f"⚠️ **{len(_neg)} UF(s) com barra negativa** — comece a revisão por "
-                                   f"**{_neg.index[0]}** ({_fmt_num(abs(_neg.iloc[0]))} km-candidato a mais)."
-                                   if len(_neg) else
-                                   "✅ **Nenhuma UF com barra negativa** — você ganha ou empata em todo lugar."))
-                    st.markdown("**Distribuição da diferença de distância (km) — positivo = aplicação mais curta**")
-                    _hist = pd.to_numeric(_df_c["Diferenca Abs (km)"], errors="coerce").dropna()
-                    if len(_hist):
-                        st.bar_chart(_hist.value_counts(bins=min(20, max(3, len(_hist)))).sort_index())
-                        _n_neg = int((_hist < -1).sum())
-                        st.caption(
-                            "📖 **Como ler:** o eixo horizontal é a **diferença de distância** (referência − "
-                            "sua aplicação). **Zero fica no meio.** A altura é **quantos municípios** caem "
-                            "naquela faixa. **Direita de zero = você ganhou. Esquerda = você perdeu.**")
-                        st.caption(
-                            f"🔎 **O que este gráfico diz:** a mediana é **{_fmt_num(_hist.median(), 1)} km**. "
-                            + (f"⚠️ **{_n_neg} município(s) à esquerda de zero** — nesses, a sua aplicação levou o "
-                               "candidato mais longe. Uma **cauda longa à esquerda** costuma ser sintoma de "
-                               "**município mal identificado** (homônimo), não de escolha logística."
-                               if _n_neg else
-                               "✅ Praticamente nada à esquerda de zero — você não piora quase ninguém."))
-                except Exception as _e_g:
-                    logger.error(f"[COMPARADOR] Falha nos gráficos: {_e_g}")
+                    _sig_selo = _geodiv_significancia(_geodiv_dataset(
+                        (st.session_state.get("cmp_diag_divergencias") or {}).get("analises") or []))
+                    if _sig_selo.get("ok"):
+                        _rz_selo = _geodiv_signif_resumo(_sig_selo)
+                        _fn_selo = {"robusta": st.success, "provavel": st.info, "ruido": st.warning}.get(_rz_selo["nivel"], st.info)
+                        _fn_selo("%s **Selo de robustez da comparação:** %s "
+                                 "_(pareado por município · IC95%% bootstrap — detalhes nas Divergências)._"
+                                 % (_rz_selo["emoji"], _rz_selo["frase"]))
+                except Exception:
+                    pass
+                st.caption("Os 4 números de cima respondem **“quem venceu”** (contagem de **municípios**, regra "
+                           "**menor distância** — leia suas réguas no help de cada KPI). Os 4 de baixo respondem "
+                           "**“qual o tamanho disso”** (ponderado por **candidatos**).")
+                _lim_m5_ui = float(st.session_state.get('cmp_limiar_empate', 1.0) or 1.0)
+                _k1, _k2, _k3, _k4 = st.columns(4)
+                _k1.metric("Aplicação venceu", f"{_br['pct_venceu_app']}%",
+                           help=f"Contagem de municípios em que o deslocamento da aplicação é MENOR "
+                                f"(diferença ≥ {_lim_m5_ui:g} km — régua configurada no controle acima).")
+                _k2.metric("Referência venceu", f"{_br['pct_venceu_ref']}%",
+                           help=f"Contagem de municípios em que a referência é MENOR "
+                                f"(diferença ≤ −{_lim_m5_ui:g} km — régua configurada acima).")
+                _k3.metric("Empate técnico", f"{_br['pct_empate']}%",
+                           help=f"Diferença < {_lim_m5_ui:g} km (régua configurada acima) — menor que isso é ruído de "
+                                "geocodificação, não vitória.")
+                _k4.metric("Mesmo local de prova", f"{_br['pct_convergencia']}%",
+                           help="Parcela dos municípios em que os dois estudos escolheram o MESMO destino. "
+                                "Denominador: SÓ municípios com destino válido dos dois lados (linhas '—' ficam fora).")
+                _k5, _k6, _k7, _k8 = st.columns(4)
+                _k5.metric("Economia ponderada", f"{_fmt_num(_br['economia_ponderada_km'])} km-cand.",
+                           help="Σ (km economizados × inscritos). É o indicador que importa: pondera pelo nº de candidatos.")
+                _k6.metric("Por candidato", f"{_fmt_num(_br['economia_km_por_candidato'], 2)} km")
+                _k7.metric("Candidatos beneficiados", _fmt_num(_br['candidatos_beneficiados']),
+                           help=f"Candidatos em municípios com diferença > {_lim_m5_ui:g} km a favor da aplicação "
+                                "(mesma régua configurada acima).")
+                _k8.metric("Candidatos prejudicados", _fmt_num(_br['candidatos_prejudicados']),
+                           help=f"Candidatos em municípios com diferença < −{_lim_m5_ui:g} km contra a aplicação "
+                                "(mesma régua configurada acima).")
+                st.caption(f"Base: **{_br['municipios']} municípios** conciliados · **{_fmt_num(_br['inscritos'])} candidatos**.")
 
-            with st.expander("📊 Faixas de diferença — quem ganhou, e por quanto", expanded=False):
+                # [M5 - ROBUSTEZ] Varredura do limiar de empate técnico: um vencedor estável mantém a
+                # vantagem em qualquer régua; maioria virando "empate" ao subir 1 km = ruído, não vitória.
                 try:
-                    _ef = _AN["faixas"]
-                    if not _ef:
-                        st.caption("Sem faixas para exibir.")
-                    if _ef:
-                        _df_ef = pd.DataFrame(_ef)
-                        st.dataframe(_colorir_risco(_rotular_colunas(_df_ef[[
-                            "faixa", "municipios", "pct_municipios", "candidatos", "pct_candidatos",
-                            "economia_km_candidato"]]),
-                            cols_negativo_ruim=["Economia (km-candidato)"]),
-                            use_container_width=True, hide_index=True)
-                        st.bar_chart(_df_ef.set_index("faixa")["candidatos"])
-                        st.caption(
-                            "📖 **Como ler:** cada linha é uma FAIXA de diferença, **com sinal**. "
-                            "“**Aplicação melhor: 20 a 50 km**” = municípios onde a SUA solução levou o "
-                            "candidato entre 20 e 50 km mais perto. “**Referência melhor**” = o contrário. "
-                            "O sinal existe de propósito: **60 km a favor e 60 km contra NÃO são a mesma coisa**, "
-                            "e uma faixa sem sinal esconderia exatamente o que interessa.")
-                        _fav = [f for f in _ef if f["faixa"].startswith("Aplicação melhor")]
-                        _con = [f for f in _ef if f["faixa"].startswith("Referência melhor")]
-                        _c_fav = sum(f["candidatos"] for f in _fav)
-                        _c_con = sum(f["candidatos"] for f in _con)
-                        st.caption(
-                            f"Interpretação: **{_fmt_num(_c_fav)} candidatos** ficam mais perto do local de prova "
-                            f"com a distribuição da aplicação; **{_fmt_num(_c_con)}** ficariam mais perto com a "
-                            "referência. As faixas guardam o **sinal** de propósito: 60 km a favor e 60 km contra "
-                            "não são a mesma coisa, e uma faixa sem sinal esconderia exatamente o que interessa. "
-                            "Priorize revisar as faixas **“Referência melhor: acima de 50 km”** — ali a aplicação "
-                            "está levando o candidato bem mais longe, e pode ser sintoma de município mal identificado.")
-                except Exception as _e_ef:
-                    logger.error(f"[COMPARADOR] Falha no painel de faixas: {_e_ef}")
+                    _estab = _estabilidade_limiar_empate(_cmp)
+                    if _estab:
+                        _df_estab = pd.DataFrame(_estab)
+                        with st.expander("🧪 Robustez ao limiar de empate técnico", expanded=False):
+                            st.caption("O que muda no placar se você redefinir o **empate técnico**? Compare a régua "
+                                       "**1 km** (padrão) com **2–5 km** (ruído comum entre matriz oficial e roteamento "
+                                       "ao vivo). Se as vitórias da aplicação evaporarem entre 1 e 2 km, a vantagem é "
+                                       "fina; se persistirem até 5 km, é estrutural.")
+                            st.dataframe(_df_estab, use_container_width=True, hide_index=True)
+                except Exception:
+                    logger.error("[CMP-ROBUSTEZ] Falha na varredura do limiar (isolada).", exc_info=True)
 
-            # [V311 · §15] ALERTA DE VALIDAÇÃO CRUZADA — torna VISÍVEL, no dashboard, o que a camada de
-            # proveniência (Fatia 1) já calcula por linha ('Validação Regra Viária'). Aditivo e defensivo:
-            # não altera nenhum dado nem decisão; apenas conta e destaca os casos críticos/atenção.
-            try:
-                _n_crit_v = sum(1 for l in _cmp
-                                if str(l.get("Validação Regra Viária", "")).strip().lower() == "critico")
-                _n_aten_v = sum(1 for l in _cmp
-                                if str(l.get("Validação Regra Viária", "")).strip().lower() == "atencao")
-                if _n_crit_v:
-                    st.error(
-                        f"🚨 **{_fmt_num(_n_crit_v)} decisão(ões) com POSSÍVEL ERRO DE SELEÇÃO** — em uma "
-                        "rota o 2º colocado tinha viária real MENOR que o vencedor, ou o vencedor é uma "
-                        "anomalia de magnitude (rota-fantasma / erro de coordenada). Filtre a coluna "
-                        "**Validação Regra Viária = critico** e leia **Alerta da Decisão** / **Ação "
-                        "Sugerida** na tabela “Comparação município a município”. São os casos a auditar primeiro.")
-                if _n_aten_v:
-                    st.warning(
-                        f"⚠️ **{_fmt_num(_n_aten_v)} decisão(ões) em ATENÇÃO** — em geral o vencedor evitou "
-                        "corretamente um artefato fluvial/fantasma (a alternativa curta não é estrada real), "
-                        "mas vale conferir. Filtre por **Validação Regra Viária = atencao**.")
-            except Exception as _e_v15:
-                logger.error(f"[V311-VALIDACAO] alerta de validação cruzada falhou: {_e_v15}")
-
-            with st.expander("📋 Comparação município a município", expanded=False):
-                _cols_show = [c for c in ["Origem", "UF", "Inscritos", "Tipo de Distancia",
-                                          "Destino Referencia", "Destino Aplicacao",
-                                          "Mesmo Destino", "Distancia Referencia", "Distancia Aplicacao",
-                                          "Diferenca Abs (km)", "Diferenca Pct (%)", "Faixa de Diferenca",
-                                          "Vencedor Distancia", "Economia km x Inscritos", "Metodo Conciliacao",
-                                          "Validação Regra Viária", "Alerta da Decisão", "Proveniência Aplicação",
-                                          "Classe da Divergência", "Divergência Evitável", "Análise de Balsa",
-                                          "Justificativa"]
-                              if c in _df_c.columns]
-                st.dataframe(_df_c[_cols_show].sort_values("Economia km x Inscritos", ascending=False),
-                             use_container_width=True, hide_index=True, height=340)
-
-            with st.expander("📐 Estatística da diferença — a média engana, a mediana não", expanded=False):
-                try:
-                    _difs = [l.get("Diferenca Abs (km)") for l in _cmp if l.get("Diferenca Abs (km)") is not None]
-                    _sd = _estatisticas_distribuicao(_difs)
-                    if not _sd:
-                        st.caption("Sem diferenças comparáveis para descrever.")
-                    if _sd:
-                        _e1, _e2, _e3, _e4 = st.columns(4)
-                        _e1.metric("Mediana", f"{_sd['mediana']} km",
-                                   help="O município TÍPICO. Mais honesta que a média.")
-                        _e2.metric("Média", f"{_sd['media']} km")
-                        _e3.metric("Desvio-padrão", f"{_sd['desvio_padrao']} km")
-                        _e4.metric("Coef. de variação", f"{_sd['coef_variacao']}" if _sd.get('coef_variacao') else "—",
-                                   help="Baixo = ganho homogêneo. Alto = ganho concentrado em poucos municípios.")
-                        _e5, _e6, _e7, _e8 = st.columns(4)
-                        _e5.metric("Q1 (25%)", f"{_sd['q1']} km")
-                        _e6.metric("Q3 (75%)", f"{_sd['q3']} km")
-                        _e7.metric("Pior caso", f"{_sd['minimo']} km")
-                        _e8.metric("Melhor caso", f"{_sd['maximo']} km")
-                        _cv = _sd.get("coef_variacao") or 0
-                        st.caption(
-                            "📖 **Como ler cada número:**\n\n"
-                            "· **Mediana** — o município **TÍPICO**. Metade ganha mais que isso, metade menos. "
-                            "É a mais honesta.\n\n"
-                            "· **Média** — pode MENTIR. Uns poucos municípios com ganho enorme puxam a média "
-                            "para cima e escondem que a maioria mudou pouco.\n\n"
-                            "· **Q1 e Q3** — a **metade do meio**. Metade dos municípios cai entre esses dois "
-                            "valores. Se estão longe um do outro, o resultado é irregular.\n\n"
-                            "· **Coeficiente de variação (CV)** — o número mais importante daqui. Ele diz se o "
-                            "ganho é **parecido em todo lugar** (CV baixo) ou **concentrado em poucos** (CV alto). "
-                            "Duas comparações com a MESMA MÉDIA podem contar histórias OPOSTAS — o CV é o que "
-                            "as separa.")
-                        _leitura = ("🟢 **Ganho HOMOGÊNEO** (CV baixo): a sua aplicação melhora o deslocamento "
-                                    "em praticamente todo o país, de forma parecida. A melhoria é "
-                                    "**ESTRUTURAL** — não depende de poucos casos."
-                                    if _cv < 1.0 else
-                                    "🟡 **Ganho CONCENTRADO** (CV alto): poucos municípios têm ganho grande e a "
-                                    "maioria muda pouco. A melhoria é **PONTUAL** — vá ao **Pareto** abaixo "
-                                    "para descobrir EXATAMENTE em quais municípios ela acontece.")
-                        st.info(f"🔎 **O que estes números dizem:** a média é **{_fmt_num(_sd['media'], 1)} km**, "
-                                f"mas o município TÍPICO (mediana) tem **{_fmt_num(_sd['mediana'], 1)} km**. "
-                                f"Metade dos municípios está entre **{_fmt_num(_sd['q1'], 1)}** e "
-                                f"**{_fmt_num(_sd['q3'], 1)} km**. O CV é **{_fmt_num(_cv, 2)}**.\n\n{_leitura}")
-                except Exception as _e_sd:
-                    logger.error(f"[CMP-STATS] Falha na distribuição: {_e_sd}")
-
-            with st.expander("🎯 Pareto — onde o ganho se concentra", expanded=False):
-                try:
-                    _pa = _AN["pareto"]
-                    if not _pa["itens"]:
-                        st.caption("Nenhum município com ganho positivo.")
-                    if _pa["itens"]:
-                        st.caption(
-                            "📖 **O que é Pareto:** é a regra do “poucos vitais, muitos triviais”. A tabela "
-                            "ordena os municípios do **maior ganho para o menor** e mostra o **% acumulado**. "
-                            "A pergunta que ela responde: **quantos municípios explicam 80% de toda a economia?** "
-                            "Se forem poucos, o resultado é PONTUAL (foque neles). Se forem muitos, é ESTRUTURAL.")
-                        st.success(f"🎯 **{_pa['n_para_80pct']} municípios** "
-                                   f"({_pa['pct_municipios_para_80']}% dos {_pa['n_municipios_com_ganho']} com ganho) "
-                                   f"concentram **80% de toda a economia** "
-                                   f"({_fmt_num(_pa['total'])} km-candidato no total).")
-                        st.dataframe(_rotular_colunas(pd.DataFrame(_pa["itens"])),
-                                     use_container_width=True, hide_index=True, height=280)
-                        st.caption("**Decisão:** " + (
-                            "o ganho é **PONTUAL** — concentre a atenção nesses poucos municípios; os demais "
-                            "praticamente não mudam."
-                            if _pa["concentrado"] else
-                            "o ganho está **ESPALHADO** — a melhoria é estrutural, não depende de poucos casos."))
-                except Exception as _e_pa:
-                    logger.error(f"[CMP-STATS] Falha no Pareto: {_e_pa}")
-
-            with st.expander("⏰ Quantos candidatos NÃO CONSEGUEM CHEGAR? (a métrica que domina)",
-                             expanded=True):
-                try:
-                    _vb = _AN.get("viabilidade") or {}
-                    if not _vb.get("comparavel"):
-                        st.warning("⏰ " + _vb.get("motivo", "Sem dados de tempo."))
-                    if _vb.get("comparavel"):
-                        st.caption(
-                            "📖 **Por que este painel abre por padrão, e os outros não.** Todo o resto desta "
-                            "aba compara **quilômetros**. Mas um estudo que poupa 12 km na média e **impede "
-                            "830 pessoas de fazer a prova** é PIOR que um que poupa 8 km e não impede "
-                            "ninguém.\n\n**Km é conforto. CHEGAR é direito.** Esta é a única métrica binária "
-                            "da aba: o candidato consegue, ou não consegue.")
-                        _b1, _b2 = st.columns(2)
-                        with _b1:
-                            st.markdown("**🏢 Nossa aplicação**")
-                            st.metric("🔴 Candidatos INVIABILIZADOS",
-                                      _fmt_num(_vb["app"]["inviaveis"]),
-                                      f"{_vb['app']['pct_risco']}% em risco", delta_color="inverse")
-                        with _b2:
-                            st.markdown("**📋 Estudo de referência**")
-                            st.metric("🔴 Candidatos INVIABILIZADOS",
-                                      _fmt_num(_vb["ref"]["inviaveis"]),
-                                      f"{_vb['ref']['pct_risco']}% em risco", delta_color="inverse")
-                        _dif = _vb["diferenca_inviaveis"]
-                        (st.error if _dif > 0 else (st.success if _dif < 0 else st.info))(_vb["veredito"])
-                        if _vb.get("criticos_app"):
-                            st.markdown("**Os municípios em que a NOSSA distribuição falha:**")
-                            st.dataframe(pd.DataFrame([{
-                                "Município": _c.get("nome"), "UF": _c.get("uf", ""),
-                                "Candidatos": int(_c.get("inscritos") or 0),
-                                "Nosso polo": _c.get("polo", "—"),
-                                "Viagem (h)": _c["horas_viagem"],
-                            } for _c in _vb["criticos_app"]]), use_container_width=True,
-                                hide_index=True, height=260)
-                except Exception as _e_vb:
-                    logger.error(f"[VIABILIDADE] Falha no painel: {_e_vb}")
-
-            with st.expander("🥈 E se tivéssemos escolhido o 2º COLOCADO? (os TRÊS estudos)",
-                             expanded=False):
-                try:
-                    _tp = _AN.get("tripla") or {}
-                    if not _tp.get("comparaveis"):
-                        st.info("ℹ️ " + _tp.get("motivo", "Sem dados do 2º colocado.") +
-                                "\n\n**Por que isso importa:** o motor multicritério calcula o 2º colocado "
-                                "de cada município — distância, tempo, balsa, sinuosidade. Esse dado JÁ "
-                                "EXISTE e custou chamadas de API. Com ele, dá para responder uma pergunta "
-                                "que muda a decisão: **e se tivéssemos escolhido o 2º?**")
-                    if _tp.get("comparaveis"):
-                        st.caption(
-                            "📖 **A pergunta que ninguém estava fazendo.** O Comparador olhava só dois "
-                            "estudos: o nosso vencedor e a referência. Mas existe um **terceiro**: o polo "
-                            "que a nossa aplicação **quase escolheu** — o 2º colocado. E se ele bate a "
-                            "referência em municípios onde o NOSSO VENCEDOR perde, então há uma escolha "
-                            "melhor **dentro da nossa própria solução** — e não a tomamos.")
-                        _p = _tp["placar"]
-                        _t1, _t2, _t3, _t4 = st.columns(4)
-                        _t1.metric("🥇 Nosso vencedor", f"{_p['vencedor']['pct']}%",
-                                   f"{_p['vencedor']['municipios']} municípios")
-                        _t2.metric("🥈 Nosso 2º colocado", f"{_p['segundo']['pct']}%",
-                                   f"{_p['segundo']['municipios']} municípios")
-                        _t3.metric("📋 Referência", f"{_p['referencia']['pct']}%",
-                                   f"{_p['referencia']['municipios']} municípios")
-                        _t4.metric("🤝 Empates", f"{_p['empate']['pct']}%",
-                                   f"{_p['empate']['municipios']} municípios")
-
-                        st.markdown("##### 📏 Deslocamento total de cada cenário")
-                        _km = _tp["km_candidato"]
-                        st.dataframe(pd.DataFrame([
-                            {"Cenário": "🥇 Só o nosso VENCEDOR", "km-candidato": _km["vencedor"]},
-                            {"Cenário": "🥈 Só o nosso 2º COLOCADO", "km-candidato": _km["segundo"]},
-                            {"Cenário": "📋 Só a REFERÊNCIA", "km-candidato": _km["referencia"]},
-                            {"Cenário": "🏆 O MELHOR dos três (por município)",
-                             "km-candidato": _km["melhor_dos_tres"]},
-                        ]), use_container_width=True, hide_index=True)
-
-                        st.info(f"⚡ **O 2º colocado bateria a REFERÊNCIA em "
-                                f"{_tp['segundo_bate_referencia']} município(s) "
-                                f"({_tp['pct_segundo_bate_ref']}%).** Ou seja: mesmo o polo que quase "
-                                "escolhemos já seria melhor que o estudo externo em boa parte dos casos.")
-
-                        (st.warning if _tp["n_segundo_seria_o_melhor"] else st.success)(_tp["leitura"])
-
-                        if _tp.get("segundo_seria_o_melhor"):
-                            st.markdown("##### ⚡ Onde deixamos economia na mesa (dentro da nossa solução)")
-                            st.caption(
-                                "Municípios em que o **2º colocado teria sido a MELHOR das três escolhas**. "
-                                "⚠️ **Antes de mudar qualquer coisa, olhe a coluna de BALSA:** se o 2º é mais "
-                                "curto mas tem travessia, o motor **fez certo** em não escolhê-lo — a "
-                                "distância pura não vê a balsa, o **custo efetivo** vê. Este painel mostra a "
-                                "tensão; **a decisão é sua**.")
-                            st.dataframe(_colorir_risco(
-                                pd.DataFrame(_tp["segundo_seria_o_melhor"]),
-                                cols_risco=["2º usa balsa?", "1º usa balsa?"]),
-                                use_container_width=True, hide_index=True, height=320)
-                except Exception as _e_tp:
-                    logger.error(f"[TRIPLA] Falha no painel dos três estudos: {_e_tp}")
-
-            with st.expander("⚖️ Diagnóstico IMPARCIAL — os dois estudos, lado a lado", expanded=False):
-                try:
-                    _di = _AN["imparcial"]
-                    if not _di:
-                        st.caption("Sem dados comparáveis suficientes.")
-                    if _di:
-                        st.caption(
-                            "📖 **Por que este painel existe:** até aqui o concorrente só existia EM RELAÇÃO "
-                            "A NÓS. Ele nunca ganhava um **perfil próprio**. E sem perfil, perguntas centrais "
-                            "ficavam sem resposta: *qual estudo evita mais balsas? qual usa menos locais de "
-                            "prova?* Aqui os dois são tratados como **estudos autônomos**, com o mesmo rigor.")
-
-                        _pl = _di["placar"]
-                        _s1, _s2, _s3, _s4 = st.columns(4)
-                        _s1.metric("🏢 Nossa aplicação venceu", f"{_pl['pct_aplicacao']}%",
-                                   f"{_pl['aplicacao']} municípios")
-                        _s2.metric("⚔️ Concorrente venceu", f"{_pl['pct_concorrente']}%",
-                                   f"{_pl['concorrente']} municípios")
-                        _s3.metric("🤝 Empates", f"{_pl['pct_empate']}%", f"{_pl['empates']} municípios")
-                        _s4.metric("Total comparável", _pl["total"])
-
-                        st.markdown("##### 📋 Perfil dos DOIS estudos, lado a lado")
-                        _pa, _pr = _di["perfil_app"], _di["perfil_ref"]
-                        if _pa and _pr:
-                            _rows = []
-                            for _k, _rot in (("municipios", "Municípios atendidos"),
-                                             ("candidatos", "Candidatos atendidos"),
-                                             ("locais_de_prova", "Locais de prova utilizados"),
-                                             ("dist_media_km", "Distância média (km)"),
-                                             ("dist_mediana_km", "Distância mediana (km)"),
-                                             ("dist_minima_km", "Distância mínima (km)"),
-                                             ("dist_maxima_km", "Distância máxima (km)"),
-                                             ("dist_desvio_km", "Desvio-padrão (km)"),
-                                             ("km_candidato_total", "Deslocamento total (km-candidato)"),
-                                             ("tempo_medio_min", "Tempo médio (min)"),
-                                             ("tempo_maximo_min", "Tempo máximo (min)"),
-                                             ("pct_com_balsa", "% de rotas com BALSA"),
-                                             ("pct_so_rodoviario", "% só rodoviário"),
-                                             ("sinuosidade_media", "Sinuosidade média")):
-                                _va, _vr = _pa.get(_k), _pr.get(_k)
-                                _rows.append({
-                                    "Indicador": _rot,
-                                    "🏢 Nossa aplicação": _va if _va is not None else "❓ não disponível",
-                                    "⚔️ Estudo concorrente": _vr if _vr is not None else "❓ não informado",
-                                })
-                            st.dataframe(pd.DataFrame(_rows), use_container_width=True, hide_index=True,
-                                         height=520)
-                            if _pr.get("campos_indisponiveis"):
-                                st.warning(
-                                    "❓ **A planilha do concorrente não informa: "
-                                    + ", ".join(_pr["campos_indisponiveis"]) + ".** "
-                                    "Esses campos aparecem como **“não informado”**, NUNCA como zero. "
-                                    "**Zero e “não sei” são coisas diferentes** — confundi-las seria mentir "
-                                    "com números. Se a planilha dele trouxer essas colunas, a comparação "
-                                    "fica completa automaticamente.")
-
-                        st.markdown("##### ❓ As perguntas que decidem")
-                        if _di.get("perguntas"):
-                            st.dataframe(pd.DataFrame(_di["perguntas"]), use_container_width=True,
-                                         hide_index=True)
-
-                        _cs = _di.get("consistencia")
-                        if _cs:
-                            st.markdown("##### 🔬 A vantagem do concorrente é PONTUAL ou SISTEMÁTICA?")
-                            st.caption(
-                                "📖 **A pergunta mais afiada de todas — e ela é MEDÍVEL, não opinável.** Se as "
-                                "vitórias dele estão CONCENTRADAS em poucos municípios, a vantagem é PONTUAL: "
-                                "revise aqueles casos e o problema some. Se estão ESPALHADAS, é SISTEMÁTICA: "
-                                "**há algo no método dele que funciona melhor** — e ignorar isso é teimosia.")
-                            (st.info if _cs["veredito"] == "PONTUAL" else st.warning)(_cs["leitura"])
-
-                        _gg = _di.get("geografia")
-                        if _gg:
-                            st.markdown("##### 🌎 Existe padrão GEOGRÁFICO nas diferenças?")
-                            (st.warning if _gg["tem_padrao"] else st.success)(_gg["leitura"])
-                            if _gg.get("por_regiao"):
-                                st.dataframe(pd.DataFrame(_gg["por_regiao"]), use_container_width=True,
-                                             hide_index=True)
-                except Exception as _e_di:
-                    logger.error(f"[PERFIL] Falha no diagnóstico imparcial: {_e_di}")
-
-            with st.expander("⚔️ Onde o CONCORRENTE venceu — e o que isso custa aos candidatos",
-                             expanded=False):
-                try:
-                    _acn = _AN["concorrente"]
-                    if not _acn["n_municipios"]:
-                        st.success("✅ **O concorrente não venceu em nenhum município comparável.** A sua "
-                                   "solução domina em todo o conjunto.")
-                    if _acn["n_municipios"]:
-                        st.caption(
-                            "📖 **Por que este painel existe:** toda a análise anterior perguntava *“nós "
-                            "ganhamos?”*. As vitórias do concorrente apareciam só como **derrotas nossas** — "
-                            "nunca eram analisadas **em si**. Um comparador que só conta as próprias vitórias "
-                            "não é ferramenta de decisão: é **peça de marketing**. Aqui ele é analisado com o "
-                            "mesmo rigor.")
-                        _k1, _k2, _k3, _k4 = st.columns(4)
-                        _k1.metric("Municípios que ele venceu", _acn["n_municipios"],
-                                   help=f"{_acn['pct_municipios']}% dos comparáveis.")
-                        _k2.metric("Candidatos impactados", _fmt_num(_acn["candidatos_impactados"]),
-                                   help="Quantos alunos se beneficiariam se adotássemos a escolha dele.")
-                        _k3.metric("Deslocamento que ele pouparia",
-                                   f"{_fmt_num(_acn['economia_km_candidato'])} km-cand.")
-                        _k4.metric("Por candidato", f"{_fmt_num(_acn['km_por_candidato'], 2)} km",
-                                   help="Quantos km a menos cada um desses alunos andaria.")
-                        if _acn.get("pareto_n80"):
-                            st.info(f"🎯 **{_acn['pareto_n80']} município(s) sozinhos explicam 80% da "
-                                    "vantagem dele.** Se você for revisar só alguns casos, revise esses.")
-                        st.markdown("##### 🗺️ Onde ele vence (por estado)")
-                        if _acn["por_uf"]:
-                            st.dataframe(pd.DataFrame(_acn["por_uf"]), use_container_width=True,
-                                         hide_index=True, height=220)
-                        st.markdown("##### ⚠️ Todos os casos em que o concorrente ganhou")
-                        st.caption("Ordenados pelo **impacto sobre candidatos** — não pela diferença em km. "
-                                   "4.000 candidatos a 160 km a mais doem muito mais que 50 a 300 km.")
-                        st.dataframe(_colorir_risco(pd.DataFrame(_acn["top_casos"]),
-                                                    cols_negativo_ruim=[]),
-                                     use_container_width=True, hide_index=True, height=320)
-
-                    # ---- PLANO HÍBRIDO ----
-                    _hb = _AN["hibrido"]
-                    if _hb:
-                        st.markdown("##### 🏆 O plano HÍBRIDO — o melhor de cada município")
-                        st.caption(
-                            "📖 **A pergunta que ninguém estava fazendo.** Todo o comparador respondia *“qual "
-                            "estudo é melhor no conjunto?”*. Mas essa é a pergunta **errada** para quem vai "
-                            "**decidir**. A pergunta certa é: **“e se eu pegar, de cada município, a MELHOR "
-                            "das duas escolhas?”** — porque **ninguém é obrigado a adotar um estudo inteiro**.")
-                        _h1, _h2, _h3 = st.columns(3)
-                        _h1.metric("Só o nosso estudo",
-                                   f"{_fmt_num(_hb['custo_so_nosso_km_candidato'])} km-cand.")
-                        _h2.metric("Só o do concorrente",
-                                   f"{_fmt_num(_hb['custo_so_dele_km_candidato'])} km-cand.")
-                        _h3.metric("🏆 HÍBRIDO",
-                                   f"{_fmt_num(_hb['custo_hibrido_km_candidato'])} km-cand.",
-                                   help="Deslocamento total se você tomar, de cada município, o melhor polo.")
-                        # [BI-COMPARADOR - 257ª geração] O gráfico traduz as 3 métricas acima numa decisão
-                        # visual: a barra verde (híbrido) é sempre a mais curta — o ganho salta aos olhos.
-                        _g_planos = _grafico_planos_comparacao(_hb)
-                        if _g_planos is not None:
-                            st.altair_chart(_g_planos, use_container_width=True)
-                            _leitura_grafico(
-                                como_ler="cada barra é o deslocamento total (km × candidatos) de um plano; menor "
-                                         "é melhor. O híbrido toma, de cada município, o polo mais perto.",
-                                conclusao=(f"o híbrido poupa **{_fmt_num(_hb['ganho_do_hibrido_sobre_nos'])} "
-                                           f"km-candidato** sobre adotar só o nosso estudo, migrando "
-                                           f"**{_hb['municipios_do_concorrente']}** município(s)."
-                                           if _hb.get("vale_a_pena") else
-                                           "o nosso estudo já é o melhor em todos os municípios — não há ganho "
-                                           "em adotar escolhas do concorrente."))
-                        if _hb["vale_a_pena"]:
-                            st.success(
-                                f"⚡ **O híbrido poupa {_fmt_num(_hb['ganho_do_hibrido_sobre_nos'])} "
-                                "km-candidato a MAIS** que adotar só o nosso estudo — e "
-                                f"**{_fmt_num(_hb['ganho_do_hibrido_sobre_ele'])} a mais** que só o dele.\n\n"
-                                f"**O que fazer:** manter o nosso polo em **{_hb['municipios_do_nosso']} "
-                                f"município(s)** e migrar **{_hb['municipios_do_concorrente']}** "
-                                f"(**{_fmt_num(_hb['candidatos_que_migrariam'])} candidatos**) para o polo do "
-                                "concorrente. **O híbrido domina os dois — por construção.**")
-                        if not _hb["vale_a_pena"]:
-                            st.success("✅ **O nosso estudo já é o melhor em todos os municípios.** Não há "
-                                       "nada a ganhar adotando escolhas do concorrente.")
-                except Exception as _e_ac:
-                    logger.error(f"[CONCORRENTE] Falha no painel: {_e_ac}")
-
-            with st.expander("🏅 Rankings — estados, locais de prova e maiores divergências", expanded=False):
-                try:
-                    _rk = _AN["rankings"]
-                    _r1, _r2 = st.columns(2)
-                    with _r1:
-                        st.markdown("##### 🗺️ Estados — quem mais ganha")
-                        st.caption("Ordenado por **economia ponderada** (km × candidatos). Negativo = "
-                                   "a nossa solução leva o candidato mais longe ali.")
-                        if _rk["estados"]:
-                            st.dataframe(_colorir_risco(pd.DataFrame(_rk["estados"]),
-                                                        cols_negativo_ruim=["economia_km_candidato"]),
-                                         use_container_width=True, hide_index=True, height=280)
-                            # [BI-COMPARADOR - 257ª geração] O mesmo dado da tabela acima, agora como mapa
-                            # de calor divergente: verde à direita = nós poupamos; vermelho à esquerda =
-                            # a referência leva mais perto. O padrão geográfico aparece num relance.
-                            _g_estados = _grafico_estados_divergente(_rk["estados"])
-                            if _g_estados is not None:
-                                st.altair_chart(_g_estados, use_container_width=True)
-                                _est_v = [e for e in _rk["estados"]
-                                          if isinstance(e, dict) and (e.get("economia_km_candidato") or 0) > 0]
-                                _est_p = [e for e in _rk["estados"]
-                                          if isinstance(e, dict) and (e.get("economia_km_candidato") or 0) < 0]
-                                _top_uf = _est_v[0].get("UF") if _est_v else "—"
-                                _leitura_grafico(
-                                    como_ler="barras verdes (direita) = estados onde a nossa solução leva o "
-                                             "candidato mais perto; vermelhas (esquerda) = onde a referência leva mais perto.",
-                                    conclusao=f"vencemos em **{len(_est_v)}** estado(s) e perdemos em "
-                                              f"**{len(_est_p)}**; o maior ganho está em **{_top_uf}**.")
-                    with _r2:
-                        st.markdown("##### 🏫 Locais de prova — quem recebe mais")
-                        st.caption("Quantos candidatos cada polo recebe, e com que deslocamento médio. "
-                                   "Um polo lotado pode não caber numa escola.")
-                        if _rk["polos"]:
-                            st.dataframe(pd.DataFrame(_rk["polos"]), use_container_width=True,
-                                         hide_index=True, height=280)
-                    st.markdown("##### ⚡ Maiores divergências — onde as duas soluções mais discordam")
-                    st.caption("**Comece a revisão por aqui.** São os municípios em que os dois estudos "
-                               "escolheram polos diferentes E o impacto sobre candidatos é maior.")
-                    if _rk["divergencias"]:
-                        st.dataframe(_colorir_risco(pd.DataFrame(_rk["divergencias"]),
-                                                    cols_negativo_ruim=["Impacto (km-candidato)"]),
-                                     use_container_width=True, hide_index=True, height=300)
-                    if not _rk["divergencias"]:
-                        st.success("✅ Nenhuma divergência de destino: as duas soluções concordam em todos "
-                                   "os municípios comparáveis.")
-                except Exception as _e_rk:
-                    logger.error(f"[RANKING] Falha nos rankings: {_e_rk}")
-
-            with st.expander("📖 Metodologia — como cada indicador é calculado", expanded=False):
-                st.caption("Nenhum número aqui é caixa-preta. Um indicador que ninguém sabe explicar não pode "
-                           "fundamentar decisão pública.")
-                st.dataframe(pd.DataFrame(_metodologia_indicadores()), use_container_width=True, hide_index=True)
-
-            with st.expander("🔍 Auditoria da conciliação", expanded=False):
-                _a1, _a2, _a3, _a4 = st.columns(4)
-                _a1.metric("Por Código IBGE", _aud_c["por_ibge"])
-                _a2.metric("Por Município+UF", _aud_c["por_mun_uf"] + _aud_c["por_mun"])
-                _a3.metric("Por similaridade", _aud_c["por_fuzzy"],
-                           help="Vínculos por fuzzy matching — NÃO são oficiais. Confira-os.")
-                _a4.metric("Não conciliados", len(_aud_c["nao_conciliados"]))
-                st.caption(
-                    "📖 **O que cada número significa:** **Código IBGE** e **Município+UF** são vínculos "
-                    "**OFICIAIS** — pode confiar. **Similaridade** é a plataforma ADIVINHANDO por parecença "
-                    "textual: **não é oficial**, e cada um desses merece uma conferida. **Não conciliados** "
-                    "ficam **FORA de todas as estatísticas** — se forem muitos, os percentuais do painel "
-                    "**não representam o universo completo**.")
-                if _aud_c["nao_conciliados"]:
-                    st.warning(f"⚠️ **{len(_aud_c['nao_conciliados'])} registro(s) da referência ficaram FORA "
-                               "de todas as estatísticas.** Nenhum foi descartado em silêncio — veja o motivo:")
-                    st.dataframe(pd.DataFrame(_aud_c["nao_conciliados"]), use_container_width=True, hide_index=True)
-                if not _aud_c["nao_conciliados"]:
-                    st.success("✅ Todos os registros da referência foram conciliados.")
-
-                # [ANTI-FALHA - 161ª geração] CONCILIADO ≠ COMPARÁVEL. São coisas DIFERENTES, e confundi-las
-                # foi a origem do bug: uma linha pode conciliar perfeitamente (Código IBGE, score 100) e
-                # ainda assim ser INCOMPARÁVEL — porque o estudo da aplicação FALHOU nela.
-                _ncomp = _aud_c.get("nao_comparaveis") or []
-                if _ncomp:
-                    st.error(
-                        f"⛔ **{len(_ncomp)} município(s) foram CONCILIADOS mas NÃO são COMPARÁVEIS.**\n\n"
-                        "Eles casaram perfeitamente com a referência (muitos por **Código IBGE, score 100**) "
-                        "— mas o **estudo da aplicação falhou** neles. Comparar contra uma distância zero "
-                        "faria a aplicação vencer pela distância inteira. **Ficam fora das estatísticas**, "
-                        "com o motivo registrado.")
-                    st.dataframe(_rotular_colunas(pd.DataFrame(_ncomp)),
-                                 use_container_width=True, hide_index=True, height=240)
-                if not _ncomp:
-                    st.success("✅ Todos os municípios conciliados também são **comparáveis** (o estudo da "
-                               "aplicação produziu rota válida para todos).")
-
-            # ============================================================================
-            # [DIVERGENCIA-XAI - 236ª] MOTOR DE ANÁLISE INTELIGENTE DAS DIVERGÊNCIAS
-            # Após comparar, o usuário pode ROTEAR as escolhas da referência (origem→destino_ref pelos MESMOS
-            # motores) e receber um diagnóstico explicável (XAI): por que cada estudo venceu/perdeu, hipóteses
-            # técnicas, oportunidades e recomendações — refletido em painéis, na planilha e no relatório HTML.
-            # ============================================================================
-            st.divider()
-            st.markdown("### 🔬 Análise Inteligente das Divergências")
-            _n_div_cmp = sum(1 for _l in _cmp if _l.get("Mesmo Destino") == "Não"
-                             and str(_l.get("Destino Referencia") or "").strip()
-                             and str(_l.get("Destino Aplicacao") or "").strip())
-            if _n_div_cmp == 0:
-                st.success("✅ Os dois estudos convergiram em **todos** os municípios comparáveis — não há "
-                           "divergência de destino para diagnosticar.")
-            else:
-                st.caption(f"Há **{_n_div_cmp}** município(s) em que a aplicação e a referência escolheram "
-                           f"locais de prova **diferentes**. Processe as rotas divergentes para entender, caso a "
-                           f"caso, por que cada escolha é melhor ou pior — roteando a opção da referência pelos "
-                           f"mesmos motores e aplicando o Índice de Qualidade multicritério.")
-                if st.button("🔬 Processar rotas divergentes (diagnóstico inteligente)",
-                             key="btn_proc_divergencias", use_container_width=True,
-                             help="Roteia origem→destino da referência para cada divergência e gera pareceres, "
-                                  "hipóteses, oportunidades e recomendações. Usa cache — reprocessar é rápido."):
+                _df_c = pd.DataFrame(_cmp)
+                with st.expander("📈 Gráficos da comparação", expanded=True):
                     try:
-                        _prog = st.progress(0.0, text="Preparando o diagnóstico…")
-                        def _cb_div(_i, _tot, _rot):
-                            try:
-                                _prog.progress(min(1.0, _i / max(1, _tot)),
-                                               text=f"Roteando {_i}/{_tot} — {_rot}")
-                            except Exception:
-                                pass
-                        _limiar_div = float(st.session_state.get('cmp_limiar_empate', 1.0) or 1.0)
-                        _diag_div = _reprocessar_rotas_divergentes(
-                            _cmp, limiar_empate_km=_limiar_div, cb_progresso=_cb_div)
-                        try:
-                            _prog.empty()
-                        except Exception:
-                            pass
-                        st.session_state['cmp_diag_divergencias'] = _diag_div
-                        # invalida o xlsx pré-gerado → será regenerado COM as abas de diagnóstico no download
-                        try:
-                            _res_c["xlsx"] = None
-                            st.session_state['cmp_resultado'] = _res_c
-                            st.session_state.pop('relatorio_html_cmp', None)
-                        except Exception:
-                            pass
-                        _falhas_d = int(_diag_div.get("falhas_roteamento", 0) or 0)
-                        if _falhas_d:
-                            st.warning(f"Diagnóstico concluído com {_falhas_d} rota(s) sem roteamento fresco "
-                                       f"(usei a distância que já constava do estudo nesses casos).")
-                        else:
-                            st.success("✅ Diagnóstico das divergências concluído.")
-                    except Exception as _e_div:
-                        logger.error(f"[DIVERGENCIA-XAI] Falha ao processar divergências: {_e_div}", exc_info=True)
-                        st.error(f"Não foi possível processar as rotas divergentes: {_e_div}")
-            # painel persistente (renderiza em todo rerun enquanto o diagnóstico existir na sessão)
-            _diag_sess = st.session_state.get('cmp_diag_divergencias')
-            if _diag_sess:
-                # [GEODIV-UI 299a] Análise Geográfica das Divergências (§4/§5/§6/§7/§8/§9/§16) — read-only, reusa coords reais.
+                        _gc1, _gc2 = st.columns(2)
+                        with _gc1:
+                            st.markdown("**Quem venceu (contagem de municípios)**")
+                            _vc = _df_c["Vencedor Distancia"].value_counts()
+                            st.bar_chart(_vc)
+                            st.caption(
+                                "📖 **Como ler:** conta **MUNICÍPIOS**, não candidatos. Um município com 5 mil "
+                                "candidatos conta o mesmo que um com 10 aqui — por isso este gráfico responde "
+                                "*“onde”*, e o KPI **Economia ponderada** responde *“quanto”*.")
+                            st.caption(f"🔎 **O que este gráfico diz:** a aplicação venceu em "
+                                       f"**{int(_vc.get('Aplicação', 0))}** município(s); a referência em "
+                                       f"**{int(_vc.get('Referência', 0))}**; **{int(_vc.get('Empate', 0))}** "
+                                       "**empataram** (diferença < 1 km — ruído de geocodificação, não vitória).")
+                        with _gc2:
+                            st.markdown("**Economia ponderada por UF (km-candidato)**")
+                            _eu = (_df_c.groupby("UF")["Economia km x Inscritos"].sum().sort_values(ascending=False))
+                            st.bar_chart(_eu)
+                            if len(_eu):
+                                _neg = _eu[_eu < 0]
+                                st.caption(
+                                    "📖 **Como ler:** cada barra é uma UF. **Altura = km-candidato poupados** "
+                                    "(km economizados × nº de candidatos). "
+                                    "**Barra para CIMA = a sua aplicação ganhou** ali. "
+                                    "**Barra para BAIXO = a referência ganhou** — a sua levou o candidato mais longe.")
+                                st.caption(
+                                    f"🔎 **O que este gráfico diz:** **{_eu.index[0]}** é onde você mais ganha "
+                                    f"(**{_fmt_num(_eu.iloc[0])} km-candidato**). "
+                                    + (f"⚠️ **{len(_neg)} UF(s) com barra negativa** — comece a revisão por "
+                                       f"**{_neg.index[0]}** ({_fmt_num(abs(_neg.iloc[0]))} km-candidato a mais)."
+                                       if len(_neg) else
+                                       "✅ **Nenhuma UF com barra negativa** — você ganha ou empata em todo lugar."))
+                        st.markdown("**Distribuição da diferença de distância (km) — positivo = aplicação mais curta**")
+                        _hist = pd.to_numeric(_df_c["Diferenca Abs (km)"], errors="coerce").dropna()
+                        if len(_hist):
+                            st.bar_chart(_hist.value_counts(bins=min(20, max(3, len(_hist)))).sort_index())
+                            _n_neg = int((_hist < -1).sum())
+                            st.caption(
+                                "📖 **Como ler:** o eixo horizontal é a **diferença de distância** (referência − "
+                                "sua aplicação). **Zero fica no meio.** A altura é **quantos municípios** caem "
+                                "naquela faixa. **Direita de zero = você ganhou. Esquerda = você perdeu.**")
+                            st.caption(
+                                f"🔎 **O que este gráfico diz:** a mediana é **{_fmt_num(_hist.median(), 1)} km**. "
+                                + (f"⚠️ **{_n_neg} município(s) à esquerda de zero** — nesses, a sua aplicação levou o "
+                                   "candidato mais longe. Uma **cauda longa à esquerda** costuma ser sintoma de "
+                                   "**município mal identificado** (homônimo), não de escolha logística."
+                                   if _n_neg else
+                                   "✅ Praticamente nada à esquerda de zero — você não piora quase ninguém."))
+                    except Exception as _e_g:
+                        logger.error(f"[COMPARADOR] Falha nos gráficos: {_e_g}")
+
+            with _tab_cmp_faixas:
+                with st.expander("📊 Faixas de diferença — quem ganhou, e por quanto", expanded=False):
+                    try:
+                        _ef = _AN["faixas"]
+                        if not _ef:
+                            st.caption("Sem faixas para exibir.")
+                        if _ef:
+                            _df_ef = pd.DataFrame(_ef)
+                            st.dataframe(_colorir_risco(_rotular_colunas(_df_ef[[
+                                "faixa", "municipios", "pct_municipios", "candidatos", "pct_candidatos",
+                                "economia_km_candidato"]]),
+                                cols_negativo_ruim=["Economia (km-candidato)"]),
+                                use_container_width=True, hide_index=True)
+                            st.bar_chart(_df_ef.set_index("faixa")["candidatos"])
+                            st.caption(
+                                "📖 **Como ler:** cada linha é uma FAIXA de diferença, **com sinal**. "
+                                "“**Aplicação melhor: 20 a 50 km**” = municípios onde a SUA solução levou o "
+                                "candidato entre 20 e 50 km mais perto. “**Referência melhor**” = o contrário. "
+                                "O sinal existe de propósito: **60 km a favor e 60 km contra NÃO são a mesma coisa**, "
+                                "e uma faixa sem sinal esconderia exatamente o que interessa.")
+                            _fav = [f for f in _ef if f["faixa"].startswith("Aplicação melhor")]
+                            _con = [f for f in _ef if f["faixa"].startswith("Referência melhor")]
+                            _c_fav = sum(f["candidatos"] for f in _fav)
+                            _c_con = sum(f["candidatos"] for f in _con)
+                            st.caption(
+                                f"Interpretação: **{_fmt_num(_c_fav)} candidatos** ficam mais perto do local de prova "
+                                f"com a distribuição da aplicação; **{_fmt_num(_c_con)}** ficariam mais perto com a "
+                                "referência. As faixas guardam o **sinal** de propósito: 60 km a favor e 60 km contra "
+                                "não são a mesma coisa, e uma faixa sem sinal esconderia exatamente o que interessa. "
+                                "Priorize revisar as faixas **“Referência melhor: acima de 50 km”** — ali a aplicação "
+                                "está levando o candidato bem mais longe, e pode ser sintoma de município mal identificado.")
+                    except Exception as _e_ef:
+                        logger.error(f"[COMPARADOR] Falha no painel de faixas: {_e_ef}")
+
+                # [V311 · §15] ALERTA DE VALIDAÇÃO CRUZADA — torna VISÍVEL, no dashboard, o que a camada de
+                # proveniência (Fatia 1) já calcula por linha ('Validação Regra Viária'). Aditivo e defensivo:
+                # não altera nenhum dado nem decisão; apenas conta e destaca os casos críticos/atenção.
                 try:
-                    _gd_rows = _geodiv_dataset(_diag_sess.get("analises") or [])
-                    if _gd_rows:
-                        # [CMP-SIGNIF - 395ª geração] Robustez estatística da vantagem: a diferença é real ou ruído?
+                    _n_crit_v = sum(1 for l in _cmp
+                                    if str(l.get("Validação Regra Viária", "")).strip().lower() == "critico")
+                    _n_aten_v = sum(1 for l in _cmp
+                                    if str(l.get("Validação Regra Viária", "")).strip().lower() == "atencao")
+                    if _n_crit_v:
+                        st.error(
+                            f"🚨 **{_fmt_num(_n_crit_v)} decisão(ões) com POSSÍVEL ERRO DE SELEÇÃO** — em uma "
+                            "rota o 2º colocado tinha viária real MENOR que o vencedor, ou o vencedor é uma "
+                            "anomalia de magnitude (rota-fantasma / erro de coordenada). Filtre a coluna "
+                            "**Validação Regra Viária = critico** e leia **Alerta da Decisão** / **Ação "
+                            "Sugerida** na tabela “Comparação município a município”. São os casos a auditar primeiro.")
+                    if _n_aten_v:
+                        st.warning(
+                            f"⚠️ **{_fmt_num(_n_aten_v)} decisão(ões) em ATENÇÃO** — em geral o vencedor evitou "
+                            "corretamente um artefato fluvial/fantasma (a alternativa curta não é estrada real), "
+                            "mas vale conferir. Filtre por **Validação Regra Viária = atencao**.")
+                except Exception as _e_v15:
+                    logger.error(f"[V311-VALIDACAO] alerta de validação cruzada falhou: {_e_v15}")
+
+                with st.expander("📋 Comparação município a município", expanded=False):
+                    _cols_show = [c for c in ["Origem", "UF", "Inscritos", "Tipo de Distancia",
+                                              "Destino Referencia", "Destino Aplicacao",
+                                              "Mesmo Destino", "Distancia Referencia", "Distancia Aplicacao",
+                                              "Diferenca Abs (km)", "Diferenca Pct (%)", "Faixa de Diferenca",
+                                              "Vencedor Distancia", "Economia km x Inscritos", "Metodo Conciliacao",
+                                              "Validação Regra Viária", "Alerta da Decisão", "Proveniência Aplicação",
+                                              "Classe da Divergência", "Divergência Evitável", "Análise de Balsa",
+                                              "Justificativa"]
+                                  if c in _df_c.columns]
+                    st.dataframe(_df_c[_cols_show].sort_values("Economia km x Inscritos", ascending=False),
+                                 use_container_width=True, hide_index=True, height=340)
+
+                with st.expander("📐 Estatística da diferença — a média engana, a mediana não", expanded=False):
+                    try:
+                        _difs = [l.get("Diferenca Abs (km)") for l in _cmp if l.get("Diferenca Abs (km)") is not None]
+                        _sd = _estatisticas_distribuicao(_difs)
+                        if not _sd:
+                            st.caption("Sem diferenças comparáveis para descrever.")
+                        if _sd:
+                            _e1, _e2, _e3, _e4 = st.columns(4)
+                            _e1.metric("Mediana", f"{_sd['mediana']} km",
+                                       help="O município TÍPICO. Mais honesta que a média.")
+                            _e2.metric("Média", f"{_sd['media']} km")
+                            _e3.metric("Desvio-padrão", f"{_sd['desvio_padrao']} km")
+                            _e4.metric("Coef. de variação", f"{_sd['coef_variacao']}" if _sd.get('coef_variacao') else "—",
+                                       help="Baixo = ganho homogêneo. Alto = ganho concentrado em poucos municípios.")
+                            _e5, _e6, _e7, _e8 = st.columns(4)
+                            _e5.metric("Q1 (25%)", f"{_sd['q1']} km")
+                            _e6.metric("Q3 (75%)", f"{_sd['q3']} km")
+                            _e7.metric("Pior caso", f"{_sd['minimo']} km")
+                            _e8.metric("Melhor caso", f"{_sd['maximo']} km")
+                            _cv = _sd.get("coef_variacao") or 0
+                            st.caption(
+                                "📖 **Como ler cada número:**\n\n"
+                                "· **Mediana** — o município **TÍPICO**. Metade ganha mais que isso, metade menos. "
+                                "É a mais honesta.\n\n"
+                                "· **Média** — pode MENTIR. Uns poucos municípios com ganho enorme puxam a média "
+                                "para cima e escondem que a maioria mudou pouco.\n\n"
+                                "· **Q1 e Q3** — a **metade do meio**. Metade dos municípios cai entre esses dois "
+                                "valores. Se estão longe um do outro, o resultado é irregular.\n\n"
+                                "· **Coeficiente de variação (CV)** — o número mais importante daqui. Ele diz se o "
+                                "ganho é **parecido em todo lugar** (CV baixo) ou **concentrado em poucos** (CV alto). "
+                                "Duas comparações com a MESMA MÉDIA podem contar histórias OPOSTAS — o CV é o que "
+                                "as separa.")
+                            _leitura = ("🟢 **Ganho HOMOGÊNEO** (CV baixo): a sua aplicação melhora o deslocamento "
+                                        "em praticamente todo o país, de forma parecida. A melhoria é "
+                                        "**ESTRUTURAL** — não depende de poucos casos."
+                                        if _cv < 1.0 else
+                                        "🟡 **Ganho CONCENTRADO** (CV alto): poucos municípios têm ganho grande e a "
+                                        "maioria muda pouco. A melhoria é **PONTUAL** — vá ao **Pareto** abaixo "
+                                        "para descobrir EXATAMENTE em quais municípios ela acontece.")
+                            st.info(f"🔎 **O que estes números dizem:** a média é **{_fmt_num(_sd['media'], 1)} km**, "
+                                    f"mas o município TÍPICO (mediana) tem **{_fmt_num(_sd['mediana'], 1)} km**. "
+                                    f"Metade dos municípios está entre **{_fmt_num(_sd['q1'], 1)}** e "
+                                    f"**{_fmt_num(_sd['q3'], 1)} km**. O CV é **{_fmt_num(_cv, 2)}**.\n\n{_leitura}")
+                    except Exception as _e_sd:
+                        logger.error(f"[CMP-STATS] Falha na distribuição: {_e_sd}")
+
+                with st.expander("🎯 Pareto — onde o ganho se concentra", expanded=False):
+                    try:
+                        _pa = _AN["pareto"]
+                        if not _pa["itens"]:
+                            st.caption("Nenhum município com ganho positivo.")
+                        if _pa["itens"]:
+                            st.caption(
+                                "📖 **O que é Pareto:** é a regra do “poucos vitais, muitos triviais”. A tabela "
+                                "ordena os municípios do **maior ganho para o menor** e mostra o **% acumulado**. "
+                                "A pergunta que ela responde: **quantos municípios explicam 80% de toda a economia?** "
+                                "Se forem poucos, o resultado é PONTUAL (foque neles). Se forem muitos, é ESTRUTURAL.")
+                            st.success(f"🎯 **{_pa['n_para_80pct']} municípios** "
+                                       f"({_pa['pct_municipios_para_80']}% dos {_pa['n_municipios_com_ganho']} com ganho) "
+                                       f"concentram **80% de toda a economia** "
+                                       f"({_fmt_num(_pa['total'])} km-candidato no total).")
+                            st.dataframe(_rotular_colunas(pd.DataFrame(_pa["itens"])),
+                                         use_container_width=True, hide_index=True, height=280)
+                            st.caption("**Decisão:** " + (
+                                "o ganho é **PONTUAL** — concentre a atenção nesses poucos municípios; os demais "
+                                "praticamente não mudam."
+                                if _pa["concentrado"] else
+                                "o ganho está **ESPALHADO** — a melhoria é estrutural, não depende de poucos casos."))
+                    except Exception as _e_pa:
+                        logger.error(f"[CMP-STATS] Falha no Pareto: {_e_pa}")
+
+                with st.expander("⏰ Quantos candidatos NÃO CONSEGUEM CHEGAR? (a métrica que domina)",
+                                 expanded=True):
+                    try:
+                        _vb = _AN.get("viabilidade") or {}
+                        if not _vb.get("comparavel"):
+                            st.warning("⏰ " + _vb.get("motivo", "Sem dados de tempo."))
+                        if _vb.get("comparavel"):
+                            st.caption(
+                                "📖 **Por que este painel abre por padrão, e os outros não.** Todo o resto desta "
+                                "aba compara **quilômetros**. Mas um estudo que poupa 12 km na média e **impede "
+                                "830 pessoas de fazer a prova** é PIOR que um que poupa 8 km e não impede "
+                                "ninguém.\n\n**Km é conforto. CHEGAR é direito.** Esta é a única métrica binária "
+                                "da aba: o candidato consegue, ou não consegue.")
+                            _b1, _b2 = st.columns(2)
+                            with _b1:
+                                st.markdown("**🏢 Nossa aplicação**")
+                                st.metric("🔴 Candidatos INVIABILIZADOS",
+                                          _fmt_num(_vb["app"]["inviaveis"]),
+                                          f"{_vb['app']['pct_risco']}% em risco", delta_color="inverse")
+                            with _b2:
+                                st.markdown("**📋 Estudo de referência**")
+                                st.metric("🔴 Candidatos INVIABILIZADOS",
+                                          _fmt_num(_vb["ref"]["inviaveis"]),
+                                          f"{_vb['ref']['pct_risco']}% em risco", delta_color="inverse")
+                            _dif = _vb["diferenca_inviaveis"]
+                            (st.error if _dif > 0 else (st.success if _dif < 0 else st.info))(_vb["veredito"])
+                            if _vb.get("criticos_app"):
+                                st.markdown("**Os municípios em que a NOSSA distribuição falha:**")
+                                st.dataframe(pd.DataFrame([{
+                                    "Município": _c.get("nome"), "UF": _c.get("uf", ""),
+                                    "Candidatos": int(_c.get("inscritos") or 0),
+                                    "Nosso polo": _c.get("polo", "—"),
+                                    "Viagem (h)": _c["horas_viagem"],
+                                } for _c in _vb["criticos_app"]]), use_container_width=True,
+                                    hide_index=True, height=260)
+                    except Exception as _e_vb:
+                        logger.error(f"[VIABILIDADE] Falha no painel: {_e_vb}")
+
+                with st.expander("🥈 E se tivéssemos escolhido o 2º COLOCADO? (os TRÊS estudos)",
+                                 expanded=False):
+                    try:
+                        _tp = _AN.get("tripla") or {}
+                        if not _tp.get("comparaveis"):
+                            st.info("ℹ️ " + _tp.get("motivo", "Sem dados do 2º colocado.") +
+                                    "\n\n**Por que isso importa:** o motor multicritério calcula o 2º colocado "
+                                    "de cada município — distância, tempo, balsa, sinuosidade. Esse dado JÁ "
+                                    "EXISTE e custou chamadas de API. Com ele, dá para responder uma pergunta "
+                                    "que muda a decisão: **e se tivéssemos escolhido o 2º?**")
+                        if _tp.get("comparaveis"):
+                            st.caption(
+                                "📖 **A pergunta que ninguém estava fazendo.** O Comparador olhava só dois "
+                                "estudos: o nosso vencedor e a referência. Mas existe um **terceiro**: o polo "
+                                "que a nossa aplicação **quase escolheu** — o 2º colocado. E se ele bate a "
+                                "referência em municípios onde o NOSSO VENCEDOR perde, então há uma escolha "
+                                "melhor **dentro da nossa própria solução** — e não a tomamos.")
+                            _p = _tp["placar"]
+                            _t1, _t2, _t3, _t4 = st.columns(4)
+                            _t1.metric("🥇 Nosso vencedor", f"{_p['vencedor']['pct']}%",
+                                       f"{_p['vencedor']['municipios']} municípios")
+                            _t2.metric("🥈 Nosso 2º colocado", f"{_p['segundo']['pct']}%",
+                                       f"{_p['segundo']['municipios']} municípios")
+                            _t3.metric("📋 Referência", f"{_p['referencia']['pct']}%",
+                                       f"{_p['referencia']['municipios']} municípios")
+                            _t4.metric("🤝 Empates", f"{_p['empate']['pct']}%",
+                                       f"{_p['empate']['municipios']} municípios")
+
+                            st.markdown("##### 📏 Deslocamento total de cada cenário")
+                            _km = _tp["km_candidato"]
+                            st.dataframe(pd.DataFrame([
+                                {"Cenário": "🥇 Só o nosso VENCEDOR", "km-candidato": _km["vencedor"]},
+                                {"Cenário": "🥈 Só o nosso 2º COLOCADO", "km-candidato": _km["segundo"]},
+                                {"Cenário": "📋 Só a REFERÊNCIA", "km-candidato": _km["referencia"]},
+                                {"Cenário": "🏆 O MELHOR dos três (por município)",
+                                 "km-candidato": _km["melhor_dos_tres"]},
+                            ]), use_container_width=True, hide_index=True)
+
+                            st.info(f"⚡ **O 2º colocado bateria a REFERÊNCIA em "
+                                    f"{_tp['segundo_bate_referencia']} município(s) "
+                                    f"({_tp['pct_segundo_bate_ref']}%).** Ou seja: mesmo o polo que quase "
+                                    "escolhemos já seria melhor que o estudo externo em boa parte dos casos.")
+
+                            (st.warning if _tp["n_segundo_seria_o_melhor"] else st.success)(_tp["leitura"])
+
+                            if _tp.get("segundo_seria_o_melhor"):
+                                st.markdown("##### ⚡ Onde deixamos economia na mesa (dentro da nossa solução)")
+                                st.caption(
+                                    "Municípios em que o **2º colocado teria sido a MELHOR das três escolhas**. "
+                                    "⚠️ **Antes de mudar qualquer coisa, olhe a coluna de BALSA:** se o 2º é mais "
+                                    "curto mas tem travessia, o motor **fez certo** em não escolhê-lo — a "
+                                    "distância pura não vê a balsa, o **custo efetivo** vê. Este painel mostra a "
+                                    "tensão; **a decisão é sua**.")
+                                st.dataframe(_colorir_risco(
+                                    pd.DataFrame(_tp["segundo_seria_o_melhor"]),
+                                    cols_risco=["2º usa balsa?", "1º usa balsa?"]),
+                                    use_container_width=True, hide_index=True, height=320)
+                    except Exception as _e_tp:
+                        logger.error(f"[TRIPLA] Falha no painel dos três estudos: {_e_tp}")
+
+            with _tab_cmp_rank:
+                with st.expander("⚖️ Diagnóstico IMPARCIAL — os dois estudos, lado a lado", expanded=False):
+                    try:
+                        _di = _AN["imparcial"]
+                        if not _di:
+                            st.caption("Sem dados comparáveis suficientes.")
+                        if _di:
+                            st.caption(
+                                "📖 **Por que este painel existe:** até aqui o concorrente só existia EM RELAÇÃO "
+                                "A NÓS. Ele nunca ganhava um **perfil próprio**. E sem perfil, perguntas centrais "
+                                "ficavam sem resposta: *qual estudo evita mais balsas? qual usa menos locais de "
+                                "prova?* Aqui os dois são tratados como **estudos autônomos**, com o mesmo rigor.")
+
+                            _pl = _di["placar"]
+                            _s1, _s2, _s3, _s4 = st.columns(4)
+                            _s1.metric("🏢 Nossa aplicação venceu", f"{_pl['pct_aplicacao']}%",
+                                       f"{_pl['aplicacao']} municípios")
+                            _s2.metric("⚔️ Concorrente venceu", f"{_pl['pct_concorrente']}%",
+                                       f"{_pl['concorrente']} municípios")
+                            _s3.metric("🤝 Empates", f"{_pl['pct_empate']}%", f"{_pl['empates']} municípios")
+                            _s4.metric("Total comparável", _pl["total"])
+
+                            st.markdown("##### 📋 Perfil dos DOIS estudos, lado a lado")
+                            _pa, _pr = _di["perfil_app"], _di["perfil_ref"]
+                            if _pa and _pr:
+                                _rows = []
+                                for _k, _rot in (("municipios", "Municípios atendidos"),
+                                                 ("candidatos", "Candidatos atendidos"),
+                                                 ("locais_de_prova", "Locais de prova utilizados"),
+                                                 ("dist_media_km", "Distância média (km)"),
+                                                 ("dist_mediana_km", "Distância mediana (km)"),
+                                                 ("dist_minima_km", "Distância mínima (km)"),
+                                                 ("dist_maxima_km", "Distância máxima (km)"),
+                                                 ("dist_desvio_km", "Desvio-padrão (km)"),
+                                                 ("km_candidato_total", "Deslocamento total (km-candidato)"),
+                                                 ("tempo_medio_min", "Tempo médio (min)"),
+                                                 ("tempo_maximo_min", "Tempo máximo (min)"),
+                                                 ("pct_com_balsa", "% de rotas com BALSA"),
+                                                 ("pct_so_rodoviario", "% só rodoviário"),
+                                                 ("sinuosidade_media", "Sinuosidade média")):
+                                    _va, _vr = _pa.get(_k), _pr.get(_k)
+                                    _rows.append({
+                                        "Indicador": _rot,
+                                        "🏢 Nossa aplicação": _va if _va is not None else "❓ não disponível",
+                                        "⚔️ Estudo concorrente": _vr if _vr is not None else "❓ não informado",
+                                    })
+                                st.dataframe(pd.DataFrame(_rows), use_container_width=True, hide_index=True,
+                                             height=520)
+                                if _pr.get("campos_indisponiveis"):
+                                    st.warning(
+                                        "❓ **A planilha do concorrente não informa: "
+                                        + ", ".join(_pr["campos_indisponiveis"]) + ".** "
+                                        "Esses campos aparecem como **“não informado”**, NUNCA como zero. "
+                                        "**Zero e “não sei” são coisas diferentes** — confundi-las seria mentir "
+                                        "com números. Se a planilha dele trouxer essas colunas, a comparação "
+                                        "fica completa automaticamente.")
+
+                            st.markdown("##### ❓ As perguntas que decidem")
+                            if _di.get("perguntas"):
+                                st.dataframe(pd.DataFrame(_di["perguntas"]), use_container_width=True,
+                                             hide_index=True)
+
+                            _cs = _di.get("consistencia")
+                            if _cs:
+                                st.markdown("##### 🔬 A vantagem do concorrente é PONTUAL ou SISTEMÁTICA?")
+                                st.caption(
+                                    "📖 **A pergunta mais afiada de todas — e ela é MEDÍVEL, não opinável.** Se as "
+                                    "vitórias dele estão CONCENTRADAS em poucos municípios, a vantagem é PONTUAL: "
+                                    "revise aqueles casos e o problema some. Se estão ESPALHADAS, é SISTEMÁTICA: "
+                                    "**há algo no método dele que funciona melhor** — e ignorar isso é teimosia.")
+                                (st.info if _cs["veredito"] == "PONTUAL" else st.warning)(_cs["leitura"])
+
+                            _gg = _di.get("geografia")
+                            if _gg:
+                                st.markdown("##### 🌎 Existe padrão GEOGRÁFICO nas diferenças?")
+                                (st.warning if _gg["tem_padrao"] else st.success)(_gg["leitura"])
+                                if _gg.get("por_regiao"):
+                                    st.dataframe(pd.DataFrame(_gg["por_regiao"]), use_container_width=True,
+                                                 hide_index=True)
+                    except Exception as _e_di:
+                        logger.error(f"[PERFIL] Falha no diagnóstico imparcial: {_e_di}")
+
+                with st.expander("⚔️ Onde o CONCORRENTE venceu — e o que isso custa aos candidatos",
+                                 expanded=False):
+                    try:
+                        _acn = _AN["concorrente"]
+                        if not _acn["n_municipios"]:
+                            st.success("✅ **O concorrente não venceu em nenhum município comparável.** A sua "
+                                       "solução domina em todo o conjunto.")
+                        if _acn["n_municipios"]:
+                            st.caption(
+                                "📖 **Por que este painel existe:** toda a análise anterior perguntava *“nós "
+                                "ganhamos?”*. As vitórias do concorrente apareciam só como **derrotas nossas** — "
+                                "nunca eram analisadas **em si**. Um comparador que só conta as próprias vitórias "
+                                "não é ferramenta de decisão: é **peça de marketing**. Aqui ele é analisado com o "
+                                "mesmo rigor.")
+                            _k1, _k2, _k3, _k4 = st.columns(4)
+                            _k1.metric("Municípios que ele venceu", _acn["n_municipios"],
+                                       help=f"{_acn['pct_municipios']}% dos comparáveis.")
+                            _k2.metric("Candidatos impactados", _fmt_num(_acn["candidatos_impactados"]),
+                                       help="Quantos alunos se beneficiariam se adotássemos a escolha dele.")
+                            _k3.metric("Deslocamento que ele pouparia",
+                                       f"{_fmt_num(_acn['economia_km_candidato'])} km-cand.")
+                            _k4.metric("Por candidato", f"{_fmt_num(_acn['km_por_candidato'], 2)} km",
+                                       help="Quantos km a menos cada um desses alunos andaria.")
+                            if _acn.get("pareto_n80"):
+                                st.info(f"🎯 **{_acn['pareto_n80']} município(s) sozinhos explicam 80% da "
+                                        "vantagem dele.** Se você for revisar só alguns casos, revise esses.")
+                            st.markdown("##### 🗺️ Onde ele vence (por estado)")
+                            if _acn["por_uf"]:
+                                st.dataframe(pd.DataFrame(_acn["por_uf"]), use_container_width=True,
+                                             hide_index=True, height=220)
+                            st.markdown("##### ⚠️ Todos os casos em que o concorrente ganhou")
+                            st.caption("Ordenados pelo **impacto sobre candidatos** — não pela diferença em km. "
+                                       "4.000 candidatos a 160 km a mais doem muito mais que 50 a 300 km.")
+                            st.dataframe(_colorir_risco(pd.DataFrame(_acn["top_casos"]),
+                                                        cols_negativo_ruim=[]),
+                                         use_container_width=True, hide_index=True, height=320)
+
+                        # ---- PLANO HÍBRIDO ----
+                        _hb = _AN["hibrido"]
+                        if _hb:
+                            st.markdown("##### 🏆 O plano HÍBRIDO — o melhor de cada município")
+                            st.caption(
+                                "📖 **A pergunta que ninguém estava fazendo.** Todo o comparador respondia *“qual "
+                                "estudo é melhor no conjunto?”*. Mas essa é a pergunta **errada** para quem vai "
+                                "**decidir**. A pergunta certa é: **“e se eu pegar, de cada município, a MELHOR "
+                                "das duas escolhas?”** — porque **ninguém é obrigado a adotar um estudo inteiro**.")
+                            _h1, _h2, _h3 = st.columns(3)
+                            _h1.metric("Só o nosso estudo",
+                                       f"{_fmt_num(_hb['custo_so_nosso_km_candidato'])} km-cand.")
+                            _h2.metric("Só o do concorrente",
+                                       f"{_fmt_num(_hb['custo_so_dele_km_candidato'])} km-cand.")
+                            _h3.metric("🏆 HÍBRIDO",
+                                       f"{_fmt_num(_hb['custo_hibrido_km_candidato'])} km-cand.",
+                                       help="Deslocamento total se você tomar, de cada município, o melhor polo.")
+                            # [BI-COMPARADOR - 257ª geração] O gráfico traduz as 3 métricas acima numa decisão
+                            # visual: a barra verde (híbrido) é sempre a mais curta — o ganho salta aos olhos.
+                            _g_planos = _grafico_planos_comparacao(_hb)
+                            if _g_planos is not None:
+                                st.altair_chart(_g_planos, use_container_width=True)
+                                _leitura_grafico(
+                                    como_ler="cada barra é o deslocamento total (km × candidatos) de um plano; menor "
+                                             "é melhor. O híbrido toma, de cada município, o polo mais perto.",
+                                    conclusao=(f"o híbrido poupa **{_fmt_num(_hb['ganho_do_hibrido_sobre_nos'])} "
+                                               f"km-candidato** sobre adotar só o nosso estudo, migrando "
+                                               f"**{_hb['municipios_do_concorrente']}** município(s)."
+                                               if _hb.get("vale_a_pena") else
+                                               "o nosso estudo já é o melhor em todos os municípios — não há ganho "
+                                               "em adotar escolhas do concorrente."))
+                            if _hb["vale_a_pena"]:
+                                st.success(
+                                    f"⚡ **O híbrido poupa {_fmt_num(_hb['ganho_do_hibrido_sobre_nos'])} "
+                                    "km-candidato a MAIS** que adotar só o nosso estudo — e "
+                                    f"**{_fmt_num(_hb['ganho_do_hibrido_sobre_ele'])} a mais** que só o dele.\n\n"
+                                    f"**O que fazer:** manter o nosso polo em **{_hb['municipios_do_nosso']} "
+                                    f"município(s)** e migrar **{_hb['municipios_do_concorrente']}** "
+                                    f"(**{_fmt_num(_hb['candidatos_que_migrariam'])} candidatos**) para o polo do "
+                                    "concorrente. **O híbrido domina os dois — por construção.**")
+                            if not _hb["vale_a_pena"]:
+                                st.success("✅ **O nosso estudo já é o melhor em todos os municípios.** Não há "
+                                           "nada a ganhar adotando escolhas do concorrente.")
+                    except Exception as _e_ac:
+                        logger.error(f"[CONCORRENTE] Falha no painel: {_e_ac}")
+
+                with st.expander("🏅 Rankings — estados, locais de prova e maiores divergências", expanded=False):
+                    try:
+                        _rk = _AN["rankings"]
+                        _r1, _r2 = st.columns(2)
+                        with _r1:
+                            st.markdown("##### 🗺️ Estados — quem mais ganha")
+                            st.caption("Ordenado por **economia ponderada** (km × candidatos). Negativo = "
+                                       "a nossa solução leva o candidato mais longe ali.")
+                            if _rk["estados"]:
+                                st.dataframe(_colorir_risco(pd.DataFrame(_rk["estados"]),
+                                                            cols_negativo_ruim=["economia_km_candidato"]),
+                                             use_container_width=True, hide_index=True, height=280)
+                                # [BI-COMPARADOR - 257ª geração] O mesmo dado da tabela acima, agora como mapa
+                                # de calor divergente: verde à direita = nós poupamos; vermelho à esquerda =
+                                # a referência leva mais perto. O padrão geográfico aparece num relance.
+                                _g_estados = _grafico_estados_divergente(_rk["estados"])
+                                if _g_estados is not None:
+                                    st.altair_chart(_g_estados, use_container_width=True)
+                                    _est_v = [e for e in _rk["estados"]
+                                              if isinstance(e, dict) and (e.get("economia_km_candidato") or 0) > 0]
+                                    _est_p = [e for e in _rk["estados"]
+                                              if isinstance(e, dict) and (e.get("economia_km_candidato") or 0) < 0]
+                                    _top_uf = _est_v[0].get("UF") if _est_v else "—"
+                                    _leitura_grafico(
+                                        como_ler="barras verdes (direita) = estados onde a nossa solução leva o "
+                                                 "candidato mais perto; vermelhas (esquerda) = onde a referência leva mais perto.",
+                                        conclusao=f"vencemos em **{len(_est_v)}** estado(s) e perdemos em "
+                                                  f"**{len(_est_p)}**; o maior ganho está em **{_top_uf}**.")
+                        with _r2:
+                            st.markdown("##### 🏫 Locais de prova — quem recebe mais")
+                            st.caption("Quantos candidatos cada polo recebe, e com que deslocamento médio. "
+                                       "Um polo lotado pode não caber numa escola.")
+                            if _rk["polos"]:
+                                st.dataframe(pd.DataFrame(_rk["polos"]), use_container_width=True,
+                                             hide_index=True, height=280)
+                        st.markdown("##### ⚡ Maiores divergências — onde as duas soluções mais discordam")
+                        st.caption("**Comece a revisão por aqui.** São os municípios em que os dois estudos "
+                                   "escolheram polos diferentes E o impacto sobre candidatos é maior.")
+                        if _rk["divergencias"]:
+                            st.dataframe(_colorir_risco(pd.DataFrame(_rk["divergencias"]),
+                                                        cols_negativo_ruim=["Impacto (km-candidato)"]),
+                                         use_container_width=True, hide_index=True, height=300)
+                        if not _rk["divergencias"]:
+                            st.success("✅ Nenhuma divergência de destino: as duas soluções concordam em todos "
+                                       "os municípios comparáveis.")
+                    except Exception as _e_rk:
+                        logger.error(f"[RANKING] Falha nos rankings: {_e_rk}")
+
+            with _tab_cmp_aud:
+                with st.expander("📖 Metodologia — como cada indicador é calculado", expanded=False):
+                    st.caption("Nenhum número aqui é caixa-preta. Um indicador que ninguém sabe explicar não pode "
+                               "fundamentar decisão pública.")
+                    st.dataframe(pd.DataFrame(_metodologia_indicadores()), use_container_width=True, hide_index=True)
+
+                with st.expander("🔍 Auditoria da conciliação", expanded=False):
+                    _a1, _a2, _a3, _a4 = st.columns(4)
+                    _a1.metric("Por Código IBGE", _aud_c["por_ibge"])
+                    _a2.metric("Por Município+UF", _aud_c["por_mun_uf"] + _aud_c["por_mun"])
+                    _a3.metric("Por similaridade", _aud_c["por_fuzzy"],
+                               help="Vínculos por fuzzy matching — NÃO são oficiais. Confira-os.")
+                    _a4.metric("Não conciliados", len(_aud_c["nao_conciliados"]))
+                    st.caption(
+                        "📖 **O que cada número significa:** **Código IBGE** e **Município+UF** são vínculos "
+                        "**OFICIAIS** — pode confiar. **Similaridade** é a plataforma ADIVINHANDO por parecença "
+                        "textual: **não é oficial**, e cada um desses merece uma conferida. **Não conciliados** "
+                        "ficam **FORA de todas as estatísticas** — se forem muitos, os percentuais do painel "
+                        "**não representam o universo completo**.")
+                    if _aud_c["nao_conciliados"]:
+                        st.warning(f"⚠️ **{len(_aud_c['nao_conciliados'])} registro(s) da referência ficaram FORA "
+                                   "de todas as estatísticas.** Nenhum foi descartado em silêncio — veja o motivo:")
+                        st.dataframe(pd.DataFrame(_aud_c["nao_conciliados"]), use_container_width=True, hide_index=True)
+                    if not _aud_c["nao_conciliados"]:
+                        st.success("✅ Todos os registros da referência foram conciliados.")
+
+                    # [ANTI-FALHA - 161ª geração] CONCILIADO ≠ COMPARÁVEL. São coisas DIFERENTES, e confundi-las
+                    # foi a origem do bug: uma linha pode conciliar perfeitamente (Código IBGE, score 100) e
+                    # ainda assim ser INCOMPARÁVEL — porque o estudo da aplicação FALHOU nela.
+                    _ncomp = _aud_c.get("nao_comparaveis") or []
+                    if _ncomp:
+                        st.error(
+                            f"⛔ **{len(_ncomp)} município(s) foram CONCILIADOS mas NÃO são COMPARÁVEIS.**\n\n"
+                            "Eles casaram perfeitamente com a referência (muitos por **Código IBGE, score 100**) "
+                            "— mas o **estudo da aplicação falhou** neles. Comparar contra uma distância zero "
+                            "faria a aplicação vencer pela distância inteira. **Ficam fora das estatísticas**, "
+                            "com o motivo registrado.")
+                        st.dataframe(_rotular_colunas(pd.DataFrame(_ncomp)),
+                                     use_container_width=True, hide_index=True, height=240)
+                    if not _ncomp:
+                        st.success("✅ Todos os municípios conciliados também são **comparáveis** (o estudo da "
+                                   "aplicação produziu rota válida para todos).")
+
+            with _tab_cmp_xai:
+                # ============================================================================
+                # [DIVERGENCIA-XAI - 236ª] MOTOR DE ANÁLISE INTELIGENTE DAS DIVERGÊNCIAS
+                # Após comparar, o usuário pode ROTEAR as escolhas da referência (origem→destino_ref pelos MESMOS
+                # motores) e receber um diagnóstico explicável (XAI): por que cada estudo venceu/perdeu, hipóteses
+                # técnicas, oportunidades e recomendações — refletido em painéis, na planilha e no relatório HTML.
+                # ============================================================================
+                st.divider()
+                st.markdown("### 🔬 Análise Inteligente das Divergências")
+                _n_div_cmp = sum(1 for _l in _cmp if _l.get("Mesmo Destino") == "Não"
+                                 and str(_l.get("Destino Referencia") or "").strip()
+                                 and str(_l.get("Destino Aplicacao") or "").strip())
+                if _n_div_cmp == 0:
+                    st.success("✅ Os dois estudos convergiram em **todos** os municípios comparáveis — não há "
+                               "divergência de destino para diagnosticar.")
+                else:
+                    st.caption(f"Há **{_n_div_cmp}** município(s) em que a aplicação e a referência escolheram "
+                               f"locais de prova **diferentes**. Processe as rotas divergentes para entender, caso a "
+                               f"caso, por que cada escolha é melhor ou pior — roteando a opção da referência pelos "
+                               f"mesmos motores e aplicando o Índice de Qualidade multicritério.")
+                    if st.button("🔬 Processar rotas divergentes (diagnóstico inteligente)",
+                                 key="btn_proc_divergencias", use_container_width=True,
+                                 help="Roteia origem→destino da referência para cada divergência e gera pareceres, "
+                                      "hipóteses, oportunidades e recomendações. Usa cache — reprocessar é rápido."):
                         try:
-                            _sig = _geodiv_significancia(_gd_rows)
-                            if _sig.get("ok"):
-                                _fmt = lambda _v: ("%s" % format(int(round(_v)), ",d")).replace(",", ".")
-                                _fav = _sig["favorito"]; _v = _sig["veredito"]
-                                _pS = _sig.get("p_sinal"); _pW = _sig.get("p_wilcoxon")
-                                _lo = _sig.get("ic_lo"); _hi = _sig.get("ic_hi")
-                                _ic_txt = ((" · IC95%% da economia líquida: [%s, %s] candidato-km"
-                                            % (_fmt(_lo), _fmt(_hi))) if (_lo is not None and _hi is not None) else "")
-                                _pS_txt = ("p=%.4f" % _pS) if _pS is not None else "—"
-                                _pW_txt = ("p=%.4f" % _pW) if _pW is not None else "n/d"
-                                _cab = ("**%s** vence em %d de %d municípios comparáveis (%d empates). "
-                                        "Economia líquida: **%s candidato-km**.%s"
-                                        % (_fav, _sig["n_app"] if _fav == "Aplicação" else _sig["n_ref"],
-                                           _sig["n"], _sig["n_tie"], _fmt(_sig["adv_candkm"]), _ic_txt))
-                                _det = ("\n\n_Teste de sinal (binomial): %s · Wilcoxon pareado: %s. "
-                                        "O IC95%% vem de bootstrap (2.000 reamostragens de municípios)._"
-                                        % (_pS_txt, _pW_txt))
-                                if _v == "robusta":
-                                    st.success("🎯 **Vantagem ESTATISTICAMENTE ROBUSTA.** " + _cab
-                                               + " O intervalo de confiança não cruza zero e os testes pareados "
-                                               "são significativos — a superioridade é sistemática, não acaso." + _det)
-                                elif _v == "provavel":
-                                    st.info("🟡 **Vantagem PROVÁVEL, mas não conclusiva.** " + _cab
-                                            + " Parte da evidência aponta para " + _fav + ", mas nem todos os "
-                                            "critérios (IC + testes) confirmam — trate como indício, não veredito." + _det)
-                                else:
-                                    st.warning("⚖️ **Diferença DENTRO DO RUÍDO.** " + _cab
-                                               + " O IC95%% cruza zero e os testes não são significativos: "
-                                               "estatisticamente, os dois estudos são equivalentes neste conjunto." + _det)
-                                st.caption("Comparação pareada por município (mesmo município nos dois estudos), "
-                                           "ponderada por inscritos. Mede se a diferença observada resistiria à "
-                                           "variação amostral — o que separa uma vantagem real de uma flutuação.")
-                                # [CMP-SIGNIF-UF - 396ª geração] robustez por UF (decisões regionais)
-                                _ruido_ufs = []
+                            _prog = st.progress(0.0, text="Preparando o diagnóstico…")
+                            def _cb_div(_i, _tot, _rot):
                                 try:
-                                    _uf_sig = _geodiv_significancia_por_uf(_gd_rows)
-                                    _ruido_ufs = [_u["uf"] for _u in (_uf_sig or []) if _u.get("veredito") == "ruido"]
-                                    if len(_uf_sig) >= 2:
-                                        with st.expander("🗺️ Robustez por UF — onde a vantagem é sólida × ruído", expanded=False):
-                                            _mapv = {"robusta": "🎯 Robusta", "provavel": "🟡 Provável", "ruido": "⚖️ Ruído"}
-                                            _df_uf = pd.DataFrame([{
-                                                "UF": _u["uf"], "Municípios": _u["n"], "Favorito": _u["favorito"],
-                                                "Veredito": _mapv.get(_u["veredito"], _u["veredito"]),
-                                                "Economia líq. (cand-km)": int(round(_u["adv_candkm"] or 0)),
-                                            } for _u in _uf_sig])
-                                            st.dataframe(_df_uf, hide_index=True, use_container_width=True)
-                                            # [CMP-SIGNIF-EXPORT - 397ª geração] exportar a robustez por UF (CSV/Excel).
-                                            _ce1, _ce2 = st.columns(2)
-                                            _ce1.download_button("⬇️ CSV (robustez por UF)",
-                                                data=_df_uf.to_csv(index=False).encode("utf-8-sig"),
-                                                file_name="robustez_por_uf.csv", mime="text/csv",
-                                                use_container_width=True, key="dl_signif_uf_csv")
-                                            try:
-                                                _ce2.download_button("⬇️ Excel (robustez por UF)",
-                                                    data=_xlsx_bytes(_df_uf, "Robustez_UF"),
-                                                    file_name="robustez_por_uf.xlsx",
-                                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                                    use_container_width=True, key="dl_signif_uf_xlsx")
-                                            except Exception:
-                                                pass
-                                            st.caption("Inferência independente por UF (mínimo de 8 municípios comparáveis). "
-                                                       "Onde o veredito é 🎯 Robusta, a decisão regional tem respaldo estatístico.")
+                                    _prog.progress(min(1.0, _i / max(1, _tot)),
+                                                   text=f"Roteando {_i}/{_tot} — {_rot}")
                                 except Exception:
                                     pass
-                        except Exception:
-                            pass
-                        with st.expander("🗺️ Análise Geográfica das Divergências", expanded=False):
-                            st.caption("Mapa **aplicação × referência**: 🔵 origem · 🟢 destino da aplicação · 🟣 destino da referência. "
-                                       "Reaproveita as coordenadas reais já processadas — não refaz roteamento e não inventa posição (§15).")
-                            _cats = ["(todas)"] + sorted({r["categoria"] for r in _gd_rows if r.get("categoria") and r["categoria"] != "—"})
-                            _fc = st.columns(2)
-                            _f_cat = _fc[0].selectbox("Categoria da divergência", _cats, key="geodiv_cat")
-                            _f_ord = _fc[1].selectbox("Ordenar por", list(_GEODIV_ORD.keys()), key="geodiv_ord")
-                            _fk = st.columns(3)
-                            _f_balsa = _fk[0].checkbox("Só com balsa", key="geodiv_balsa")
-                            _f_semrota = _fk[1].checkbox("Só sem rota viária", key="geodiv_semrota")
-                            _f_refm = _fk[2].checkbox("Só onde a referência é melhor", key="geodiv_refm")
-                            _rows = _geodiv_ordenar(_geodiv_filtrar(_gd_rows, categoria=_f_cat, so_balsa=_f_balsa,
-                                                                    so_sem_rota=_f_semrota, so_ref_melhor=_f_refm), _f_ord)
-                            st.caption(f"Mostrando **{len(_rows)}** de {len(_gd_rows)} divergências com coordenadas.")
-                            _ag = _geodiv_agregado(_rows)
-                            if _ag:
-                                _k = st.columns(4)
-                                _k[0].metric("Divergências", _ag["n"])
-                                _k[1].metric("Aplicação superior", _ag["n_app_superior"])
-                                _k[2].metric("Referência superior", _ag["n_ref_superior"])
-                                _k[3].metric("Impacto (km-candidato)", f"{_ag['km_candidato_total']:,}".replace(",", "."))
-                                st.caption(f"👥 Candidatos **beneficiados pela aplicação**: {_ag['inscritos_beneficiados_app']} · "
-                                           f"**em perda** (referência seria melhor): {_ag['inscritos_prejudicados']} (§7).")
-                                if _ag.get("dif_tempo_media_ponderada") is not None:
-                                    st.caption("⏱️ **Diferença de tempo média por candidato:** "
-                                               + ("%+.0f min" % _ag["dif_tempo_media_ponderada"])
-                                               + " (positivo = aplicação mais rápida) · impacto: "
-                                               + "{:,}".format(_ag.get("min_candidato_total", 0)).replace(",", ".")
-                                               + " min-candidato.")
-                            if _rows:
-                                _estilo_gd = st.radio("Estilo do traçado", ["Arco", "Reta"], horizontal=True,
-                                                      key="geodiv_estilo")
-                                _hm = _geodiv_mapa(_rows, altura=520, max_features=400,
-                                                   estilo=("arco" if _estilo_gd == "Arco" else "reta"),
-                                                   ufs_ruido=(_ruido_ufs if "_ruido_ufs" in dir() else None))
-                                if _hm:
-                                    components.html(_hm, height=540, scrolling=False)
-                                    st.caption("Os traçados são **conectores** — a geometria das rotas não é armazenada no comparativo em lote (§9).")
-                                _labels = [f"{r['municipio']}/{r['uf']} — dif {r['dif_km']} km" for r in _rows[:300]]
-                                _sel = st.selectbox("🔍 Ver leitura de uma divergência", ["(nenhuma)"] + _labels, key="geodiv_sel")
-                                if _sel != "(nenhuma)":
-                                    _r = _rows[_labels.index(_sel)]
-                                    st.markdown("**🧠 Leitura do Analista:** " + _geodiv_leitura(_r))
-                                    _cc = st.columns(2)
-                                    with _cc[0]:
-                                        st.markdown(f"**🟢 Aplicação** → {_r['app_destino']}")
-                                        st.caption((f"{_r['app_dist']:.1f} km" if isinstance(_r.get('app_dist'), (int, float)) else "distância n/d")
-                                                   + f" · motor {_r['app_motor']}")
-                                    with _cc[1]:
-                                        st.markdown(f"**🟣 Referência** → {_r['ref_destino']}")
-                                        st.caption((f"{_r['ref_dist']:.1f} km" if isinstance(_r.get('ref_dist'), (int, float)) else "distância n/d")
-                                                   + f" · motor {_r['ref_motor']}")
-                                    if _r.get("alertas"):
-                                        st.warning("⚠️ " + " · ".join(_r["alertas"]))
-                                    # [GEODIV-REAL - 386ª geração] traçado VIÁRIO REAL sob demanda (OSRM) da origem selecionada.
-                                    _rrk = "geodiv_reais_%s" % _sel
-                                    if st.button("🛰️ Traçar rotas viárias reais desta origem", key="geodiv_btn_real"):
-                                        with st.spinner("Calculando rotas viárias reais (OSRM)…"):
-                                            _rr = []
-                                            _aw = (isinstance(_r.get("app_dist"), (int, float)) and isinstance(_r.get("ref_dist"), (int, float))
-                                                   and _r["app_dist"] <= _r["ref_dist"])
-                                            _pa = _geodiv_rota_viaria(_r.get("lat_o"), _r.get("lon_o"), _r.get("lat_a"), _r.get("lon_a"))
-                                            if _pa:
-                                                _rr.append({"pts": _pa, "cor": "#1F8A70",
-                                                            "win": bool(_aw) or not isinstance(_r.get("ref_dist"), (int, float))})
-                                            _pr = _geodiv_rota_viaria(_r.get("lat_o"), _r.get("lon_o"), _r.get("lat_r"), _r.get("lon_r"))
-                                            if _pr:
-                                                _rr.append({"pts": _pr, "cor": "#7c3aed",
-                                                            "win": (not _aw) if isinstance(_r.get("app_dist"), (int, float)) else True})
-                                            st.session_state[_rrk] = _rr or None
-                                            _mk = "%s/%s" % (_r.get("municipio", "—"), _r.get("uf", "—"))
-                                            _mapd = st.session_state.setdefault("geodiv_reais_map", {})
-                                            if _rr:
-                                                _mapd[_mk] = _rr
-                                            else:
-                                                _mapd.pop(_mk, None)
-                                    _reais_gd = st.session_state.get(_rrk)
-                                    if _reais_gd:
-                                        _hmr = _geodiv_mapa([_r], altura=460, rotas_reais=_reais_gd)
-                                        if _hmr:
-                                            components.html(_hmr, height=480, scrolling=False)
-                                            st.caption("🛰️ **Traçados viários reais** (OSRM) — verde: rota da aplicação · "
-                                                       "roxo: rota da referência. Estes são o caminho real pelas estradas.")
-                                        else:
-                                            st.info("Não foi possível traçar as rotas viárias reais desta origem agora (motor/rede).")
-                                _tdf = pd.DataFrame([{
-                                    "Município": r["municipio"], "UF": r["uf"], "Candidatos": r["inscritos"],
-                                    "Destino aplicação": r["app_destino"], "Dist. aplicação (km)": r["app_dist"],
-                                    "Destino referência": r["ref_destino"], "Dist. referência (km)": r["ref_dist"],
-                                    "Diferença (km)": r["dif_km"], "Diferença (%)": r["dif_pct"],
-                                    "Impacto (km-cand)": r["km_candidato"], "Categoria": r["categoria"],
-                                    "Alertas": " · ".join(r["alertas"])} for r in _rows])
-                                st.dataframe(_tdf, use_container_width=True, hide_index=True)
-                                try:
-                                    st.download_button("📥 Baixar divergências geográficas (.csv)",
-                                                       data=_tdf.to_csv(index=False).encode("utf-8-sig"),
-                                                       file_name="divergencias_geograficas.csv", mime="text/csv", key="geodiv_dl")
-                                except Exception:
-                                    logger.error("[GEODIV-UI] Falha no download (isolada).", exc_info=True)
-                            with st.expander("❓ Como interpretar este mapa", expanded=False):
-                                st.markdown(
-                                    "- **🔵 Origem:** município dos candidatos (maior = mais candidatos).\n"
-                                    "- **🟢 Destino da aplicação** vs **🟣 destino da referência**: para onde cada estudo mandaria a origem.\n"
-                                    "- **Linhas tracejadas:** conectores origem→destino (não são o traçado viário — a geometria não é armazenada no lote).\n"
-                                    "- **Diferença (km):** positiva = a aplicação é mais curta; negativa 🔴 = a referência é mais curta (investigar).\n"
-                                    "- **Impacto (km-candidato):** diferença × candidatos — o peso logístico real da divergência.\n"
-                                    "- **Categoria:** por que os estudos divergiram (viária, motor, metodológica, balsa, sem rota) — divergência metodológica ≠ escolha pior (§9).")
-                except Exception:
-                    logger.error("[GEODIV-UI] Falha ao renderizar a análise geográfica de divergências (isolada).", exc_info=True)
-                # [POS-DIAGNOSTICO - 256ª geração] Reconciliação: o que o reprocessamento REVELOU vs. o placar
-                # do topo (calculado sobre os dados originais). Aparece a cada rerun enquanto o diagnóstico
-                # existir na sessão — é a "atualização das informações após processar as divergências".
-                try:
-                    _pos = _resumo_pos_diagnostico_divergencias(_diag_sess)
-                    if _pos and (_pos.get("linhas") or _pos.get("kpis")):
-                        with st.container(border=True):
-                            _titulo_pos = ("### 🔄 Resultado do reprocessamento — placar merece ajuste"
-                                           if _pos.get("houve_ajuste")
-                                           else "### 🔄 Resultado do reprocessamento — placar confirmado")
-                            st.markdown(_titulo_pos)
-                            _kpis_pos = _pos.get("kpis", [])
-                            if _kpis_pos:
-                                _cols_pos = st.columns(min(4, len(_kpis_pos)))
-                                for _ip, (_rot, _val, _aju) in enumerate(_kpis_pos[:4]):
-                                    _cols_pos[_ip].metric(_rot, _val, help=_aju)
-                            for _lp in _pos.get("linhas", []):
-                                st.markdown(_lp)
-                            if _pos.get("houve_ajuste"):
-                                st.info("💡 Use a seção **🏆 O plano HÍBRIDO** abaixo para adotar município a "
-                                        "município as escolhas em que a referência se mostrou melhor — é como "
-                                        "capturar esse ganho sem abrir mão de onde a aplicação já vence.")
-                except Exception:
-                    logger.error("[POS-DIAGNOSTICO] Falha ao montar resumo pós-diagnóstico", exc_info=True)
-
-                with st.container(border=True):
-                    _painel_divergencias_ui(_diag_sess, st)
-                st.caption("As análises acima também vão para o **relatório HTML** (seção “Diagnóstico "
-                           "Inteligente das Divergências”) e para a **planilha** (abas “Diag - …”) ao exportar.")
-
-            st.markdown("### 📝 Relatório Executivo (gerado automaticamente)")
-            _rel_c = _res_c.get("relatorio") or _relatorio_executivo_comparacao(
-                _res_c["stats"], _aud_c, top_municipios=_cmp)
-            with st.container(border=True):
-                st.markdown(_rel_c)
-
-            # [PERF - 139ª geração] Bytes JÁ prontos (montados no clique). Zero CPU por rerun.
-            # [FIX-EXPORT-CMP - 184ª geração] Exportação SEMPRE visível. Antes, TODO o bloco (relatório +
-            # planilha) ficava dentro de `if _xb:` — se o xlsx pré-gerado viesse None (falha ao montar as 24
-            # abas, ou resultado antigo em sessão), os DOIS botões sumiam juntos. Agora: o relatório HTML (que
-            # usa stats/aud, não o xlsx) aparece SEMPRE; e a planilha, se não estiver pré-gerada, é gerada SOB
-            # DEMANDA — o usuário nunca fica sem os downloads.
-            st.markdown("#### ⬇️ Exportação")
-            # [V432 · MAPA DE ROTAS] Mapa comparativo inteligente app×referência, INLINE na aba (o mesmo do HTML
-            # exportável): rota da aplicação (verde) e da referência (vermelho tracejado) por município, com filtros.
-            try:
-                if _cmp:
-                    with st.expander("🗺️ Mapa comparativo de rotas (aplicação × referência) — com filtros", expanded=False):
-                        st.caption("Verde = escolha da **aplicação** · Vermelho tracejado = escolha da **referência** · "
-                                   "Ponto azul = origem. Onde saem duas linhas da mesma origem, há **divergência**. "
-                                   "Use as caixas do mapa para filtrar só a aplicação, só a referência ou só divergências. "
-                                   "Requer internet para os blocos do mapa; sem ela, o painel avisa e o resto segue.")
-                        _mapa_rotas_inline = _mapa_rotas_comparador_standalone(_cmp, altura=560)
-                        components.html(_mapa_rotas_inline, height=680, scrolling=False)
-            except Exception as _e_mri:
-                logger.error(f"[V432-MAPA-ROTAS-ABA] {_e_mri}")
-            if st.button("📄 Gerar relatório HTML da comparação", key="btn_relatorio_html_cmp",
-                         use_container_width=True,
-                         help="Parecer da comparação (conciliação, vitórias, economia) num arquivo HTML "
-                              "único que abre offline em qualquer navegador."):
-                with st.spinner("Gerando relatório..."):
-                    _rel_html_cmp = _gerar_relatorio_comparacao_html(
-                        _res_c["stats"], _aud_c, titulo="Relatório da Comparação de Estudos",
-                        data_str=pd.Timestamp.now().strftime("%d/%m/%Y %H:%M"), linhas=_cmp,
-                        diagnostico_div=st.session_state.get('cmp_diag_divergencias'))
-                    if _rel_html_cmp:
-                        st.session_state['relatorio_html_cmp'] = _rel_html_cmp.encode("utf-8")
-                    else:
-                        st.session_state.pop('relatorio_html_cmp', None)
-                        st.warning("Não foi possível gerar o relatório.")
-            if st.session_state.get('relatorio_html_cmp'):
-                st.download_button("⬇️ Baixar relatório HTML (.html)",
-                                   data=st.session_state['relatorio_html_cmp'],
-                                   file_name="relatorio_comparacao.html", mime="text/html",
-                                   use_container_width=True, key="dl_relatorio_html_cmp")
-            # [FIX-EXPORT-CMP - 184ª geração] Download ROBUSTO: valida que o xlsx em sessão é BYTES não-vazio (um
-            # BytesIO ou None de uma geração antiga faz o st.download_button "não baixar nada"). Se inválido,
-            # RE-GERA automaticamente (sem botão extra → download em 1 clique) e passa bytes() explícito.
-            _xb = _res_c.get("xlsx")
-            if not (isinstance(_xb, (bytes, bytearray)) and len(_xb) > 0):
-                with st.spinner("Preparando a planilha de comparação (24 abas)..."):
+                            _limiar_div = float(st.session_state.get('cmp_limiar_empate', 1.0) or 1.0)
+                            _diag_div = _reprocessar_rotas_divergentes(
+                                _cmp, limiar_empate_km=_limiar_div, cb_progresso=_cb_div)
+                            try:
+                                _prog.empty()
+                            except Exception:
+                                pass
+                            st.session_state['cmp_diag_divergencias'] = _diag_div
+                            # invalida o xlsx pré-gerado → será regenerado COM as abas de diagnóstico no download
+                            try:
+                                _res_c["xlsx"] = None
+                                st.session_state['cmp_resultado'] = _res_c
+                                st.session_state.pop('relatorio_html_cmp', None)
+                            except Exception:
+                                pass
+                            _falhas_d = int(_diag_div.get("falhas_roteamento", 0) or 0)
+                            if _falhas_d:
+                                st.warning(f"Diagnóstico concluído com {_falhas_d} rota(s) sem roteamento fresco "
+                                           f"(usei a distância que já constava do estudo nesses casos).")
+                            else:
+                                st.success("✅ Diagnóstico das divergências concluído.")
+                        except Exception as _e_div:
+                            logger.error(f"[DIVERGENCIA-XAI] Falha ao processar divergências: {_e_div}", exc_info=True)
+                            st.error(f"Não foi possível processar as rotas divergentes: {_e_div}")
+                # painel persistente (renderiza em todo rerun enquanto o diagnóstico existir na sessão)
+                _diag_sess = st.session_state.get('cmp_diag_divergencias')
+                if _diag_sess:
+                    # [GEODIV-UI 299a] Análise Geográfica das Divergências (§4/§5/§6/§7/§8/§9/§16) — read-only, reusa coords reais.
                     try:
-                        _xb_novo = _montar_xlsx_comparacao(
-                            _cmp, _res_c["stats"], _aud_c, _rel_c,
+                        _gd_rows = _geodiv_dataset(_diag_sess.get("analises") or [])
+                        if _gd_rows:
+                            # [CMP-SIGNIF - 395ª geração] Robustez estatística da vantagem: a diferença é real ou ruído?
+                            try:
+                                _sig = _geodiv_significancia(_gd_rows)
+                                if _sig.get("ok"):
+                                    _fmt = lambda _v: ("%s" % format(int(round(_v)), ",d")).replace(",", ".")
+                                    _fav = _sig["favorito"]; _v = _sig["veredito"]
+                                    _pS = _sig.get("p_sinal"); _pW = _sig.get("p_wilcoxon")
+                                    _lo = _sig.get("ic_lo"); _hi = _sig.get("ic_hi")
+                                    _ic_txt = ((" · IC95%% da economia líquida: [%s, %s] candidato-km"
+                                                % (_fmt(_lo), _fmt(_hi))) if (_lo is not None and _hi is not None) else "")
+                                    _pS_txt = ("p=%.4f" % _pS) if _pS is not None else "—"
+                                    _pW_txt = ("p=%.4f" % _pW) if _pW is not None else "n/d"
+                                    _cab = ("**%s** vence em %d de %d municípios comparáveis (%d empates). "
+                                            "Economia líquida: **%s candidato-km**.%s"
+                                            % (_fav, _sig["n_app"] if _fav == "Aplicação" else _sig["n_ref"],
+                                               _sig["n"], _sig["n_tie"], _fmt(_sig["adv_candkm"]), _ic_txt))
+                                    _det = ("\n\n_Teste de sinal (binomial): %s · Wilcoxon pareado: %s. "
+                                            "O IC95%% vem de bootstrap (2.000 reamostragens de municípios)._"
+                                            % (_pS_txt, _pW_txt))
+                                    if _v == "robusta":
+                                        st.success("🎯 **Vantagem ESTATISTICAMENTE ROBUSTA.** " + _cab
+                                                   + " O intervalo de confiança não cruza zero e os testes pareados "
+                                                   "são significativos — a superioridade é sistemática, não acaso." + _det)
+                                    elif _v == "provavel":
+                                        st.info("🟡 **Vantagem PROVÁVEL, mas não conclusiva.** " + _cab
+                                                + " Parte da evidência aponta para " + _fav + ", mas nem todos os "
+                                                "critérios (IC + testes) confirmam — trate como indício, não veredito." + _det)
+                                    else:
+                                        st.warning("⚖️ **Diferença DENTRO DO RUÍDO.** " + _cab
+                                                   + " O IC95%% cruza zero e os testes não são significativos: "
+                                                   "estatisticamente, os dois estudos são equivalentes neste conjunto." + _det)
+                                    st.caption("Comparação pareada por município (mesmo município nos dois estudos), "
+                                               "ponderada por inscritos. Mede se a diferença observada resistiria à "
+                                               "variação amostral — o que separa uma vantagem real de uma flutuação.")
+                                    # [CMP-SIGNIF-UF - 396ª geração] robustez por UF (decisões regionais)
+                                    _ruido_ufs = []
+                                    try:
+                                        _uf_sig = _geodiv_significancia_por_uf(_gd_rows)
+                                        _ruido_ufs = [_u["uf"] for _u in (_uf_sig or []) if _u.get("veredito") == "ruido"]
+                                        if len(_uf_sig) >= 2:
+                                            with st.expander("🗺️ Robustez por UF — onde a vantagem é sólida × ruído", expanded=False):
+                                                _mapv = {"robusta": "🎯 Robusta", "provavel": "🟡 Provável", "ruido": "⚖️ Ruído"}
+                                                _df_uf = pd.DataFrame([{
+                                                    "UF": _u["uf"], "Municípios": _u["n"], "Favorito": _u["favorito"],
+                                                    "Veredito": _mapv.get(_u["veredito"], _u["veredito"]),
+                                                    "Economia líq. (cand-km)": int(round(_u["adv_candkm"] or 0)),
+                                                } for _u in _uf_sig])
+                                                st.dataframe(_df_uf, hide_index=True, use_container_width=True)
+                                                # [CMP-SIGNIF-EXPORT - 397ª geração] exportar a robustez por UF (CSV/Excel).
+                                                _ce1, _ce2 = st.columns(2)
+                                                _ce1.download_button("⬇️ CSV (robustez por UF)",
+                                                    data=_df_uf.to_csv(index=False).encode("utf-8-sig"),
+                                                    file_name="robustez_por_uf.csv", mime="text/csv",
+                                                    use_container_width=True, key="dl_signif_uf_csv")
+                                                try:
+                                                    _ce2.download_button("⬇️ Excel (robustez por UF)",
+                                                        data=_xlsx_bytes(_df_uf, "Robustez_UF"),
+                                                        file_name="robustez_por_uf.xlsx",
+                                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                                        use_container_width=True, key="dl_signif_uf_xlsx")
+                                                except Exception:
+                                                    pass
+                                                st.caption("Inferência independente por UF (mínimo de 8 municípios comparáveis). "
+                                                           "Onde o veredito é 🎯 Robusta, a decisão regional tem respaldo estatístico.")
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                pass
+                            with st.expander("🗺️ Análise Geográfica das Divergências", expanded=False):
+                                st.caption("Mapa **aplicação × referência**: 🔵 origem · 🟢 destino da aplicação · 🟣 destino da referência. "
+                                           "Reaproveita as coordenadas reais já processadas — não refaz roteamento e não inventa posição (§15).")
+                                _cats = ["(todas)"] + sorted({r["categoria"] for r in _gd_rows if r.get("categoria") and r["categoria"] != "—"})
+                                _fc = st.columns(2)
+                                _f_cat = _fc[0].selectbox("Categoria da divergência", _cats, key="geodiv_cat")
+                                _f_ord = _fc[1].selectbox("Ordenar por", list(_GEODIV_ORD.keys()), key="geodiv_ord")
+                                _fk = st.columns(3)
+                                _f_balsa = _fk[0].checkbox("Só com balsa", key="geodiv_balsa")
+                                _f_semrota = _fk[1].checkbox("Só sem rota viária", key="geodiv_semrota")
+                                _f_refm = _fk[2].checkbox("Só onde a referência é melhor", key="geodiv_refm")
+                                _rows = _geodiv_ordenar(_geodiv_filtrar(_gd_rows, categoria=_f_cat, so_balsa=_f_balsa,
+                                                                        so_sem_rota=_f_semrota, so_ref_melhor=_f_refm), _f_ord)
+                                st.caption(f"Mostrando **{len(_rows)}** de {len(_gd_rows)} divergências com coordenadas.")
+                                _ag = _geodiv_agregado(_rows)
+                                if _ag:
+                                    _k = st.columns(4)
+                                    _k[0].metric("Divergências", _ag["n"])
+                                    _k[1].metric("Aplicação superior", _ag["n_app_superior"])
+                                    _k[2].metric("Referência superior", _ag["n_ref_superior"])
+                                    _k[3].metric("Impacto (km-candidato)", f"{_ag['km_candidato_total']:,}".replace(",", "."))
+                                    st.caption(f"👥 Candidatos **beneficiados pela aplicação**: {_ag['inscritos_beneficiados_app']} · "
+                                               f"**em perda** (referência seria melhor): {_ag['inscritos_prejudicados']} (§7).")
+                                    if _ag.get("dif_tempo_media_ponderada") is not None:
+                                        st.caption("⏱️ **Diferença de tempo média por candidato:** "
+                                                   + ("%+.0f min" % _ag["dif_tempo_media_ponderada"])
+                                                   + " (positivo = aplicação mais rápida) · impacto: "
+                                                   + "{:,}".format(_ag.get("min_candidato_total", 0)).replace(",", ".")
+                                                   + " min-candidato.")
+                                if _rows:
+                                    _estilo_gd = st.radio("Estilo do traçado", ["Arco", "Reta"], horizontal=True,
+                                                          key="geodiv_estilo")
+                                    _hm = _geodiv_mapa(_rows, altura=520, max_features=400,
+                                                       estilo=("arco" if _estilo_gd == "Arco" else "reta"),
+                                                       ufs_ruido=(_ruido_ufs if "_ruido_ufs" in dir() else None))
+                                    if _hm:
+                                        components.html(_hm, height=540, scrolling=False)
+                                        st.caption("Os traçados são **conectores** — a geometria das rotas não é armazenada no comparativo em lote (§9).")
+                                    _labels = [f"{r['municipio']}/{r['uf']} — dif {r['dif_km']} km" for r in _rows[:300]]
+                                    _sel = st.selectbox("🔍 Ver leitura de uma divergência", ["(nenhuma)"] + _labels, key="geodiv_sel")
+                                    if _sel != "(nenhuma)":
+                                        _r = _rows[_labels.index(_sel)]
+                                        st.markdown("**🧠 Leitura do Analista:** " + _geodiv_leitura(_r))
+                                        _cc = st.columns(2)
+                                        with _cc[0]:
+                                            st.markdown(f"**🟢 Aplicação** → {_r['app_destino']}")
+                                            st.caption((f"{_r['app_dist']:.1f} km" if isinstance(_r.get('app_dist'), (int, float)) else "distância n/d")
+                                                       + f" · motor {_r['app_motor']}")
+                                        with _cc[1]:
+                                            st.markdown(f"**🟣 Referência** → {_r['ref_destino']}")
+                                            st.caption((f"{_r['ref_dist']:.1f} km" if isinstance(_r.get('ref_dist'), (int, float)) else "distância n/d")
+                                                       + f" · motor {_r['ref_motor']}")
+                                        if _r.get("alertas"):
+                                            st.warning("⚠️ " + " · ".join(_r["alertas"]))
+                                        # [GEODIV-REAL - 386ª geração] traçado VIÁRIO REAL sob demanda (OSRM) da origem selecionada.
+                                        _rrk = "geodiv_reais_%s" % _sel
+                                        if st.button("🛰️ Traçar rotas viárias reais desta origem", key="geodiv_btn_real"):
+                                            with st.spinner("Calculando rotas viárias reais (OSRM)…"):
+                                                _rr = []
+                                                _aw = (isinstance(_r.get("app_dist"), (int, float)) and isinstance(_r.get("ref_dist"), (int, float))
+                                                       and _r["app_dist"] <= _r["ref_dist"])
+                                                _pa = _geodiv_rota_viaria(_r.get("lat_o"), _r.get("lon_o"), _r.get("lat_a"), _r.get("lon_a"))
+                                                if _pa:
+                                                    _rr.append({"pts": _pa, "cor": "#1F8A70",
+                                                                "win": bool(_aw) or not isinstance(_r.get("ref_dist"), (int, float))})
+                                                _pr = _geodiv_rota_viaria(_r.get("lat_o"), _r.get("lon_o"), _r.get("lat_r"), _r.get("lon_r"))
+                                                if _pr:
+                                                    _rr.append({"pts": _pr, "cor": "#7c3aed",
+                                                                "win": (not _aw) if isinstance(_r.get("app_dist"), (int, float)) else True})
+                                                st.session_state[_rrk] = _rr or None
+                                                _mk = "%s/%s" % (_r.get("municipio", "—"), _r.get("uf", "—"))
+                                                _mapd = st.session_state.setdefault("geodiv_reais_map", {})
+                                                if _rr:
+                                                    _mapd[_mk] = _rr
+                                                else:
+                                                    _mapd.pop(_mk, None)
+                                        _reais_gd = st.session_state.get(_rrk)
+                                        if _reais_gd:
+                                            _hmr = _geodiv_mapa([_r], altura=460, rotas_reais=_reais_gd)
+                                            if _hmr:
+                                                components.html(_hmr, height=480, scrolling=False)
+                                                st.caption("🛰️ **Traçados viários reais** (OSRM) — verde: rota da aplicação · "
+                                                           "roxo: rota da referência. Estes são o caminho real pelas estradas.")
+                                            else:
+                                                st.info("Não foi possível traçar as rotas viárias reais desta origem agora (motor/rede).")
+                                    _tdf = pd.DataFrame([{
+                                        "Município": r["municipio"], "UF": r["uf"], "Candidatos": r["inscritos"],
+                                        "Destino aplicação": r["app_destino"], "Dist. aplicação (km)": r["app_dist"],
+                                        "Destino referência": r["ref_destino"], "Dist. referência (km)": r["ref_dist"],
+                                        "Diferença (km)": r["dif_km"], "Diferença (%)": r["dif_pct"],
+                                        "Impacto (km-cand)": r["km_candidato"], "Categoria": r["categoria"],
+                                        "Alertas": " · ".join(r["alertas"])} for r in _rows])
+                                    st.dataframe(_tdf, use_container_width=True, hide_index=True)
+                                    try:
+                                        st.download_button("📥 Baixar divergências geográficas (.csv)",
+                                                           data=_tdf.to_csv(index=False).encode("utf-8-sig"),
+                                                           file_name="divergencias_geograficas.csv", mime="text/csv", key="geodiv_dl")
+                                    except Exception:
+                                        logger.error("[GEODIV-UI] Falha no download (isolada).", exc_info=True)
+                                with st.expander("❓ Como interpretar este mapa", expanded=False):
+                                    st.markdown(
+                                        "- **🔵 Origem:** município dos candidatos (maior = mais candidatos).\n"
+                                        "- **🟢 Destino da aplicação** vs **🟣 destino da referência**: para onde cada estudo mandaria a origem.\n"
+                                        "- **Linhas tracejadas:** conectores origem→destino (não são o traçado viário — a geometria não é armazenada no lote).\n"
+                                        "- **Diferença (km):** positiva = a aplicação é mais curta; negativa 🔴 = a referência é mais curta (investigar).\n"
+                                        "- **Impacto (km-candidato):** diferença × candidatos — o peso logístico real da divergência.\n"
+                                        "- **Categoria:** por que os estudos divergiram (viária, motor, metodológica, balsa, sem rota) — divergência metodológica ≠ escolha pior (§9).")
+                    except Exception:
+                        logger.error("[GEODIV-UI] Falha ao renderizar a análise geográfica de divergências (isolada).", exc_info=True)
+                    # [POS-DIAGNOSTICO - 256ª geração] Reconciliação: o que o reprocessamento REVELOU vs. o placar
+                    # do topo (calculado sobre os dados originais). Aparece a cada rerun enquanto o diagnóstico
+                    # existir na sessão — é a "atualização das informações após processar as divergências".
+                    try:
+                        _pos = _resumo_pos_diagnostico_divergencias(_diag_sess)
+                        if _pos and (_pos.get("linhas") or _pos.get("kpis")):
+                            with st.container(border=True):
+                                _titulo_pos = ("### 🔄 Resultado do reprocessamento — placar merece ajuste"
+                                               if _pos.get("houve_ajuste")
+                                               else "### 🔄 Resultado do reprocessamento — placar confirmado")
+                                st.markdown(_titulo_pos)
+                                _kpis_pos = _pos.get("kpis", [])
+                                if _kpis_pos:
+                                    _cols_pos = st.columns(min(4, len(_kpis_pos)))
+                                    for _ip, (_rot, _val, _aju) in enumerate(_kpis_pos[:4]):
+                                        _cols_pos[_ip].metric(_rot, _val, help=_aju)
+                                for _lp in _pos.get("linhas", []):
+                                    st.markdown(_lp)
+                                if _pos.get("houve_ajuste"):
+                                    st.info("💡 Use a seção **🏆 O plano HÍBRIDO** abaixo para adotar município a "
+                                            "município as escolhas em que a referência se mostrou melhor — é como "
+                                            "capturar esse ganho sem abrir mão de onde a aplicação já vence.")
+                    except Exception:
+                        logger.error("[POS-DIAGNOSTICO] Falha ao montar resumo pós-diagnóstico", exc_info=True)
+
+                    with st.container(border=True):
+                        _painel_divergencias_ui(_diag_sess, st)
+                    st.caption("As análises acima também vão para o **relatório HTML** (seção “Diagnóstico "
+                               "Inteligente das Divergências”) e para a **planilha** (abas “Diag - …”) ao exportar.")
+
+            with _tab_cmp_exp:
+                st.markdown("### 📝 Relatório Executivo (gerado automaticamente)")
+                _rel_c = _res_c.get("relatorio") or _relatorio_executivo_comparacao(
+                    _res_c["stats"], _aud_c, top_municipios=_cmp)
+                with st.container(border=True):
+                    st.markdown(_rel_c)
+
+                # [PERF - 139ª geração] Bytes JÁ prontos (montados no clique). Zero CPU por rerun.
+                # [FIX-EXPORT-CMP - 184ª geração] Exportação SEMPRE visível. Antes, TODO o bloco (relatório +
+                # planilha) ficava dentro de `if _xb:` — se o xlsx pré-gerado viesse None (falha ao montar as 24
+                # abas, ou resultado antigo em sessão), os DOIS botões sumiam juntos. Agora: o relatório HTML (que
+                # usa stats/aud, não o xlsx) aparece SEMPRE; e a planilha, se não estiver pré-gerada, é gerada SOB
+                # DEMANDA — o usuário nunca fica sem os downloads.
+                st.markdown("#### ⬇️ Exportação")
+                # [V432 · MAPA DE ROTAS] Mapa comparativo inteligente app×referência, INLINE na aba (o mesmo do HTML
+                # exportável): rota da aplicação (verde) e da referência (vermelho tracejado) por município, com filtros.
+                try:
+                    if _cmp:
+                        with st.expander("🗺️ Mapa comparativo de rotas (aplicação × referência) — com filtros", expanded=False):
+                            st.caption("Verde = escolha da **aplicação** · Vermelho tracejado = escolha da **referência** · "
+                                       "Ponto azul = origem. Onde saem duas linhas da mesma origem, há **divergência**. "
+                                       "Use as caixas do mapa para filtrar só a aplicação, só a referência ou só divergências. "
+                                       "Requer internet para os blocos do mapa; sem ela, o painel avisa e o resto segue.")
+                            _mapa_rotas_inline = _mapa_rotas_comparador_standalone(_cmp, altura=560)
+                            components.html(_mapa_rotas_inline, height=680, scrolling=False)
+                except Exception as _e_mri:
+                    logger.error(f"[V432-MAPA-ROTAS-ABA] {_e_mri}")
+                if st.button("📄 Gerar relatório HTML da comparação", key="btn_relatorio_html_cmp",
+                             use_container_width=True,
+                             help="Parecer da comparação (conciliação, vitórias, economia) num arquivo HTML "
+                                  "único que abre offline em qualquer navegador."):
+                    with st.spinner("Gerando relatório..."):
+                        _rel_html_cmp = _gerar_relatorio_comparacao_html(
+                            _res_c["stats"], _aud_c, titulo="Relatório da Comparação de Estudos",
+                            data_str=pd.Timestamp.now().strftime("%d/%m/%Y %H:%M"), linhas=_cmp,
                             diagnostico_div=st.session_state.get('cmp_diag_divergencias'))
-                        if isinstance(_xb_novo, (bytes, bytearray)) and len(_xb_novo) > 0:
-                            _xb = bytes(_xb_novo)
-                            _res_c["xlsx"] = _xb
-                            st.session_state['cmp_resultado'] = _res_c
+                        if _rel_html_cmp:
+                            st.session_state['relatorio_html_cmp'] = _rel_html_cmp.encode("utf-8")
                         else:
+                            st.session_state.pop('relatorio_html_cmp', None)
+                            st.warning("Não foi possível gerar o relatório.")
+                if st.session_state.get('relatorio_html_cmp'):
+                    st.download_button("⬇️ Baixar relatório HTML (.html)",
+                                       data=st.session_state['relatorio_html_cmp'],
+                                       file_name="relatorio_comparacao.html", mime="text/html",
+                                       use_container_width=True, key="dl_relatorio_html_cmp")
+                # [FIX-EXPORT-CMP - 184ª geração] Download ROBUSTO: valida que o xlsx em sessão é BYTES não-vazio (um
+                # BytesIO ou None de uma geração antiga faz o st.download_button "não baixar nada"). Se inválido,
+                # RE-GERA automaticamente (sem botão extra → download em 1 clique) e passa bytes() explícito.
+                _xb = _res_c.get("xlsx")
+                if not (isinstance(_xb, (bytes, bytearray)) and len(_xb) > 0):
+                    with st.spinner("Preparando a planilha de comparação (24 abas)..."):
+                        try:
+                            _xb_novo = _montar_xlsx_comparacao(
+                                _cmp, _res_c["stats"], _aud_c, _rel_c,
+                                diagnostico_div=st.session_state.get('cmp_diag_divergencias'))
+                            if isinstance(_xb_novo, (bytes, bytearray)) and len(_xb_novo) > 0:
+                                _xb = bytes(_xb_novo)
+                                _res_c["xlsx"] = _xb
+                                st.session_state['cmp_resultado'] = _res_c
+                            else:
+                                _xb = None
+                        except Exception as _e_xbr:
                             _xb = None
-                    except Exception as _e_xbr:
-                        _xb = None
-                        logger.error(f"[FIX-EXPORT-CMP] Falha ao gerar planilha de comparação: {_e_xbr}", exc_info=True)
-            if _xb:
-                st.download_button("📥 Baixar comparação completa (.xlsx — 24 abas + 2 de documentação)",
-                                   data=bytes(_xb), file_name="comparacao_estudos.xlsx",
-                                   mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                   use_container_width=True, key="cmp_export")
-            else:
-                st.warning("⚠️ Não foi possível gerar a planilha de comparação (veja os logs). O **relatório HTML** "
-                           "acima está disponível como alternativa completa.")
+                            logger.error(f"[FIX-EXPORT-CMP] Falha ao gerar planilha de comparação: {_e_xbr}", exc_info=True)
+                if _xb:
+                    st.download_button("📥 Baixar comparação completa (.xlsx — 24 abas + 2 de documentação)",
+                                       data=bytes(_xb), file_name="comparacao_estudos.xlsx",
+                                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                       use_container_width=True, key="cmp_export")
+                else:
+                    st.warning("⚠️ Não foi possível gerar a planilha de comparação (veja os logs). O **relatório HTML** "
+                               "acima está disponível como alternativa completa.")
 
 
 if _secao == _SECOES[4]:   # tab_analytics
