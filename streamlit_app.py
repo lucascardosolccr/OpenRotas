@@ -7106,22 +7106,17 @@ def _render_status_rico(tipo, titulo, metricas=None, blocos=None, badge=None):
         return ""
 
 def _status_sucesso_lote(df, resumo=None):
-    """Banner de sucesso do Lote (§15) com metricas reais. '' se sem dados."""
+    """Banner de sucesso do Lote (§15). '' se sem dados.
+    [REDESIGN TOTAL - Rodada 9] Antes recalculava e reexibia Municípios de origem/Candidatos/
+    Rotas/% conciliadas — os MESMOS números (mesma fórmula) que o header de KPIs
+    (_render_kpi_header_lote) já mostra logo acima, no mesmo painel de conclusão (mission
+    redesign §10/§47 — "existe repetição?"). Mantido só o título de sucesso; os números vivem
+    num único lugar."""
     try:
         resumo = resumo or {}
         if df is None or len(df) == 0:
             return ""
-        mets = []
-        if resumo.get("municipios") is not None:
-            mets.append(("Municípios de origem", _mnil_int(resumo["municipios"])))
-        if resumo.get("candidatos") is not None:
-            mets.append(("Candidatos", _mnil_int(resumo["candidatos"])))
-        mets.append(("Rotas", _mnil_int(resumo.get("rotas") or len(df))))
-        if "Distancia" in df.columns:
-            d = pd.to_numeric(df["Distancia"], errors="coerce")
-            if len(d):
-                mets.append(("Conciliadas", f"{100.0*(d>0).mean():.1f}%".replace(".", ",")))
-        return _render_status_rico("ok", "Processamento em lote concluído", metricas=mets)
+        return _render_status_rico("ok", "Processamento em lote concluído")
     except Exception:
         logger.error("[STATUS-RICO] Falha no banner de sucesso do lote (isolada).", exc_info=True)
         return ""
