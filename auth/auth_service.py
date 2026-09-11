@@ -121,6 +121,29 @@ def fazer_login(email: str, senha: str) -> AuthResult:
         return AuthResult(False, _mensagem_login_generica())
 
 
+def renovar_sessao(refresh_token: str) -> AuthResult:
+    """[PERSISTÊNCIA DE SESSÃO] Troca um refresh_token ainda válido por um novo par de
+    tokens, sem exigir novo login. O access_token do Supabase é um JWT de vida curta
+    (~1h por padrão) — isso é normal e esperado, não uma sessão "expirada" de verdade; é
+    o refresh_token (vida bem mais longa) quem garante que o usuário continue logado
+    enquanto o navegador permanecer aberto. Usado por `session_manager` na revalidação
+    periódica, para renovar silenciosamente em vez de derrubar a sessão."""
+    _cliente = obter_cliente()
+    if _cliente is None or not refresh_token:
+        return AuthResult(False, "Não foi possível renovar a sessão no momento.")
+    try:
+        _resp = _cliente.auth.refresh_session(refresh_token)
+        if _resp.session is None or _resp.user is None:
+            return AuthResult(False, "Sessão não pôde ser renovada — faça login novamente.")
+        return AuthResult(True, "Sessão renovada.", {
+            "user_id": _resp.user.id, "email": _resp.user.email,
+            "access_token": _resp.session.access_token, "refresh_token": _resp.session.refresh_token,
+        })
+    except Exception:
+        logger.debug("[AUTH] Falha ao renovar sessão via refresh_token.", exc_info=True)
+        return AuthResult(False, "Sessão não pôde ser renovada — faça login novamente.")
+
+
 def fazer_logout() -> AuthResult:
     _cliente = obter_cliente()
     if _cliente is None:

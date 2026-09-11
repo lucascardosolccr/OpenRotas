@@ -58,18 +58,34 @@ def encerrar_sessao():
 
 
 def _sessao_expirada_no_servidor() -> bool:
-    """[§24] Verifica, sem derrubar a app em caso de falha de rede, se o token ainda é
-    válido no Supabase. Fail-open (assume válida) quando o cliente está indisponível —
-    a validação real de autorização continua sendo feita pelo próprio Supabase a cada
-    chamada (nunca confiamos só nesta checagem local, ver §34 da missão)."""
+    """[§24, revisado para PERSISTÊNCIA DE SESSÃO] Verifica, sem derrubar a app em caso de
+    falha de rede, se o token ainda é válido no Supabase. Fail-open (assume válida) quando
+    o cliente está indisponível — a validação real de autorização continua sendo feita pelo
+    próprio Supabase a cada chamada (nunca confiamos só nesta checagem local, ver §34 da
+    missão).
+
+    O access_token é um JWT de vida curta (~1h por padrão do Supabase) — expirar é normal e
+    NÃO deve derrubar quem está com o navegador aberto. Antes de considerar a sessão
+    realmente expirada, tenta renová-la silenciosamente com o refresh_token (vida bem mais
+    longa); só quando o próprio refresh_token não é mais aceito (revogado, ou expirado de
+    verdade) é que a sessão termina — assim o login permanece ativo enquanto o navegador
+    continuar aberto, encerrando apenas quando o usuário sai ou fecha o navegador."""
     _cliente = obter_cliente()
     if _cliente is None:
         return False
     try:
         _resp = _cliente.auth.get_user(st.session_state.get("auth_access_token"))
-        return _resp is None or _resp.user is None
+        if _resp is not None and _resp.user is not None:
+            return False
     except Exception:
-        return True  # token claramente inválido/expirado -> trata como sessão expirada
+        pass  # access_token expirado/inválido -> tenta renovar com o refresh_token abaixo
+
+    _renov = auth_service.renovar_sessao(st.session_state.get("auth_refresh_token"))
+    if _renov.ok:
+        st.session_state["auth_access_token"] = _renov.dados["access_token"]
+        st.session_state["auth_refresh_token"] = _renov.dados["refresh_token"]
+        return False
+    return True  # refresh_token também inválido -> sessão realmente expirada
 
 
 # ==============================================================================
