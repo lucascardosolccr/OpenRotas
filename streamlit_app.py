@@ -59141,7 +59141,29 @@ if _secao == _SECOES[21]:   # tab_auditoria_completa
 
     with _aba_aud[3]:
         st.subheader("📚 Fontes de Dados Utilizadas")
-        st.info("Fontes: IBGE, ANA/SNIRH, ANTAQ, DNIT, ANTT, OSRM, FOSSGIS, Valhalla, IBGE BC250/BC100, Natural Earth 10m.")
+        # [UI-REENGENHARIA - Rodada 13] Mission UI/UX §40 ("central de auditoria... continua
+        # profundamente auditável"). Esta lista era um texto FIXO, digitado à mão — podia ficar
+        # desatualizada em relação ao catálogo real (inteligencia_geoespacial.sources_inventory),
+        # que já é a fonte única de verdade usada na aba própria "📖 Fontes de Dados". Uma trilha
+        # de auditoria que mostra um dado que pode ter ficado obsoleto é o oposto do que a missão
+        # pede — agora deriva do MESMO catálogo, nunca um texto solto por conta própria. O texto
+        # fixo original vira só o fallback defensivo (nunca quebra a aba).
+        try:
+            from inteligencia_geoespacial.sources_inventory import populate_sources as _popular_fontes_aud
+            _df_fontes_aud = _popular_fontes_aud().to_dataframe()
+            _orgaos_aud = sorted(_df_fontes_aud["Órgão"].dropna().unique())
+            st.caption(f"**{len(_df_fontes_aud)} fonte(s)** catalogada(s), de **{len(_orgaos_aud)} órgão(s)/provedor(es)**: "
+                       + ", ".join(_orgaos_aud) + ".")
+            st.caption("Catálogo completo — com modo de acesso real (API ao vivo / arquivo local / "
+                       "download sob demanda) e onde cada fonte é usada hoje no motor — na aba "
+                       "**📖 Fontes de Dados** (grupo 🧠 Inteligência).")
+            if st.button("📖 Abrir catálogo completo de Fontes de Dados", key="cta_aud_fontes"):
+                st.session_state["_pending_nav_grupo"] = "🧠 Inteligência"
+                st.session_state["_pending_nav_secao"] = _SECOES[16]
+                st.rerun()
+        except Exception:
+            logger.debug("[AUDIT-TAB] Falha ao carregar catálogo de fontes; usando fallback estático.", exc_info=True)
+            st.info("Fontes: IBGE, ANA/SNIRH, ANTAQ, DNIT, ANTT, OSRM, FOSSGIS, Valhalla, IBGE BC250/BC100, Natural Earth 10m.")
 
     with _aba_aud[4]:
         st.subheader("🔧 APIs Utilizadas")
