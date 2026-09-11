@@ -42640,6 +42640,25 @@ _SECAO_DESC = {
     _SECOES[22]: "Camadas geoespaciais oficiais do IBGE (BC250/BC100).",
 }
 
+# [UI-REENGENHARIA - Rodada 12] NAVEGAÇÃO PROGRAMÁTICA ("pular para"). Mission UI/UX §44 pede um
+# botão "[ Explorar inteligência geográfica ]" que leve o usuário DIRETO da tela de resultado para
+# a aba de referência correspondente — conectando o processamento à Inteligência, em vez de deixar
+# o usuário procurar sozinho no menu. Streamlit proíbe atribuir st.session_state[key] de um widget
+# DEPOIS que ele já foi instanciado nesta mesma execução — por isso o botão (que vive bem mais
+# abaixo no script, depois dos radios de navegação já terem rodado) nunca escreve nas chaves reais
+# (nav_grupo/nav_sec_gN) diretamente. Ele só grava um PEDIDO pendente e chama st.rerun(); aqui, ANTES
+# dos radios serem criados na nova execução, o pedido é aplicado nas chaves reais e descartado.
+if st.session_state.get("_pending_nav_grupo"):
+    _pnd_grupo = st.session_state.pop("_pending_nav_grupo")
+    if _pnd_grupo in _GRUPOS_NAV:
+        st.session_state["nav_grupo"] = _pnd_grupo
+        _pnd_idx = list(_GRUPOS_NAV).index(_pnd_grupo)
+        _pnd_secao = st.session_state.pop("_pending_nav_secao", None)
+        if _pnd_secao in [_SECOES[_i] for _i in _GRUPOS_NAV[_pnd_grupo]]:
+            st.session_state[f"nav_sec_g{_pnd_idx}"] = _pnd_secao
+    else:
+        st.session_state.pop("_pending_nav_secao", None)
+
 # div-âncora VAZIA e FECHADA no mesmo bloco: o CSS usa o seletor de irmão adjacente (+).
 # (A suíte me pegou abrindo a div num markdown e fechando em outro — HTML DESBALANCEADO, a mesma
 # classe de bug que me custou a 137ª. O invariante existe exatamente para isso.)
@@ -44389,6 +44408,18 @@ if _secao == _SECOES[0]:   # tab_individual
                                                   "rios, pontes, travessias, hidrovias e portos.")
                                     except Exception:
                                         logger.debug("[GEO-MAPA] Falha ao renderizar mapa de contexto (aditivo).", exc_info=True)
+
+                                # [UI-REENGENHARIA - Rodada 12] Mission UI/UX §44: "conecta diretamente a
+                                # aba Inteligência ao processamento" — um botão que leva da rota calculada
+                                # direto para a central de referência hidrográfica nacional, em vez de
+                                # deixar o usuário procurar sozinho no menu. Só aparece quando a rota tem
+                                # algo hidrográfico a explorar (nunca um CTA para uma seção vazia).
+                                if _ctx_gi.rios_detectados or _ctx_gi.corpos_dagua or _ctx_gi.travessias or _ctx_gi.hidrovias_proximas:
+                                    if st.button("🧠 Explorar Hidrografia Nacional (aba Inteligência)",
+                                                key="cta_intel_hidro_ind", use_container_width=True):
+                                        st.session_state["_pending_nav_grupo"] = "🧠 Inteligência"
+                                        st.session_state["_pending_nav_secao"] = _SECOES[17]
+                                        st.rerun()
                     except Exception:
                         logger.debug("[GEO-INTEL-AUTO] Falha no contexto geográfico individual (aditivo).", exc_info=True)
 
