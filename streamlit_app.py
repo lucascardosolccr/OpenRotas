@@ -938,6 +938,16 @@ st.markdown("""
         border-right: 1px solid var(--sf-3);
     }
     
+    /* [REDESIGN TOTAL - Rodada 5] st.radio (usado na navegação principal e em vários filtros da app)
+       nunca foi tematizado — o indicador de seleção usava o vermelho padrão do Streamlit (#FF4B4B),
+       destoando da marca azul (--brand) usada em botões/links/headers em todo o resto da app. Sem
+       config.toml de tema, o Streamlit aplica sua paleta padrão; a regra abaixo sobrescreve só a cor
+       do indicador (mission redesign §6 — "cada cor deve possuir função", §39 consistência visual
+       entre componentes nativos e o design system próprio). */
+    [data-testid="stRadio"] label:has(input:checked) > div:first-child {
+        background-color: var(--brand) !important;
+    }
+
     [data-testid="stMetric"] {
         background-color: var(--sf-2);
         border: 1px solid var(--sf-3);
