@@ -44235,8 +44235,49 @@ if _secao == _SECOES[0]:   # tab_individual
                                     st.caption("🚆 Ferrovias próximas: " + ", ".join(
                                         f.nome for f in _ctx_gi.ferrovias))
                                 if _ctx_gi.rios_detectados:
-                                    st.caption("🌊 Rios/córregos cruzados: " + ", ".join(
-                                        r.nome + (f" (bacia {r.bacia})" if r.bacia else "") for r in _ctx_gi.rios_detectados))
+                                    # [UI-REENGENHARIA - Rodada 9] Progressive disclosure (mission UI/UX
+                                    # §11 — exemplo literal da missão: "🌊 4 rios atravessados" → clique →
+                                    # lista → clique num rio → bacia/km/navegável/fonte/confiança). Antes,
+                                    # tudo isso era achatado numa única legenda ("Rio X (bacia Y), Rio Z...")
+                                    # e o resto dos campos que CruzamentoHidrografico já mede (distância do
+                                    # eixo, posição na rota, navegabilidade, regime, fonte, confiança,
+                                    # corroboração entre fontes) nunca aparecia na tela — dado real, só não
+                                    # mostrado. Agora: contagem no topo, um item por rio, detalhes completos
+                                    # só ao expandir aquele rio específico.
+                                    with st.expander(
+                                            f"🌊 {len(_ctx_gi.rios_detectados)} rio(s)/córrego(s) cruzado(s)",
+                                            expanded=False):
+                                        for _r in _ctx_gi.rios_detectados:
+                                            with st.expander(
+                                                    _r.nome + (f" — bacia {_r.bacia}" if _r.bacia else ""),
+                                                    expanded=False):
+                                                _rd = []
+                                                if _r.bacia:
+                                                    _rd.append(f"**Bacia:** {_r.bacia}")
+                                                if _r.distancia_eixo_km is not None:
+                                                    _rd.append(f"**Distância do eixo da rota:** {_r.distancia_eixo_km:.2f} km")
+                                                if _r.km_desde_origem is not None:
+                                                    _pos = f"**Posição na rota:** km {_r.km_desde_origem:.1f} desde a origem"
+                                                    if _r.km_ate_destino is not None:
+                                                        _pos += f" (km {_r.km_ate_destino:.1f} até o destino)"
+                                                    _rd.append(_pos)
+                                                if _r.navegavel:
+                                                    _rd.append(f"**Navegável:** {_r.navegavel}")
+                                                if _r.regime:
+                                                    _rd.append(f"**Regime:** {_r.regime}")
+                                                if _r.encoberto:
+                                                    _rd.append(f"**Trecho encoberto/canalizado:** {_r.encoberto}")
+                                                if _r.artificial:
+                                                    _rd.append(f"**Reservatório artificial:** {_r.artificial}")
+                                                if _r.salgada:
+                                                    _rd.append(f"**Água salgada:** {_r.salgada}")
+                                                if _r.dominialidade:
+                                                    _rd.append(f"**Dominialidade:** {_r.dominialidade}")
+                                                _fc = f"**Fonte:** {_r.fonte} · **Confiança:** {_r.confianca}"
+                                                if _r.confirmado_por:
+                                                    _fc += f" · confirmado por {_r.confirmado_por}"
+                                                _rd.append(_fc)
+                                                st.markdown("  \n".join(_rd))
                                 if _ctx_gi.sub_bacia:
                                     st.caption(f"🔖 Sub-bacia (código oficial SNIRH, sem nome catalogado nesta base): {_ctx_gi.sub_bacia}")
                                 if _ctx_gi.pontes:
