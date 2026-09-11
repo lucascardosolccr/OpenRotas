@@ -6768,9 +6768,15 @@ def _livro_razao_csv_bytes(ledger):
 
 _MNIL_CSS = """
 <style>
-.mnil{--ink:#0E2A3B;--surface:#F6F8F9;--card:#FFFFFF;--slate:#5B6B76;--line:#E3E9EC;
---route:#1F8A70;--route-soft:#E7F3EF;--attention:#E8A33D;--attention-soft:#FBF1DF;--alert:#C6553F;--alert-soft:#F7E7E3;
---r:14px;--shadow:0 1px 2px rgba(14,42,59,.04),0 6px 20px rgba(14,42,59,.06);color:var(--ink);font-family:'Inter',system-ui,sans-serif}
+/* [REDESIGN TOTAL - Rodada 3] Tokens retintados para o tema escuro da app (mission redesign
+   §6/§7 — "tudo deve parecer pertencer ao mesmo produto"). Estes cartões .mnil eram de uma
+   geração anterior, com paleta clara fixa (--card:#FFFFFF etc.) — sobre o fundo --sf-0 escuro
+   da app, apareciam como caixas brancas destoantes. Os valores abaixo mapeiam 1:1 para os
+   tokens --sf-N / --tx-N / --ok / --warn / --danger já usados no resto da app; nenhuma estrutura ou
+   layout mudou, só a paleta. */
+.mnil{--ink:#F9FAFB;--surface:#161A25;--card:#1E232F;--slate:#9CA3AF;--line:#2D3342;
+--route:#2ECC71;--route-soft:rgba(46,204,113,.16);--attention:#E67E22;--attention-soft:rgba(230,126,34,.18);--alert:#E74C3C;--alert-soft:rgba(231,76,60,.18);
+--r:14px;--shadow:0 1px 2px rgba(0,0,0,.25),0 6px 20px rgba(0,0,0,.35);color:var(--ink);font-family:'Inter',system-ui,sans-serif}
 .mnil *{box-sizing:border-box}
 .mnil .eyebrow{display:flex;align-items:center;gap:10px;margin:6px 2px 12px}
 .mnil .eyebrow .tick{width:26px;height:3px;background:var(--route);border-radius:2px;position:relative}
@@ -6788,8 +6794,8 @@ _MNIL_CSS = """
 .mnil .kpi .val small{font-size:15px;font-weight:600;color:var(--slate);margin-left:3px}
 .mnil .kpi .sub{margin-top:9px;font-size:11.5px;color:var(--slate)}
 .mnil .chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 8px;border-radius:999px;font-variant-numeric:tabular-nums}
-.mnil .chip.ok{background:var(--route-soft);color:#14624e}
-.mnil .chip.att{background:var(--attention-soft);color:#8a5a12}
+.mnil .chip.ok{background:var(--route-soft);color:#6EE7B7}
+.mnil .chip.att{background:var(--attention-soft);color:#F5B971}
 @media (max-width:760px){.mnil .grid,.mnil .grid.sec{grid-template-columns:repeat(2,1fr)}}
 </style>
 """
@@ -6900,19 +6906,19 @@ def _render_kpi_header_lote(df, resumo=None, tempo_seg=None):
 
 _MNIL_CSS_VEREDITO = """
 <style>
-.mnil .verdict{margin-top:8px;background:var(--card,#fff);border:1px solid var(--line,#E3E9EC);border-radius:14px;
-box-shadow:0 1px 2px rgba(14,42,59,.04),0 6px 20px rgba(14,42,59,.06);display:grid;grid-template-columns:1.25fr 1fr;overflow:hidden}
-.mnil .verdict .win{padding:20px 22px;background:linear-gradient(180deg,#fff,#f4faf8);border-right:1px solid var(--line,#E3E9EC);position:relative}
-.mnil .verdict .win::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--route,#1F8A70)}
-.mnil .verdict .tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#14624e;background:var(--route-soft,#E7F3EF);padding:4px 9px;border-radius:999px}
-.mnil .verdict h3{font-family:'Space Grotesk','Inter',sans-serif;font-weight:700;font-size:24px;margin:12px 0 2px;color:var(--ink,#0E2A3B)}
-.mnil .verdict .meta{font-size:12.5px;color:var(--slate,#5B6B76);line-height:1.5}
+.mnil .verdict{margin-top:8px;background:var(--card,#1E232F);border:1px solid var(--line,#2D3342);border-radius:14px;
+box-shadow:0 1px 2px rgba(0,0,0,.25),0 6px 20px rgba(0,0,0,.35);display:grid;grid-template-columns:1.25fr 1fr;overflow:hidden}
+.mnil .verdict .win{padding:20px 22px;background:linear-gradient(180deg,var(--card,#1E232F),var(--surface,#161A25));border-right:1px solid var(--line,#2D3342);position:relative}
+.mnil .verdict .win::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--route,#2ECC71)}
+.mnil .verdict .tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#6EE7B7;background:var(--route-soft,rgba(46,204,113,.16));padding:4px 9px;border-radius:999px}
+.mnil .verdict h3{font-family:'Space Grotesk','Inter',sans-serif;font-weight:700;font-size:24px;margin:12px 0 2px;color:var(--ink,#F9FAFB)}
+.mnil .verdict .meta{font-size:12.5px;color:var(--slate,#9CA3AF);line-height:1.5}
 .mnil .verdict .cmp{padding:18px 22px;display:flex;flex-direction:column;justify-content:center;gap:9px}
 .mnil .verdict .cmp .row{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
-.mnil .verdict .cmp .k{font-size:12px;color:var(--slate,#5B6B76)}
-.mnil .verdict .cmp .v{font-family:'Space Grotesk','Inter',sans-serif;font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink,#0E2A3B);text-align:right}
-.mnil .verdict .whatif{margin-top:10px;padding:10px 12px;background:var(--attention-soft,#FBF1DF);border-radius:10px;font-size:12px;color:#8a5a12}
-@media (max-width:760px){.mnil .verdict{grid-template-columns:1fr}.mnil .verdict .win{border-right:none;border-bottom:1px solid var(--line,#E3E9EC)}}
+.mnil .verdict .cmp .k{font-size:12px;color:var(--slate,#9CA3AF)}
+.mnil .verdict .cmp .v{font-family:'Space Grotesk','Inter',sans-serif;font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink,#F9FAFB);text-align:right}
+.mnil .verdict .whatif{margin-top:10px;padding:10px 12px;background:var(--attention-soft,rgba(230,126,34,.18));border-radius:10px;font-size:12px;color:#F5B971}
+@media (max-width:760px){.mnil .verdict{grid-template-columns:1fr}.mnil .verdict .win{border-right:none;border-bottom:1px solid var(--line,#2D3342)}}
 </style>
 """
 
@@ -7009,21 +7015,21 @@ def _render_veredito_card(d):
 
 _MNIL_CSS_STATUS = """
 <style>
-.mnil .status{border-radius:14px;padding:16px 18px;border:1px solid var(--line,#E3E9EC);
-box-shadow:0 1px 2px rgba(14,42,59,.04),0 6px 20px rgba(14,42,59,.06);position:relative;overflow:hidden;background:var(--card,#fff)}
+.mnil .status{border-radius:14px;padding:16px 18px;border:1px solid var(--line,#2D3342);
+box-shadow:0 1px 2px rgba(0,0,0,.25),0 6px 20px rgba(0,0,0,.35);position:relative;overflow:hidden;background:var(--card,#1E232F)}
 .mnil .status::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px}
-.mnil .status.ok::before{background:var(--route,#1F8A70)}
-.mnil .status.att::before{background:var(--attention,#E8A33D)}
-.mnil .status.err::before{background:var(--alert,#C6553F)}
-.mnil .status .hd{display:flex;align-items:center;gap:9px;font-family:'Space Grotesk','Inter',sans-serif;font-weight:600;font-size:16px;color:var(--ink,#0E2A3B)}
+.mnil .status.ok::before{background:var(--route,#2ECC71)}
+.mnil .status.att::before{background:var(--attention,#E67E22)}
+.mnil .status.err::before{background:var(--alert,#E74C3C)}
+.mnil .status .hd{display:flex;align-items:center;gap:9px;font-family:'Space Grotesk','Inter',sans-serif;font-weight:600;font-size:16px;color:var(--ink,#F9FAFB)}
 .mnil .status .badge{font-size:15px}
 .mnil .status .mets{margin-top:10px;display:flex;flex-wrap:wrap;gap:8px}
-.mnil .status .met{font-size:12.5px;color:var(--ink,#0E2A3B);background:var(--surface,#F6F8F9);border:1px solid var(--line,#E3E9EC);
+.mnil .status .met{font-size:12.5px;color:var(--ink,#F9FAFB);background:var(--surface,#161A25);border:1px solid var(--line,#2D3342);
 padding:4px 10px;border-radius:999px;font-variant-numeric:tabular-nums}
 .mnil .status .met b{font-weight:600}
 .mnil .status .blocos{margin-top:12px;display:flex;flex-direction:column;gap:8px}
-.mnil .status .bloco{font-size:12.5px;color:var(--slate,#5B6B76);line-height:1.5}
-.mnil .status .bloco b{color:var(--ink,#0E2A3B);font-weight:600;display:block;margin-bottom:1px}
+.mnil .status .bloco{font-size:12.5px;color:var(--slate,#9CA3AF);line-height:1.5}
+.mnil .status .bloco b{color:var(--ink,#F9FAFB);font-weight:600;display:block;margin-bottom:1px}
 </style>
 """
 
@@ -7085,7 +7091,7 @@ def _render_rodape_mnil(versao="", geracao=""):
         ger = f" · {geracao}ª geração" if geracao else ""
         return (
         "<style>"
-        ".mnil-foot{--ink:#0E2A3B;--slate:#5B6B76;--route:#1F8A70;--line:#E3E9EC;font-family:'Inter',system-ui,sans-serif;"
+        ".mnil-foot{--ink:#F9FAFB;--slate:#9CA3AF;--route:#2ECC71;--line:#2D3342;font-family:'Inter',system-ui,sans-serif;"
         "display:flex;align-items:center;justify-content:center;gap:10px;margin:26px auto 6px;padding:12px 16px;"
         "max-width:1080px;border-top:1px solid var(--line);color:var(--slate);font-size:11.5px;text-align:center;flex-wrap:wrap}"
         ".mnil-foot .g{width:22px;height:22px;border-radius:6px;background:linear-gradient(150deg,var(--route),#15607e);"
@@ -7119,20 +7125,20 @@ def _render_rodape_mnil(versao="", geracao=""):
 
 _MNIL_CSS_CB = """
 <style>
-.mnil .cbp{background:var(--card,#fff);border:1px solid var(--line,#E3E9EC);border-radius:14px;padding:16px 18px;
-box-shadow:0 1px 2px rgba(14,42,59,.04),0 6px 20px rgba(14,42,59,.06)}
-.mnil .cbp .hd{font-family:'Space Grotesk','Inter',sans-serif;font-weight:600;font-size:15px;color:var(--ink,#0E2A3B);margin-bottom:10px}
+.mnil .cbp{background:var(--card,#1E232F);border:1px solid var(--line,#2D3342);border-radius:14px;padding:16px 18px;
+box-shadow:0 1px 2px rgba(0,0,0,.25),0 6px 20px rgba(0,0,0,.35)}
+.mnil .cbp .hd{font-family:'Space Grotesk','Inter',sans-serif;font-weight:600;font-size:15px;color:var(--ink,#F9FAFB);margin-bottom:10px}
 .mnil .cbp table{width:100%;border-collapse:collapse;font-size:13px}
-.mnil .cbp th{text-align:left;color:var(--slate,#5B6B76);font-weight:500;font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;padding:6px 8px;border-bottom:1px solid var(--line,#E3E9EC)}
-.mnil .cbp td{padding:8px;border-bottom:1px solid var(--line,#E3E9EC);color:var(--ink,#0E2A3B);font-variant-numeric:tabular-nums}
+.mnil .cbp th{text-align:left;color:var(--slate,#9CA3AF);font-weight:500;font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;padding:6px 8px;border-bottom:1px solid var(--line,#2D3342)}
+.mnil .cbp td{padding:8px;border-bottom:1px solid var(--line,#2D3342);color:var(--ink,#F9FAFB);font-variant-numeric:tabular-nums}
 .mnil .cbp tr:last-child td{border-bottom:none}
 .mnil .cbp .pill{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:999px}
-.mnil .cbp .pill.ok{background:var(--route-soft,#E7F3EF);color:#14624e}
-.mnil .cbp .pill.att{background:var(--attention-soft,#FBF1DF);color:#8a5a12}
-.mnil .cbp .pill.err{background:var(--alert-soft,#F7E7E3);color:#8f3626}
+.mnil .cbp .pill.ok{background:var(--route-soft,rgba(46,204,113,.16));color:#6EE7B7}
+.mnil .cbp .pill.att{background:var(--attention-soft,rgba(230,126,34,.18));color:#F5B971}
+.mnil .cbp .pill.err{background:var(--alert-soft,rgba(231,76,60,.18));color:#FCA5A5}
 .mnil .cbp .skips{font-weight:600}
-.mnil .cbp .note{margin-top:11px;font-size:12px;color:var(--slate,#5B6B76);line-height:1.5}
-.mnil .cbp .note b{color:var(--ink,#0E2A3B)}
+.mnil .cbp .note{margin-top:11px;font-size:12px;color:var(--slate,#9CA3AF);line-height:1.5}
+.mnil .cbp .note b{color:var(--ink,#F9FAFB)}
 </style>
 """
 
