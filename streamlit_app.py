@@ -82,6 +82,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from functools import lru_cache as _lru_cache
+from auth import session_manager
 try:
     from cachetools import LRUCache as _CacheToolsLRU
     _CACHETOOLS_DISPONIVEL = True
@@ -1135,6 +1136,13 @@ st.markdown("""
     [data-ds-tip] { position: relative; cursor: help; border-bottom: 1px dotted var(--tx-4); }
 </style>
 """, unsafe_allow_html=True)
+
+# ==============================================================================
+# PORTÃO DE AUTENTICAÇÃO — bloqueia (st.stop()) todo o restante do script para quem
+# não estiver autenticado. Chamado aqui (depois do CSS, antes de qualquer conteúdo
+# real) para que a própria tela de login já receba o estilo visual da aplicação.
+# ==============================================================================
+session_manager.exigir_autenticacao()
 
 # ==============================================================================
 # DESIGN SYSTEM — Helpers de UI reutilizáveis [UX 2ª geração]
@@ -9772,10 +9780,11 @@ def _cache_set_seguro(cache, chave, valor, expire=2592000):
 
 # ==============================================================================
 # [JOB-RUNNER + OBSERVABILIDADE - 402a geração] ALICERCE (Rodada 1 da arquitetura híbrida).
-# Infraestrutura ADITIVA e INERTE: ainda NÃO é chamada pelo fluxo de roteamento — é a base onde,
-# nas próximas rodadas, plugaremos (a) o runner de background que tira o processamento do ciclo de
-# rerun/WebSocket e (b) o painel de observabilidade por rota via st.fragment. Zero-regressão: nada
-# existente muda de comportamento.
+# [ATUALIZADO - Missão 3, Rodada 23] O texto original dizia "ainda NÃO é chamada pelo fluxo de
+# roteamento" — desatualizado: o runner de background (405a/406a, `_alo_iniciar_job_background` /
+# `_alo_processar_background`) e o painel de observabilidade (`_obs_painel_rotas_fragment`) já estão
+# em produção. O único gap real encontrado na Rodada 23 era `_job_remover` nunca ser chamado (ver
+# `_alo_processar_background`) — corrigido.
 #
 #  • Registro de jobs THREAD-SAFE que SOBREVIVE aos reruns (singleton de processo via
 #    @st.cache_resource — mesmo padrão do EXECUTOR_GLOBAL). A thread de background escreverá aqui
@@ -10183,6 +10192,14 @@ def _alo_processar_background():
             st.session_state["alo_chunk_idx"] = _total
             st.session_state["alo_bg_on"] = False
             st.session_state["alo_fase"] = "finalizar"
+            # [JOB-RUNNER - Rodada 23] `_job_remover` (402ª geração) existia desde a fundação deste
+            # subsistema mas nunca era chamado: o registro de jobs é um singleton POR PROCESSO
+            # (@st.cache_resource, compartilhado entre TODAS as sessões/usuários do servidor), não
+            # por-sessão — sem remoção, cada estudo concluído deixa uma entrada permanente na memória
+            # do processo (vazamento real num deploy de longa duração, ex. Streamlit Community Cloud).
+            # Seguro aqui: os resultados já foram copiados para session_state acima, e o painel de
+            # observabilidade (_obs_painel_rotas_fragment) lê do SQLite por job_id, não deste registro.
+            _job_remover(_job)
             return "handoff"
         return "poll"
     except Exception:
@@ -21437,6 +21454,10 @@ def _diagnostico_divergencias_html(diag):
             return ""
         _r = diag.get("resumo", {})
         _analises = diag.get("analises") or []
+        # [DIVERGENCIA-XAI-3 - Rodada 22] Chama cedo (idempotente): antes, _montar_stage_b só rodava lá na
+        # frente (via _html_stage_b), DEPOIS dos "Pareceres técnicos" abaixo — então a["Motivo Granular"]
+        # nunca existia a tempo de aparecer no parecer de cada caso. Nenhuma outra ordem de campo muda.
+        _montar_stage_b(diag)
         _ag = diag.get("agregado") or diag  # aceita tanto o dict completo quanto o agregado direto
         if "resumo" not in _ag and "resumo" in diag:
             _ag = diag
@@ -21538,11 +21559,14 @@ def _diagnostico_divergencias_html(diag):
             _venc = a.get("Vencedor (Qualidade)", "—")
             _hip = a.get("Hipóteses") or []
             _hip_html = "".join(f"<li>{_he.escape(h)}</li>" for h in _hip)
+            _mg = a.get("Motivo Granular")
+            _mg_html = f'<div class="dv-caso-mg">🔎 {_he.escape(_mg)}</div>' if _mg else ""
             _pareceres += (
                 f'<div class="dv-caso" style="border-left:4px solid {_cor}">'
                 f'<div class="dv-caso-h"><b>{_he.escape(str(a.get("Município")))}/{_he.escape(str(a.get("UF")))}</b>'
                 f' · {_he.escape(str(a.get("Categoria")))} · <span class="dv-tag">Vantagem: {_he.escape(_venc)}</span></div>'
                 f'<div class="dv-caso-p">{_he.escape(a.get("Parecer Técnico", ""))}</div>'
+                f'{_mg_html}'
                 f'<div class="dv-caso-hip"><b>Hipóteses técnicas:</b><ul>{_hip_html}</ul></div>'
                 f'<div class="dv-caso-rec">{_he.escape(a.get("Recomendação", ""))}</div>'
                 f'</div>')
@@ -21574,6 +21598,7 @@ def _diagnostico_divergencias_html(diag):
             '.dv-caso-h{font-size:13px;color:#334155;margin-bottom:6px}'
             '.dv-tag{background:#eef2ff;color:#3730a3;padding:2px 8px;border-radius:12px;font-size:11px}'
             '.dv-caso-p{font-size:14px;line-height:1.6;color:#1f2937;margin:6px 0}'
+            '.dv-caso-mg{font-size:12px;color:#475569;margin:2px 0 6px;font-style:italic}'
             '.dv-caso-hip{font-size:12px;color:#475569;margin:6px 0}.dv-caso-hip ul{margin:4px 0 0 18px}'
             '.dv-caso-rec{font-size:13px;font-weight:600;color:#0f172a;margin-top:6px}'
             '</style>')
@@ -21654,6 +21679,10 @@ def _abas_diagnostico_divergencias(writer, diag):
         _wb = getattr(writer, "book", None)
         if _wb is None or not hasattr(_wb, "add_format"):
             return
+        # [DIVERGENCIA-XAI-3 - Rodada 22] Chama cedo (idempotente): antes, _montar_stage_b só rodava lá na
+        # frente (via _abas_stage_b), DEPOIS da aba "Diag - Divergencias" já escrita — então a coluna
+        # "Motivo Granular" (239ª) nunca chegava a existir a tempo de aparecer na planilha.
+        _montar_stage_b(diag)
         _analises = diag.get("analises") or []
         _res = diag.get("resumo", {}) or {}
         _ins = diag.get("insights", []) or []
@@ -21745,8 +21774,9 @@ def _abas_diagnostico_divergencias(writer, diag):
                          "Diferença Tempo (min)", "Balsa Aplicação", "Balsa Referência", "Acesso Aplicação",
                          "Acesso Referência", "Sinuosidade Aplicação (V/R)", "Sinuosidade Referência (V/R)",
                          "Motor Aplicação", "Motor Referência", "Divergência Motores (%)", "Categoria",
-                         "Índice Qualidade Aplicação", "Índice Qualidade Referência", "Vencedor (Qualidade)"]
-                _larg = [22, 5, 9, 20, 20, 14, 14, 11, 11, 12, 10, 10, 16, 16, 14, 14, 12, 12, 14, 24, 12, 12, 16]
+                         "Índice Qualidade Aplicação", "Índice Qualidade Referência", "Vencedor (Qualidade)",
+                         "Motivo Granular"]
+                _larg = [22, 5, 9, 20, 20, 14, 14, 11, 11, 12, 10, 10, 16, 16, 14, 14, 12, 12, 14, 24, 12, 12, 16, 42]
                 _ordi = sorted(_analises, key=lambda a: abs((a.get("Diferença (km)") or 0.0)
                                * (int(a.get("Inscritos") or 0) or 1)), reverse=True)
                 _last = _escrever_tabela(_ws, 0, _cols, _ordi, _larg)
@@ -21760,7 +21790,9 @@ def _abas_diagnostico_divergencias(writer, diag):
                             "risco operacional — por isso o 'Vencedor (Qualidade)' pode diferir de quem tem a menor "
                             "distância pura (ex.: uma rota 5 km maior, mas sem balsa, pode ser preferível). 'V/R' é a "
                             "razão viário/linha-reta (quanto maior, mais sinuoso/indireto). 'Divergência Motores (%)' "
-                            "alta sugere malhas cartográficas distintas entre os motores — candidata a auditoria.", 150)
+                            "alta sugere malhas cartográficas distintas entre os motores — candidata a auditoria. "
+                            "'Motivo Granular' atribui a diferença ao MOTOR quando aplicável (ex.: 'OSRM encontrou "
+                            "uma rota 12 km menor') e sinaliza motores distintos/alta divergência entre malhas.", 160)
         except Exception:
             pass
 
@@ -22431,6 +22463,12 @@ def _painel_divergencias_ui(diag, st):
                 _cc[1].metric("IQ aplicação", f"{a.get('Índice Qualidade Aplicação','—')}")
                 _cc[2].metric("IQ referência", f"{a.get('Índice Qualidade Referência','—')}")
                 st.markdown(a.get("Parecer Técnico", "—"))
+                # [FLUVIAL-NAVEGAVEL-WIRE / DIVERGENCIA-XAI-3 - Rodada 22] "Motivo Granular" (239ª) já era
+                # calculado por _montar_stage_b mas nunca era exibido em lugar nenhum — atribui a diferença
+                # ao MOTOR quando aplicável (§32/§40 da missão: explique a decisão, sinalize conflito de fontes).
+                _mg = a.get("Motivo Granular")
+                if _mg:
+                    st.caption(f"🔎 Motivo granular: {_mg}")
                 _hip = a.get("Hipóteses") or []
                 if _hip:
                     st.markdown("**Hipóteses técnicas:**")
@@ -24801,8 +24839,9 @@ def _rio_e_navegavel(nome_rio):
     Retorna (bool, confidence_score 0-100, detalhes)."""
     if not nome_rio:
         return False, 0, "sem nome"
-    
-    _nome_norm = "".join(ch for ch in unicodedata.normalize("NFD", str(nome_rio).lower()) 
+
+    import unicodedata
+    _nome_norm = "".join(ch for ch in unicodedata.normalize("NFD", str(nome_rio).lower())
                          if unicodedata.category(ch) != "Mn")
     _nome_norm = _nome_norm.replace("-", " ").replace(".", "").strip()
     
@@ -24844,8 +24883,9 @@ def _rio_tem_obstrucao(nome_rio):
     Retorna (bool, tipo, nome_obstrucao)."""
     if not nome_rio:
         return False, None, None
-    
-    _nome_norm = "".join(ch for ch in unicodedata.normalize("NFD", str(nome_rio).lower()) 
+
+    import unicodedata
+    _nome_norm = "".join(ch for ch in unicodedata.normalize("NFD", str(nome_rio).lower())
                          if unicodedata.category(ch) != "Mn")
     _nome_norm = _nome_norm.replace("-", " ").replace(".", "").strip()
     
@@ -24890,23 +24930,62 @@ def _fluvial_custo_com_navegabilidade(dist_fluvial_km, rio_nome, distancia_reta_
     """[FLUVIAL-CUSTO-NAVEGAVEL - 435ª] Calcula custo efetivo da rota fluvial considerando navegabilidade.
     Retorna custo efetivo (km equivalentes) ou None se inviável."""
     _tem_obs, _tipo, _nome_obs = _rio_tem_obstrucao(rio_nome)
-    
+
     if _tem_obs:
         return None  # Inviável - obstrução total
-    
+
     _score = _calcular_score_navegabilidade(rio_nome, dist_fluvial_km, tem_obstrucao=False)
-    
+
     if _score < 30:
         return None  # Confiança muito baixa
-    
+
     # Ajusta custo: score baixo = custo maior (penaliza incerteza)
     _fator_penalidade = 1.0 + (100 - _score) / 100.0  # 1.0 a 2.0
-    
+
     # Verifica se fluvial é realmente vantajoso vs reta
     if dist_fluvial_km > distancia_reta_km * 3.0:
         return None  # Fluvial muito sinuoso vs reta
-    
+
     return round(dist_fluvial_km * _fator_penalidade, 1)
+
+
+def _fluvial_custo_efetivo_caminho(rios, dist_total_km, distancia_reta_km):
+    """[FLUVIAL-NAVEGAVEL-WIRE - 436ª geração] Estende `_fluvial_custo_com_navegabilidade` para um
+    CAMINHO com vários rios (multi-hop, §12/§17 da missão): a navegabilidade de uma travessia é a do
+    seu ELO MAIS FRACO — um transbordo por 3 rios navegáveis e 1 riacho duvidoso continua duvidoso.
+
+    Regras (mesma semântica de `_fluvial_custo_com_navegabilidade`, nunca reimplementada):
+    1. Qualquer rio do caminho com obstrução CONHECIDA (barragem/cachoeira, `_rio_tem_obstrucao`)
+       -> inviável (None). Travessia física real bloqueada não pode virar vencedora.
+    2. Sem nenhum rio NOMEADO no caminho (aresta sem atributo `names` no grafo) -> sem evidência
+       para avaliar; passa por NEUTRO (fail-open honesto, como o resto do pipeline fluvial: ausência
+       de dado nunca vira rejeição arbitrária).
+    3. Caso contrário, o score de navegabilidade do caminho é o PIOR score entre os rios nomeados
+       (`_calcular_score_navegabilidade`); score < 30 (confiança muito baixa) -> inviável (None).
+    4. Muito sinuoso vs. a reta (> 3×) -> inviável (None), mesmo critério do custo de 1 rio.
+
+    Retorna (custo_efetivo_km ou None, pior_score ou None, obstrucao_info ou None). O km FÍSICO real
+    (`dist_total_km`) nunca é alterado no retorno — o custo penalizado serve SÓ para decidir elegibilidade
+    contra a medição vigente (nunca fabrica/infla o km reportado ao usuário quando a rota é adotada)."""
+    if dist_total_km > max(0.0, float(distancia_reta_km or 0.0)) * 3.0:
+        return None, None, None
+
+    for _rio in (rios or []):
+        _tem_obs, _tipo_obs, _nome_obs = _rio_tem_obstrucao(_rio)
+        if _tem_obs:
+            return None, 0, {"tipo": _tipo_obs, "nome": _nome_obs, "rio": _rio}
+
+    _rios_nomeados = [r for r in (rios or []) if r]
+    if not _rios_nomeados:
+        return round(float(dist_total_km), 1), None, None  # sem evidência -> neutro, não bloqueia
+
+    _pior_score = min(_calcular_score_navegabilidade(_r, dist_total_km, tem_obstrucao=False)
+                       for _r in _rios_nomeados)
+    if _pior_score < 30:
+        return None, _pior_score, None
+
+    _fator_penalidade = 1.0 + (100 - _pior_score) / 100.0  # 1.0 a 2.0
+    return round(float(dist_total_km) * _fator_penalidade, 1), _pior_score, None
 
 
 # =============================================================================
@@ -25034,7 +25113,9 @@ def _fluvial_sweep_otimizado(resultados, coords_f, g, topk_map=None, max_pares=3
         
         _out = {}
         _tested = 0
-        
+        _navegabilidade_aud = {}
+        _bloqueados_navegabilidade = 0
+
         for _excesso, _r in _defeats_sorted:
             if _tested >= max_pares:
                 break
@@ -25112,18 +25193,47 @@ def _fluvial_sweep_otimizado(resultados, coords_f, g, topk_map=None, max_pares=3
                 _fr = _fluvial_rota_com_transbordos(_la, _lo, _hlat, _hlon, snap_max_km=30.0)
                 if not _fr or _fr.get("km") is None:
                     continue
-                
+
                 _fk = float(_fr["km"])
                 _so = float(_fr.get("snap_o_km", 0) or 0)
                 _sd = float(_fr.get("snap_d_km", 0) or 0)
                 _total = _fk + _so + _sd
-                
-                if _ant is not None and _total >= float(_ant) - 1e-9:
+
+                # [FLUVIAL-NAVEGAVEL-WIRE - 436ª geração] Antes desta rodada, a varredura adotava
+                # QUALQUER rota multi-hop estritamente menor — inclusive por riachos/córregos sem
+                # navegabilidade real (o merge Natural Earth 10m da 433ª geração encheu o grafo de
+                # cursos d'água pequenos) ou por rios com barragem/cachoeira CONHECIDA bloqueando a
+                # travessia (§17: "decisão baseada em evidência, não regra simplista"). A camada de
+                # navegabilidade (435ª) existia mas nunca era chamada — dado pronto e não usado (§24).
+                # Elo mais fraco do caminho decide: obstrução conhecida ou confiança muito baixa
+                # bloqueia por completo; confiança intermediária exige vantagem extra (custo efetivo
+                # penalizado) antes de destronar a medição vigente. O km REPORTADO nunca é inflado —
+                # só a elegibilidade usa o custo penalizado.
+                _custo_efetivo, _nav_score, _obstrucao = _fluvial_custo_efetivo_caminho(
+                    _fr.get("rios") or [], _total, _reta)
+                if _custo_efetivo is None:
+                    _bloqueados_navegabilidade += 1
                     continue
-                
+
+                if _ant is not None and _custo_efetivo >= float(_ant) - 1e-9:
+                    continue
+
                 _out[(_o, _hub)] = (_total, 0, "Nao", "Nao", "", "fluvial-multi-hop")
+                _navegabilidade_aud[(_o, _hub)] = {
+                    "score": _nav_score, "rios": _fr.get("rios") or [],
+                    "custo_efetivo_km": _custo_efetivo, "km_real": _total,
+                }
                 _tested += 1
-        
+
+        if _bloqueados_navegabilidade:
+            logger.warning("[FLUVIAL-SWEEP-OTIMIZADO] %d candidato(s) rejeitado(s) por navegabilidade "
+                           "insuficiente/obstrução conhecida (nunca adotados como vencedor).",
+                           _bloqueados_navegabilidade)
+        if _navegabilidade_aud:
+            try:
+                st.session_state['fluvial_navegabilidade_aud'] = _navegabilidade_aud
+            except Exception:
+                pass
         return _out
         
     except Exception as _e:
@@ -30217,9 +30327,18 @@ def _fluvial_para_resgate(pares, resultados, coords_f=None, g=None, limite_km=25
                 if not _frr or not _frr.get("km"):
                     continue
                 _fk = float(_frr["km"])
-                if _fk <= 0 or _fk >= _cm:
-                    continue   # só adota estritamente menor (conservador)
+                if _fk <= 0:
+                    continue
                 _rios = _frr.get("rios") or []
+                # [FLUVIAL-NAVEGAVEL-WIRE - 436ª geração, Rodada 21] mesma lacuna corrigida no sweep
+                # otimizado (Rodada 20) também existia aqui: a rota fluvial direta/snap-largo (426ª/432ª)
+                # adotava por "estritamente menor km" sem checar navegabilidade real dos rios nem obstrução
+                # (barragem/cachoeira) — reusa a MESMA função pura `_fluvial_custo_efetivo_caminho` (elo
+                # mais fraco do caminho decide; sem rio nomeado passa neutro, fail-open honesto).
+                _reta_fd = _haversine_fluv((_lof, _laf), (_lndf, _ldf))
+                _custo_ef_fd, _nav_score_fd, _obstr_fd = _fluvial_custo_efetivo_caminho(_rios, _fk, _reta_fd)
+                if _custo_ef_fd is None or _custo_ef_fd >= _cm:
+                    continue   # obstrução conhecida, confiança muito baixa, sinuoso demais, ou não vantajoso
                 if (_frr.get("snap_km") or 0.0) > (float(snap_max_km) + 1e-9):
                     _fonte_fd = "fluvial-direta-largo"
                 else:
@@ -40618,6 +40737,20 @@ except Exception:
     logger.error("[DEV-ABOUT] Falha ao exibir apresentação na home — ignorada", exc_info=True)
 
 with st.sidebar:
+    # [AUTH] Usuário logado + logout — visível em toda a aplicação, já que o portão
+    # exigir_autenticacao() garante que ninguém chega até aqui sem sessão válida.
+    _auth_user = session_manager.usuario_atual()
+    if _auth_user:
+        st.caption(f"👤 {_auth_user['email']}")
+        _auth_c1, _auth_c2 = st.columns(2)
+        if _auth_c1.button("Perfil", key="_auth_btn_perfil", use_container_width=True):
+            session_manager.abrir_perfil()
+            st.rerun()
+        if _auth_c2.button("Sair", key="_auth_btn_logout", use_container_width=True):
+            session_manager.encerrar_sessao()
+            st.rerun()
+        st.markdown("---")
+
     # [OFFLINE - 144ª geração] Controle do curto-circuito oficial. Ligado por padrão porque a sede do
     # IBGE é a coordenada OFICIAL, determinística e auditável — e porque a nuvem, nesses casos, era
     # chamada 3× para chegar a um ponto ~1-2 km ao lado do que já estava em memória.

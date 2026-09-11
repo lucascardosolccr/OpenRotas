@@ -1586,7 +1586,10 @@ def validar():
     _stub_flag = {"largo": True}
     def _rota_stub_432(lat_o, lon_o, lat_d, lon_d, limite_km=2500, snap_max_km=8.0):
         if _stub_flag["largo"] and float(snap_max_km) >= 30.0:
-            return {"km": 20.0, "rios": ["Rio Sintético"], "snap_km": 25.0,
+            # [FLUVIAL-NAVEGAVEL-WIRE - Rodada 21] "rios" vazio de propósito: este teste valida o MECANISMO
+            # de snap largo/custo honesto (432a), ortogonal à navegabilidade (436a, testada isoladamente na
+            # seção 25/25b) — sem rio nomeado, o gate de navegabilidade passa NEUTRO (fail-open honesto).
+            return {"km": 20.0, "rios": [], "snap_km": 25.0,
                     "snap_o_km": 10.0, "snap_d_km": 15.0, "path_lonlat": [[lon_o, lat_o], [lon_d, lat_d]]}
         return None
     _rota_orig_432 = m._fluvial_rota_real_sob_demanda
@@ -1619,6 +1622,20 @@ def validar():
                                   snap_max_km=8.0, snap_max_km_largo=8.0) == {})
     check("SNAP-EXPANDIDO: fail-open de argumentos (None) mantém comportamento da 426ª",
           m._fluvial_para_resgate(None, None, None, g=_g_432) == {})
+
+    # [FLUVIAL-NAVEGAVEL-WIRE - Rodada 21] mesmo gate de navegabilidade da 434ª/sweep otimizado (Rodada 20)
+    # agora também protege o FLUVIAL-ROTA-DIRETA/SNAP-EXPANDIDO (426ª/432ª): rio com obstrução conhecida
+    # (barragem/cachoeira) NUNCA vence, mesmo com km estritamente menor e snap dentro da banda.
+    def _rota_stub_obstruida(lat_o, lon_o, lat_d, lon_d, limite_km=2500, snap_max_km=8.0):
+        if float(snap_max_km) >= 30.0:
+            return {"km": 20.0, "rios": ["Itaipu"], "snap_km": 25.0,
+                    "snap_o_km": 10.0, "snap_d_km": 15.0, "path_lonlat": [[lon_o, lat_o], [lon_d, lat_d]]}
+        return None
+    m._fluvial_rota_real_sob_demanda = _rota_stub_obstruida
+    check("NAVEGAVEL-WIRE em FLUVIAL-ROTA-DIRETA: rio com barragem conhecida (Itaipu) NUNCA vence, mesmo "
+          "km estritamente menor (45 < 53)",
+          m._fluvial_para_resgate([("Ribeirinho", "Ribeirinha")], _res_432, _coords_432, g=_g_432,
+                                  snap_max_km=8.0, snap_max_km_largo=30.0) == {})
     m._fluvial_rota_real_sob_demanda = _rota_orig_432
 
     print("== 23) Melhoria4-451 (M1 resgate-dirigido / M3 forense-universo / M5 qualidade-matriz / M4 2ª opinião) ==")
@@ -1705,6 +1722,98 @@ def validar():
           m._n_candidatos_adaptativo("GO", _esp_453) < 60)
     check("MATRIZ-ADAPTATIVA: resposta sempre dentro do intervalo [_min, _max]",
           20 <= m._n_candidatos_adaptativo("MG", _den_453) <= 240)
+
+    print("== 25) FLUVIAL-NAVEGAVEL-WIRE 436ª (navegabilidade real trava falsa vitória fluvial) ==")
+    # A camada de navegabilidade (435ª geração) existia mas nunca era chamada pela varredura fluvial
+    # (434ª) — esta rodada fecha essa lacuna (§17/§24 da missão): elo mais fraco do caminho decide.
+    check("NAVEGAVEL: rio grande conhecido (Amazonas) é navegável com confiança alta",
+          m._rio_e_navegavel("Amazonas") == (True, 95, "rio navegavel conhecido (ANA/ANTAQ)"))
+    check("NAVEGAVEL: riacho pequeno é marcado como NÃO navegável",
+          m._rio_e_navegavel("Riacho Seco")[0] is False)
+    check("NAVEGAVEL: sem nome -> não navegável, confiança 0",
+          m._rio_e_navegavel(None) == (False, 0, "sem nome"))
+    check("OBSTRUCAO: barragem conhecida (Itaipu) é detectada",
+          m._rio_tem_obstrucao("Itaipu")[0] is True)
+    check("OBSTRUCAO: rio sem obstrução conhecida -> (False, None, None)",
+          m._rio_tem_obstrucao("Rio Qualquer Sem Barragem") == (False, None, None))
+    check("SCORE: obstrução conhecida derruba o score para quase zero",
+          m._calcular_score_navegabilidade("Amazonas", 50.0, tem_obstrucao=True) <
+          m._calcular_score_navegabilidade("Amazonas", 50.0, tem_obstrucao=False))
+    check("CUSTO-1RIO: barragem -> inviável (None)",
+          m._fluvial_custo_com_navegabilidade(50.0, "Itaipu", 40.0) is None)
+    check("CUSTO-1RIO: rio navegável grande -> custo efetivo perto do km real (penalidade mínima)",
+          m._fluvial_custo_com_navegabilidade(50.0, "Amazonas", 40.0) < 55.0)
+
+    print("== 25b) FLUVIAL-NAVEGAVEL-WIRE — caminho multi-hop (elo mais fraco) ==")
+    check("CAMINHO: obstrução em QUALQUER rio do caminho bloqueia (mesmo com rios bons antes/depois)",
+          m._fluvial_custo_efetivo_caminho(["Amazonas", "Itaipu", "Tocantins"], 50.0, 40.0)[0] is None)
+    check("CAMINHO: sem rios nomeados -> passa NEUTRO (fail-open honesto, nunca bloqueia por ausência de dado)",
+          m._fluvial_custo_efetivo_caminho([], 50.0, 40.0) == (50.0, None, None))
+    check("CAMINHO: só riachos pequenos -> confiança muito baixa -> inviável (None)",
+          m._fluvial_custo_efetivo_caminho(["Riacho Seco", "Corrego Fundo"], 50.0, 40.0)[0] is None)
+    check("CAMINHO: rio grande conhecido -> custo efetivo muito próximo do km real (alta confiança)",
+          abs(m._fluvial_custo_efetivo_caminho(["Amazonas"], 50.0, 40.0)[0] - 50.0) < 3.0)
+    check("CAMINHO: elo mais fraco de ['Amazonas','Riacho Seco'] é o riacho -> mesmo resultado do riacho sozinho",
+          m._fluvial_custo_efetivo_caminho(["Amazonas", "Riacho Seco"], 50.0, 40.0)[0] ==
+          m._fluvial_custo_efetivo_caminho(["Riacho Seco"], 50.0, 40.0)[0])
+    check("CAMINHO: sinuosidade extrema (>3x a reta) é inviável mesmo com rio navegável bom",
+          m._fluvial_custo_efetivo_caminho(["Amazonas"], 200.0, 40.0)[0] is None)
+    check("CAMINHO: score reportado é o PIOR entre os rios nomeados do caminho",
+          m._fluvial_custo_efetivo_caminho(["Amazonas", "Rio Grande"], 50.0, 40.0)[1] is not None)
+
+    print("== 26) DIVERGENCIA-XAI-3 — Motivo Granular agora É EXIBIDO (Rodada 22) ==")
+    # [ACHADO] a["Motivo Granular"] era calculado por _montar_stage_b (239ª) mas nunca aparecia em nenhuma
+    # das 3 superfícies (tela/HTML/Excel) — nem a própria função _motivo_granular tinha teste. Esta seção
+    # fecha as duas lacunas: cobre a função pura e o efeito colateral (mutação) de _montar_stage_b.
+    _mg1 = m._motivo_granular({"Vencedor (Qualidade)": "Referência", "Diferença (km)": 12.4,
+                               "Motor Aplicação": "google", "Motor Referência": "osrm"})
+    check("MOTIVO-GRANULAR: referência menor -> atribui ao motor da referência (OSRM) com 'km menor'",
+          "OSRM" in _mg1 and "12 km menor" in _mg1 and "referência" in _mg1)
+    check("MOTIVO-GRANULAR: motores distintos (Google×OSRM) aparece como hipótese extra",
+          "Google" in _mg1 and "OSRM" in _mg1)
+    _mg2 = m._motivo_granular({"Vencedor (Qualidade)": "Aplicação", "Diferença (km)": -8.0,
+                               "Motor Aplicação": "valhalla", "Motor Referência": "valhalla"})
+    check("MOTIVO-GRANULAR: aplicação menor -> atribui ao motor da aplicação (Valhalla)",
+          "Valhalla" in _mg2 and "8 km menor" in _mg2 and "aplicação" in _mg2)
+    check("MOTIVO-GRANULAR: mesmo motor nos dois lados -> NÃO aponta 'motores distintos'",
+          "motores distintos" not in _mg2)
+    _mg3 = m._motivo_granular({"Vencedor (Qualidade)": "Empate", "Diferença (km)": 0.3})
+    check("MOTIVO-GRANULAR: sem vencedor claro -> 'diferença dentro do erro esperado entre fontes'",
+          _mg3 == "diferença dentro do erro esperado entre fontes")
+    _mg4 = m._motivo_granular({"Vencedor (Qualidade)": "Referência", "Diferença (km)": 5.0,
+                               "Categoria": "Dependência de balsa"})
+    check("MOTIVO-GRANULAR: categoria com 'balsa' soma a hipótese de dependência de travessia",
+          "dependência de balsa" in _mg4)
+
+    _diag_mg = {"analises": [{"Vencedor (Qualidade)": "Referência", "Diferença (km)": 10.0,
+                              "Motor Aplicação": "google", "Motor Referência": "osrm",
+                              "Categoria": "Diferença por sinuosidade"}]}
+    m._montar_stage_b(_diag_mg)
+    check("MONTAR-STAGE-B: popula 'Motivo Granular' em cada análise (antes, ficava calculado e nunca lido)",
+          bool(_diag_mg["analises"][0].get("Motivo Granular")))
+    _mg_antes = _diag_mg["analises"][0]["Motivo Granular"]
+    m._montar_stage_b(_diag_mg)  # idempotente: 2ª chamada não recalcula nem quebra
+    check("MONTAR-STAGE-B: idempotente (_stage_b) — 2ª chamada preserva o mesmo Motivo Granular",
+          _diag_mg["analises"][0]["Motivo Granular"] == _mg_antes)
+
+    print("== 27) JOB-RUNNER — _job_remover fecha o vazamento do registro process-wide (Rodada 23) ==")
+    # [ACHADO] _obter_registro_jobs() é @st.cache_resource — singleton POR PROCESSO, compartilhado entre
+    # TODAS as sessões/usuários do servidor. _job_remover existia desde a fundação (402ª) mas nunca era
+    # chamado: cada estudo concluído deixava uma entrada permanente na memória do processo. Corrigido em
+    # _alo_processar_background (chama _job_remover logo após capturar os resultados no handoff).
+    _jid_27 = "teste-job-rodada23"
+    m._job_remover(_jid_27)  # limpa resíduo de execução anterior, se houver (isolamento do teste)
+    check("JOB-RUNNER: job recém-criado aparece no registro", m._job_criar(_jid_27, total=3, etapa="fila")
+          and m._job_status(_jid_27) is not None)
+    check("JOB-RUNNER: _job_concluir atualiza o status sem remover do registro",
+          m._job_concluir(_jid_27, "concluido", "ok") and m._job_status(_jid_27) is not None
+          and m._job_status(_jid_27).get("status") == "concluido")
+    check("JOB-RUNNER: _job_remover remove o job do registro (fecha o vazamento)",
+          m._job_remover(_jid_27) and m._job_status(_jid_27) is None)
+    check("JOB-RUNNER: _job_remover em job inexistente é defensivo (True, nunca levanta)",
+          m._job_remover("id-que-nunca-existiu-" + _jid_27) is True)
+    check("JOB-RUNNER: registro removido não reaparece sozinho (status permanece None)",
+          m._job_status(_jid_27) is None)
 
     print()
     print("=" * 70)
