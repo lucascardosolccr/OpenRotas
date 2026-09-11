@@ -33553,6 +33553,33 @@ def _mapa_leaflet_contexto_geografico(ctx, lat_o, lon_o, lat_d, lon_d, nome_orig
     _n_rod = len(ctx.rodovias if ctx else [])
     _n_ferro = len(ctx.ferrovias if ctx else [])
 
+    # [UI-REENGENHARIA - Rodada 11] LEGENDA — mission UI/UX §21 ("mapas devem ser primeira
+    # classe... utilize legenda"). A classe CSS .legenda já existia no <style> deste mapa desde
+    # a Rodada 9, mas nunca chegou a ser instanciada no HTML — um mapa com 7 camadas coloridas
+    # e nenhuma chave para decifrar as cores. Só entram itens de categorias com pelo menos 1
+    # feição (nunca lista uma camada vazia — mesmo princípio de "nunca fabricar" já usado nos
+    # popups e no controle de camadas acima).
+    _legenda_itens = [("#2563eb", "Rota")]
+    if _n_rios:
+        _legenda_itens.append(("#0891b2", f"Rios/corpos d'água ({_n_rios})"))
+    if _n_pontes:
+        _legenda_itens.append(("#78350f", f"Pontes ({_n_pontes})"))
+    if _n_trav:
+        _legenda_itens.append(("#f97316", f"Travessias ({_n_trav})"))
+    if _n_hidro:
+        _legenda_itens.append(("#1d4ed8", f"Hidrovias ({_n_hidro})"))
+    if _n_portos:
+        _legenda_itens.append(("#7c3aed", f"Portos/terminais ({_n_portos})"))
+    if _n_rod:
+        _legenda_itens.append(("#059669", f"Rodovias ({_n_rod})"))
+    if _n_ferro:
+        _legenda_itens.append(("#57534e", f"Ferrovias ({_n_ferro})"))
+    # Rótulos são todos fixos/autorais (nunca dado externo) — não passam por _escapar_js
+    # (que escapa aspas com barra invertida, certo para JS mas errado dentro de HTML puro).
+    _legenda_html = "".join(
+        f'<div><span style="background:{_cor}"></span>{_rotulo}</div>'
+        for _cor, _rotulo in _legenda_itens)
+
     html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -33565,6 +33592,7 @@ border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.2);font-family:system-ui,sans
 border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.2);font-family:system-ui,sans-serif;font-size:13px;max-width:90%">
 <b>🧠 Contexto Geográfico da Rota</b><br>
 <span style="color:#16a34a">●</span> {_no} &nbsp;→&nbsp; <span style="color:#dc2626">●</span> {_nd}</div>
+<div class="legenda">{_legenda_html}</div>
 <div id="map" style="position:relative"><div style="position:absolute;top:0;left:0;right:0;bottom:0;z-index:0;
 display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;text-align:center;
 font-family:system-ui,Arial,sans-serif;color:#0E2A3B;background:#f4f6f8;"><div>
