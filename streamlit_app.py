@@ -45992,16 +45992,22 @@ if _secao == _SECOES[1]:   # tab_processamento
                 else:
                     st.markdown("#### ⚙️ Processamento Contínuo em Andamento")
                     st.progress(min(1.0, _pct))
+                    # [REDESIGN TOTAL - Rodada 8] 8 métricas simultâneas durante um processo que reroda a cada
+                    # poucos segundos era "informação demais" para o momento (mission redesign §29/§47) — as 4
+                    # que respondem "quanto falta, e quando termina" ficam sempre visíveis; as 4 mais técnicas
+                    # (redundantes com essas, ou só curiosidade) vão para um expander recolhido. Nada foi
+                    # removido, só reagrupado por importância.
                     _mon1, _mon2, _mon3, _mon4 = st.columns(4)
                     _mon1.metric("Processados", f"{_feitos:,} / {_total:,}", help="Rotas únicas já processadas / total.")
-                    _mon2.metric("Restantes", f"{_restantes:,}", help="Rotas únicas ainda pendentes.")
-                    _mon3.metric("Concluído", f"{_pct*100:.1f}%", help="Percentual concluído.")
-                    _mon4.metric("Lote Atual", f"{_chunk_atual_num} / {_total_chunks}", help="Chunk atual / total de chunks.")
-                    _mon5, _mon6, _mon7, _mon8 = st.columns(4)
-                    _mon5.metric("Tempo Decorrido", _formatar_duracao(_elapsed), help="Tempo desde o início do processamento.")
-                    _mon6.metric("Velocidade", f"{_taxa:.1f} rotas/s", help="Velocidade média de processamento.")
-                    _mon7.metric("Rotas/min", f"{_taxa*60:.0f}", help="Rotas processadas por minuto.")
-                    _mon8.metric("Tempo Restante (ETA)", _formatar_duracao(_eta_seg) if _taxa > 0 else "calculando...", help="Estimativa para concluir, baseada na velocidade atual.")
+                    _mon2.metric("Concluído", f"{_pct*100:.1f}%", help="Percentual concluído.")
+                    _mon3.metric("Velocidade", f"{_taxa:.1f} rotas/s", help="Velocidade média de processamento.")
+                    _mon4.metric("Tempo Restante (ETA)", _formatar_duracao(_eta_seg) if _taxa > 0 else "calculando...", help="Estimativa para concluir, baseada na velocidade atual.")
+                    with st.expander("🔧 Detalhes técnicos do processamento", expanded=False):
+                        _mon5, _mon6, _mon7, _mon8 = st.columns(4)
+                        _mon5.metric("Restantes", f"{_restantes:,}", help="Rotas únicas ainda pendentes.")
+                        _mon6.metric("Lote Atual", f"{_chunk_atual_num} / {_total_chunks}", help="Chunk atual / total de chunks.")
+                        _mon7.metric("Tempo Decorrido", _formatar_duracao(_elapsed), help="Tempo desde o início do processamento.")
+                        _mon8.metric("Rotas/min", f"{_taxa*60:.0f}", help="Rotas processadas por minuto.")
                     st.caption("🔄 O processamento avança automaticamente. **Não é necessário clicar novamente** — cada lote continua sozinho até o fim. "
                                "Você pode cancelar a qualquer momento no botão acima.")
                 
