@@ -1,0 +1,16 @@
+# [REDESIGN TOTAL - Rodada 11] A app nunca teve este arquivo — sem ele, o Streamlit resolve seu
+# tema INTERNO (independente do CSS customizado da app) para o padrão claro, e usa essa mesma
+# resolução para tematizar automaticamente componentes que não são estilizáveis via CSS puro, como
+# os ~32 gráficos Plotly ao vivo (st.plotly_chart(..., theme="streamlit"), o padrão): fundo e cores
+# de eixo/grade/legenda claros, destoando do fundo --sf-0 escuro do resto da app (mesma classe de
+# defeito do .mnil, corrigido na Rodada 3). Os valores abaixo espelham exatamente os tokens já
+# definidos em streamlit_app.py (--sf-0/--sf-2/--tx-1/--brand) para que os componentes nativos
+# (gráficos, e qualquer outro elemento não coberto pelo CSS customizado) fiquem consistentes com o
+# resto da identidade visual, em vez de depender da preferência de cor do navegador do visitante.
+[theme]
+base = "dark"
+primaryColor = "#3B82F6"
+backgroundColor = "#0E1117"
+secondaryBackgroundColor = "#1E232F"
+textColor = "#F9FAFB"
+font = "sans serif"

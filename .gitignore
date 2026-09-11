@@ -6,7 +6,8 @@
 # =====================================================================================
 
 # ---- Segredos (Streamlit Cloud / local) ----
-.streamlit/
+.streamlit/*
+!.streamlit/config.toml
 secrets.toml
 *.env
 .env.*
