@@ -711,55 +711,6 @@ st.markdown("""
         --sh-2: 0 4px 14px rgba(0,0,0,.35);
     }
 
-    /* ---------- NAVEGAÇÃO LATERAL (corrige a regressão que EU criei na 142ª) ----------
-       Ao trocar st.tabs por um radio horizontal de 13 itens, os rótulos quebravam em 3-4
-       linhas — feio e difícil de escanear. Agora é uma navegação VERTICAL na barra lateral,
-       o padrão de Linear/Notion/Azure Portal: 13 itens cabem, cada um vira um alvo grande,
-       e o estado ativo é óbvio. A renderização preguiçosa (o motivo técnico da 142ª) é
-       preservada intacta. */
-    [data-testid="stSidebar"] div[role="radiogroup"] { gap: 2px; }
-    [data-testid="stSidebar"] div[role="radiogroup"] > label {
-        width: 100%;
-        padding: var(--sp-2) var(--sp-3);
-        border-radius: var(--r-sm);
-        border-left: 3px solid transparent;
-        transition: background .12s ease, border-color .12s ease;
-        cursor: pointer;
-    }
-    [data-testid="stSidebar"] div[role="radiogroup"] > label:hover {
-        background: var(--sf-2);
-    }
-    [data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) {
-        background: var(--sf-2);
-        border-left-color: var(--brand);
-    }
-    [data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) p {
-        color: var(--tx-1) !important;
-        font-weight: 600 !important;
-    }
-    [data-testid="stSidebar"] div[role="radiogroup"] input { display: none; }
-    [data-testid="stSidebar"] div[role="radiogroup"] p {
-        font-size: var(--fs-md) !important;
-        color: var(--tx-3);
-    }
-
-    /* — cabeçalhos de grupo injetados nas posições da navegação (ordem determinística) — */
-    [data-testid="stSidebar"] div[role="radiogroup"] > label:nth-of-type(1)::before { content: "ESTUDAR O DESLOCAMENTO"; }
-    [data-testid="stSidebar"] div[role="radiogroup"] > label:nth-of-type(3)::before { content: "DECIDIR O LOCAL DE PROVA"; }
-    [data-testid="stSidebar"] div[role="radiogroup"] > label:nth-of-type(6)::before { content: "ANALISAR"; }
-    [data-testid="stSidebar"] div[role="radiogroup"] > label:nth-of-type(9)::before { content: "APRENDER"; }
-    [data-testid="stSidebar"] div[role="radiogroup"] > label:nth-of-type(11)::before { content: "SISTEMA"; }
-    [data-testid="stSidebar"] div[role="radiogroup"] > label::before {
-        display: block;
-        font-size: 10px;
-        font-weight: 700;
-        letter-spacing: .08em;
-        color: var(--tx-3);
-        opacity: .65;
-        margin: var(--sp-4) 0 var(--sp-2) 0;
-    }
-    [data-testid="stSidebar"] div[role="radiogroup"] > label:nth-of-type(1)::before { margin-top: var(--sp-2); }
-
     /* ---------- CARTÃO DE ONBOARDING ---------- */
     .ds-onboard {
         background: linear-gradient(135deg, var(--sf-2) 0%, var(--sf-1) 100%);
