@@ -1119,6 +1119,27 @@ st.markdown("""
 
     /* Tooltip nativo aprimorado em elementos com [data-ds-tip] */
     [data-ds-tip] { position: relative; cursor: help; border-bottom: 1px dotted var(--tx-4); }
+
+    /* ---------- KPIs EM TELA ESTREITA (Rodada 14 UI/UX — mission §18/§19) ----------
+       O Streamlit já empilha st.columns() em telas estreitas (1 por linha) — correto e
+       nunca quebra, mas uma fileira de 5 métricas (Resumo Executivo, monitor do lote etc.)
+       vira uma pilha alta de 5 blocos cheios de espaço vazio, obrigando a rolar bastante
+       para ver um resumo que devia caber num relance. Confirmado por captura real a 390px
+       (viewport de celular) antes desta mudança. Correção CIRÚRGICA via :has() — só afeta
+       fileiras que contêm st.metric especificamente (nunca os radios de navegação, tabelas
+       ou outras fileiras de colunas), então nenhum outro layout do app é tocado. 2 por linha
+       é o padrão comum para grades de KPI em telas de celular — visível sem rolar, ainda
+       legível (a métrica sozinha já é curta por natureza). */
+    @media (max-width: 640px) {
+        [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) {
+            flex-wrap: wrap;
+        }
+        [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) > [data-testid="stColumn"] {
+            flex: 1 1 45% !important;
+            min-width: 45% !important;
+            width: 45% !important;
+        }
+    }
 </style>
 """, unsafe_allow_html=True)
 
