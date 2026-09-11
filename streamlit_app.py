@@ -767,7 +767,14 @@ st.markdown("""
         margin: 0 0 2px 0; padding: 0 2px;
     }
     .nav-breadcrumb b { color: var(--tx-1); font-weight: 600; }
-    .nav-breadcrumb .nav-sep { opacity: .5; margin: 0 2px; }
+    /* [Rodada 15 UI/UX - acessibilidade, mission §35 "contraste"] Era `opacity:.5` sobre
+       --tx-3 — reduzia o contraste efetivo do separador para ~2.4-2.7:1 (abaixo do mínimo
+       de 4.5:1 para texto, medido pela fórmula do WCAG), num elemento visível em TODA página
+       da aplicação. --tx-3 já É a cor secundária/apagada do design system (6.2-7.4:1, dentro
+       do padrão) — a opacidade era uma segunda camada de esmaecimento desnecessária, e foi ela
+       quem quebrou o contraste. Remover a opacidade resolve sem perder a hierarquia visual
+       (o separador continua mais discreto que o texto em negrito ao lado, só não ilegível). */
+    .nav-breadcrumb .nav-sep { margin: 0 2px; }
     .nav-subtitle {
         font-size: var(--fs-sm); color: var(--tx-3);
         margin: 0 0 var(--sp-3) 0; padding: 0 2px;
