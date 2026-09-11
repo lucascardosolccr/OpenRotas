@@ -44186,8 +44186,12 @@ if _secao == _SECOES[0]:   # tab_individual
                     except Exception as _e_cap:
                         logger.error(f"[GOLDEN] Falha ao capturar última rota individual: {_e_cap}")
                 
-                    # [UX-07] Barra visual de confiança global — leitura instantânea da qualidade
-                    st.markdown(f"**Confiança Global do Resultado:** {score_g:.0f}/100", help="Quanto mais cheia e verde a barra, mais confiável é a localização encontrada.")
+                    # [UX-07] Barra visual de confiança global — leitura instantânea da qualidade.
+                    # [UI-REENGENHARIA - Rodada 8] O número (score_g) já apareceu duas vezes acima — na
+                    # frase "🧭 De X até Y..." e no card "Score Global" — repeti-lo aqui de novo era
+                    # informação redundante (mission UI/UX §13). A barra é só o reforço VISUAL do mesmo
+                    # dado; o rótulo não precisa reafirmar o número.
+                    st.markdown("**Confiança Global do Resultado**", help="Quanto mais cheia e verde a barra, mais confiável é a localização encontrada. O número exato está no card 'Score Global' acima.")
                     st.markdown(ds_barra_confianca(score_g), unsafe_allow_html=True)
                     st.write("")
                 
