@@ -788,6 +788,18 @@ st.markdown("""
         display: flex; align-items: center; justify-content: center;
     }
 
+    /* ---------- BREADCRUMB "ONDE ESTOU" (Rodada 3 UI/UX — mission §5) ---------- */
+    .nav-breadcrumb {
+        font-size: var(--fs-sm); color: var(--tx-3);
+        margin: 0 0 2px 0; padding: 0 2px;
+    }
+    .nav-breadcrumb b { color: var(--tx-1); font-weight: 600; }
+    .nav-breadcrumb .nav-sep { opacity: .5; margin: 0 2px; }
+    .nav-subtitle {
+        font-size: var(--fs-sm); color: var(--tx-3);
+        margin: 0 0 var(--sp-3) 0; padding: 0 2px;
+    }
+
     /* ================================================================================
        [UX-VIVO - 163ª geração] EU TINHA MATADO A APLICAÇÃO.
        Na 159ª, medi "138 caixas coloridas = parede" e SOBRECORRIGI: pus
@@ -42538,6 +42550,40 @@ _GRUPOS_NAV = {
 assert sorted(_i for _v in _GRUPOS_NAV.values() for _i in _v) == list(range(len(_SECOES))), \
     "toda seção precisa estar em exatamente um grupo"
 
+# [UI-REENGENHARIA - Rodada 3] "ONDE ESTOU?" / "O QUE EXISTE NESTA SEÇÃO?" (mission UI/UX §5).
+# Os dois st.radio acima já respondem "onde posso ir?", mas nenhum dos dois deixa explícito, em
+# uma frase, ONDE o usuário está agora nem O QUE ele vai encontrar ali — sobretudo em telas
+# estreitas, onde as pílulas horizontais podem quebrar em várias linhas e a hierarquia Grupo→Seção
+# fica menos óbvia visualmente. Solução aditiva: uma linha de breadcrumb (Grupo › Seção) + um
+# subtítulo de uma frase por seção, logo abaixo dos radios. Nada de navegação muda — só a
+# ORIENTAÇÃO fica explícita. _SECAO_DESC é opcional por design (.get com default ""): uma seção
+# sem descrição simplesmente não mostra o subtítulo, nunca quebra.
+_SECAO_DESC = {
+    _SECOES[0]: "Calcule a distância e o tempo de deslocamento de um candidato até um local de prova específico.",
+    _SECOES[1]: "Envie uma planilha com todos os candidatos e locais de prova para processamento em lote.",
+    _SECOES[2]: "Veja e decida quais locais de aplicação melhor atendem os candidatos do seu estudo.",
+    _SECOES[3]: "Compare dois estudos processados lado a lado para identificar diferenças e ganhos.",
+    _SECOES[4]: "Visão executiva com indicadores-chave e gráficos do estudo processado.",
+    _SECOES[5]: "Simule cenários e faça cálculos pontuais fora do fluxo de processamento padrão.",
+    _SECOES[6]: "Classifique e agrupe municípios/candidatos por critérios territoriais.",
+    _SECOES[7]: "Explore locais de aplicação alternativos aos já definidos no estudo.",
+    _SECOES[8]: "Consulte conceitos, definições e regras de negócio da plataforma.",
+    _SECOES[9]: "Guia passo a passo de como usar cada funcionalidade da aplicação.",
+    _SECOES[10]: "Acompanhe a saúde e a disponibilidade das APIs externas usadas pela plataforma.",
+    _SECOES[11]: "Veja logs técnicos e trilhas de auditoria do funcionamento interno da aplicação.",
+    _SECOES[12]: "Avalie sua experiência com a plataforma.",
+    _SECOES[13]: "Conheça quem desenvolveu a plataforma e a filosofia do projeto.",
+    _SECOES[14]: "Explore mapas e camadas geográficas de referência nacional.",
+    _SECOES[15]: "Análise geoespacial detalhada das rotas do seu estudo processado.",
+    _SECOES[16]: "Catálogo das fontes oficiais de dados usadas pela plataforma.",
+    _SECOES[17]: "Consulte a base hidrográfica nacional (rios, bacias) usada nas análises.",
+    _SECOES[18]: "Rotas do seu estudo que dependem de travessia por balsa.",
+    _SECOES[19]: "Rotas do seu estudo que são puramente rodoviárias.",
+    _SECOES[20]: "Casos em que a rota otimizada não foi adotada — e por quê.",
+    _SECOES[21]: "Trilha de auditoria completa de todas as decisões tomadas no seu estudo.",
+    _SECOES[22]: "Camadas geoespaciais oficiais do IBGE (BC250/BC100).",
+}
+
 # div-âncora VAZIA e FECHADA no mesmo bloco: o CSS usa o seletor de irmão adjacente (+).
 # (A suíte me pegou abrindo a div num markdown e fechando em outro — HTML DESBALANCEADO, a mesma
 # classe de bug que me custou a 137ª. O invariante existe exatamente para isso.)
@@ -42549,6 +42595,13 @@ _idx_g = list(_GRUPOS_NAV).index(_grupo)
 _secao = st.radio("Seção", [_SECOES[_i] for _i in _GRUPOS_NAV[_grupo]],
                   key=f"nav_sec_g{_idx_g}", horizontal=True,
                   label_visibility="collapsed", disabled=_PROC_ATIVO)
+
+# [UI-REENGENHARIA - Rodada 3] breadcrumb "onde estou" + subtítulo "o que existe nesta seção".
+_desc_secao = _SECAO_DESC.get(_secao, "")
+st.markdown(
+    f'<div class="nav-breadcrumb">📍 <b>{_grupo}</b> <span class="nav-sep">›</span> <b>{_secao}</b></div>'
+    + (f'<div class="nav-subtitle">{_desc_secao}</div>' if _desc_secao else ''),
+    unsafe_allow_html=True)
 
 if _PROC_ATIVO:
     st.warning("⏳ **Processamento em andamento.** A navegação fica travada até terminar (ou até você "
