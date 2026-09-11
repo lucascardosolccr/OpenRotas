@@ -380,7 +380,7 @@ def _renderizar_tela_autenticacao():
     # cartão "Comece por aqui" (onboarding pós-login) — não inventa uma descrição nova.
     st.markdown(
         "<div style='max-width:440px;margin:40px auto 0;text-align:center'>"
-        "<h1 style='margin-bottom:0'>🗺️ Motor Nacional de Inteligência Logística</h1>"
+        "<h1 style='margin-bottom:0;color:var(--tx-1, #F9FAFB)'>🗺️ Motor Nacional de Inteligência Logística</h1>"
         "<p style='color:var(--tx-2, #E5E7EB);margin:10px 0 2px'>Analisa quanto cada candidato "
         "precisa se deslocar até seu local de prova e ajuda a decidir onde ela deve ser "
         "aplicada.</p>"

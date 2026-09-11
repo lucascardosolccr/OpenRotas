@@ -932,7 +932,25 @@ st.markdown("""
     .stApp {
         background-color: var(--sf-0);
     }
-    
+
+    /* [REDESIGN TOTAL - Rodada 6] Títulos nativos do Streamlit (st.markdown("### ..."), st.title,
+       st.subheader, ou <h1>-<h6> soltos em unsafe_allow_html) nunca tiveram cor própria — sem
+       config.toml de tema, o Streamlit escolhe entre dois tons FIXOS (quase preto ou quase branco)
+       conforme a preferência de cor do NAVEGADOR do visitante, não conforme o fundo real da app.
+       Em navegador/SO com preferência clara (bem comum), o resultado é texto quase preto sobre o
+       fundo --sf-0 quase preto desta app — praticamente ilegível. Isso inclui a TELA DE LOGIN, a
+       primeira coisa que qualquer visitante vê (mission redesign §49 — "regra dos 5 segundos").
+       Fixa a cor só de headings SEM cor própria já definida (guard :not([style*="color"])) para
+       nunca sobrescrever coloração intencional já existente em outro lugar da app. */
+    [data-testid="stMarkdownContainer"] h1:not([style*="color"]),
+    [data-testid="stMarkdownContainer"] h2:not([style*="color"]),
+    [data-testid="stMarkdownContainer"] h3:not([style*="color"]),
+    [data-testid="stMarkdownContainer"] h4:not([style*="color"]),
+    [data-testid="stMarkdownContainer"] h5:not([style*="color"]),
+    [data-testid="stMarkdownContainer"] h6:not([style*="color"]) {
+        color: var(--tx-1) !important;
+    }
+
     [data-testid="stSidebar"] {
         background-color: var(--sf-1);
         border-right: 1px solid var(--sf-3);
@@ -946,6 +964,21 @@ st.markdown("""
        entre componentes nativos e o design system próprio). */
     [data-testid="stRadio"] label:has(input:checked) > div:first-child {
         background-color: var(--brand) !important;
+    }
+
+    /* [REDESIGN TOTAL - Rodada 6] Mesmo problema do st.radio (Rodada 5), agora no botão PRIMÁRIO
+       nativo (type="primary"/form_submit_button) — inclusive o "Entrar" da própria tela de login,
+       a primeira ação que qualquer visitante vê. Usava o vermelho padrão do Streamlit em vez do
+       --brand-3, token que o próprio design system já reservava para isso ("botão primário (estado
+       ativo)", ver :root acima) mas nunca chegou a ser aplicado ao componente nativo. Prefixo
+       stBaseButton-primary cobre tanto botões normais quanto de formulário. */
+    [data-testid^="stBaseButton-primary"] {
+        background-color: var(--brand-3) !important;
+        border-color: var(--brand-3) !important;
+    }
+    [data-testid^="stBaseButton-primary"]:hover {
+        background-color: var(--brand-2) !important;
+        border-color: var(--brand-2) !important;
     }
 
     [data-testid="stMetric"] {
