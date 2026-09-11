@@ -38511,6 +38511,46 @@ def _tornar_arrow_safe(df):
         return df
 
 
+# [UI-REENGENHARIA - Rodada 10] TABELA CURADA — mission UI/UX §27 ("a tabela principal deve mostrar
+# apenas as colunas essenciais... as demais devem estar disponíveis em: detalhes → drawer"). O
+# df_processado final chega a 80-100+ colunas (geocoding interno de origem/destino, scores
+# decompostos, concorrente inteiro quando é resultado de Alocação) — dumpado cru, isso é exatamente
+# a "página gigante" que a missão pede para evitar. _COLS_AVANCADAS_PLANILHA é derivada da MESMA
+# constante que já define essas colunas no pipeline (NOVAS_COLUNAS_ALOCACAO) menos as poucas que a
+# missão classifica como essenciais — nunca uma lista adivinhada à parte. Qualquer coluna que NÃO
+# esteja nessa lista (inclusive as que o usuário trouxe na própria planilha) nunca é ocultada.
+_COLS_ESSENCIAIS_PLANILHA = {
+    'Municipio Origem', 'UF Origem', 'Municipio Destino', 'UF Destino',
+    'Distancia', 'Tempo', 'Linha Reta', 'Balsas', 'Status da Rota', 'Score Final Global',
+}
+_COLS_AVANCADAS_PLANILHA = [c for c in NOVAS_COLUNAS_ALOCACAO if c not in _COLS_ESSENCIAIS_PLANILHA]
+
+
+def _tabela_planilha_curada(df, contexto):
+    """Mostra só as colunas essenciais do resultado por padrão; as ~50 colunas avançadas geradas
+    pelo pipeline (geocoding interno, scores decompostos, dados do concorrente) ficam atrás de uma
+    caixa de seleção — nunca removidas, só ocultas até o usuário pedir. `contexto` é uma chave curta
+    e ESTÁTICA (nunca derivada de id()/memória) para o widget não colidir entre as duas telas que
+    reusam este helper. Defensivo: qualquer falha devolve a tabela completa (nunca esconde dado)."""
+    try:
+        _avancadas = [c for c in _COLS_AVANCADAS_PLANILHA if c in df.columns]
+        if not _avancadas:
+            st.dataframe(_tornar_arrow_safe(df), use_container_width=True, height=250)
+            return
+        _mostrar_tudo = st.checkbox(
+            f"Mostrar todas as colunas (+{len(_avancadas)} avançadas: geocoding interno, scores "
+            "decompostos, dados do concorrente)",
+            value=False, key=f"planilha_full_cols_{contexto}")
+        _df_show = df if _mostrar_tudo else df.drop(columns=_avancadas)
+        st.dataframe(_tornar_arrow_safe(_df_show), use_container_width=True, height=250)
+        if not _mostrar_tudo:
+            st.caption(f"📋 Mostrando {len(_df_show.columns)} de {len(df.columns)} colunas — marque a caixa "
+                       "acima para ver as colunas avançadas.")
+    except Exception:
+        logger.debug("[TABELA-CURADA] Falha ao curar colunas (aditivo, isolado).", exc_info=True)
+        st.dataframe(_tornar_arrow_safe(df), use_container_width=True, height=250)
+
+
 # [FIX-ARROW-GLOBAL - 219ª geração] GUARDA CENTRAL: roteia TODA chamada st.dataframe(...) por _tornar_arrow_safe
 # automaticamente. Antes, cada ponto de exibição precisava ser embrulhado à mão (e havia 75+ deles) — bastava
 # UM escapar para a tela inteira quebrar com pyarrow ArrowInvalid. Com este guard, é IMPOSSÍVEL: qualquer
@@ -46583,7 +46623,7 @@ if _secao == _SECOES[1]:   # tab_processamento
                                    "revisão. Use o **link de auditoria** na planilha (coluna dedicada) para reproduzir a rota no Validador Rápido.")
             st.write("---")
             st.markdown("### 📋 Prévia Interativa da Planilha Final")
-            st.dataframe(_tornar_arrow_safe(st.session_state['df_processado']), use_container_width=True, height=250)
+            _tabela_planilha_curada(st.session_state['df_processado'], "lote")
             # [INTEL-TERRITORIAL - 113ª geração] Análise hídrica POR ESTADO (UF): distribuição das rotas com
             # balsa/ferry e dos municípios de acesso fluvial/isolado. Só aparece quando há esses casos.
             try:
@@ -51520,7 +51560,7 @@ if _secao == _SECOES[2]:   # tab_alocacao
                                                    "confirme a distância viária roteando os cenários na aba de Alocação.")
                 except Exception as _e_hubopt:
                     logger.error(f"[HUBOPT] Falha no otimizador de localização: {_e_hubopt}")
-                st.dataframe(_tornar_arrow_safe(st.session_state['df_processado']), use_container_width=True, height=250)
+                _tabela_planilha_curada(st.session_state['df_processado'], "alo_sim")
                 # [FASE2-FLUXO - 184ª geração] Cabeçalho de fase: Exportação (aditivo, dentro do bloco de resultado).
                 st.markdown("#### ⬇️ Exportação")
                 # [RELATORIO-HTML - 184ª geração] Relatório autocontido (KPIs + distribuição + mapa + maiores
