@@ -54877,6 +54877,11 @@ if _secao == _SECOES[7]:   # tab_proximidade
                 _view = _pdk.ViewState(latitude=_org['lat'], longitude=_org['lon'], zoom=7)
                 st.pydeck_chart(_pdk.Deck(layers=[_layer_l, _layer_p], initial_view_state=_view,
                                           tooltip={"text": "{nome}"}, map_style=None))
+                # [MAPA-LEGENDA - Redesign Total Rodada 14] O mapa usa 3 cores com significado
+                # (origem / vizinho no mesmo estado / vizinho em outro estado) mas não dizia o que
+                # cada cor representava — só o nome aparecia no hover. Legenda textual abaixo do mapa.
+                st.caption("🔵 Origem  ·  🟢 Município próximo no mesmo estado  ·  🟠 Em outro estado  ·  "
+                           "as linhas ligam a origem a cada vizinho.")
             except Exception as _e_map:
                 # Fallback robusto: st.map (pontos)
                 _df_map = pd.DataFrame([{"lat": _org['lat'], "lon": _org['lon']}] +
