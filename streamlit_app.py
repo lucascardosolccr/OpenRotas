@@ -1622,6 +1622,30 @@ _GUIA_ABAS = {
         "erros_comuns": "Entrar aqui sem ter processado nada (tabelas vazias); esperar dados de rotas individuais (a auditoria cobre lotes).",
         "dicas": "Esta é a aba da transparência total: nenhum resultado é caixa-preta. Use-a para justificar decisões a clientes ou auditores.",
     },
+    # [Melhoria aba a aba - 3] Guias das seções mais novas, que ainda não tinham a seção padronizada
+    # "Como usar esta aba". Mesmo formato das 12 originais — puramente aditivo.
+    "route_intel": {
+        "o_que_faz": "É o **dashboard analítico completo do lote** já processado. Reúne KPIs globais, mapa origem→destino, distribuições por modal/UF, inteligência hidrográfica, um **Inspetor de Rota** (drill-down com o *porquê* de cada escolha) e a tabela analítica consolidada. Não refaz roteamento: **lê o que o lote já calculou**.",
+        "quando_usar": "Depois de processar um lote (aba **Estudo em Lote**), quando você quer explorar o estudo a fundo — entender padrões, investigar uma rota específica, medir a dependência de rios/balsas ou apresentar o panorama a terceiros.",
+        "dados": "Nenhum upload aqui. Usa automaticamente o **último lote processado** que está em memória.",
+        "preenchimento": "1. Processe um lote na aba **Estudo em Lote**.\n        2. Abra esta aba.\n        3. Percorra as sub-abas na ordem: **Visão Geral → Mapa de Rotas → Distribuição → Hidrografia → Inspetor de Rota → Tabela Analítica**.\n        4. No **Inspetor**, selecione uma rota para o drill-down completo.",
+        "apos_executar": "Não há processamento novo — os painéis leem o lote em memória e se montam na hora. O Inspetor apenas recompõe a leitura contextual da rota escolhida (sem nova chamada de API).",
+        "interpretar": "Os **KPIs Globais** resumem o estudo inteiro; o **Mapa** mostra origem (🔵) → destino (🔴); a **Distribuição** revela o perfil por modal/UF; a **Hidrografia** quantifica a dependência de rios e balsas; o **Inspetor** explica, rota a rota, por que aquela foi a escolhida e por que as alternativas foram descartadas.",
+        "exemplos": "“Quais rotas do lote dependem de balsa e quanto isso pesa?” → sub-aba **Hidrografia**. “Por que a rota do município X ficou tão longa?” → **Inspetor de Rota**.",
+        "erros_comuns": "Abrir sem ter processado um lote (painéis vazios); confundir este dashboard (visão do **estudo inteiro**) com o **Deslocamento do Candidato** (um caso único).",
+        "dicas": "Use o **Inspetor** para auditar casos suspeitos e os **mapas temáticos** para mostrar onde o estudo concentra complexidade. Tudo vem do lote já calculado — é leitura, não recálculo.",
+    },
+    "data_sources": {
+        "o_que_faz": "É o **catálogo vivo das fontes de dados e APIs** que o motor de rotas realmente usa — gerado a partir do **código** (`sources_inventory`), não de uma lista fixa. Mostra **como** cada fonte é acessada (API ao vivo, arquivo local, download sob demanda ou link informativo), **onde** é usada hoje e a **saúde dos dados**.",
+        "quando_usar": "Quando você quer saber **de onde vêm os números** — quais provedores de mapa, bases oficiais (IBGE, ANA e outras) e APIs sustentam cada cálculo — ou precisa **documentar/auditar a procedência** dos dados.",
+        "dados": "Nenhum — é consulta. O catálogo se monta sozinho a partir do inventário de fontes do código.",
+        "preenchimento": "Não há campos a preencher. Navegue pelas sub-abas: **Tabela Completa**, **Endpoints & APIs**, **Resumo por Categoria** e **Saúde dos Dados**. Use **Exportar** para baixar o catálogo.",
+        "apos_executar": "Não há processamento — as tabelas refletem o estado atual das fontes e, na **Saúde dos Dados**, a disponibilidade das camadas locais nesta execução.",
+        "interpretar": "Cada fonte traz o **tipo de acesso** e **onde é usada** hoje. **Saúde dos Dados** indica quais bases locais estão presentes agora; **Resumo por Categoria** agrupa as fontes por natureza (roteamento, hidrografia, oficiais etc.).",
+        "exemplos": "“O motor usa IBGE mesmo ou estima?” → a **Tabela Completa** mostra a fonte, o endpoint e o uso real de cada uma.",
+        "erros_comuns": "Confundir **link informativo** (só referência) com **API ao vivo** (consultada de fato); achar que uma base local indisponível quebra a app — as demais seções seguem com **fallback** automático.",
+        "dicas": "Exporte o catálogo para anexar a relatórios de procedência. A tela é **auto-documentada**: se o código troca de fonte, ela reflete a mudança sozinha.",
+    },
 }
 
 def renderizar_guia_aba(chave_aba: str):
@@ -57948,7 +57972,8 @@ def _fig_mapa_tematico(df, col_valor, titulo_legenda, colorscale="YlOrRd", altur
 if _secao == _SECOES[15]:   # tab_route_intel
     # [REDESIGN BELEZA - Rodada 8] Título duplicado removido (o hero já o exibe).
     st.caption("Dashboard analítico completo com visões detalhadas, geográficas e hídricas do lote.")
-    
+    renderizar_guia_aba("route_intel")
+
     try:
         _rotas_proc = st.session_state.get('df_processado')
         if _rotas_proc is None or _rotas_proc.empty:
@@ -58588,6 +58613,7 @@ if _secao == _SECOES[16]:   # tab_data_sources
                "gerado a partir do código (inteligencia_geoespacial.sources_inventory), não de uma "
                "lista estática. Cada fonte mostra COMO é acessada de fato (API ao vivo, arquivo local "
                "já baixado, download sob demanda ou só um link informativo) e ONDE é usada hoje.")
+    renderizar_guia_aba("data_sources")
 
     import pandas as pd
     from inteligencia_geoespacial.sources_inventory import populate_sources as _popular_fontes_reais
