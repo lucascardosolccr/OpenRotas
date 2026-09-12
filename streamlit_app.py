@@ -1188,6 +1188,15 @@ st.markdown("""
             min-width: 45% !important;
             width: 45% !important;
         }
+        /* [REDESIGN TOTAL - Rodada 18] Abas em telas de celular. A app tem grupos de st.tabs com
+           6 abas de rótulos longos (ex.: Centro de Inteligência: "🏠 Visão Geral" … "📋 Tabela
+           Analítica"). Com o padding padrão de 24px por aba, a tira de abas chega a ~936px de
+           largura numa tela de 400px — o usuário vê ~2 abas e precisa rolar a tira lateralmente
+           para achar as demais (a página em si não estoura, só a tira rola). Reduzindo o padding
+           lateral e a fonte SÓ no celular, a mesma tira cai para ~772px: mais abas visíveis de uma
+           vez, menos rolagem. Desktop intacto (regra só vale ≤640px). */
+        [data-baseweb="tab-list"] { gap: 4px; }
+        [data-baseweb="tab"] { padding: 10px 12px !important; font-size: var(--fs-sm) !important; }
     }
 </style>
 """, unsafe_allow_html=True)
