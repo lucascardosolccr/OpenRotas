@@ -44458,7 +44458,6 @@ if _secao == _SECOES[14]:   # tab_geografica
         st.warning("Não foi possível montar a Análise Geográfica desta rodada. As demais seções seguem normais.")
 
 if _secao == _SECOES[0]:   # tab_individual
-    st.info("🎯 **Objetivo desta aba:** Analisar o deslocamento de UM candidato até seu local de prova. Informe o **município de origem do candidato** e o **local de aplicação** para obter a distância viária oficial, a distância geodésica rigorosa e a explicabilidade da identificação territorial.")
     renderizar_guia_aba("geocodificacao")
     # [GOLDEN - 120ª geração] Caderneta de Rotas Douradas (verificadas): captura manual da última rota
     # calculada, aviso de "já verificada" e exportação do dataset proprietário. Reusa cache_rotas_douradas
@@ -45832,7 +45831,6 @@ def _gerar_planilha_modelo_lote():
 
 
 if _secao == _SECOES[1]:   # tab_processamento
-    st.info("⚙️ **Objetivo desta aba:** Estudo de deslocamento em massa. Envie uma planilha com milhares de **municípios de origem dos candidatos** e seus **locais de aplicação**. O sistema calcula todos os deslocamentos simultaneamente e devolve a planilha preenchida e auditável.")
     renderizar_guia_aba("processamento")
     # [CHECKPOINT-DISCO - 269ª geração] Cartão de RETOMADA. Se houver um estudo interrompido compatível (e não
     # houver um rodando ou concluído nesta sessão), oferece retomar de onde parou — sem refazer o roteiro do
@@ -47515,7 +47513,6 @@ if _secao == _SECOES[1]:   # tab_processamento
                                "Importe no QGIS/Google Earth para visualizar todas as rotas do lote num mapa só.")
 
 if _secao == _SECOES[2]:   # tab_alocacao
-    st.info("🎯 **Objetivo desta aba:** Definir o **melhor local de aplicação da prova** para cada município de candidatos. Envie a lista de **municípios de origem dos candidatos** e a lista de **polos de aplicação** (escolas/unidades aplicadoras). O sistema avalia todas as combinações e recomenda, para cada município, o local de prova que minimiza o deslocamento dos candidatos.")
     renderizar_guia_aba("alocacao")
     # [CHECKPOINT-DISCO - 269ª geração] Cartão de RETOMADA da Alocação. Se houver um estudo interrompido
     # compatível na fase de roteamento (a cara), oferece retomar de onde parou após refresh/queda/restart.
@@ -52220,9 +52217,6 @@ if _secao == _SECOES[3]:   # tab_comparador
         São os casos em que a sua distribuição está levando o candidato **bem mais longe**. Pode ser uma
         escolha logística legítima (evitar balsa) — ou sintoma de **município mal identificado**. Verifique.
         """)
-    st.info("⚖️ **Objetivo desta aba:** Comparar, com rigor de auditoria, a distribuição de candidatos "
-            "produzida pela aba **Locais de Aplicação** contra uma **base de referência externa** — e "
-            "demonstrar, município a município, onde cada solução leva o candidato mais perto do local de prova.")
     _df_alo_cmp = st.session_state.get('df_processado')
     _tem_alo = (_df_alo_cmp is not None and len(_df_alo_cmp) > 0
                 and {'Municipio Origem', 'Distancia'}.issubset(_df_alo_cmp.columns))
@@ -53867,7 +53861,6 @@ if _secao == _SECOES[3]:   # tab_comparador
 
 
 if _secao == _SECOES[4]:   # tab_analytics
-    st.info("📊 **Objetivo desta aba:** Painel estratégico da aplicação do exame. Clique nas fatias, barras ou arraste o mouse no gráfico para filtrar dinamicamente TODOS os indicadores de deslocamento, mapas e tabelas abaixo.")
     renderizar_guia_aba("analytics")
     col_d_title, col_d_btn = st.columns([80, 20])
     with col_d_title: 
@@ -54402,7 +54395,6 @@ def _cf_fonte_selector(prefix):
 
 
 if _secao == _SECOES[5]:   # tab_calculadora
-    st.info("🧮 **Objetivo desta aba:** Autoatendimento analítico. Crie tabelas dinâmicas e extrações próprias sobre a base de deslocamentos já validada — por UF, por polo de aplicação, por faixa de distância do candidato.")
     renderizar_guia_aba("calculadora")
     col_c_title, col_c_btn = st.columns([80, 20])
     with col_c_title: 
@@ -54731,7 +54723,6 @@ Gerado pelo Motor Nacional de Inteligência Logística para Exames v4.36
                 logger.error("[CALC-COMPARADOR] Falha ao calcular sobre o Comparador (isolada).", exc_info=True)
 
 if _secao == _SECOES[6]:   # tab_classificacao
-    st.info("🗂️ **Objetivo desta aba:** Segmentar os municípios por faixas de deslocamento dos candidatos e rotular os polos de aplicação. Use o Editor de Faixas para configurar os limites e identificar os municípios com acesso mais crítico ao local de prova.")
     renderizar_guia_aba("classificacao")
     st.markdown("### 🗂️ Classificação Territorial de Ocorrências Municipais")
     
@@ -55012,7 +55003,6 @@ if _secao == _SECOES[6]:   # tab_classificacao
 
 if _secao == _SECOES[7]:   # tab_proximidade
     renderizar_guia_aba("proximidade")
-    st.info("🗺️ **Objetivo desta aba:** Descobrir **polos alternativos de aplicação** para um município de candidatos: quais localidades próximas poderiam receber a prova e reduzir o deslocamento. Primeiro pela **distância geodésica** (Karney/WGS-84, instantânea) e, sob demanda, pela **malha viária** apenas para as mais próximas — preservando velocidade e custo.")
     renderizar_guia_aba("geocodificacao")
     with st.expander("🚀 Como funciona e como obter os melhores resultados", expanded=False):
         st.markdown("""
@@ -55386,7 +55376,6 @@ if _secao == _SECOES[7]:   # tab_proximidade
                 st.warning("Não foi possível carregar o explorador de municípios no momento.")
 
 if _secao == _SECOES[8]:   # tab_enciclopedia
-    st.info("📚 **Objetivo desta aba:** Repositório mestre de conhecimento. Detalha toda a jornada técnica de um dado — do município de origem do candidato até o local de aplicação da prova — passando pela identificação territorial oficial (IBGE), pela desambiguação de municípios homônimos e pela validação de integridade do deslocamento.")
     st.caption("👨‍💻 Conheça a filosofia, os valores e a trajetória por trás desta plataforma na seção **Sobre o Desenvolvedor** (menu **📚 Aprender**).")
     renderizar_guia_aba("enciclopedia")
     st.markdown("# 📚 Enciclopédia Operacional e Base de Conhecimento Core")
@@ -56937,7 +56926,6 @@ Tudo acima é **estritamente cumulativo**: nenhuma tabela, filtro, exportação,
         """)
 
 if _secao == _SECOES[10]:   # tab_motores
-    st.info("🩺 **Objetivo desta aba:** Monitorar a saúde técnica das fontes de mapa e o Uptime (SLA) de cada uma. Visualize quais APIs responderam melhor, identifique instabilidades (timeouts) e verifique a integridade algorítmica do último estudo de deslocamento.")
     renderizar_guia_aba("motores")
     st.markdown("### 🩺 Painel de Monitoramento de Infraestrutura (APIs Health Check)")
     
@@ -57232,7 +57220,6 @@ if _secao == _SECOES[10]:   # tab_motores
     st.dataframe(df_metricas_lr, use_container_width=True, hide_index=True)
 
 if _secao == _SECOES[11]:   # tab_auditoria
-    st.info("🔍 **Objetivo desta aba:** Auditoria da aplicação — transparência total e explicabilidade (XAI). Verifique em detalhes como cada município de origem e cada local de prova foi identificado, e por que o sistema descartou as demais alternativas.")
     renderizar_guia_aba("auditoria")
     st.markdown("### 🔍 Dossiê Investigativo de Auditoria Viária e Espacial")
 
@@ -57546,8 +57533,6 @@ if _secao == _SECOES[11]:   # tab_auditoria
             st.warning("Não foi possível carregar o painel de ambiguidade.")
 
 if _secao == _SECOES[12]:   # tab_pesquisa
-    st.info("⭐ **Objetivo desta aba:** Ouvir você. Sua avaliação ajuda a evoluir a plataforma — "
-            "responda à pesquisa abaixo e envie. Leva menos de um minuto.")
     st.markdown("### ⭐ Pesquisa de Satisfação")
 
     # [PESQUISA - 73ª geração / item #5] E-mail do produtor: pré-configurável via Secrets
