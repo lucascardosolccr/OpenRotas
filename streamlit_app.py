@@ -7341,6 +7341,20 @@ padding:4px 10px;border-radius:999px;font-variant-numeric:tabular-nums}
 .mnil .status .blocos{margin-top:12px;display:flex;flex-direction:column;gap:8px}
 .mnil .status .bloco{font-size:12.5px;color:var(--slate,#9CA3AF);line-height:1.5}
 .mnil .status .bloco b{color:var(--ink,#F9FAFB);font-weight:600;display:block;margin-bottom:1px}
+/* [REDESIGN BELEZA - Rodada 5] Elevação dos banners de status (sucesso/atenção/erro do
+   processamento): leve tingimento semântico do fundo a partir do lado do acento, barra de acento
+   em gradiente com brilho, sombra premium e pílulas de métrica refinadas. Só acabamento. */
+.mnil .status{
+  border-color:rgba(148,163,184,.14);
+  box-shadow:0 1px 2px rgba(0,0,0,.22),0 12px 30px -14px rgba(0,0,0,.62);
+}
+.mnil .status.ok{background:linear-gradient(100deg,rgba(46,204,113,.10) 0%,#1E232F 42%)}
+.mnil .status.att{background:linear-gradient(100deg,rgba(230,126,34,.11) 0%,#1E232F 42%)}
+.mnil .status.err{background:linear-gradient(100deg,rgba(231,76,60,.12) 0%,#1E232F 44%)}
+.mnil .status.ok::before{background:linear-gradient(180deg,var(--route,#2ECC71),#22a35a);box-shadow:0 0 22px -2px rgba(46,204,113,.55)}
+.mnil .status.att::before{background:linear-gradient(180deg,var(--attention,#E67E22),#c65f13);box-shadow:0 0 22px -2px rgba(230,126,34,.55)}
+.mnil .status.err::before{background:linear-gradient(180deg,var(--alert,#E74C3C),#c0392b);box-shadow:0 0 22px -2px rgba(231,76,60,.55)}
+.mnil .status .met{background:rgba(148,163,184,.08);border-color:rgba(148,163,184,.18)}
 </style>
 """
 
