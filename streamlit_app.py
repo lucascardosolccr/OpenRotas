@@ -7411,10 +7411,15 @@ def _render_rodape_mnil(versao="", geracao=""):
         ger = f" · {geracao}ª geração" if geracao else ""
         return (
         "<style>"
+        # [REDESIGN BELEZA - Rodada 6] Rodapé: régua superior que esmaece nas pontas (em vez de linha
+        # dura) e brilho no selo do logo.
         ".mnil-foot{--ink:#F9FAFB;--slate:#9CA3AF;--route:#2ECC71;--line:#2D3342;font-family:'Inter',system-ui,sans-serif;"
-        "display:flex;align-items:center;justify-content:center;gap:10px;margin:26px auto 6px;padding:12px 16px;"
-        "max-width:1080px;border-top:1px solid var(--line);color:var(--slate);font-size:11.5px;text-align:center;flex-wrap:wrap}"
+        "display:flex;align-items:center;justify-content:center;gap:10px;margin:30px auto 6px;padding:16px 16px 6px;position:relative;"
+        "max-width:1080px;color:var(--slate);font-size:11.5px;text-align:center;flex-wrap:wrap}"
+        ".mnil-foot::before{content:'';position:absolute;top:0;left:8%;right:8%;height:1px;"
+        "background:linear-gradient(90deg,transparent,rgba(148,163,184,.28),transparent)}"
         ".mnil-foot .g{width:22px;height:22px;border-radius:6px;background:linear-gradient(150deg,var(--route),#15607e);"
+        "box-shadow:0 4px 14px -4px rgba(46,204,113,.55);"
         "display:inline-flex;align-items:center;justify-content:center;flex:none}"
         ".mnil-foot .g svg{width:14px;height:14px}"
         ".mnil-foot b{color:var(--ink);font-weight:600;font-family:'Space Grotesk','Inter',sans-serif}"
@@ -7459,6 +7464,14 @@ box-shadow:0 1px 2px rgba(0,0,0,.25),0 6px 20px rgba(0,0,0,.35)}
 .mnil .cbp .skips{font-weight:600}
 .mnil .cbp .note{margin-top:11px;font-size:12px;color:var(--slate,#9CA3AF);line-height:1.5}
 .mnil .cbp .note b{color:var(--ink,#F9FAFB)}
+/* [REDESIGN BELEZA - Rodada 6] Painel de disjuntores: superfície em gradiente e bordas hairline,
+   coeso com os demais cartões. Só acabamento. */
+.mnil .cbp{
+  background:linear-gradient(180deg,#232937 0%,#191E29 100%);
+  border-color:rgba(148,163,184,.14);
+  box-shadow:0 1px 2px rgba(0,0,0,.22),0 12px 30px -14px rgba(0,0,0,.6);
+}
+.mnil .cbp th, .mnil .cbp td{border-color:rgba(148,163,184,.12)}
 </style>
 """
 
