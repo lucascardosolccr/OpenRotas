@@ -7,6 +7,11 @@
 # definidos em streamlit_app.py (--sf-0/--sf-2/--tx-1/--brand) para que os componentes nativos
 # (gráficos, e qualquer outro elemento não coberto pelo CSS customizado) fiquem consistentes com o
 # resto da identidade visual, em vez de depender da preferência de cor do navegador do visitante.
+# [REDESIGN BELEZA - Rodada 2] Chaves nativas de tema do Streamlit 1.46 — refinam os componentes
+# NA RAIZ (cantos arredondados, bordas hairline, cor de link da marca), inclusive partes que o CSS
+# customizado não alcança (steppers do number_input, date pickers, popovers, blocos de código).
+# Mais robusto que sobrescrever via CSS. Espelham os tokens do design system (--sf-3 nas bordas,
+# --brand-2 nos links). Verificado em galeria de componentes antes de aplicar.
 [theme]
 base = "dark"
 primaryColor = "#3B82F6"
@@ -14,3 +19,8 @@ backgroundColor = "#0E1117"
 secondaryBackgroundColor = "#1E232F"
 textColor = "#F9FAFB"
 font = "sans serif"
+baseRadius = "0.625rem"
+buttonRadius = "0.5rem"
+borderColor = "#2D3342"
+dataframeBorderColor = "#2D3342"
+linkColor = "#60A5FA"
