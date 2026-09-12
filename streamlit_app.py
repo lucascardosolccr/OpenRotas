@@ -56900,6 +56900,13 @@ if _secao == _SECOES[11]:   # tab_auditoria
     except Exception:
         pass
 
+    # [AUDITORIA-GRUPOS - Redesign Total Rodada 16] A Auditoria era uma pilha plana de ~9 expanders
+    # sem nenhum agrupamento (o "paredão" que a missão pede para evitar). Três cabeçalhos temáticos
+    # dão hierarquia sem tocar em nenhum painel: nada é removido nem reordenado, só rotulado. Os dois
+    # painéis-âncora de cada extremo (disjuntores e Livro-Razão) sempre renderizam, então seus
+    # cabeçalhos nunca ficam órfãos; o cabeçalho do meio é condicionado à presença do estudo.
+    st.markdown("#### 🔧 Saúde dos motores e da infraestrutura")
+
     # [CB-PANEL-R(UI) 285a] Observabilidade dos disjuntores — read-only (§4/§17). Aditivo, isolado.
     try:
         with st.expander("🔌 Estado dos disjuntores dos motores de rota", expanded=False):
@@ -56939,6 +56946,13 @@ if _secao == _SECOES[11]:   # tab_auditoria
                     st.info("Sem dados de performance por motor para este estudo.")
     except Exception:
         logger.error("[PERF-MOTORES-UI] Falha ao renderizar performance por motor (isolada).", exc_info=True)
+
+    # [AUDITORIA-GRUPOS - Redesign Total Rodada 16] 2º cabeçalho temático — condicionado à presença
+    # de um estudo processado (necessário para qualquer painel deste grupo aparecer), evitando um
+    # cabeçalho órfão quando ainda não há dados.
+    _df_aud_grp = st.session_state.get("df_processado")
+    if _df_aud_grp is not None and len(_df_aud_grp) > 0:
+        st.markdown("#### 📊 Análise do estudo atual")
 
     # [KM-CAND-R(UI) 287a] Análise ponderada km-candidato (§13) — read-only. Aditivo, isolado.
     try:
@@ -57052,6 +57066,10 @@ if _secao == _SECOES[11]:   # tab_auditoria
                         st.info("Sem dados de decisão para este município.")
     except Exception:
         logger.error("[VEREDITO-UI] Falha ao renderizar cartão de veredito (isolada).", exc_info=True)
+
+    # [AUDITORIA-GRUPOS - Redesign Total Rodada 16] 3º cabeçalho temático — antes do Livro-Razão
+    # (sempre renderiza) e das abas de logs; nunca fica órfão.
+    st.markdown("#### 📒 Rastreabilidade e registros")
 
     # [LIVRO-RAZAO-R3 276ª] Livro-Razão de Rastreabilidade — download auditável (aditivo, read-only).
     with st.expander("📒 Livro-Razão de Rastreabilidade (1 linha por rota: motor, divergência, confiança, tempos)", expanded=False):
