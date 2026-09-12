@@ -1203,6 +1203,192 @@ st.markdown("""
         [data-baseweb="tab-list"] { gap: 4px; }
         [data-baseweb="tab"] { padding: 10px 12px !important; font-size: var(--fs-sm) !important; }
     }
+
+    /* ================================================================================
+       [REDESIGN BELEZA - Rodada 1] CAMADA DE ELEVAÇÃO PREMIUM.
+       Refinamento visual global (Linear/Stripe/Vercel-grade) sobre o design system que já
+       existia: profundidade ambiente, tipografia display, inputs/abas/cartões/expanders
+       polidos, microinterações sóbrias e scrollbar temática. Puramente cosmético — nenhum
+       componente, dado ou lógica muda. Vem por último no bloco para vencer regras anteriores
+       de mesma especificidade sem !important onde possível.
+       Tokens estendidos abaixo (glows, superfícies elevadas, bordas de marca).
+       ================================================================================ */
+    :root {
+        --sf-elev: #232937;                 /* superfície elevada (hover de cartão)      */
+        --brd-soft: rgba(148,163,184,.16);  /* borda hairline sutil                      */
+        --brd-brand: rgba(59,130,246,.45);  /* borda com tom de marca (foco/ativo)       */
+        --glow-brand: 0 0 0 1px rgba(59,130,246,.35), 0 8px 28px -8px rgba(59,130,246,.45);
+        --sh-soft: 0 1px 2px rgba(0,0,0,.20), 0 8px 24px -12px rgba(0,0,0,.55);
+        --sh-lift: 0 2px 4px rgba(0,0,0,.22), 0 18px 40px -16px rgba(0,0,0,.65);
+        --grad-brand: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
+        --grad-surface: linear-gradient(180deg, #1E232F 0%, #191E29 100%);
+    }
+
+    /* Profundidade ambiente — um brilho de marca discreto no topo, para o fundo não ser
+       um preto chapado. Fixo e atrás de tudo (pointer-events:none, z-index:0). */
+    .stApp {
+        background:
+            radial-gradient(1200px 620px at 78% -8%, rgba(59,130,246,.10), transparent 60%),
+            radial-gradient(1000px 560px at 8% 0%, rgba(46,204,113,.05), transparent 55%),
+            var(--sf-0) !important;
+        background-attachment: fixed;
+    }
+
+    /* Tipografia display — Space Grotesk (já carregada) nos títulos de maior peso, com
+       tracking negativo para um ar editorial e moderno. Corpo segue em Inter. */
+    .main h1, .main h2, [data-testid="stMarkdownContainer"] h1,
+    [data-testid="stMarkdownContainer"] h2 {
+        font-family: 'Space Grotesk','Inter',sans-serif !important;
+        letter-spacing: -.02em !important;
+    }
+    .main h1, [data-testid="stMarkdownContainer"] h1 { font-weight: 700 !important; }
+
+    /* Inputs premium — superfície interna, borda hairline, e glow de marca no foco.
+       Cobre text_input, number_input, textarea e o controle do selectbox/multiselect. */
+    [data-baseweb="input"], [data-baseweb="base-input"], [data-baseweb="textarea"],
+    [data-baseweb="select"] > div:first-child {
+        background-color: var(--sf-2) !important;
+        border: 1px solid var(--brd-soft) !important;
+        border-radius: var(--r-sm) !important;
+        transition: border-color .16s ease, box-shadow .16s ease, background-color .16s ease !important;
+    }
+    [data-baseweb="input"]:hover, [data-baseweb="base-input"]:hover, [data-baseweb="textarea"]:hover,
+    [data-baseweb="select"] > div:first-child:hover {
+        border-color: var(--brd-brand) !important;
+    }
+    [data-baseweb="input"]:focus-within, [data-baseweb="base-input"]:focus-within,
+    [data-baseweb="textarea"]:focus-within, [data-baseweb="select"]:focus-within > div:first-child {
+        border-color: var(--brand) !important;
+        box-shadow: 0 0 0 3px rgba(59,130,246,.20) !important;
+    }
+    /* Menu suspenso (dropdown) do selectbox/multiselect — superfície escura coesa */
+    [data-baseweb="popover"] [role="listbox"], [data-baseweb="menu"] {
+        background-color: var(--sf-2) !important;
+        border: 1px solid var(--brd-soft) !important;
+        border-radius: var(--r-md) !important;
+        box-shadow: var(--sh-lift) !important;
+    }
+
+    /* Abas — trilho inferior + aba ativa com gradiente e leve elevação/brilho */
+    [data-baseweb="tab-list"] {
+        border-bottom: 1px solid var(--brd-soft) !important;
+        padding-bottom: 0 !important;
+    }
+    [data-baseweb="tab"] {
+        border-color: var(--brd-soft) !important;
+        transition: color .18s ease, background-color .18s ease, transform .18s ease, box-shadow .18s ease !important;
+    }
+    [data-baseweb="tab"][aria-selected="true"] {
+        background: var(--grad-brand) !important;
+        border-color: transparent !important;
+        box-shadow: 0 6px 18px -8px rgba(59,130,246,.7) !important;
+    }
+
+    /* Métricas — superfície com gradiente, borda hairline, acento e elevação no hover */
+    [data-testid="stMetric"] {
+        background: var(--grad-surface) !important;
+        border: 1px solid var(--brd-soft) !important;
+        border-left: 3px solid var(--brand) !important;
+        border-radius: var(--r-md) !important;
+        box-shadow: var(--sh-soft) !important;
+        transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease !important;
+    }
+    [data-testid="stMetric"]:hover {
+        transform: translateY(-3px);
+        box-shadow: var(--sh-lift) !important;
+        border-left-color: var(--brand-2) !important;
+    }
+
+    /* Expanders — borda hairline, cabeçalho respirando e leve realce no hover */
+    [data-testid="stExpander"] {
+        background: var(--grad-surface) !important;
+        border: 1px solid var(--brd-soft) !important;
+        border-radius: var(--r-md) !important;
+        box-shadow: var(--sh-soft) !important;
+        transition: border-color .18s ease, box-shadow .18s ease !important;
+        overflow: hidden;
+    }
+    [data-testid="stExpander"]:hover { border-color: var(--brd-brand) !important; }
+    [data-testid="stExpander"] summary { padding: 4px 2px !important; }
+    [data-testid="stExpander"] summary:hover { color: var(--tx-1) !important; }
+
+    /* Contêiner com borda (st.container(border=True)) — mesma linguagem dos cartões */
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        border-radius: var(--r-lg) !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] > div {
+        border-color: var(--brd-soft) !important;
+    }
+
+    /* DataFrame — cabeçalho tingido e cantos arredondados coesos */
+    [data-testid="stDataFrame"] {
+        border: 1px solid var(--brd-soft) !important;
+        border-radius: var(--r-md) !important;
+        box-shadow: var(--sh-soft) !important;
+    }
+    [data-testid="stDataFrame"] [class*="headerCell"],
+    [data-testid="stDataFrame"] thead tr th {
+        background: var(--sf-1) !important;
+        color: var(--tx-2) !important;
+        font-weight: 600 !important;
+    }
+
+    /* Sidebar — gradiente vertical sutil para dar corpo */
+    [data-testid="stSidebar"] > div:first-child {
+        background: linear-gradient(180deg, var(--sf-1) 0%, #12151E 100%) !important;
+    }
+
+    /* Botões (todos) — cantos, peso e microinteração consistentes; primário com glow */
+    .stButton > button, [data-testid="stDownloadButton"] > button, [data-testid="stFormSubmitButton"] > button {
+        border-radius: var(--r-sm) !important;
+        font-weight: 600 !important;
+        transition: transform .14s ease, box-shadow .18s ease, filter .14s ease, border-color .14s ease, background-color .14s ease !important;
+    }
+    .stButton > button:hover, [data-testid="stDownloadButton"] > button:hover,
+    [data-testid="stFormSubmitButton"] > button:hover {
+        transform: translateY(-1px);
+    }
+    .stButton > button:active, [data-testid="stDownloadButton"] > button:active { transform: translateY(0); }
+    [data-testid^="stBaseButton-primary"] {
+        background: var(--grad-brand) !important;
+        border-color: transparent !important;
+        box-shadow: 0 2px 10px -2px rgba(59,130,246,.5) !important;
+    }
+    [data-testid^="stBaseButton-primary"]:hover {
+        filter: brightness(1.06);
+        box-shadow: 0 10px 26px -8px rgba(59,130,246,.65) !important;
+        border-color: transparent !important;
+    }
+    /* Botão de download — ganha ar de ação positiva (borda/realce verdes discretos) */
+    [data-testid="stDownloadButton"] > button:hover {
+        border-color: var(--ok) !important;
+        color: var(--ok) !important;
+    }
+
+    /* Divisores — regra que esmaece nas pontas, em vez de linha dura de ponta a ponta */
+    [data-testid="stDivider"] hr, hr {
+        border: none !important;
+        height: 1px !important;
+        background: linear-gradient(90deg, transparent, var(--sf-3) 18%, var(--sf-3) 82%, transparent) !important;
+    }
+
+    /* Scrollbar temática — fina, discreta, coesa com o fundo escuro */
+    ::-webkit-scrollbar { width: 11px; height: 11px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+        background: var(--sf-3); border-radius: 999px;
+        border: 3px solid var(--sf-0); background-clip: padding-box;
+    }
+    ::-webkit-scrollbar-thumb:hover { background: #3b4457; background-clip: padding-box; }
+    * { scrollbar-color: var(--sf-3) transparent; scrollbar-width: thin; }
+
+    /* Tags do multiselect — pílula de marca em vez do cinza padrão */
+    [data-baseweb="tag"] {
+        background: rgba(59,130,246,.16) !important;
+        border: 1px solid var(--brd-brand) !important;
+        color: var(--brand-2) !important;
+        border-radius: 999px !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
