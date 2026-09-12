@@ -53565,30 +53565,40 @@ if _secao == _SECOES[4]:   # tab_analytics
         
         sync_altair_to_widgets()
         df_kpi_raw = st.session_state['df_processado']
-        
-        @st.cache_data(show_spinner=False)
-        def _enriquecer_df_analytics(df_serial: str) -> pd.DataFrame:
-            _df = pd.read_json(io.StringIO(df_serial), orient='records')
+
+        # [PERF - Redesign Total Rodada 20] O enriquecimento do df da aba Analytics (colunas
+        # derivadas + UF/Região) roda a CADA rerun — e esta aba re-executa a cada mexida de filtro.
+        # A versão anterior usava @st.cache_data com a CHAVE = df_kpi_raw.to_json(): serializar o df
+        # inteiro para JSON só para montar a chave custava ~82 ms num lote de 50k linhas (medido) e
+        # rodava SEMPRE, mesmo em cache hit — mais caro que os ~10 ms de enriquecimento que ele
+        # pretendia evitar (o cache saía no prejuízo). Trocado por memoização em session_state com
+        # assinatura via hash_pandas_object (~8 ms em 50k, 10× mais barato e baseada no conteúdo, sem
+        # risco de colisão de id()): o enriquecimento completo só roda quando o estudo muda; nos
+        # demais reruns, devolve o df já enriquecido. Mesmíssimas colunas e valores de antes.
+        def _enriquecer_df_analytics_full(_src):
+            _df = _src.copy()
             _df['Distancia'] = pd.to_numeric(_df['Distancia'], errors='coerce').fillna(0)
             _df['Linha Reta'] = pd.to_numeric(_df['Linha Reta'], errors='coerce').fillna(0)
             _df['Tempo_Minutos'] = _df['Tempo'].apply(parse_tempo_minutos)
             _df['Tempo_Horas'] = _df['Tempo_Minutos'] / 60.0
+            # MAPA_ESTADOS_FULL/REGIOES_BRASIL/extrair_uf_precisa são de módulo [PERF-2]; extrair_uf
+            # é lru_cache. [PERF-1] UF→Região por dict O(1) + .map() vetorizado.
+            _df['UF_Sintetica_Origem'] = _df['Endereco Oficial Origem'].apply(extrair_uf_precisa)
+            _df['Regiao_Sintetica_Origem'] = _df['UF_Sintetica_Origem'].map(_UF_PARA_REGIAO).fillna("Indefinido")
             return _df
-            
+
         try:
-            df_kpi = _enriquecer_df_analytics(df_kpi_raw.to_json(orient='records'))
+            _sig_kpi = int(pd.util.hash_pandas_object(df_kpi_raw, index=True).sum())
         except Exception:
-            df_kpi = df_kpi_raw.copy()
-            df_kpi['Distancia'] = pd.to_numeric(df_kpi['Distancia'], errors='coerce').fillna(0)
-            df_kpi['Linha Reta'] = pd.to_numeric(df_kpi['Linha Reta'], errors='coerce').fillna(0)
-            df_kpi['Tempo_Minutos'] = df_kpi['Tempo'].apply(parse_tempo_minutos)
-            df_kpi['Tempo_Horas'] = df_kpi['Tempo_Minutos'] / 60.0
-            
-        # MAPA_ESTADOS_FULL, REGIOES_BRASIL e extrair_uf_precisa agora são definidos
-        # no escopo do módulo [PERF-2] — não recriados a cada rerun.
-        df_kpi['UF_Sintetica_Origem'] = df_kpi['Endereco Oficial Origem'].apply(extrair_uf_precisa)
-        # [PERF-1] Mapeamento UF→Região via dict de lookup O(1) + .map() vetorizado
-        df_kpi['Regiao_Sintetica_Origem'] = df_kpi['UF_Sintetica_Origem'].map(_UF_PARA_REGIAO).fillna("Indefinido")
+            _sig_kpi = None  # df com conteúdo não-hasheável → recomputa sempre (correto, só não memoiza)
+        if _sig_kpi is not None and st.session_state.get('_analytics_enrich_sig') == _sig_kpi \
+           and '_analytics_enrich_df' in st.session_state:
+            df_kpi = st.session_state['_analytics_enrich_df']
+        else:
+            df_kpi = _enriquecer_df_analytics_full(df_kpi_raw)
+            if _sig_kpi is not None:
+                st.session_state['_analytics_enrich_df'] = df_kpi
+                st.session_state['_analytics_enrich_sig'] = _sig_kpi
         
         lista_regioes = ["Todas"] + sorted([x for x in df_kpi['Regiao_Sintetica_Origem'].unique() if pd.notna(x)])
         if st.session_state['widget_regiao'] not in lista_regioes: st.session_state['widget_regiao'] = 'Todas'
