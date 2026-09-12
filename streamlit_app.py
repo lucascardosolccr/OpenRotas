@@ -43820,7 +43820,8 @@ def _geo_narrativa(rotas):
 
 
 if _secao == _SECOES[14]:   # tab_geografica
-    st.header("🗺️ Análise Geográfica Visual")
+    # [REDESIGN BELEZA - Rodada 8] Título removido: o cabeçalho de página (hero, Rodada 3) já exibe o
+    # nome da seção no topo; o st.header duplicava. A legenda detalhada abaixo é mantida.
     st.caption("Central de análise geográfica e logística dos candidatos: **origem → deslocamento → destino**, "
                "reaproveitando as coordenadas, geometrias e distâncias já calculadas (não refaz roteamento).")
     try:
@@ -57960,7 +57961,7 @@ def _fig_mapa_tematico(df, col_valor, titulo_legenda, colorscale="YlOrRd", altur
 # Centro de inteligência unificado: consolida tudo que a aplicação sabe sobre a rota.
 # ==============================================================================
 if _secao == _SECOES[15]:   # tab_route_intel
-    st.header("🧠 Centro de Inteligência da Rota")
+    # [REDESIGN BELEZA - Rodada 8] Título duplicado removido (o hero já o exibe).
     st.caption("Dashboard analítico completo com visões detalhadas, geográficas e hídricas do lote.")
     
     try:
@@ -58597,7 +58598,7 @@ if _secao == _SECOES[15]:   # tab_route_intel
 # Catálogo estruturado de todas as fontes oficiais integradas ao motor de roteamento.
 # ==============================================================================
 if _secao == _SECOES[16]:   # tab_data_sources
-    st.header("📖 Fontes de Dados Oficiais Integradas")
+    # [REDESIGN BELEZA - Rodada 8] Título duplicado removido (o hero já o exibe).
     st.caption("Catálogo real das fontes de dados e APIs efetivamente usadas pelo motor de rotas — "
                "gerado a partir do código (inteligencia_geoespacial.sources_inventory), não de uma "
                "lista estática. Cada fonte mostra COMO é acessada de fato (API ao vivo, arquivo local "
@@ -58759,7 +58760,7 @@ def _resolver_csv(nome):
 # Central de hidrografia nacional: rios, bacias, sub-bacias, estações, cotas, vazões.
 # ==============================================================================
 if _secao == _SECOES[17]:   # tab_hidrografia
-    st.header("💧 Hidrografia Nacional")
+    # [REDESIGN BELEZA - Rodada 8] Título duplicado removido (o hero já o exibe).
     st.caption("Central de inteligência hidrográfica nacional: rios, bacias, sub-bacias, estações, séries hidrológicas.")
     
     _aba_hidro = st.tabs(["🌊 Rios", "🏞️ Bacias", "📍 Estações", "📊 Séries Hidrológicas", "📈 Cotas & Vazões", "🗺️ Mapa Hidrográfico"])
@@ -58994,7 +58995,7 @@ if _secao == _SECOES[17]:   # tab_hidrografia
 # hidrovias, atracadouros, portos, sinalização, rede viária e municípios.
 # ==============================================================================
 if _secao == _SECOES[22]:   # tab_geo_ibge
-    st.header("🗺️ Geoespacial IBGE")
+    # [REDESIGN BELEZA - Rodada 8] Título duplicado removido (o hero já o exibe).
     st.caption("Infraestrutura de transporte e hidrografia oficiais IBGE (BC250 em todo o Brasil + BC100 em 8 UFs) — pontes, travessias/balsas, eclusas, hidrovias, portos, sinalização, rede viária e limites municipais, sem depender de GDAL/geopandas.")
 
     if not _BASES_LOCAIS_IBGE:
@@ -59178,7 +59179,7 @@ if _secao == _SECOES[22]:   # tab_geo_ibge
 # Central de rotas que dependem de travessias aquaviárias (balsas/ferries).
 # ==============================================================================
 if _secao == _SECOES[18]:   # tab_ferry_routes
-    st.header("🚢 Rotas com Balsa")
+    # [REDESIGN BELEZA - Rodada 8] Título duplicado removido (o hero já o exibe).
     st.caption("Rotas que dependem de travessias aquaviárias (balsas/ferries). Identificação do rio, bacia, travessia e alternativa rodoviária.")
     
     _aba_ferry = st.tabs(["📋 Lista", "🗺️ Mapa das Travessias", "📊 Análise"])
@@ -59409,7 +59410,7 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
 # Central de rotas puramente rodoviárias (sem travessias aquaviárias).
 # ==============================================================================
 if _secao == _SECOES[19]:   # tab_land_routes
-    st.header("🛣️ Rotas sem Balsa")
+    # [REDESIGN BELEZA - Rodada 8] Título duplicado removido (o hero já o exibe).
     st.caption("Rotas puramente rodoviárias (sem travessias aquaviárias). Alternativas rodoviárias puras para rotas que hoje usam balsa.")
     
     try:
@@ -59482,7 +59483,7 @@ if _secao == _SECOES[19]:   # tab_land_routes
 # df_processado real não tem 'Balsa'/'Vencedor'/'Distância App (km)'; o helper normaliza.
 # ==============================================================================
 if _secao == _SECOES[20]:   # tab_defeats
-    st.header("❌ Central de Derrotas e Correções")
+    # [REDESIGN BELEZA - Rodada 8] Título duplicado removido (o hero já o exibe).
     st.caption("Diagnóstico de cada derrota do estudo de referência: causa raiz, rio, balsa, candidatos descartados, correção aplicada.")
     
     _aba_derrotas = st.tabs(["📋 Lista", "🗺️ Mapa das Derrotas", "⚔️ Diff Visual", "📊 Estatísticas"])
@@ -59627,7 +59628,7 @@ if _secao == _SECOES[20]:   # tab_defeats
 # Trilha completa de auditoria: candidatos avaliados, descartados, rotas consultadas, fontes, APIs, decisões.
 # ==============================================================================
 if _secao == _SECOES[21]:   # tab_auditoria_completa
-    st.header("🔍 Auditoria Completa da Aplicação")
+    # [REDESIGN BELEZA - Rodada 8] Título duplicado removido (o hero já o exibe).
     st.caption("Trilha completa de auditoria: candidatos avaliados, descartados, rotas consultadas, fontes, APIs, decisões.")
     
     _aba_aud = st.tabs(["📋 Candidatos", "🗑️ Descartados", "🛣️ Rotas", "📚 Fontes", "🔧 APIs", "⚙️ Decisões"])
