@@ -57704,16 +57704,24 @@ if _secao == _SECOES[15]:   # tab_route_intel
                 with _abas_intel[0]:
                     st.subheader("KPIs Globais")
                     _k1, _k2, _k3, _k4 = st.columns(4)
-                    _k1.metric("Rotas Analisadas", f"{_int_tot:,}")
-                    _k2.metric("Distância Média", ("%.1f km" % float(_km_mean)) if _int_km.notna().any() else "—")
-                    _k3.metric("Distância Mediana", ("%.1f km" % float(_km_med)) if _int_km.notna().any() else "—")
-                    _k4.metric("Distância Total", ("%.0f km" % float(_km_sum)) if _int_km.notna().any() else "—")
+                    _k1.metric("Rotas Analisadas", f"{_int_tot:,}",
+                               help="Total de rotas no recorte atual (após os filtros inteligentes acima).")
+                    _k2.metric("Distância Média", ("%.1f km" % float(_km_mean)) if _int_km.notna().any() else "—",
+                               help="Média aritmética da distância viária das rotas — sensível a outliers (rotas muito longas puxam para cima).")
+                    _k3.metric("Distância Mediana", ("%.1f km" % float(_km_med)) if _int_km.notna().any() else "—",
+                               help="Valor central da distância viária (metade das rotas abaixo, metade acima) — mais robusto a outliers que a média.")
+                    _k4.metric("Distância Total", ("%.0f km" % float(_km_sum)) if _int_km.notna().any() else "—",
+                               help="Soma da distância viária de todas as rotas do recorte.")
 
                     _k5, _k6, _k7, _k8 = st.columns(4)
-                    _k5.metric("Rotas com Balsa", f"{_int_balsa:,} ({_pct_balsa:.1f}%)")
-                    _k6.metric("Rios Cruzados", _int_rios)
-                    _k7.metric("Bacias Hidrográficas", _int_bac)
-                    _k8.metric("UFs Cobertas", _ufs_cobertas)
+                    _k5.metric("Rotas com Balsa", f"{_int_balsa:,} ({_pct_balsa:.1f}%)",
+                               help="Rotas que obrigatoriamente cruzam uma travessia aquática (balsa), e sua fração do recorte.")
+                    _k6.metric("Rios Cruzados", _int_rios,
+                               help="Número de rios DISTINTOS nomeados cruzados pelas rotas do recorte (contagem única, não por rota).")
+                    _k7.metric("Bacias Hidrográficas", _int_bac,
+                               help="Número de bacias hidrográficas DISTINTAS tocadas pelas rotas do recorte (contagem única).")
+                    _k8.metric("UFs Cobertas", _ufs_cobertas,
+                               help="Número de unidades federativas (estados) DISTINTAS de origem no recorte.")
 
                     st.divider()
 
