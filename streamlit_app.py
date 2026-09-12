@@ -53626,8 +53626,14 @@ if _secao == _SECOES[4]:   # tab_analytics
             _insights = gerar_insights_automaticos(df_cf)
             if _insights:
                 with st.expander("🤖 Insights Automáticos (descoberta de padrões e anomalias)", expanded=True):
-                    st.caption("O sistema analisou os dados filtrados e destacou automaticamente os pontos mais relevantes:")
-                    for tipo, texto in _insights:
+                    st.caption("O sistema analisou os dados filtrados e destacou automaticamente os pontos mais relevantes — do que exige atenção ao contexto geral:")
+                    # [INSIGHTS-ORDEM - Redesign Total Rodada 17] Ordena por prioridade ("resultado
+                    # primeiro"): alertas (exigem ação) no topo, depois boas notícias, por fim os
+                    # informativos de contexto. Antes renderizavam na ordem de geração, intercalando
+                    # um alerta crítico ("20% precisam de revisão") entre dois fatos neutros. sorted()
+                    # é estável → preserva a ordem de geração dentro de cada tipo.
+                    _ordem_ins = {"alerta": 0, "sucesso": 1, "info": 2}
+                    for tipo, texto in sorted(_insights, key=lambda _it: _ordem_ins.get(_it[0], 3)):
                         if tipo == "sucesso":
                             st.success(texto)
                         elif tipo == "alerta":
