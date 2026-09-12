@@ -1389,6 +1389,48 @@ st.markdown("""
         color: var(--brand-2) !important;
         border-radius: 999px !important;
     }
+
+    /* [REDESIGN BELEZA - Rodada 3] Cabeçalho de página (hero) — aparece no topo de TODA seção,
+       reaproveitando grupo/seção/descrição que a navegação já computa. Faixa com leve gradiente de
+       marca, ícone em destaque, título display e sobrelinha do grupo. Substitui o breadcrumb simples
+       sem perder nenhuma informação. */
+    .page-hero {
+        position: relative; margin: 2px 0 20px 0; padding: 16px 22px 16px 24px;
+        background: linear-gradient(135deg, rgba(59,130,246,.11) 0%, var(--sf-2) 46%, var(--sf-1) 100%);
+        border: 1px solid var(--brd-soft); border-radius: 16px;
+        box-shadow: var(--sh-soft); overflow: hidden;
+    }
+    .page-hero::before {
+        content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+        background: linear-gradient(180deg, var(--brand) 0%, var(--brand-3) 100%);
+    }
+    .page-hero::after {
+        content: ''; position: absolute; right: -40px; top: -60px; width: 220px; height: 220px;
+        background: radial-gradient(circle, rgba(59,130,246,.14), transparent 70%);
+        pointer-events: none;
+    }
+    .page-hero-eyebrow {
+        display: inline-flex; align-items: center; gap: 6px;
+        font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+        color: var(--brand-2); margin: 0 0 6px 0;
+    }
+    .page-hero-row { display: flex; align-items: center; gap: 14px; }
+    .page-hero-icon {
+        font-size: 30px; line-height: 1; flex: none;
+        filter: drop-shadow(0 2px 8px rgba(0,0,0,.45));
+    }
+    .page-hero-title {
+        font-family: 'Space Grotesk','Inter',sans-serif; font-weight: 700;
+        font-size: 26px; letter-spacing: -.02em; color: var(--tx-1); margin: 0; line-height: 1.15;
+    }
+    .page-hero-sub {
+        color: var(--tx-3); font-size: 13.5px; margin: 10px 0 0 0; line-height: 1.55; max-width: 860px;
+    }
+    @media (max-width: 640px) {
+        .page-hero { padding: 14px 16px; border-radius: 14px; }
+        .page-hero-title { font-size: 20px; }
+        .page-hero-icon { font-size: 24px; }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -42944,10 +42986,22 @@ _secao = st.radio("Seção", [_SECOES[_i] for _i in _GRUPOS_NAV[_grupo]],
                   label_visibility="collapsed", disabled=_PROC_ATIVO)
 
 # [UI-REENGENHARIA - Rodada 3] breadcrumb "onde estou" + subtítulo "o que existe nesta seção".
+# [REDESIGN BELEZA - Rodada 3] Elevado a um cabeçalho de página (hero): o grupo vira sobrelinha, o
+# emoji da seção vira ícone em destaque e o nome vira título display. Mesma informação de antes
+# (grupo · seção · descrição), acabamento premium. Separa o emoji do nome só para o layout; se a
+# seção não tiver espaço, usa o rótulo inteiro como título (defensivo).
 _desc_secao = _SECAO_DESC.get(_secao, "")
+_sec_partes = _secao.split(" ", 1)
+_sec_icone = _sec_partes[0] if len(_sec_partes) == 2 else ""
+_sec_titulo = _sec_partes[1] if len(_sec_partes) == 2 else _secao
 st.markdown(
-    f'<div class="nav-breadcrumb">📍 <b>{_grupo}</b> <span class="nav-sep">›</span> <b>{_secao}</b></div>'
-    + (f'<div class="nav-subtitle">{_desc_secao}</div>' if _desc_secao else ''),
+    '<div class="page-hero">'
+    f'<div class="page-hero-eyebrow">📍 {_grupo}</div>'
+    '<div class="page-hero-row">'
+    + (f'<span class="page-hero-icon">{_sec_icone}</span>' if _sec_icone else '')
+    + f'<div class="page-hero-title">{_sec_titulo}</div></div>'
+    + (f'<div class="page-hero-sub">{_desc_secao}</div>' if _desc_secao else '')
+    + '</div>',
     unsafe_allow_html=True)
 
 if _PROC_ATIVO:
