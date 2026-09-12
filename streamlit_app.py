@@ -1669,6 +1669,29 @@ _GUIA_ABAS = {
         "erros_comuns": "Esperar cobertura **BC100** fora das 8 UFs (lá só há BC250); usar raio grande demais e trazer feições irrelevantes; achar que a **ausência** de feição é erro — pode simplesmente não haver nada ali.",
         "dicas": "Comece com raio pequeno e aumente se precisar. A aba **não depende de GDAL/geopandas** — funciona mesmo em ambientes enxutos. Cruze com **Hidrografia** e **Rotas com Balsa** para a visão completa.",
     },
+    # [Melhoria aba a aba - 5] Guias das abas de rotas com/sem balsa.
+    "ferry_routes": {
+        "o_que_faz": "Filtra e analisa, do lote processado, as rotas que **dependem de travessia aquaviária** (balsa/ferry). Para cada uma identifica o **rio**, a **bacia**, a **travessia** e, quando existe, a **alternativa rodoviária**.",
+        "quando_usar": "Quando você quer ver quais deslocamentos do estudo **exigem balsa** — o que afeta tempo, risco e previsibilidade — e avaliar se há um caminho só por estrada.",
+        "dados": "Nenhum upload. Usa o **último lote processado**, filtrando as rotas com balsa.",
+        "preenchimento": "1. Processe um lote na aba **Estudo em Lote**.\n        2. Abra esta aba.\n        3. Use **📋 Lista** para ver as rotas, **🗺️ Mapa das Travessias** para localizá-las e **📊 Análise** para o panorama.",
+        "apos_executar": "É leitura do lote: a app separa as rotas com travessia e cruza com a hidrografia para nomear rio/bacia/travessia (sem novo roteamento).",
+        "interpretar": "A **Lista** traz cada rota com balsa e seus detalhes; o **Mapa** mostra onde estão as travessias; a **Análise** resume o peso das balsas no estudo (quantas rotas, quais bacias, alternativas possíveis).",
+        "exemplos": "“Quantas rotas dependem de balsa e em quais rios?” → **Análise** + **Lista**.",
+        "erros_comuns": "Abrir sem lote processado (vazio); supor que toda balsa tem alternativa rodoviária curta — às vezes o desvio por terra é enorme.",
+        "dicas": "Use junto com **Rotas sem Balsa** (o complemento) e com **Hidrografia** para entender o regime do rio. A alternativa rodoviária ajuda a justificar decisões.",
+    },
+    "land_routes": {
+        "o_que_faz": "Mostra as rotas **puramente rodoviárias** do lote (sem travessia aquaviária) e, para as rotas que hoje usam balsa, as **alternativas 100% por estrada**.",
+        "quando_usar": "Quando você quer o conjunto de deslocamentos **sem dependência de balsa**, ou busca substituir uma travessia por um caminho terrestre.",
+        "dados": "Nenhum upload. Usa o **último lote processado**.",
+        "preenchimento": "1. Processe um lote na aba **Estudo em Lote**.\n        2. Abra esta aba para ver as rotas rodoviárias puras e as alternativas terrestres das rotas com balsa.",
+        "apos_executar": "Leitura do lote: separa as rotas sem balsa e, para as com balsa, exibe a **opção rodoviária** quando ela existe.",
+        "interpretar": "Cada rota aparece com sua distância/tempo **rodoviários**; para rotas que hoje usam balsa, compare o custo da alternativa terrestre — ele pode ser bem maior.",
+        "exemplos": "“Dá para evitar a balsa desta rota? A quanto sai de estrada?” → a **alternativa rodoviária** desta aba.",
+        "erros_comuns": "Abrir sem lote; achar que a alternativa rodoviária é sempre melhor — muitas vezes a **balsa continua sendo a escolha ótima**.",
+        "dicas": "Use em par com **Rotas com Balsa**: uma mostra a dependência aquaviária, a outra a saída por terra quando ela existe.",
+    },
 }
 
 def renderizar_guia_aba(chave_aba: str):
@@ -59217,7 +59240,8 @@ if _secao == _SECOES[22]:   # tab_geo_ibge
 if _secao == _SECOES[18]:   # tab_ferry_routes
     # [REDESIGN BELEZA - Rodada 8] Título duplicado removido (o hero já o exibe).
     st.caption("Rotas que dependem de travessias aquaviárias (balsas/ferries). Identificação do rio, bacia, travessia e alternativa rodoviária.")
-    
+    renderizar_guia_aba("ferry_routes")
+
     _aba_ferry = st.tabs(["📋 Lista", "🗺️ Mapa das Travessias", "📊 Análise"])
     
     # [ABA-ROBUSTA 448ª] Projeção canônica do df_processado (sinonímia de colunas e balsa
@@ -59448,7 +59472,8 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
 if _secao == _SECOES[19]:   # tab_land_routes
     # [REDESIGN BELEZA - Rodada 8] Título duplicado removido (o hero já o exibe).
     st.caption("Rotas puramente rodoviárias (sem travessias aquaviárias). Alternativas rodoviárias puras para rotas que hoje usam balsa.")
-    
+    renderizar_guia_aba("land_routes")
+
     try:
         _rotas_proc = st.session_state.get('df_processado')
         if _rotas_proc is not None and not _rotas_proc.empty:
