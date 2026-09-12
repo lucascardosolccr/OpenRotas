@@ -1431,6 +1431,36 @@ st.markdown("""
         .page-hero-title { font-size: 20px; }
         .page-hero-icon { font-size: 24px; }
     }
+
+    /* [REDESIGN BELEZA - Rodada 7] Onboarding, estados vazios e stepper da jornada — acabamento
+       premium coeso com o restante. Só cosmético. */
+    .ds-onboard {
+        background: linear-gradient(135deg, rgba(59,130,246,.10) 0%, var(--sf-2) 45%, var(--sf-1) 100%) !important;
+        border: 1px solid var(--brd-soft) !important; border-left: 4px solid var(--brand) !important;
+        border-radius: 16px !important; box-shadow: var(--sh-lift) !important;
+        position: relative; overflow: hidden;
+    }
+    .ds-onboard::after {
+        content: ''; position: absolute; right: -50px; top: -70px; width: 240px; height: 240px;
+        background: radial-gradient(circle, rgba(59,130,246,.13), transparent 70%); pointer-events: none;
+    }
+    .ds-onboard h3 { font-family: 'Space Grotesk','Inter',sans-serif !important; letter-spacing: -.01em; }
+    .ds-onboard > * { position: relative; z-index: 1; }
+    .ds-step-n {
+        background: var(--grad-brand) !important;
+        box-shadow: 0 4px 12px -3px rgba(59,130,246,.6);
+    }
+    .ds-empty {
+        background: var(--grad-surface) !important;
+        border: 1px dashed rgba(148,163,184,.28) !important;
+        border-radius: 14px !important;
+    }
+    .ds-jornada-passo { border-radius: 999px !important; transition: all .18s ease; }
+    .ds-jornada-passo.atual {
+        background: var(--grad-brand) !important; border-color: transparent !important;
+        box-shadow: 0 4px 14px -4px rgba(59,130,246,.6);
+    }
+    .ds-jornada-passo.feito { border-color: var(--ok) !important; background: rgba(46,204,113,.10) !important; }
 </style>
 """, unsafe_allow_html=True)
 
