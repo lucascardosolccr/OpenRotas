@@ -1692,6 +1692,29 @@ _GUIA_ABAS = {
         "erros_comuns": "Abrir sem lote; achar que a alternativa rodoviária é sempre melhor — muitas vezes a **balsa continua sendo a escolha ótima**.",
         "dicas": "Use em par com **Rotas com Balsa**: uma mostra a dependência aquaviária, a outra a saída por terra quando ela existe.",
     },
+    # [Melhoria aba a aba - 6] Guias das abas de derrotas e auditoria completa.
+    "defeats": {
+        "o_que_faz": "Faz o **diagnóstico, caso a caso, das “derrotas” do estudo** — os municípios em que a **referência** levou o candidato mais perto do que a **aplicação**. Para cada derrota mostra a **causa raiz**, se há rio/balsa envolvidos, os candidatos descartados e a **correção aplicada**.",
+        "quando_usar": "Depois de rodar o **Comparador de Estudos**, quando você quer entender **por que** a aplicação perdeu em certos municípios e o que é recuperável.",
+        "dados": "Nenhum upload. Usa o resultado do **Comparador**/estudo em memória — rode o Comparador antes.",
+        "preenchimento": "1. Rode a aba **⚖️ Comparador de Estudos**.\n        2. Abra esta aba.\n        3. Use **📋 Lista** para os casos, **🗺️ Mapa das Derrotas** para localizá-los, **⚔️ Diff Visual** para comparar lado a lado e **📊 Estatísticas** para o agregado.",
+        "apos_executar": "Leitura e **classificação forense** dos casos de derrota: separa *evitáveis*, *regra-correta* e *referência estimada* (sem novo roteamento).",
+        "interpretar": "Cada derrota traz a **causa raiz**: *evitável* = dava para melhorar; *regra-correta* = a referência usou método diferente (ex: linha reta); *referência estimada* = distância fisicamente implausível. As **Estatísticas** somam o quadro geral.",
+        "exemplos": "“Perdemos em 40 municípios — quantos eram realmente evitáveis?” → **Estatísticas** + **Lista** filtrada.",
+        "erros_comuns": "Abrir sem rodar o Comparador (nada a diagnosticar); tratar **toda** derrota como erro do algoritmo — muitas são metodológicas (*referência estimada*).",
+        "dicas": "Priorize as derrotas **evitáveis** para revisão. O **Diff Visual** é ótimo para defender tecnicamente cada caso.",
+    },
+    "auditoria_completa": {
+        "o_que_faz": "Abre a **trilha completa de auditoria** do estudo: todos os candidatos avaliados, os **descartados** (e por quê), as rotas consultadas, as **fontes e APIs** usadas e as **decisões** tomadas. Rastreabilidade total.",
+        "quando_usar": "Quando você precisa **provar/justificar cada passo** do estudo a um auditor ou cliente, ou investigar um resultado específico a fundo.",
+        "dados": "Nenhum upload. Usa os **logs de auditoria** do último estudo/alocação processados.",
+        "preenchimento": "Não há campos. Navegue pelas sub-abas: **📋 Candidatos**, **🗑️ Descartados**, **🛣️ Rotas**, **📚 Fontes**, **🔧 APIs** e **⚙️ Decisões**. Use a busca do navegador (Ctrl+F) para achar um caso.",
+        "apos_executar": "Não há processamento — exibe o **histórico já registrado**, com total rastreabilidade.",
+        "interpretar": "**Candidatos** = quem foi avaliado; **Descartados** = quem saiu e o motivo; **Rotas** = o que foi consultado; **Fontes/APIs** = a procedência real; **Decisões** = o raciocínio final de cada escolha.",
+        "exemplos": "“Por que o município X não foi considerado?” → **Descartados** mostra o motivo exato.",
+        "erros_comuns": "Abrir sem ter processado nada (tabelas vazias); confundir com a **Auditoria da Aplicação** (saúde/XAI de geocodificação) — esta cobre a **trilha do estudo de rotas**.",
+        "dicas": "É a aba da **transparência total** do estudo. Exporte/print para anexar a relatórios de auditoria.",
+    },
 }
 
 def renderizar_guia_aba(chave_aba: str):
@@ -59546,7 +59569,8 @@ if _secao == _SECOES[19]:   # tab_land_routes
 if _secao == _SECOES[20]:   # tab_defeats
     # [REDESIGN BELEZA - Rodada 8] Título duplicado removido (o hero já o exibe).
     st.caption("Diagnóstico de cada derrota do estudo de referência: causa raiz, rio, balsa, candidatos descartados, correção aplicada.")
-    
+    renderizar_guia_aba("defeats")
+
     _aba_derrotas = st.tabs(["📋 Lista", "🗺️ Mapa das Derrotas", "⚔️ Diff Visual", "📊 Estatísticas"])
     
     try:
@@ -59691,7 +59715,8 @@ if _secao == _SECOES[20]:   # tab_defeats
 if _secao == _SECOES[21]:   # tab_auditoria_completa
     # [REDESIGN BELEZA - Rodada 8] Título duplicado removido (o hero já o exibe).
     st.caption("Trilha completa de auditoria: candidatos avaliados, descartados, rotas consultadas, fontes, APIs, decisões.")
-    
+    renderizar_guia_aba("auditoria_completa")
+
     _aba_aud = st.tabs(["📋 Candidatos", "🗑️ Descartados", "🛣️ Rotas", "📚 Fontes", "🔧 APIs", "⚙️ Decisões"])
     
     with _aba_aud[0]:
