@@ -7081,6 +7081,26 @@ _MNIL_CSS = """
 .mnil .chip.ok{background:var(--route-soft);color:#6EE7B7}
 .mnil .chip.att{background:var(--attention-soft);color:#F5B971}
 @media (max-width:760px){.mnil .grid,.mnil .grid.sec{grid-template-columns:repeat(2,1fr)}}
+
+/* [REDESIGN BELEZA - Rodada 4] Elevação premium dos cartões de KPI do "Panorama do estudo".
+   Superfície em gradiente, barra de acento com gradiente semântico, elevação e brilho no hover.
+   Só acabamento — mesma estrutura, mesmos dados. */
+.mnil .kpi{
+  background:linear-gradient(180deg,#232937 0%,#191E29 100%);
+  border-color:rgba(148,163,184,.14);
+  box-shadow:0 1px 2px rgba(0,0,0,.22),0 10px 28px -14px rgba(0,0,0,.6);
+  transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease;
+}
+.mnil .kpi:hover{
+  transform:translateY(-3px);
+  box-shadow:0 2px 4px rgba(0,0,0,.28),0 22px 46px -18px rgba(0,0,0,.72);
+  border-color:rgba(148,163,184,.26);
+}
+.mnil .kpi::before{width:4px;background:linear-gradient(180deg,var(--route),#22a35a)}
+.mnil .kpi.attention::before{background:linear-gradient(180deg,var(--attention),#c65f13)}
+.mnil .kpi.alert::before{background:linear-gradient(180deg,var(--alert),#c0392b)}
+.mnil .kpi .val{letter-spacing:-.6px}
+.mnil .eyebrow h2{letter-spacing:.9px}
 </style>
 """
 
@@ -7203,6 +7223,13 @@ box-shadow:0 1px 2px rgba(0,0,0,.25),0 6px 20px rgba(0,0,0,.35);display:grid;gri
 .mnil .verdict .cmp .v{font-family:'Space Grotesk','Inter',sans-serif;font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink,#F9FAFB);text-align:right}
 .mnil .verdict .whatif{margin-top:10px;padding:10px 12px;background:var(--attention-soft,rgba(230,126,34,.18));border-radius:10px;font-size:12px;color:#F5B971}
 @media (max-width:760px){.mnil .verdict{grid-template-columns:1fr}.mnil .verdict .win{border-right:none;border-bottom:1px solid var(--line,#2D3342)}}
+/* [REDESIGN BELEZA - Rodada 4] Elevação do cartão de veredito — superfície e sombra premium,
+   acento vencedor em gradiente com leve brilho. Só acabamento. */
+.mnil .verdict{
+  border-color:rgba(148,163,184,.14);
+  box-shadow:0 1px 2px rgba(0,0,0,.22),0 14px 34px -16px rgba(0,0,0,.65);
+}
+.mnil .verdict .win::before{width:5px;background:linear-gradient(180deg,var(--route,#2ECC71),#22a35a);box-shadow:0 0 22px -2px rgba(46,204,113,.5)}
 </style>
 """
 
