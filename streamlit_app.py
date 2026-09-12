@@ -1109,7 +1109,12 @@ st.markdown("""
        ========================================================================== */
 
     /* Acessibilidade: foco visível por teclado (WCAG 2.4.7) */
-    button:focus-visible, a:focus-visible, input:focus-visible,
+    /* [REDESIGN TOTAL - Rodada 19] `textarea` fora da lista era o único controle de formulário SEM
+       anel de foco: input/button/select/checkbox/radio recebiam o contorno (ou um box-shadow do
+       próprio BaseWeb, no caso do slider), mas os st.text_area (sugestão de anomalia, feedback,
+       registro de derrotas) ficavam sem NENHUMA indicação visível ao navegar por teclado — medido
+       via Playwright (outline:none e box-shadow:none no foco). Adicionado à mesma regra. */
+    button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible,
     [data-baseweb="tab"]:focus-visible, select:focus-visible {
         outline: 3px solid var(--brand-2) !important;
         outline-offset: 2px !important;
