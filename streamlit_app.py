@@ -1646,6 +1646,29 @@ _GUIA_ABAS = {
         "erros_comuns": "Confundir **link informativo** (só referência) com **API ao vivo** (consultada de fato); achar que uma base local indisponível quebra a app — as demais seções seguem com **fallback** automático.",
         "dicas": "Exporte o catálogo para anexar a relatórios de procedência. A tela é **auto-documentada**: se o código troca de fonte, ela reflete a mudança sozinha.",
     },
+    # [Melhoria aba a aba - 4] Guias das abas hidrográfica e geoespacial IBGE.
+    "hidrografia": {
+        "o_que_faz": "É a **central de inteligência hidrográfica nacional**: consulta rios, bacias e sub-bacias, estações fluviométricas, séries hidrológicas e **cotas & vazões**, com um mapa hidrográfico. Reúne dados oficiais (ANA e afins) em um só painel.",
+        "quando_usar": "Quando você precisa entender o **contexto hídrico** de uma região — quais rios e bacias existem, onde há estações de medição e o regime de cheias/vazantes que pode afetar **travessias por balsa**.",
+        "dados": "Nenhum upload obrigatório — usa as bases hidrográficas já carregadas. Em algumas sub-abas você escolhe o **rio**, a **bacia** ou a **estação** de interesse.",
+        "preenchimento": "Navegue pelas sub-abas: **🌊 Rios**, **🏞️ Bacias**, **📍 Estações**, **📊 Séries Hidrológicas**, **📈 Cotas & Vazões** e **🗺️ Mapa Hidrográfico**. Selecione o item desejado em cada uma.",
+        "apos_executar": "As tabelas e o mapa se montam a partir das bases hidrográficas; as **séries** e **cotas & vazões** podem consultar os dados das estações selecionadas.",
+        "interpretar": "**Rios/Bacias/Sub-bacias** dão a estrutura da rede; **Estações** são os pontos de medição; **Séries** e **Cotas & Vazões** mostram o regime do rio ao longo do tempo — útil para antecipar **períodos de cheia** que impactam balsas.",
+        "exemplos": "“Esta região depende de qual bacia e o rio enche em que época?” → **Bacias** + **Cotas & Vazões**.",
+        "erros_comuns": "Esperar dados em tempo real de toda estação (algumas têm séries limitadas); confundir a **rede hidrográfica** (esta aba) com a **detecção de balsa em rotas** (abas Rotas com Balsa / Derrotas).",
+        "dicas": "Use o **Mapa Hidrográfico** para localizar visualmente rios e estações. Cruze com **Rotas com Balsa** para entender por que uma travessia existe naquele ponto.",
+    },
+    "geo_ibge": {
+        "o_que_faz": "Consulta a **infraestrutura oficial do IBGE** (bases BC250 em todo o Brasil + BC100 em 8 UFs) em torno de um ponto: **pontes, travessias/balsas, eclusas, hidrovias, portos, sinalização, rede viária e limites municipais** — sem depender de GDAL/geopandas.",
+        "quando_usar": "Quando você quer saber **o que existe fisicamente perto de um local** — há ponte ou balsa ali? eclusa? hidrovia? — ou enriquecer um ponto com os dados oficiais do IBGE.",
+        "dados": "Um **ponto de consulta**: coordenadas ou um município (seletor). Depois, uma **camada** (ex: pontes) e um **raio** de busca.",
+        "preenchimento": "1. Em **📍 Local de consulta**, informe coordenadas ou escolha um município.\n        2. Em **🔎 Feições próximas**, escolha a **camada** e o **raio**.\n        3. (Opcional) filtre pelos atributos da camada.\n        4. Veja o painel **🧠 XAI — enriquecimento do ponto**.",
+        "apos_executar": "O sistema busca, nas bases locais do IBGE, as feições da camada escolhida **dentro do raio** e as lista/mapeia; o painel XAI resume o contexto daquele ponto.",
+        "interpretar": "A lista mostra cada feição encontrada (com a **distância** até o ponto) e seus atributos oficiais; o **XAI** consolida o que o ponto “tem por perto” — base para decidir se uma rota cruza ponte, balsa ou hidrovia.",
+        "exemplos": "“Há balsa num raio de 20 km deste município?” → camada de **travessias** + raio **20 km**.",
+        "erros_comuns": "Esperar cobertura **BC100** fora das 8 UFs (lá só há BC250); usar raio grande demais e trazer feições irrelevantes; achar que a **ausência** de feição é erro — pode simplesmente não haver nada ali.",
+        "dicas": "Comece com raio pequeno e aumente se precisar. A aba **não depende de GDAL/geopandas** — funciona mesmo em ambientes enxutos. Cruze com **Hidrografia** e **Rotas com Balsa** para a visão completa.",
+    },
 }
 
 def renderizar_guia_aba(chave_aba: str):
@@ -58773,7 +58796,8 @@ def _resolver_csv(nome):
 if _secao == _SECOES[17]:   # tab_hidrografia
     # [REDESIGN BELEZA - Rodada 8] Título duplicado removido (o hero já o exibe).
     st.caption("Central de inteligência hidrográfica nacional: rios, bacias, sub-bacias, estações, séries hidrológicas.")
-    
+    renderizar_guia_aba("hidrografia")
+
     _aba_hidro = st.tabs(["🌊 Rios", "🏞️ Bacias", "📍 Estações", "📊 Séries Hidrológicas", "📈 Cotas & Vazões", "🗺️ Mapa Hidrográfico"])
     
     # Carregar dados com fallback automático
@@ -59008,6 +59032,7 @@ if _secao == _SECOES[17]:   # tab_hidrografia
 if _secao == _SECOES[22]:   # tab_geo_ibge
     # [REDESIGN BELEZA - Rodada 8] Título duplicado removido (o hero já o exibe).
     st.caption("Infraestrutura de transporte e hidrografia oficiais IBGE (BC250 em todo o Brasil + BC100 em 8 UFs) — pontes, travessias/balsas, eclusas, hidrovias, portos, sinalização, rede viária e limites municipais, sem depender de GDAL/geopandas.")
+    renderizar_guia_aba("geo_ibge")
 
     if not _BASES_LOCAIS_IBGE:
         st.warning("Camadas derivadas IBGE indisponíveis nesta execução. As demais seções seguem normais.")
