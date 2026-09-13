@@ -59192,12 +59192,60 @@ if _secao == _SECOES[17]:   # tab_hidrografia
                 except Exception:
                     logger.debug("[HYDRO-COTAS] Ficha local da estação isolada falhou (aditivo).", exc_info=True)
 
-            if st.button("🔍 Consultar API SNIRH", key="hidro_consultar_api"):
+            # [Expansão de conteúdo] O botão agora TENTA a consulta real (antes só imprimia o
+            # curl). A API pública da ANA pode exigir autenticação e/ou estar indisponível a
+            # partir deste ambiente — por isso o tratamento é honesto: mostra os dados quando
+            # vierem, e uma mensagem clara + o endpoint para uso manual quando não vierem.
+            # Nunca inventa uma série: em falha, nenhum número é exibido.
+            _tipo_slug_map = {"Cotas": "cotas", "Vazões": "vazoes", "Sedimentos": "sedimentos",
+                              "Qualidade": "qualidadeagua", "Curvas descarga": "curvasdescarga",
+                              "Chuvas": "chuvas"}
+            if st.button("🔍 Consultar API SNIRH (ao vivo)", key="hidro_consultar_api"):
                 if _est_sel != "(nenhuma)":
                     _cod = _est_sel.split(" - ")[0]
-                    st.info(f"Endpoint: `https://hidroweb.ana.gov.br/api/v1/{_tipo_serie.lower()}/estacao/{_cod}`")
-                    st.code(f"curl 'https://hidroweb.ana.gov.br/api/v1/{_tipo_serie.lower()}/estacao/{_cod}'", language="bash")
-                    st.caption("A API retorna dados no formato HAL+JSON. Use o código acima para integração direta.")
+                    _slug = _tipo_slug_map.get(_tipo_serie, str(_tipo_serie).lower())
+                    _url_ana = f"https://hidroweb.ana.gov.br/api/v1/{_slug}/estacao/{_cod}"
+                    _ok_ana, _dados_ana = False, None
+                    with st.spinner("Consultando ANA/HidroWeb (%s · estação %s)..." % (_tipo_serie, _cod)):
+                        try:
+                            _resp_ana = requests.get(_url_ana, timeout=25, headers={"Accept": "application/json"})
+                            if _resp_ana.status_code == 200:
+                                try:
+                                    _dados_ana = _resp_ana.json()
+                                except Exception:
+                                    _dados_ana = _resp_ana.text[:8000]
+                                _ok_ana = True
+                            else:
+                                _dados_ana = ("A API respondeu HTTP %d — pode exigir autenticação (cadastro no SNIRH) "
+                                              "ou a estação não ter esta série." % _resp_ana.status_code)
+                        except Exception as _e_ana:
+                            _dados_ana = ("Não foi possível alcançar a API da ANA a partir deste ambiente "
+                                          "(%s). Use o endpoint abaixo diretamente." % type(_e_ana).__name__)
+                    if _ok_ana:
+                        st.success("✅ Resposta recebida da ANA/HidroWeb.")
+                        try:
+                            _df_ana = None
+                            if isinstance(_dados_ana, list):
+                                _df_ana = pd.DataFrame(_dados_ana)
+                            elif isinstance(_dados_ana, dict):
+                                _emb = (_dados_ana.get("_embedded") or _dados_ana.get("items")
+                                        or _dados_ana.get("data") or _dados_ana.get("content"))
+                                if isinstance(_emb, dict):
+                                    _emb = next((v for v in _emb.values() if isinstance(v, list)), None)
+                                if isinstance(_emb, list):
+                                    _df_ana = pd.DataFrame(_emb)
+                            if _df_ana is not None and not _df_ana.empty:
+                                st.dataframe(_df_ana.head(500), use_container_width=True, hide_index=True)
+                                st.caption("Exibindo até 500 registros retornados pela API.")
+                            else:
+                                st.json(_dados_ana if isinstance(_dados_ana, (dict, list)) else {"resposta": _dados_ana})
+                        except Exception:
+                            logger.debug("[HYDRO-ANA] Falha ao tabular resposta da ANA (aditivo).", exc_info=True)
+                            st.json(_dados_ana if isinstance(_dados_ana, (dict, list)) else {"resposta": str(_dados_ana)})
+                    else:
+                        st.warning("⚠️ %s" % _dados_ana)
+                        st.caption("Endpoint para uso manual (ex.: seu navegador ou integração com token):")
+                        st.code(f"curl '{_url_ana}'", language="bash")
         else:
             st.warning("Nenhuma estação disponível para consulta.")
     
