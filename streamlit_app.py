@@ -58934,19 +58934,68 @@ if _secao == _SECOES[17]:   # tab_hidrografia
         st.subheader("🌊 Rios Brasileiros")
         if not _rios_df.empty:
             st.caption(f"Fonte: {_rios_df['fonte'].iloc[0] if 'fonte' in _rios_df.columns else 'Desconhecida'} | Total: {len(_rios_df)} rios")
-            _cols_show = [c for c in ["nome", "nome_rio", "bacia", "uf", "latitude", "longitude", "fonte"] if c in _rios_df.columns]
-            st.dataframe(_rios_df[_cols_show].head(100), use_container_width=True, hide_index=True)
-            
-            # [HYDRO-VIS - 452ª] Rios por bacia (aditivo): dá a leitura analítica logo abaixo da tabela.
+
+            # [Expansão de conteúdo - Rios] Traduz o `baciaCodigo` do SNIRH (código 1–9, hoje
+            # descartado) para o NOME da região hidrográfica, cruzando com a tabela de bacias já
+            # carregada (registroID → nome). Nada é fabricado: se as colunas não existirem em
+            # outro ambiente, o cruzamento simplesmente não acontece. O `jurisdicao` do SNIRH é
+            # um código numérico sem legenda pública aqui — deliberadamente NÃO interpretado.
+            _bac_col = next((c for c in ["baciaCodigo", "bacia", "nome_bacia"] if c in _rios_df.columns), None)
+            _sub_col = next((c for c in ["subBaciaCodigo", "subbacia"] if c in _rios_df.columns), None)
+            _bac_map = {}
             try:
-                _bacia_col = next((c for c in ["bacia", "nome_bacia"] if c in _rios_df.columns), None)
-                if _bacia_col:
-                    _rios_bac = _rios_df[_bacia_col].astype(str).str.strip().replace(["", "—"], pd.NA).dropna()
-                    if _rios_bac.nunique():
-                        st.caption("Rios por bacia (top 10)")
-                        st.bar_chart(_rios_bac.value_counts().head(10))
+                if (_bacias_df is not None and not _bacias_df.empty
+                        and "registroID" in _bacias_df.columns and "nome" in _bacias_df.columns):
+                    _bac_map = {str(int(_k)): str(_v) for _k, _v in
+                                zip(_bacias_df["registroID"], _bacias_df["nome"]) if pd.notna(_k)}
             except Exception:
-                logger.debug("[HYDRO-VIS] Gráfico de bacias isolado falhou (aditivo).", exc_info=True)
+                _bac_map = {}
+            _rios_show = _rios_df.copy()
+            if _bac_col and _bac_map:
+                try:
+                    _rios_show["Região hidrográfica"] = (
+                        _rios_show[_bac_col].dropna().apply(lambda _x: _bac_map.get(str(int(_x)), "—"))
+                        if pd.api.types.is_numeric_dtype(_rios_show[_bac_col])
+                        else _rios_show[_bac_col].astype(str).map(lambda _x: _bac_map.get(_x.split(".")[0], "—")))
+                except Exception:
+                    pass
+            try:
+                _fmt_mil = lambda _n: f"{int(_n):,}".replace(",", ".")
+                _rk1, _rk2 = st.columns(2)
+                _rk1.metric("Rios catalogados", _fmt_mil(len(_rios_df)))
+                if "Região hidrográfica" in _rios_show.columns:
+                    _rk2.metric("Regiões hidrográficas", _fmt_mil(
+                        _rios_show["Região hidrográfica"].replace("—", pd.NA).dropna().nunique()),
+                        help="Grandes regiões hidrográficas do país (SNIRH): Amazonas, Tocantins, São Francisco, Paraná, Uruguai e os trechos do Atlântico.")
+                elif _bac_col:
+                    _rk2.metric("Bacias distintas", _fmt_mil(
+                        _rios_df[_bac_col].astype(str).str.strip().replace(["", "nan", "—"], pd.NA).dropna().nunique()))
+            except Exception:
+                logger.debug("[HYDRO-RIOS] KPIs isolados falharam (aditivo).", exc_info=True)
+
+            _cols_show = [c for c in ["nome", "nome_rio", "Região hidrográfica", _sub_col,
+                                      "bacia", "uf", "latitude", "longitude", "fonte"]
+                          if c and c in _rios_show.columns]
+            _cols_show = list(dict.fromkeys(_cols_show))
+            st.dataframe(_rios_show[_cols_show].head(100), use_container_width=True, hide_index=True)
+
+            # [HYDRO-VIS - 452ª] Rios por região hidrográfica (aditivo): leitura analítica real,
+            # com nomes em vez de códigos.
+            try:
+                if "Região hidrográfica" in _rios_show.columns:
+                    _rios_reg = _rios_show["Região hidrográfica"].astype(str).str.strip().replace(["", "—", "nan"], pd.NA).dropna()
+                    if _rios_reg.nunique():
+                        st.caption("Rios por região hidrográfica")
+                        st.bar_chart(_rios_reg.value_counts())
+                else:
+                    _bacia_col = next((c for c in ["bacia", "nome_bacia"] if c in _rios_df.columns), None)
+                    if _bacia_col:
+                        _rios_bac = _rios_df[_bacia_col].astype(str).str.strip().replace(["", "—"], pd.NA).dropna()
+                        if _rios_bac.nunique():
+                            st.caption("Rios por bacia (top 10)")
+                            st.bar_chart(_rios_bac.value_counts().head(10))
+            except Exception:
+                logger.debug("[HYDRO-VIS] Gráfico de regiões/bacias isolado falhou (aditivo).", exc_info=True)
             
             # Botões de exportação (bloco único DRY — [Melhoria4-EXCEL 453ª · M3])
             _botoes_exportacao_geo("rios_brasil", _rios_df, sheet_name="Rios")
