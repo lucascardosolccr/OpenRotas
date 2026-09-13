@@ -1570,6 +1570,26 @@ st.markdown("""
         background: var(--sf-3); border-color: var(--brand); color: var(--tx-1); font-weight: 600;
     }
     [class*="st-key-nav_sec_g"] [role="radiogroup"] > label:has(input:checked) p { color: var(--tx-1) !important; }
+
+    /* ============================================================================
+       [MICRO-INTERAÇÕES] Toques finos disparados por INTERAÇÃO (hover/foco/active) —
+       nunca por rerun, para não "piscar" a cada clique (no Streamlit todo o script
+       re-renderiza). Respeita prefers-reduced-motion (guard global mais acima). */
+    /* Rótulos de filtro (radio/checkbox) — realce suave ao passar o mouse. As regras
+       da navegação são mais específicas e continuam prevalecendo sobre estas. */
+    [data-testid="stRadio"] label, [data-testid="stCheckbox"] label {
+        transition: color .14s ease, transform .12s ease;
+    }
+    [data-testid="stRadio"] label:hover, [data-testid="stCheckbox"] label:hover { color: var(--tx-1) !important; }
+    /* Links — transição de cor da marca */
+    a, a:visited { transition: color .14s ease, opacity .14s ease; }
+    a:hover { color: var(--brand-2) !important; }
+    /* Opções de menus suspensos (selectbox/multiselect) — realce de marca no hover */
+    [data-baseweb="menu"] li:hover, [role="option"]:hover { background: rgba(59,130,246,.14) !important; }
+    /* Alça do slider — anel de foco suave ao passar o mouse/segurar */
+    [data-baseweb="slider"] [role="slider"] { transition: box-shadow .15s ease, transform .12s ease; }
+    [data-baseweb="slider"] [role="slider"]:hover { box-shadow: 0 0 0 6px rgba(59,130,246,.20); }
+    [data-baseweb="slider"] [role="slider"]:active { transform: scale(1.08); }
 </style>
 """, unsafe_allow_html=True)
 
