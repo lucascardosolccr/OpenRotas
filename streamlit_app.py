@@ -43960,8 +43960,7 @@ if _secao == _SECOES[14]:   # tab_geografica
         _geo_ds = None
         _geo_render_div = False
         if not _fontes:
-            st.info("ℹ️ Processe uma **alocação** (🎯 Locais de Aplicação), um **lote**, ou rode o **Comparador de "
-                    "estudos** para habilitar a análise. Esta aba reaproveita os resultados já calculados.")
+            _ds_empty_state("Nenhum resultado disponível para reaproveitar.", "Rode uma alocação (🎯 Locais de Aplicação), um lote (⚙️ Estudo em Lote) ou o ⚖️ Comparador de Estudos — esta aba reaproveita os resultados já calculados.")
         else:
             if len(_fontes) > 1:
                 _flabels = [_f[0] for _f in _fontes]
@@ -57536,7 +57535,7 @@ if _secao == _SECOES[11]:   # tab_auditoria
                    "Consolida a proveniência de cada rota para auditoria e prestação de contas.")
         _df_lr_base = st.session_state.get("df_processado")
         if _df_lr_base is None or len(_df_lr_base) == 0:
-            st.info("Processe um Estudo em Lote para gerar o livro-razão de rastreabilidade.")
+            _ds_empty_state("Nenhum estudo carregado nesta sessão.", "Rode a aba ⚙️ Estudo em Lote para gerar o livro-razão de rastreabilidade.")
         else:
             try:
                 _ledger = _montar_livro_razao_rastreabilidade(_df_lr_base)
@@ -58160,7 +58159,7 @@ if _secao == _SECOES[15]:   # tab_route_intel
             # passou a assumir o recorte completo, não uma amostra truncada.
             _df_intel = _proj_analise("proj_intel", _rotas_proc, max_linhas=100000)
             if _df_intel is None or _df_intel.empty:
-                st.info("Não há linhas analisáveis nesta sessão. Rode um estudo primeiro.")
+                _ds_empty_state("Não há linhas analisáveis nesta sessão.", "Rode a aba ⚙️ Estudo em Lote (ou 🎯 Locais de Aplicação) primeiro.")
             else:
                 _col_ic = _col_existente(_rotas_proc, "Indice Confianca Rota", "Índice Confiança", "Score da Rota", "Score Final Global", "Score Final")
                 _col_fonte = _col_existente(_rotas_proc, "Fonte da Rota", "Fonte Rota", "Motor da Rota")
