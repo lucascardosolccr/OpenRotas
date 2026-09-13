@@ -57901,6 +57901,16 @@ def _df_rotas_para_analise(df, max_linhas=300):
     _lon_o = _col_existente(_d, "Lon Origem", "Longitude Origem", "lon_origem", "lonO")
     _lat_d = _col_existente(_d, "Lat Destino", "Latitude Destino", "lat_destino", "latD")
     _lon_d = _col_existente(_d, "Lon Destino", "Longitude Destino", "lon_destino", "lonD")
+    # [Expansão de conteúdo] Colunas geográficas RICAS já calculadas pelo enriquecimento
+    # (route_context) que a projeção descartava — carregadas quando presentes na origem, para
+    # que TODAS as abas de rota (Balsa/sem Balsa/Derrotas) possam analisá-las, não só o Centro
+    # de Inteligência. Chaves sempre presentes (None quando a origem não as tem) → DataFrame
+    # consistente; abas que selecionam colunas por nome não são afetadas.
+    _col_dep = _col_existente(_d, "Dependencia Aquaviaria", "Dependência Aquaviária")
+    _col_cplx = _col_existente(_d, "Complexidade Geografica", "Complexidade Geográfica")
+    _col_conf = _col_existente(_d, "Confianca Geografica", "Confiança Geográfica")
+    _col_pontes = _col_existente(_d, "QT_PONTES", "Qtd Pontes")
+    _col_trav = _col_existente(_d, "QT_TRAVESSIAS", "Qtd Travessias")
 
     try:
         _g = _grafo_fluvial_memoizado()
@@ -57929,6 +57939,11 @@ def _df_rotas_para_analise(df, max_linhas=300):
                 "Lon Origem": (_num_seguro(_r.get(_lon_o)) if _lon_o else None),
                 "Lat Destino": (_num_seguro(_r.get(_lat_d)) if _lat_d else None),
                 "Lon Destino": (_num_seguro(_r.get(_lon_d)) if _lon_d else None),
+                "Dependência Aquaviária": (_num_seguro(_r.get(_col_dep)) if _col_dep else None),
+                "Complexidade Geográfica": (_num_seguro(_r.get(_col_cplx)) if _col_cplx else None),
+                "Confiança Geográfica": (_num_seguro(_r.get(_col_conf)) if _col_conf else None),
+                "Pontes no Cruzamento": (_num_seguro(_r.get(_col_pontes)) if _col_pontes else None),
+                "Travessias (qtd)": (_num_seguro(_r.get(_col_trav)) if _col_trav else None),
             })
     except Exception:
         return None
@@ -59697,6 +59712,26 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
                     if not _top_rios.empty:
                         st.bar_chart(_top_rios)
                     
+                    # [Expansão de conteúdo] Perfil geográfico das travessias (aditivo) — usa as
+                    # colunas ricas agora carregadas pela projeção (dependência/complexidade/pontes),
+                    # quando o estudo passou pelo enriquecimento. Guardado por presença de dado.
+                    try:
+                        _gc1, _gc2, _gc3 = st.columns(3)
+                        _dep_s = pd.to_numeric(_ferry_rotas.get("Dependência Aquaviária"), errors="coerce") if "Dependência Aquaviária" in _ferry_rotas.columns else pd.Series(dtype=float)
+                        _cplx_s = pd.to_numeric(_ferry_rotas.get("Complexidade Geográfica"), errors="coerce") if "Complexidade Geográfica" in _ferry_rotas.columns else pd.Series(dtype=float)
+                        _pon_s = pd.to_numeric(_ferry_rotas.get("Pontes no Cruzamento"), errors="coerce") if "Pontes no Cruzamento" in _ferry_rotas.columns else pd.Series(dtype=float)
+                        if _dep_s.notna().any():
+                            _gc1.metric("Dependência aquaviária média", "%.0f/100" % float(_dep_s.mean()),
+                                        help="Média (0–100) de quanto estas rotas dependem de travessia por água. Quanto maior, mais crítica a balsa para o deslocamento.")
+                        if _cplx_s.notna().any():
+                            _gc2.metric("Complexidade geográfica média", "%.0f/100" % float(_cplx_s.mean()),
+                                        help="Média (0–100) da complexidade física do trajeto (rios, pontes, sinuosidade) das rotas com balsa.")
+                        if _pon_s.notna().any():
+                            _gc3.metric("Pontes no cruzamento (total)", "%d" % int(_pon_s.fillna(0).sum()),
+                                        help="Total de pontes identificadas nos cruzamentos das rotas com balsa (fonte: enriquecimento IBGE).")
+                    except Exception:
+                        logger.debug("[FERRY-GEO] Perfil geográfico das travessias isolado falhou (aditivo).", exc_info=True)
+
                     # [FERRY-VIS - 452ª] Distribuição de distância das travessias (aditivo).
                     try:
                         _fk_km = pd.to_numeric(_ferry_rotas["Distância (km)"], errors="coerce").dropna()
