@@ -57205,7 +57205,8 @@ if _secao == _SECOES[10]:   # tab_motores
         _cc0.metric("Participações do Google", f"{_tot}", help="Geocodificações em que o voto do Google entrou no consenso.")
         _cc1.metric("Concordou (≤1 km)", f"{_ok}", help="Casos em que a coordenada do Google ficou a até 1 km do vencedor do consenso.")
         _cc2.metric("Divergiu (>1 km)", f"{_dv}", help="Casos em que o Google apontou para longe do vencedor (foi rebaixado como outlier).")
-        _cc3.metric("Taxa de Concordância", f"{_pct_ok}%")
+        _cc3.metric("Taxa de Concordância", f"{_pct_ok}%",
+                    help="Percentual das participações do Google que ficaram a ≤1 km do vencedor do consenso. Alta = fonte confiável reforçando o consenso; baixa = ruído a considerar desligar.")
         if _pct_ok >= 85:
             st.success(f"✅ Alta concordância ({_pct_ok}%): o Google tem reforçado o consenso de forma confiável. "
                        "Mantê-lo ligado tende a aumentar a assertividade.")
@@ -58804,7 +58805,8 @@ if _secao == _SECOES[16]:   # tab_data_sources
             _sd2.metric("APIs ao vivo", _saude['apis_ao_vivo'])
             _sd3.metric("Camadas IBGE presentes", f"{_saude['camadas_com_arquivo_presente']}/{_saude['camadas_total']}")
             _qm = _saude.get('qualidade_media_completude')
-            _sd4.metric("Qualidade média (completude)", f"{_qm * 100:.1f}%" if _qm is not None else "—")
+            _sd4.metric("Qualidade média (completude)", f"{_qm * 100:.1f}%" if _qm is not None else "—",
+                        help="Média de completude das camadas locais (0–100%): quão preenchidos estão os campos esperados em relação ao manifest. Quanto maior, menos lacunas nos dados-fonte.")
 
             if _saude["camadas_divergentes_do_manifest"]:
                 st.error("⚠️ Camadas com contagem DIVERGENTE do manifest.json: "
