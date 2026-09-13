@@ -129,6 +129,34 @@ def test_anotacao_persiste_entre_sessoes(monkeypatch):
     assert len(_lista) == 1 and _lista[0]["titulo"] == "T"
 
 
+def test_iniciar_login_social_mapeia_microsoft_para_azure_e_devolve_url():
+    _cli = MagicMock()
+    _cli.auth.sign_in_with_oauth.return_value = SimpleNamespace(url="https://provedor/autoriza?x=1")
+    _r = auth_service.iniciar_login_social("microsoft", "https://app.exemplo/", _cli)
+    assert _r.ok and _r.dados["url"].startswith("https://provedor/")
+    _payload = _cli.auth.sign_in_with_oauth.call_args[0][0]
+    assert _payload["provider"] == "azure"  # Microsoft = provider 'azure' no Supabase
+    assert _payload["options"]["redirect_to"] == "https://app.exemplo/"
+
+
+def test_iniciar_login_social_provedor_invalido():
+    assert not auth_service.iniciar_login_social("orkut", "https://app/", MagicMock()).ok
+
+
+def test_finalizar_login_social_troca_code_por_sessao():
+    _cli = MagicMock()
+    _cli.auth.exchange_code_for_session.return_value = SimpleNamespace(
+        session=SimpleNamespace(access_token="AT", refresh_token="RT"),
+        user=SimpleNamespace(id="uid-9", email="g@x.com"))
+    _r = auth_service.finalizar_login_social("o-code", _cli)
+    assert _r.ok
+    assert _r.dados == {"user_id": "uid-9", "email": "g@x.com", "access_token": "AT", "refresh_token": "RT"}
+
+
+def test_finalizar_login_social_sem_code():
+    assert not auth_service.finalizar_login_social("", MagicMock()).ok
+
+
 def test_cliente_do_usuario_renova_quando_access_token_vencido(monkeypatch):
     """Se o access_token estiver vencido (comum após ficar fora), set_session falha e a
     função renova via refresh_session — garantindo que a leitura dos dados salvos funcione

@@ -57,6 +57,42 @@ def obter_cliente():
         return None
 
 
+def obter_cliente_oauth():
+    """Cliente Supabase dedicado ao fluxo de LOGIN SOCIAL (Google/Microsoft), guardado em
+    st.session_state para persistir DENTRO da mesma sessão do navegador.
+
+    Por quê separado: o OAuth PKCE gera um 'code_verifier' no início (sign_in_with_oauth) que
+    precisa estar disponível no RETORNO (exchange_code_for_session), depois do usuário ir ao
+    Google/Microsoft e voltar. O supabase-py guarda esse verifier na memória do PRÓPRIO cliente,
+    e nesta versão não dá para injetar um storage custom via ClientOptions. Então reutilizamos a
+    MESMA instância do cliente (cacheada na sessão) nos dois momentos — como o Streamlit reconecta
+    o navegador à mesma sessão após o redirect, o verifier sobrevive. flow_type='pkce' explícito.
+    None (nunca lança) quando indisponível."""
+    if not _SUPABASE_SDK_DISPONIVEL:
+        return None
+    _cache = st.session_state.get("_sb_oauth_client")
+    if _cache is not None:
+        return _cache
+    try:
+        _url = str(st.secrets.get("SUPABASE_URL", "") or "").strip()
+        _key = str(st.secrets.get("SUPABASE_ANON_KEY", "") or "").strip()
+    except Exception:
+        _url, _key = "", ""
+    if not _url or not _key:
+        return None
+    try:
+        from supabase.lib.client_options import ClientOptions
+        _cli = create_client(_url, _key, options=ClientOptions(flow_type="pkce"))
+    except Exception:
+        try:
+            _cli = create_client(_url, _key)  # fallback: sem opções (flow padrão)
+        except Exception:
+            logger.error("[AUTH] Falha ao criar cliente OAuth.", exc_info=True)
+            return None
+    st.session_state["_sb_oauth_client"] = _cli
+    return _cli
+
+
 def credenciais_configuradas() -> bool:
     """Checagem rápida e read-only para a UI decidir se mostra o modo 'autenticação
     indisponível' (sem tentar conectar) — nunca lança."""

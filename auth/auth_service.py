@@ -300,6 +300,63 @@ def solicitar_alteracao_email(novo_email: str) -> AuthResult:
 
 
 # ==============================================================================
+# Login social (Google / Microsoft) — via OAuth do Supabase
+# ------------------------------------------------------------------------------
+# Mantém UM só tipo de usuário: quem entra com Google/Microsoft vira um usuário
+# comum do Supabase (mesmo auth.users / mesmo user_id), então perfil, foto e
+# estudos salvos funcionam igual ao login por e-mail/senha. O `cliente` vem de
+# supabase_client.obter_cliente_oauth() (cacheado na sessão) para o PKCE funcionar
+# no retorno. 'microsoft' mapeia para o provider 'azure' do Supabase.
+# ==============================================================================
+_OAUTH_PROVIDERS = {"google": "google", "microsoft": "azure", "azure": "azure"}
+
+
+def iniciar_login_social(provedor: str, redirect_to: str, cliente) -> AuthResult:
+    """Gera a URL de autorização do provedor (o usuário será enviado para lá). Não redireciona
+    aqui — devolve a URL para a UI abrir. `cliente` deve ser o cliente OAuth cacheado na sessão."""
+    if cliente is None:
+        return AuthResult(False, "Login social indisponível no momento.")
+    _prov = _OAUTH_PROVIDERS.get((provedor or "").lower())
+    if not _prov:
+        return AuthResult(False, "Provedor de login não suportado.")
+    try:
+        _resp = cliente.auth.sign_in_with_oauth({
+            "provider": _prov,
+            "options": {"redirect_to": redirect_to, "skip_browser_redirect": True},
+        })
+        _url = getattr(_resp, "url", None) or (isinstance(_resp, dict) and _resp.get("url"))
+        if not _url:
+            return AuthResult(False, "Não foi possível iniciar o login social.")
+        return AuthResult(True, "URL de login gerada.", {"url": _url})
+    except Exception:
+        logger.error("[AUTH] Falha ao iniciar login social (%s).", _prov, exc_info=True)
+        return AuthResult(False, "Não foi possível iniciar o login social — o provedor já está "
+                                 "habilitado no painel do Supabase?")
+
+
+def finalizar_login_social(code: str, cliente) -> AuthResult:
+    """Troca o 'code' recebido no retorno do provedor por uma sessão do Supabase. Usa o MESMO
+    cliente OAuth do início (guarda o code_verifier do PKCE)."""
+    if cliente is None:
+        return AuthResult(False, "Login social indisponível no momento.")
+    if not code:
+        return AuthResult(False, "Código de autorização ausente.")
+    try:
+        _resp = cliente.auth.exchange_code_for_session({"auth_code": code})
+        _sessao = getattr(_resp, "session", None)
+        _usuario = getattr(_resp, "user", None)
+        if _sessao is None or _usuario is None:
+            return AuthResult(False, "Não foi possível concluir o login social.")
+        return AuthResult(True, "Login realizado.", {
+            "user_id": _usuario.id, "email": _usuario.email,
+            "access_token": _sessao.access_token, "refresh_token": _sessao.refresh_token,
+        })
+    except Exception:
+        logger.error("[AUTH] Falha ao finalizar login social (troca de code).", exc_info=True)
+        return AuthResult(False, "Não foi possível concluir o login social — tente novamente.")
+
+
+# ==============================================================================
 # [RECURSOS DO USUÁRIO] Anotações, estudos salvos e foto de perfil
 # ------------------------------------------------------------------------------
 # Estas operações mexem em tabelas protegidas por Row Level Security (auth.uid()

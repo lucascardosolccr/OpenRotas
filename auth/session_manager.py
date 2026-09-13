@@ -19,7 +19,7 @@ import time
 import streamlit as st
 
 from auth import auth_service, email_service, validators
-from auth.supabase_client import credenciais_configuradas, obter_cliente
+from auth.supabase_client import credenciais_configuradas, obter_cliente, obter_cliente_oauth
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +117,35 @@ def _tela_login():
                 st.rerun()
             else:
                 st.error(_res.mensagem)
+
+    # [LOGIN SOCIAL] Entrar com Google / Microsoft (OAuth do Supabase). Fluxo em 2 passos por
+    # robustez no Streamlit: o botão gera a URL do provedor; um link "Continuar" leva o usuário
+    # até lá. No retorno (?code=...), _renderizar_tela_autenticacao troca o code por sessão.
+    st.markdown("<div style='text-align:center;color:var(--tx-3,#9CA3AF);margin:10px 0 6px'>ou entre com</div>",
+                unsafe_allow_html=True)
+    _redir = ""
+    try:
+        _redir = str(st.secrets.get("APP_URL", "") or "").strip()
+    except Exception:
+        _redir = ""
+    _sc1, _sc2 = st.columns(2)
+    _prov_click = None
+    if _sc1.button("🔵 Google", use_container_width=True, key="oauth_google"):
+        _prov_click = ("google", "Google")
+    if _sc2.button("🟦 Microsoft", use_container_width=True, key="oauth_microsoft"):
+        _prov_click = ("microsoft", "Microsoft")
+    if _prov_click:
+        _res = auth_service.iniciar_login_social(_prov_click[0], _redir or None, obter_cliente_oauth())
+        if _res.ok:
+            st.session_state["_oauth_url"] = _res.dados["url"]
+            st.session_state["_oauth_prov_nome"] = _prov_click[1]
+            st.rerun()
+        else:
+            st.error(_res.mensagem)
+    if st.session_state.get("_oauth_url"):
+        st.link_button(f"Continuar para o {st.session_state.get('_oauth_prov_nome','provedor')} →",
+                       st.session_state["_oauth_url"], use_container_width=True, type="primary")
+        st.caption("Você será levado à tela de login do provedor e voltará já conectado.")
 
     _c1, _c2 = st.columns(2)
     with _c1:
@@ -607,7 +636,47 @@ def _tela_perfil():
             st.rerun()
 
 
+def _processar_retorno_oauth():
+    """[LOGIN SOCIAL] Se o navegador voltou do provedor com ?code=... (ou ?error=...), conclui o
+    login trocando o code por uma sessão do Supabase, usando o MESMO cliente OAuth do início
+    (guarda o code_verifier do PKCE). Sem retorno pendente, não faz nada. Nunca levanta."""
+    try:
+        _qp = st.query_params
+    except Exception:
+        return
+    _erro = _qp.get("error_description") or _qp.get("error")
+    if _erro and not esta_autenticado():
+        st.error("Login social não concluído: %s" % str(_erro)[:200])
+        try:
+            st.query_params.clear()
+        except Exception:
+            pass
+        return
+    _code = _qp.get("code")
+    if not _code or esta_autenticado():
+        return
+    with st.spinner("Concluindo login..."):
+        _res = auth_service.finalizar_login_social(_code, obter_cliente_oauth())
+    if _res.ok:
+        _iniciar_sessao(_res.dados["user_id"], _res.dados["email"],
+                        _res.dados["access_token"], _res.dados["refresh_token"])
+        for _k in ("_oauth_url", "_oauth_prov_nome", "_sb_oauth_client"):
+            st.session_state.pop(_k, None)
+        try:
+            st.query_params.clear()
+        except Exception:
+            pass
+        st.rerun()
+    else:
+        st.error(_res.mensagem)
+        try:
+            st.query_params.clear()
+        except Exception:
+            pass
+
+
 def _renderizar_tela_autenticacao():
+    _processar_retorno_oauth()
     # [UI-REENGENHARIA - Rodada 17] Mission UI/UX §49 ("regra dos 5 segundos" — ao abrir, o
     # usuário deve responder em poucos segundos "para que serve a aplicação?"). Esta é a
     # PRIMEIRA tela que todo usuário vê, e ela só dizia "entre ou crie sua conta" — nenhuma
