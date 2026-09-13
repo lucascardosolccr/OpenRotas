@@ -218,6 +218,33 @@ def redefinir_senha(nova_senha: str, access_token: str, refresh_token: str) -> A
         return AuthResult(False, "Não foi possível redefinir a senha — o código pode ter expirado.")
 
 
+def alterar_senha_logado(email: str, senha_atual: str, nova_senha: str) -> AuthResult:
+    """[Perfil] Troca de senha para um usuário JÁ AUTENTICADO. Por segurança, RE-VERIFICA a
+    senha atual antes de trocar (impede que alguém troque a senha numa sessão deixada aberta):
+    faz um sign_in_with_password com a senha atual — se falhar, aborta; se passar, o próprio
+    cliente fica autenticado com a sessão recém-aberta e então `update_user` aplica a nova
+    senha. Delegado 100% ao Supabase Auth (nunca reimplementamos hashing/validação de senha).
+    O rate-limit protege contra tentativa de adivinhação da senha atual."""
+    _cliente = obter_cliente()
+    if _cliente is None:
+        return AuthResult(False, "Alteração de senha indisponível no momento.")
+    if _rate_limit_excedido(f"trocar_senha_{email}", max_tentativas=5, janela_segundos=900):
+        return AuthResult(False, "Muitas tentativas — aguarde alguns minutos antes de tentar de novo.")
+    try:
+        _resp = _cliente.auth.sign_in_with_password({"email": email, "password": senha_atual})
+        if _resp is None or _resp.user is None or _resp.session is None:
+            return AuthResult(False, "Senha atual incorreta.")
+    except Exception:
+        logger.debug("[AUTH] Re-verificação da senha atual falhou na troca de senha.", exc_info=True)
+        return AuthResult(False, "Senha atual incorreta.")
+    try:
+        _cliente.auth.update_user({"password": nova_senha})
+        return AuthResult(True, "Senha alterada com sucesso.")
+    except Exception:
+        logger.error("[AUTH] Falha ao aplicar a nova senha (usuário logado).", exc_info=True)
+        return AuthResult(False, "Não foi possível alterar a senha no momento — tente novamente em instantes.")
+
+
 # ==============================================================================
 # Perfil
 # ==============================================================================

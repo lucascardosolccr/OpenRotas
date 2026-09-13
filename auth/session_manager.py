@@ -379,6 +379,37 @@ def _tela_perfil():
                     st.error(_res.mensagem)
 
     st.markdown("---")
+    st.markdown("#### 🔒 Alterar senha")
+    st.caption("Por segurança, confirme a senha atual antes de definir uma nova.")
+    with st.form("form_trocar_senha", clear_on_submit=True):
+        _senha_atual = st.text_input("Senha atual", type="password")
+        _nova_senha = st.text_input("Nova senha", type="password",
+                                    help="Mínimo 8 caracteres, combinando ao menos 3 de: maiúscula, minúscula, número, símbolo.")
+        _nova_senha2 = st.text_input("Confirmar nova senha", type="password")
+        _trocar_senha = st.form_submit_button("Alterar senha")
+    if _trocar_senha:
+        _erros_s = []
+        if not _senha_atual:
+            _erros_s.append("Informe a senha atual.")
+        if not validators.senhas_conferem(_nova_senha, _nova_senha2):
+            _erros_s.append("A nova senha e a confirmação não conferem.")
+        _ok_forca, _erro_forca, _ = validators.validar_forca_senha(_nova_senha)
+        if not _ok_forca:
+            _erros_s.append(_erro_forca)
+        if _senha_atual and _nova_senha and _senha_atual == _nova_senha:
+            _erros_s.append("A nova senha deve ser diferente da atual.")
+        if _erros_s:
+            for _e in _erros_s:
+                st.error(_e)
+        else:
+            with st.spinner("Alterando senha..."):
+                _res = auth_service.alterar_senha_logado(_user["email"], _senha_atual, _nova_senha)
+            if _res.ok:
+                st.success("✅ " + _res.mensagem)
+            else:
+                st.error(_res.mensagem)
+
+    st.markdown("---")
     st.markdown("#### ✉️ Alterar e-mail")
     st.caption("Você continua conectado com o e-mail atual até confirmar o novo endereço — "
                "a alteração NUNCA entra em vigor antes dessa confirmação.")
