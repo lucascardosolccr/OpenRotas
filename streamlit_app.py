@@ -1727,6 +1727,18 @@ _GUIA_ABAS = {
         "erros_comuns": "E-mail de destino vazio ou errado; esperar resposta na própria tela (o retorno vem fora da app); achar que é obrigatório preencher tudo — só as **notas** já bastam.",
         "dicas": "Seja **específico** nas melhorias — quanto mais concreto, mais fácil implementar. Ao relatar um erro, diga **qual passo** o causou: acelera muito a correção.",
     },
+    # [Melhoria aba a aba - 8] Guia da página institucional (formato de leitura, como Enciclopédia/Manual).
+    "sobre": {
+        "o_que_faz": "Apresenta **quem desenvolveu a plataforma** — a trajetória, a motivação por trás do projeto e as formas de contato. É a **página institucional** da aplicação.",
+        "quando_usar": "Quando você quer conhecer a origem do projeto, saber quem o mantém ou **entrar em contato** para dúvidas, parcerias ou suporte.",
+        "dados": "Nenhum — é conteúdo de leitura. Não há campos a preencher.",
+        "preenchimento": "Não há campos. Basta ler as informações e usar os links de contato, se quiser.",
+        "apos_executar": "Não há processamento — é uma página informativa, sempre disponível.",
+        "interpretar": "Não há resultados a interpretar. As informações são institucionais: **quem** fez, **por quê** e **como** falar com quem desenvolve.",
+        "exemplos": "“Quem fez esta aplicação e como falo com essa pessoa?” → esta aba responde.",
+        "erros_comuns": "Nenhum — é apenas leitura.",
+        "dicas": "Use os canais de contato para reportar problemas complexos ou propor melhorias; para um retorno rápido, a aba **⭐ Pesquisa de Satisfação** é o caminho mais direto.",
+    },
 }
 
 def renderizar_guia_aba(chave_aba: str):
@@ -57720,6 +57732,7 @@ if _secao == _SECOES[12]:   # tab_pesquisa
 # LinkedIn + QR). Não interfere em nenhuma outra seção.
 # ==============================================================================
 if _secao == _SECOES[13]:   # tab_sobre_desenvolvedor
+    renderizar_guia_aba("sobre")
     _dev_render_streamlit(contexto="aba")
 
 
