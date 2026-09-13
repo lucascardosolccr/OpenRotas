@@ -300,56 +300,128 @@ def solicitar_alteracao_email(novo_email: str) -> AuthResult:
 
 
 # ==============================================================================
-# Login social (Google / Microsoft) — via OAuth do Supabase
+# Login social (Google / Microsoft) — OAuth PKCE do Supabase, tocado À MÃO
 # ------------------------------------------------------------------------------
 # Mantém UM só tipo de usuário: quem entra com Google/Microsoft vira um usuário
 # comum do Supabase (mesmo auth.users / mesmo user_id), então perfil, foto e
-# estudos salvos funcionam igual ao login por e-mail/senha. O `cliente` vem de
-# supabase_client.obter_cliente_oauth() (cacheado na sessão) para o PKCE funcionar
-# no retorno. 'microsoft' mapeia para o provider 'azure' do Supabase.
+# estudos salvos funcionam igual ao login por e-mail/senha. 'microsoft' mapeia
+# para o provider 'azure' do Supabase.
+#
+# POR QUE À MÃO (e não pelo SDK): o fluxo PKCE gera um segredo `code_verifier` no
+# INÍCIO (ao clicar "Google") que precisa existir de novo no RETORNO (troca do
+# `code` por sessão). O SDK guarda esse verifier na memória do PRÓPRIO cliente
+# Supabase. Só que, ao voltar do Google, o navegador RECARREGA a página inteira e
+# o Streamlit abre uma sessão NOVA — o `st.session_state` (e o cliente cacheado
+# nele) é descartado, então o verifier some e a troca falha ("tente novamente").
+# Solução: geramos o PKCE nós mesmos e guardamos o verifier em memória DE PROCESSO
+# (módulo, não sessão), que sobrevive ao redirect. A troca do code é um POST HTTP
+# direto ao endpoint /auth/v1/token?grant_type=pkce do Supabase (mesmo contrato
+# que o SDK usa por baixo).
 # ==============================================================================
+import base64 as _base64
+import hashlib as _hashlib
+import secrets as _secrets
+import threading as _threading
+from urllib.parse import urlencode as _urlencode
+
+import requests as _requests  # já em requirements.txt (usado por outras integrações)
+
 _OAUTH_PROVIDERS = {"google": "google", "microsoft": "azure", "azure": "azure"}
 
+# Guarda o code_verifier PENDENTE entre a ida ao provedor e a volta. É memória de
+# PROCESSO (compartilhada por todas as sessões do mesmo servidor Streamlit), porque
+# o retorno do OAuth recria a sessão do navegador. Guardamos só o pendente mais
+# recente + carimbo de tempo (TTL curto) — simples e suficiente para a escala do app.
+_PKCE_TTL_SEG = 600
+_PKCE_LOCK = _threading.Lock()
+_PKCE_PENDENTE: dict = {}  # {"verifier": str, "ts": float}
 
-def iniciar_login_social(provedor: str, redirect_to: str, cliente) -> AuthResult:
-    """Gera a URL de autorização do provedor (o usuário será enviado para lá). Não redireciona
-    aqui — devolve a URL para a UI abrir. `cliente` deve ser o cliente OAuth cacheado na sessão."""
-    if cliente is None:
-        return AuthResult(False, "Login social indisponível no momento.")
+
+def _config_supabase():
+    """(url, anon_key) de st.secrets — sem barra final na url. ('','') se ausente."""
+    try:
+        _url = str(st.secrets.get("SUPABASE_URL", "") or "").strip().rstrip("/")
+        _key = str(st.secrets.get("SUPABASE_ANON_KEY", "") or "").strip()
+    except Exception:
+        _url, _key = "", ""
+    return _url, _key
+
+
+def _gerar_par_pkce():
+    """(code_verifier, code_challenge) no formato exigido pelo PKCE (S256, base64url sem '=')."""
+    _verifier = _base64.urlsafe_b64encode(_secrets.token_bytes(64)).decode("ascii").rstrip("=")
+    _challenge = _base64.urlsafe_b64encode(
+        _hashlib.sha256(_verifier.encode("ascii")).digest()).decode("ascii").rstrip("=")
+    return _verifier, _challenge
+
+
+def iniciar_login_social(provedor: str, redirect_to: str = "", cliente=None) -> AuthResult:
+    """Monta a URL de autorização do provedor (para a UI abrir num link) e guarda o
+    code_verifier do PKCE em memória de processo, pronto para o retorno. `cliente` é ignorado
+    (mantido só por compatibilidade de assinatura)."""
     _prov = _OAUTH_PROVIDERS.get((provedor or "").lower())
     if not _prov:
         return AuthResult(False, "Provedor de login não suportado.")
+    _url, _key = _config_supabase()
+    if not _url or not _key:
+        return AuthResult(False, "Login social indisponível no momento (Supabase não configurado).")
     try:
-        _resp = cliente.auth.sign_in_with_oauth({
+        _verifier, _challenge = _gerar_par_pkce()
+        _params = {
             "provider": _prov,
-            "options": {"redirect_to": redirect_to, "skip_browser_redirect": True},
-        })
-        _url = getattr(_resp, "url", None) or (isinstance(_resp, dict) and _resp.get("url"))
-        if not _url:
-            return AuthResult(False, "Não foi possível iniciar o login social.")
-        return AuthResult(True, "URL de login gerada.", {"url": _url})
+            "code_challenge": _challenge,
+            "code_challenge_method": "s256",
+        }
+        if redirect_to:
+            _params["redirect_to"] = redirect_to
+        _auth_url = "%s/auth/v1/authorize?%s" % (_url, _urlencode(_params))
+        with _PKCE_LOCK:
+            _PKCE_PENDENTE["verifier"] = _verifier
+            _PKCE_PENDENTE["ts"] = time.time()
+        return AuthResult(True, "URL de login gerada.", {"url": _auth_url})
     except Exception:
         logger.error("[AUTH] Falha ao iniciar login social (%s).", _prov, exc_info=True)
         return AuthResult(False, "Não foi possível iniciar o login social — o provedor já está "
                                  "habilitado no painel do Supabase?")
 
 
-def finalizar_login_social(code: str, cliente) -> AuthResult:
-    """Troca o 'code' recebido no retorno do provedor por uma sessão do Supabase. Usa o MESMO
-    cliente OAuth do início (guarda o code_verifier do PKCE)."""
-    if cliente is None:
-        return AuthResult(False, "Login social indisponível no momento.")
+def finalizar_login_social(code: str, cliente=None) -> AuthResult:
+    """Troca o 'code' recebido no retorno por uma sessão do Supabase (POST PKCE), usando o
+    code_verifier guardado em memória de processo no início. `cliente` é ignorado."""
     if not code:
         return AuthResult(False, "Código de autorização ausente.")
+    _url, _key = _config_supabase()
+    if not _url or not _key:
+        return AuthResult(False, "Login social indisponível no momento (Supabase não configurado).")
+    with _PKCE_LOCK:
+        _pend = dict(_PKCE_PENDENTE)
+    _verifier = _pend.get("verifier")
+    _vencido = (not _verifier) or (time.time() - _pend.get("ts", 0) > _PKCE_TTL_SEG)
+    if _vencido:
+        return AuthResult(False, "A sessão de login expirou. Volte e clique em Google de novo.")
     try:
-        _resp = cliente.auth.exchange_code_for_session({"auth_code": code})
-        _sessao = getattr(_resp, "session", None)
-        _usuario = getattr(_resp, "user", None)
-        if _sessao is None or _usuario is None:
-            return AuthResult(False, "Não foi possível concluir o login social.")
+        _resp = _requests.post(
+            "%s/auth/v1/token?grant_type=pkce" % _url,
+            headers={"apikey": _key, "Authorization": "Bearer %s" % _key,
+                     "Content-Type": "application/json"},
+            json={"auth_code": code, "code_verifier": _verifier},
+            timeout=20,
+        )
+        _dados = _resp.json() if _resp.content else {}
+        _access = _dados.get("access_token")
+        _refresh = _dados.get("refresh_token")
+        _usuario = _dados.get("user") or {}
+        if not _access or not _refresh or not _usuario.get("id"):
+            _msg = str(_dados.get("error_description") or _dados.get("msg")
+                       or _dados.get("error") or "")[:200]
+            logger.error("[AUTH] Troca PKCE não retornou sessão (HTTP %s): %s",
+                         getattr(_resp, "status_code", "?"), _msg or _dados)
+            return AuthResult(False, "Não foi possível concluir o login social — tente novamente.")
+        with _PKCE_LOCK:
+            _PKCE_PENDENTE.clear()  # verifier é de uso único
         return AuthResult(True, "Login realizado.", {
-            "user_id": _usuario.id, "email": _usuario.email,
-            "access_token": _sessao.access_token, "refresh_token": _sessao.refresh_token,
+            "user_id": _usuario.get("id"), "email": _usuario.get("email"),
+            "access_token": _access, "refresh_token": _refresh,
         })
     except Exception:
         logger.error("[AUTH] Falha ao finalizar login social (troca de code).", exc_info=True)

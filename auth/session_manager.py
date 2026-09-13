@@ -19,7 +19,7 @@ import time
 import streamlit as st
 
 from auth import auth_service, email_service, validators
-from auth.supabase_client import credenciais_configuradas, obter_cliente, obter_cliente_oauth
+from auth.supabase_client import credenciais_configuradas, obter_cliente
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +135,7 @@ def _tela_login():
     if _sc2.button("🟦 Microsoft", use_container_width=True, key="oauth_microsoft"):
         _prov_click = ("microsoft", "Microsoft")
     if _prov_click:
-        _res = auth_service.iniciar_login_social(_prov_click[0], _redir or None, obter_cliente_oauth())
+        _res = auth_service.iniciar_login_social(_prov_click[0], _redir or "")
         if _res.ok:
             st.session_state["_oauth_url"] = _res.dados["url"]
             st.session_state["_oauth_prov_nome"] = _prov_click[1]
@@ -656,7 +656,7 @@ def _processar_retorno_oauth():
     if not _code or esta_autenticado():
         return
     with st.spinner("Concluindo login..."):
-        _res = auth_service.finalizar_login_social(_code, obter_cliente_oauth())
+        _res = auth_service.finalizar_login_social(_code)
     if _res.ok:
         _iniciar_sessao(_res.dados["user_id"], _res.dados["email"],
                         _res.dados["access_token"], _res.dados["refresh_token"])

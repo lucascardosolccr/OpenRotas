@@ -129,32 +129,65 @@ def test_anotacao_persiste_entre_sessoes(monkeypatch):
     assert len(_lista) == 1 and _lista[0]["titulo"] == "T"
 
 
-def test_iniciar_login_social_mapeia_microsoft_para_azure_e_devolve_url():
-    _cli = MagicMock()
-    _cli.auth.sign_in_with_oauth.return_value = SimpleNamespace(url="https://provedor/autoriza?x=1")
-    _r = auth_service.iniciar_login_social("microsoft", "https://app.exemplo/", _cli)
-    assert _r.ok and _r.dados["url"].startswith("https://provedor/")
-    _payload = _cli.auth.sign_in_with_oauth.call_args[0][0]
-    assert _payload["provider"] == "azure"  # Microsoft = provider 'azure' no Supabase
-    assert _payload["options"]["redirect_to"] == "https://app.exemplo/"
+def test_iniciar_login_social_mapeia_microsoft_para_azure_e_devolve_url(monkeypatch):
+    """A URL de autorização é montada à mão (PKCE): provider correto (microsoft→azure),
+    code_challenge presente, redirect_to preservado — e o verifier fica pendente em memória
+    de PROCESSO (não em session_state), para sobreviver ao recarregamento no retorno."""
+    monkeypatch.setattr(auth_service, "_config_supabase",
+                        lambda: ("https://proj.supabase.co", "anon-key"))
+    auth_service._PKCE_PENDENTE.clear()
+    _r = auth_service.iniciar_login_social("microsoft", "https://app.exemplo/")
+    assert _r.ok
+    _url = _r.dados["url"]
+    assert _url.startswith("https://proj.supabase.co/auth/v1/authorize?")
+    assert "provider=azure" in _url  # Microsoft = provider 'azure' no Supabase
+    assert "code_challenge=" in _url and "code_challenge_method=s256" in _url
+    assert "redirect_to=https%3A%2F%2Fapp.exemplo%2F" in _url
+    assert auth_service._PKCE_PENDENTE.get("verifier")  # verifier guardado para o retorno
 
 
 def test_iniciar_login_social_provedor_invalido():
-    assert not auth_service.iniciar_login_social("orkut", "https://app/", MagicMock()).ok
+    assert not auth_service.iniciar_login_social("orkut", "https://app/").ok
 
 
-def test_finalizar_login_social_troca_code_por_sessao():
-    _cli = MagicMock()
-    _cli.auth.exchange_code_for_session.return_value = SimpleNamespace(
-        session=SimpleNamespace(access_token="AT", refresh_token="RT"),
-        user=SimpleNamespace(id="uid-9", email="g@x.com"))
-    _r = auth_service.finalizar_login_social("o-code", _cli)
+def test_finalizar_login_social_troca_code_por_sessao(monkeypatch):
+    """Com um verifier pendente (do início), a troca do code faz um POST PKCE ao Supabase e
+    devolve a sessão. Mockamos o requests.post para não tocar a rede."""
+    monkeypatch.setattr(auth_service, "_config_supabase",
+                        lambda: ("https://proj.supabase.co", "anon-key"))
+    auth_service._PKCE_PENDENTE.clear()
+    auth_service._PKCE_PENDENTE.update({"verifier": "V-123", "ts": __import__("time").time()})
+
+    _capturado = {}
+
+    def _fake_post(url, headers=None, json=None, timeout=None):
+        _capturado["url"], _capturado["json"] = url, json
+        return SimpleNamespace(
+            status_code=200, content=b"{}",
+            json=lambda: {"access_token": "AT", "refresh_token": "RT",
+                          "user": {"id": "uid-9", "email": "g@x.com"}})
+
+    monkeypatch.setattr(auth_service._requests, "post", _fake_post)
+    _r = auth_service.finalizar_login_social("o-code")
     assert _r.ok
     assert _r.dados == {"user_id": "uid-9", "email": "g@x.com", "access_token": "AT", "refresh_token": "RT"}
+    assert _capturado["url"].endswith("/auth/v1/token?grant_type=pkce")
+    assert _capturado["json"] == {"auth_code": "o-code", "code_verifier": "V-123"}
+    assert not auth_service._PKCE_PENDENTE  # verifier é de uso único (limpo após sucesso)
 
 
 def test_finalizar_login_social_sem_code():
-    assert not auth_service.finalizar_login_social("", MagicMock()).ok
+    assert not auth_service.finalizar_login_social("").ok
+
+
+def test_finalizar_login_social_sem_verifier_pendente(monkeypatch):
+    """Se o verifier pendente sumiu (ex.: expirou), a mensagem orienta a recomeçar — nunca
+    tenta uma troca fadada ao erro."""
+    monkeypatch.setattr(auth_service, "_config_supabase",
+                        lambda: ("https://proj.supabase.co", "anon-key"))
+    auth_service._PKCE_PENDENTE.clear()
+    _r = auth_service.finalizar_login_social("o-code")
+    assert not _r.ok and "expirou" in _r.mensagem.lower()
 
 
 def test_cliente_do_usuario_renova_quando_access_token_vencido(monkeypatch):
