@@ -58072,7 +58072,7 @@ if _secao == _SECOES[15]:   # tab_route_intel
     try:
         _rotas_proc = st.session_state.get('df_processado')
         if _rotas_proc is None or _rotas_proc.empty:
-            st.info("Rode um estudo (aba **⚙️ Estudo em Lote** ou **🎯 Locais de Aplicação**) para visualizar o Centro de Inteligência das rotas.")
+            _ds_empty_state("Nenhum estudo carregado nesta sessão.", "Rode a aba ⚙️ Estudo em Lote (ou 🎯 Locais de Aplicação) para visualizar o Centro de Inteligência das rotas.")
         else:
             # [FILTROS-INTELIGENTES - Rodada 10/Missão 2, §31] Filtra o recorte ANTES de
             # projetar/exibir — tabela, KPIs, gráficos e mapas abaixo já refletem o filtro
@@ -59316,7 +59316,7 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
                 else:
                     st.info("Nenhuma rota com balsa identificada no estudo atual.")
             else:
-                st.info("Execute um estudo (aba 'Locais de Aplicação') para popular os dados de rotas.")
+                _ds_empty_state("Nenhum estudo carregado nesta sessão.", "Rode a aba 🎯 Locais de Aplicação (ou ⚙️ Estudo em Lote) para popular os dados de rotas.")
         except Exception:
             logger.error("[FERRY-ROUTES] Falha ao renderizar rotas com balsa (isolada).", exc_info=True)
             st.warning("Não foi possível montar a central de rotas com balsa. As demais seções seguem normais.")
@@ -59465,7 +59465,7 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
                 else:
                     st.info("Nenhuma rota com balsa identificada no estudo atual.")
             else:
-                st.info("Execute um estudo (aba 'Locais de Aplicação') para popular os dados de rotas.")
+                _ds_empty_state("Nenhum estudo carregado nesta sessão.", "Rode a aba 🎯 Locais de Aplicação (ou ⚙️ Estudo em Lote) para popular os dados de rotas.")
         except Exception as e:
             logger.error("[FERRY-MAP] Falha ao renderizar mapa de travessias.", exc_info=True)
             st.warning("Não foi possível montar o mapa de travessias.")
@@ -59507,7 +59507,7 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
                 else:
                     st.info("Nenhuma rota com balsa identificada.")
             else:
-                st.info("Execute um estudo (aba 'Locais de Aplicação') para popular os dados de rotas.")
+                _ds_empty_state("Nenhum estudo carregado nesta sessão.", "Rode a aba 🎯 Locais de Aplicação (ou ⚙️ Estudo em Lote) para popular os dados de rotas.")
         except Exception:
             logger.error("[FERRY-ANALYSIS] Falha na análise de travessias.", exc_info=True)
             st.warning("Não foi possível montar a análise das travessias. As demais seções seguem normais.")
@@ -59579,7 +59579,7 @@ if _secao == _SECOES[19]:   # tab_land_routes
             else:
                 st.info("Nenhuma rota analisável nesta sessão (projeção robusta vazia).")
         else:
-            st.info("Execute um estudo (aba 'Locais de Aplicação') para popular os dados de rotas.")
+            _ds_empty_state("Nenhum estudo carregado nesta sessão.", "Rode a aba 🎯 Locais de Aplicação (ou ⚙️ Estudo em Lote) para popular os dados de rotas.")
     except Exception:
         logger.error("[LAND-ROUTES] Falha ao renderizar rotas sem balsa (isolada).", exc_info=True)
         st.warning("Não foi possível montar a central de rotas sem balsa. As demais seções seguem normais.")
@@ -59760,7 +59760,7 @@ if _secao == _SECOES[21]:   # tab_auditoria_completa
                 else:
                     st.info("Nenhuma rota analisável nesta sessão.")
             else:
-                st.info("Execute um estudo (aba 'Locais de Aplicação') para popular os dados de rotas.")
+                _ds_empty_state("Nenhum estudo carregado nesta sessão.", "Rode a aba 🎯 Locais de Aplicação (ou ⚙️ Estudo em Lote) para popular os dados de rotas.")
         except Exception:
             logger.error("[AUDIT-TAB] Falha ao renderizar candidatos (isolada).", exc_info=True)
             st.warning("Não foi possível montar a lista de candidatos. As demais seções seguem normais.")
