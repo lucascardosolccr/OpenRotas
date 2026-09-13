@@ -59952,7 +59952,25 @@ if _secao == _SECOES[20]:   # tab_defeats
                 _dist_media = _dist_media if _dist_media == _dist_media else 0.0
                 _c3.metric("Dist. Média (km)", f"{float(_dist_media):.1f}")
                 _c4.metric("Sem Rio", int((_derrotas["Rio"].astype(str).str.strip() == "—").sum()))
-                
+
+                # [Expansão de conteúdo] Perfil geográfico das derrotas, usando as colunas ricas
+                # agora carregadas pela projeção (dependência/complexidade). Ajuda a distinguir
+                # derrotas por barreira física (rio/complexidade alta) de derrotas metodológicas.
+                # Guardado por presença de dado.
+                try:
+                    _ddep = pd.to_numeric(_derrotas.get("Dependência Aquaviária"), errors="coerce") if "Dependência Aquaviária" in _derrotas.columns else pd.Series(dtype=float)
+                    _dcplx = pd.to_numeric(_derrotas.get("Complexidade Geográfica"), errors="coerce") if "Complexidade Geográfica" in _derrotas.columns else pd.Series(dtype=float)
+                    if _ddep.notna().any() or _dcplx.notna().any():
+                        _dg1, _dg2 = st.columns(2)
+                        if _dcplx.notna().any():
+                            _dg1.metric("Complexidade geográfica média", "%.0f/100" % float(_dcplx.mean()),
+                                        help="Média (0–100) da complexidade física do trajeto das derrotas. Complexidade alta sugere derrota por barreira geográfica real (rio/serra), não por erro metodológico.")
+                        if _ddep.notna().any():
+                            _dg2.metric("Dependência aquaviária média", "%.0f/100" % float(_ddep.mean()),
+                                        help="Média (0–100) da dependência de travessia por água nas derrotas. Alta = a barreira hídrica pesou na perda.")
+                except Exception:
+                    logger.debug("[DEFEATS-GEO] Perfil geográfico das derrotas isolado falhou (aditivo).", exc_info=True)
+
                 # Por causa raiz
                 _causa = _derrotas["Causa Raiz"].astype(str).str.strip().replace("—", "")
                 _causa_val = _causa[_causa != ""]
