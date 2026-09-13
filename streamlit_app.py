@@ -59098,10 +59098,46 @@ if _secao == _SECOES[17]:   # tab_hidrografia
         """)
         
         if not _est_df.empty:
+            # [Expansão de conteúdo - Séries] Analítica real da REDE de monitoramento (antes só
+            # texto estático + amostra de 20 linhas). Usa colunas já presentes no catálogo de
+            # estações (tipo/uf/rio/bacia). Estações telemétricas = dados quase em tempo real.
+            try:
+                _fmt_mil = lambda _n: f"{int(_n):,}".replace(",", ".")
+                _tipo_col = next((c for c in ["tipo", "Tipo"] if c in _est_df.columns), None)
+                _uf_col_e = next((c for c in ["uf", "UF", "estado"] if c in _est_df.columns), None)
+                _rio_col_e = next((c for c in ["rio", "nome_rio"] if c in _est_df.columns), None)
+                _sk1, _sk2, _sk3, _sk4 = st.columns(4)
+                _sk1.metric("Estações na rede", _fmt_mil(len(_est_df)))
+                if _tipo_col:
+                    _n_tele = int(_est_df[_tipo_col].astype(str).str.contains("telem", case=False, na=False).sum())
+                    _sk2.metric("Telemétricas", _fmt_mil(_n_tele),
+                                help="Estações com transmissão automática — fornecem cotas/vazões quase em tempo real. As demais são convencionais (leitura manual periódica).")
+                if _uf_col_e:
+                    _sk3.metric("UFs cobertas", _fmt_mil(_est_df[_uf_col_e].astype(str).str.strip().replace(["", "nan", "—"], pd.NA).dropna().nunique()))
+                if _rio_col_e:
+                    _sk4.metric("Rios monitorados", _fmt_mil(_est_df[_rio_col_e].astype(str).str.strip().replace(["", "nan", "—"], pd.NA).dropna().nunique()))
+
+                _sc1, _sc2 = st.columns(2)
+                with _sc1:
+                    if _tipo_col:
+                        _tipos = _est_df[_tipo_col].astype(str).str.strip().replace(["", "nan", "—"], pd.NA).dropna()
+                        if _tipos.nunique():
+                            st.caption("Estações por tipo de monitoramento")
+                            st.bar_chart(_tipos.value_counts())
+                with _sc2:
+                    _bac_col_e = next((c for c in ["bacia", "nome_bacia"] if c in _est_df.columns), None)
+                    if _bac_col_e:
+                        _bacs = _est_df[_bac_col_e].astype(str).str.strip().replace(["", "nan", "—"], pd.NA).dropna()
+                        if _bacs.nunique():
+                            st.caption("Estações por bacia (top 12)")
+                            st.bar_chart(_bacs.value_counts().head(12))
+            except Exception:
+                logger.debug("[HYDRO-SERIES] Analítica da rede isolada falhou (aditivo).", exc_info=True)
+
             st.markdown("**Estações com séries disponíveis (amostra):**")
             _cols_show = [c for c in ["codigo", "nome", "rio", "bacia", "uf", "tipo"] if c in _est_df.columns]
             st.dataframe(_est_df[_cols_show].head(20), use_container_width=True, hide_index=True)
-    
+
     with _aba_hidro[4]:
         st.subheader("📈 Cotas & Vazões — Consulta Rápida")
         st.caption("Consulta direta via API SNIRH REST. Requer conexão com internet.")
