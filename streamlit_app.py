@@ -59809,6 +59809,27 @@ if _secao == _SECOES[19]:   # tab_land_routes
                                      if "Bacia" in _land_rotas.columns else pd.Series(dtype=object))
                             st.bar_chart(_lbac.value_counts().head(10)) if _lbac.nunique() else st.caption("Sem bacias.")
 
+                        # [Expansão de conteúdo] Perfil geográfico das rotas rodoviárias, usando as
+                        # colunas ricas agora carregadas pela projeção (complexidade/confiança/pontes).
+                        # Guardado por presença de dado (só aparece com estudo enriquecido).
+                        try:
+                            _lcplx = pd.to_numeric(_land_rotas.get("Complexidade Geográfica"), errors="coerce") if "Complexidade Geográfica" in _land_rotas.columns else pd.Series(dtype=float)
+                            _lconf = pd.to_numeric(_land_rotas.get("Confiança Geográfica"), errors="coerce") if "Confiança Geográfica" in _land_rotas.columns else pd.Series(dtype=float)
+                            _lpon = pd.to_numeric(_land_rotas.get("Pontes no Cruzamento"), errors="coerce") if "Pontes no Cruzamento" in _land_rotas.columns else pd.Series(dtype=float)
+                            if _lcplx.notna().any() or _lconf.notna().any() or _lpon.notna().any():
+                                _lp1, _lp2, _lp3 = st.columns(3)
+                                if _lcplx.notna().any():
+                                    _lp1.metric("Complexidade geográfica média", "%.0f/100" % float(_lcplx.mean()),
+                                                help="Média (0–100) da complexidade física do trajeto (rios, pontes, sinuosidade). Mesmo sem balsa, valores altos indicam terreno difícil.")
+                                if _lconf.notna().any():
+                                    _lp2.metric("Confiança geográfica média", "%.0f/100" % float(_lconf.mean()),
+                                                help="Média (0–100) da confiança do enriquecimento geográfico destas rotas.")
+                                if _lpon.notna().any():
+                                    _lp3.metric("Pontes no cruzamento (total)", "%d" % int(_lpon.fillna(0).sum()),
+                                                help="Total de pontes identificadas nos trajetos rodoviários (fonte: enriquecimento IBGE).")
+                        except Exception:
+                            logger.debug("[LAND-GEO] Perfil geográfico das rotas rodoviárias isolado falhou (aditivo).", exc_info=True)
+
                         st.divider()
                         st.caption("🗺️ Mapa origem → destino (rotas sem balsa)")
                         _fig_land = _fig_pares_od(_land_rotas)
