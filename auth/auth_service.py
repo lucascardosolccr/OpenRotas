@@ -311,15 +311,29 @@ def solicitar_alteracao_email(novo_email: str) -> AuthResult:
 
 def _cliente_do_usuario(access_token: str = "", refresh_token: str = ""):
     """Cliente Supabase com a SESSÃO do usuário aplicada (para respeitar a RLS).
-    None quando indisponível. Nunca levanta."""
+    None quando indisponível. Nunca levanta.
+
+    [PERSISTÊNCIA] Os dados do usuário (estudos/anotações/avatar) vivem no BANCO,
+    atrelados ao user_id — não à sessão do navegador. Ao logar de novo, os tokens
+    são NOVOS; esta função aplica essa sessão e, se o access_token estiver vencido
+    (comum após ficar tempo fora), tenta renová-lo pelo refresh_token antes de
+    desistir — assim a leitura dos dados salvos funciona de forma confiável mesmo
+    depois de fechar o navegador e voltar."""
     _c = obter_cliente()
     if _c is None:
         return None
+    if not (access_token and refresh_token):
+        return _c
     try:
-        if access_token and refresh_token:
-            _c.auth.set_session(access_token, refresh_token)
+        _c.auth.set_session(access_token, refresh_token)
+        return _c
     except Exception:
-        logger.debug("[AUTH] Falha ao aplicar sessão no cliente do usuário.", exc_info=True)
+        logger.debug("[AUTH] set_session falhou; tentando refresh_session.", exc_info=True)
+    # access_token provavelmente vencido -> renova com o refresh_token (vida longa)
+    try:
+        _c.auth.refresh_session(refresh_token)
+    except Exception:
+        logger.debug("[AUTH] refresh_session também falhou ao preparar cliente do usuário.", exc_info=True)
     return _c
 
 

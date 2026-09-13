@@ -516,6 +516,9 @@ def _tela_perfil():
     # [Perfil] ESTUDOS SALVOS — salva na conta o estudo/processamento que está em memória
     # (o último lote rodado) e permite restaurá-lo depois. Tabela public.estudos_salvos (RLS).
     st.markdown("#### 💾 Estudos salvos")
+    st.caption("Seus estudos ficam guardados **na sua conta** (não no navegador) — você os "
+               "encontra aqui sempre que entrar, mesmo depois de sair, fechar o navegador ou "
+               "usar outro dispositivo.")
     import pandas as _pd
     import json as _json
     _df_mem = st.session_state.get("df_processado")
