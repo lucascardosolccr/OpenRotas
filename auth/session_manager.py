@@ -513,6 +513,84 @@ def _tela_perfil():
         st.caption("Você ainda não tem anotações salvas.")
 
     st.markdown("---")
+    # [Perfil] ESTUDOS SALVOS — salva na conta o estudo/processamento que está em memória
+    # (o último lote rodado) e permite restaurá-lo depois. Tabela public.estudos_salvos (RLS).
+    st.markdown("#### 💾 Estudos salvos")
+    import pandas as _pd
+    import json as _json
+    _df_mem = st.session_state.get("df_processado")
+    _tem_estudo = _df_mem is not None and hasattr(_df_mem, "empty") and not _df_mem.empty
+    if _tem_estudo:
+        st.caption(f"Há um estudo/processamento em memória agora: **{len(_df_mem):,}** linha(s)."
+                   .replace(",", "."))
+        with st.form("form_salvar_estudo", clear_on_submit=True):
+            _est_nome = st.text_input("Nome para este estudo",
+                                      placeholder="Ex.: ENEM 2026 — lote nacional")
+            _salvar_est = st.form_submit_button("💾 Salvar o estudo atual na minha conta", type="primary")
+        if _salvar_est:
+            _MAX = 8000  # limite de segurança do tamanho do JSON por registro
+            _trunc = len(_df_mem) > _MAX
+            try:
+                _df_ser = _df_mem.head(_MAX)
+                _dados = _json.loads(_df_ser.to_json(orient="records", date_format="iso"))
+            except Exception:
+                logger.error("[PERFIL] Falha ao serializar estudo para salvar.", exc_info=True)
+                _dados = None
+            if _dados is None:
+                st.error("Não foi possível preparar este estudo para salvar.")
+            else:
+                _resumo = {"linhas_total": int(len(_df_mem)), "linhas_salvas": int(min(len(_df_mem), _MAX)),
+                           "colunas": [str(c) for c in list(_df_mem.columns)[:80]], "truncado": bool(_trunc)}
+                with st.spinner("Salvando estudo na sua conta..."):
+                    _r = auth_service.salvar_estudo(_user["user_id"], _est_nome or "Estudo sem nome",
+                                                    "lote", _resumo, _dados, _at, _rt)
+                if _r.ok:
+                    _msg = _r.mensagem + (f" (salvamos as primeiras {_MAX:,} de {len(_df_mem):,} linhas)".replace(",", ".") if _trunc else "")
+                    st.success("✅ " + _msg)
+                    time.sleep(0.8); st.rerun()
+                else:
+                    st.error(_r.mensagem)
+    else:
+        st.caption("Nenhum estudo em memória agora. Rode um **⚙️ Estudo em Lote** e volte aqui "
+                   "para salvá-lo — ou restaure um estudo salvo abaixo.")
+    try:
+        _estudos = auth_service.listar_estudos(_user["user_id"], _at, _rt)
+    except Exception:
+        _estudos = []
+    if _estudos:
+        st.caption(f"{len(_estudos)} estudo(s) salvo(s).")
+        for _es in _estudos:
+            _es_id = _es.get("id")
+            _es_res = _es.get("resumo") or {}
+            _es_nome = (_es.get("nome") or "Estudo").strip()
+            _es_quando = _fmt_data(_es.get("created_at")) or ""
+            _es_linhas = _es_res.get("linhas_total", _es_res.get("linhas_salvas", "?"))
+            with st.expander(f"💾 {_es_nome} — {_es_linhas} linha(s) · {_es_quando}", expanded=False):
+                _rc1, _rc2 = st.columns(2)
+                if _rc1.button("♻️ Restaurar", key=f"es_load_{_es_id}", use_container_width=True):
+                    with st.spinner("Restaurando estudo..."):
+                        _full = auth_service.carregar_estudo(_user["user_id"], _es_id, _at, _rt)
+                    _es_dados = (_full or {}).get("dados")
+                    if _es_dados:
+                        try:
+                            st.session_state["df_processado"] = _pd.DataFrame(_es_dados)
+                            st.session_state["_mostrar_perfil"] = False
+                            st.success("✅ Estudo restaurado — abrindo na aplicação...")
+                            time.sleep(0.9); st.rerun()
+                        except Exception:
+                            logger.error("[PERFIL] Falha ao reconstruir estudo restaurado.", exc_info=True)
+                            st.error("Não foi possível reconstruir este estudo.")
+                    else:
+                        st.error("Este estudo não tem dados salvos para restaurar.")
+                if _rc2.button("🗑️ Excluir", key=f"es_del_{_es_id}", use_container_width=True):
+                    _r = auth_service.excluir_estudo(_user["user_id"], _es_id, _at, _rt)
+                    (st.success if _r.ok else st.error)(("✅ " if _r.ok else "") + _r.mensagem)
+                    if _r.ok:
+                        time.sleep(0.6); st.rerun()
+    else:
+        st.caption("Você ainda não salvou nenhum estudo.")
+
+    st.markdown("---")
     # [Perfil UX] Sair da conta direto do perfil (além da sidebar) — bloqueio real de sessão.
     _cv1, _cv2 = st.columns(2)
     with _cv1:
