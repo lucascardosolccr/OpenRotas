@@ -1466,6 +1466,50 @@ st.markdown("""
         box-shadow: 0 4px 14px -4px rgba(59,130,246,.6);
     }
     .ds-jornada-passo.feito { border-color: var(--ok) !important; background: rgba(46,204,113,.10) !important; }
+
+    /* ============================================================================
+       [NAV-BELEZA] Navegação em DOIS NÍVEIS como controle segmentado premium.
+       Escopo cirúrgico via as classes .st-key-<key> que o Streamlit 1.46 injeta no
+       container de cada widget — assim SÓ os dois radios de navegação (nav_grupo e
+       nav_sec_g0..g7) são atingidos; nenhum outro st.radio da app é afetado. Puramente
+       CSS: a lógica de navegação (radios, estado, renderização preguiçosa) é intocada.
+       Nível 1 (grupo) = pílulas maiores; a pílula ativa recebe o gradiente da marca +
+       brilho. Nível 2 (seção) = painel que "expande" abaixo do grupo (borda-acento à
+       esquerda + reveal animado), com as seções como pílulas secundárias. Verificado
+       em galeria isolada (render + interação) antes de aplicar. */
+    .st-key-nav_grupo [role="radiogroup"] { gap: 8px; flex-wrap: wrap; margin-bottom: 2px; }
+    .st-key-nav_grupo [role="radiogroup"] > label {
+        background: var(--sf-2); border: 1px solid var(--sf-3); border-radius: 12px;
+        padding: 9px 16px; margin: 0; cursor: pointer; font-weight: 600; color: var(--tx-2);
+        transition: transform .15s ease, border-color .15s ease, background .15s ease, box-shadow .15s ease;
+    }
+    .st-key-nav_grupo [role="radiogroup"] > label > div:first-child { display: none !important; }
+    .st-key-nav_grupo [role="radiogroup"] > label:hover {
+        border-color: var(--brand-2); transform: translateY(-1px); background: var(--sf-3);
+    }
+    .st-key-nav_grupo [role="radiogroup"] > label:has(input:checked) {
+        background: var(--grad-brand); border-color: transparent; color: #fff;
+        box-shadow: 0 6px 18px rgba(37,99,235,.45); transform: translateY(-1px);
+    }
+    .st-key-nav_grupo [role="radiogroup"] > label:has(input:checked) p { color: #fff !important; }
+
+    [class*="st-key-nav_sec_g"] {
+        background: var(--sf-1); border: 1px solid var(--sf-3); border-left: 3px solid var(--brand);
+        border-radius: 12px; padding: 10px 12px; margin-top: 6px; animation: navreveal .22s ease;
+    }
+    @keyframes navreveal { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+    [class*="st-key-nav_sec_g"] [role="radiogroup"] { gap: 7px; flex-wrap: wrap; }
+    [class*="st-key-nav_sec_g"] [role="radiogroup"] > label {
+        background: transparent; border: 1px solid transparent; border-radius: 999px;
+        padding: 5px 13px; margin: 0; cursor: pointer; color: var(--tx-3); font-size: .92rem;
+        transition: all .14s ease;
+    }
+    [class*="st-key-nav_sec_g"] [role="radiogroup"] > label > div:first-child { display: none !important; }
+    [class*="st-key-nav_sec_g"] [role="radiogroup"] > label:hover { color: var(--tx-1); background: var(--sf-2); }
+    [class*="st-key-nav_sec_g"] [role="radiogroup"] > label:has(input:checked) {
+        background: var(--sf-3); border-color: var(--brand); color: var(--tx-1); font-weight: 600;
+    }
+    [class*="st-key-nav_sec_g"] [role="radiogroup"] > label:has(input:checked) p { color: var(--tx-1) !important; }
 </style>
 """, unsafe_allow_html=True)
 
