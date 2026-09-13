@@ -59127,6 +59127,56 @@ if _secao == _SECOES[22]:   # tab_geo_ibge
             if not _geo_camadas:
                 st.info("Nenhuma camada derivada em data/brasil/ibge/derivadas/. Gere com `py -X utf8 construir_bases_locais_ibge.py`.")
             else:
+                # [Expansão de conteúdo - geo_ibge] PANORAMA NACIONAL das camadas (aditivo).
+                # Antes, a aba só mostrava algo DEPOIS de geocodificar + buscar; agora ela já
+                # abre informativa, com o inventário real de feições por camada lido do
+                # manifest.json (contagem oficial IBGE BC250+BC100, sem ler os parquets nem rede).
+                try:
+                    _mani_ibge = _bases_locais_ibge.manifest()
+                    _cam_mani = _mani_ibge.get("camadas", {}) if isinstance(_mani_ibge, dict) else {}
+                    if _cam_mani:
+                        with st.expander("📊 Panorama nacional das camadas IBGE — o que há disponível para consultar", expanded=True):
+                            _rot_cam = {
+                                "pontes": "🌉 Pontes", "travessias": "⛴️ Travessias/balsas",
+                                "hidrovias": "🚢 Hidrovias", "atracadouros_terminal": "⚓ Atracadouros/terminais",
+                                "complexos_portuarios": "🏭 Complexos portuários", "eclusas": "🔒 Eclusas",
+                                "sinalizacao": "🚦 Sinalização", "rodovias": "🛣️ Rodovias",
+                                "ferrovias": "🚂 Ferrovias", "massas_dagua": "💧 Massas d'água",
+                                "drenagem": "🌊 Drenagem (rios)", "municipios": "🗺️ Municípios",
+                            }
+                            _linhas_pan, _tot_feicoes = [], 0
+                            for _c in _geo_camadas:
+                                _cm = _cam_mani.get(_c, {}) or {}
+                                _reg = int(_cm.get("registros", 0) or 0)
+                                _tot_feicoes += _reg
+                                _porf = _cm.get("contagem_por_fonte", {}) or {}
+                                _linhas_pan.append({
+                                    "Camada": _rot_cam.get(_c, _c),
+                                    "Registros": _reg,
+                                    "BC250 (Brasil)": int(_porf.get("BC250", 0) or 0),
+                                    "BC100 (8 UFs)": int(_porf.get("BC100", 0) or 0),
+                                })
+                            _fmt_mil = lambda _n: f"{int(_n):,}".replace(",", ".")
+                            _pk1, _pk2, _pk3 = st.columns(3)
+                            _pk1.metric("Feições catalogadas", _fmt_mil(_tot_feicoes),
+                                        help="Soma de todos os registros das camadas disponíveis em disco (fonte: manifest IBGE, contagem oficial — sem ler os arquivos nem rede).")
+                            _pk2.metric("Camadas disponíveis", len(_geo_camadas))
+                            _muni_reg = int((_cam_mani.get("municipios", {}) or {}).get("registros", 0) or 0)
+                            _pk3.metric("Municípios na malha", _fmt_mil(_muni_reg),
+                                        help="Municípios na malha oficial IBGE BC250 usada para o ponto-em-polígono desta aba.")
+                            _df_pan = pd.DataFrame(_linhas_pan).sort_values("Registros", ascending=False)
+                            st.dataframe(_df_pan, use_container_width=True, hide_index=True)
+                            try:
+                                _df_bar_pan = _df_pan[_df_pan["Camada"] != _rot_cam["drenagem"]].set_index("Camada")["Registros"]
+                                if not _df_bar_pan.empty:
+                                    st.caption("Registros por camada (a **Drenagem** — malha completa de rios — é omitida do gráfico por dominar a escala; veja o valor exato na tabela acima).")
+                                    st.bar_chart(_df_bar_pan)
+                            except Exception:
+                                logger.debug("[IBGE-PANORAMA] Gráfico isolado falhou (aditivo).", exc_info=True)
+                            if _mani_ibge.get("extraido_em_utc"):
+                                st.caption("📅 Bases derivadas do IBGE geradas em: %s · Origem: BC250 v2025 (todo o Brasil) + BC100 (AC/AL/ES/GO-DF/RS/RR/SE)." % _mani_ibge["extraido_em_utc"])
+                except Exception:
+                    logger.debug("[IBGE-PANORAMA] Painel nacional isolado falhou (aditivo).", exc_info=True)
                 # ---- camadas pesadas (Release de dados) -------------------------------
                 try:
                     _heavy_falt = _dados_bootstrap.ausentes(somente_geoespacial=True) if _dados_bootstrap is not None else []
