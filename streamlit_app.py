@@ -43,6 +43,34 @@ from typing import NamedTuple, List
 import altair as alt
 import plotly.express as px
 import plotly.graph_objects as go
+import plotly.io as _pio
+
+# [GRÁFICOS-BELEZA] Template Plotly único da marca ("openrotas"): paleta categórica coerente
+# com o design system, fundo transparente (nunca briga com o --sf da app), grade discreta,
+# fonte Inter e hover no tom das superfícies. Registrado como default do Plotly e dos px.defaults
+# para que TODOS os ~32 gráficos herdem a mesma identidade SEM tocar em cada chamada. Fundo
+# transparente garante que, mesmo quando o st.plotly_chart usa o tema "streamlit" (padrão), o
+# resultado permaneça escuro e consistente — só ganha a paleta/estilo da marca; nada regride.
+_OPENROTAS_COLORWAY = ["#3B82F6", "#2ECC71", "#E67E22", "#9B59B6", "#1ABC9C",
+                       "#E74C3C", "#F1C40F", "#60A5FA", "#EC4899", "#14B8A6"]
+try:
+    _pio.templates["openrotas"] = go.layout.Template(layout=dict(
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, sans-serif", color="#E5E7EB", size=13),
+        colorway=_OPENROTAS_COLORWAY,
+        xaxis=dict(gridcolor="rgba(148,163,184,.14)", zerolinecolor="rgba(148,163,184,.22)",
+                   linecolor="rgba(148,163,184,.25)"),
+        yaxis=dict(gridcolor="rgba(148,163,184,.14)", zerolinecolor="rgba(148,163,184,.22)",
+                   linecolor="rgba(148,163,184,.25)"),
+        legend=dict(bgcolor="rgba(0,0,0,0)"),
+        hoverlabel=dict(bgcolor="#1E232F", bordercolor="#2D3342", font=dict(color="#F9FAFB")),
+        colorscale=dict(sequential=[[0, "#0E1117"], [0.5, "#2563EB"], [1, "#60A5FA"]]),
+    ))
+    _pio.templates.default = "openrotas"
+    px.defaults.template = "openrotas"
+    px.defaults.color_discrete_sequence = _OPENROTAS_COLORWAY
+except Exception:
+    pass  # nunca deixa a identidade de gráfico derrubar a app
 
 # [PLOTLY-COMPAT - Rodada 7/Missão 2] Plotly >=6.2 usa Scattermapbox/
 # scatter_mapbox + parâmetros "mapbox*"; Plotly >=7 renomeou tudo para
