@@ -943,6 +943,24 @@ st.markdown("""
         background-color: var(--sf-1);
         border-right: 1px solid var(--sf-3);
     }
+    /* [Beleza - Sidebar] Fundo com leve profundidade + cartão de identidade do usuário. */
+    [data-testid="stSidebar"] > div:first-child {
+        background: linear-gradient(180deg, var(--sf-1) 0%, var(--sf-0) 100%);
+    }
+    .sb-user {
+        display: flex; align-items: center; gap: 10px;
+        background: var(--sf-2); border: 1px solid var(--sf-3);
+        border-radius: 12px; padding: 10px 12px; margin-bottom: 10px;
+    }
+    .sb-user-av {
+        flex: 0 0 auto; width: 38px; height: 38px; border-radius: 50%;
+        background: var(--grad-brand); color: #fff; display: flex;
+        align-items: center; justify-content: center; font-weight: 700; font-size: .9rem;
+        box-shadow: 0 4px 12px -4px rgba(37,99,235,.6);
+    }
+    .sb-user-meta { min-width: 0; }
+    .sb-user-label { color: var(--tx-3); font-size: .66rem; text-transform: uppercase; letter-spacing: .05em; }
+    .sb-user-email { color: var(--tx-1); font-size: .86rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     
     /* [REDESIGN TOTAL - Rodada 5] st.radio (usado na navegação principal e em vários filtros da app)
        nunca foi tematizado — o indicador de seleção usava o vermelho padrão do Streamlit (#FF4B4B),
@@ -41386,7 +41404,19 @@ with st.sidebar:
     # exigir_autenticacao() garante que ninguém chega até aqui sem sessão válida.
     _auth_user = session_manager.usuario_atual()
     if _auth_user:
-        st.caption(f"👤 {_auth_user['email']}")
+        # [Beleza - Sidebar] Cartão de identidade (avatar com iniciais + e-mail) no lugar
+        # da legenda simples. Conteúdo escapado por higiene de HTML.
+        import html as _sb_html
+        _sb_email = _auth_user.get('email') or '—'
+        _sb_ini = (_sb_email.split('@')[0][:2] or '👤').upper()
+        st.markdown(
+            "<div class='sb-user'>"
+            "<div class='sb-user-av'>" + _sb_html.escape(_sb_ini) + "</div>"
+            "<div class='sb-user-meta'>"
+            "<div class='sb-user-label'>Conectado como</div>"
+            "<div class='sb-user-email' title='" + _sb_html.escape(_sb_email) + "'>"
+            + _sb_html.escape(_sb_email) + "</div></div></div>",
+            unsafe_allow_html=True)
         _auth_c1, _auth_c2 = st.columns(2)
         if _auth_c1.button("Perfil", key="_auth_btn_perfil", use_container_width=True):
             session_manager.abrir_perfil()
