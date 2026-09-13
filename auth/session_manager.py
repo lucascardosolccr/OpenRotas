@@ -94,8 +94,14 @@ def _sessao_expirada_no_servidor() -> bool:
 
 def _tela_login():
     st.markdown("### Entrar")
+    # [Login UX] Após criar a conta, o e-mail recém-cadastrado é pré-preenchido e uma
+    # confirmação única é exibida — o usuário não redigita o que acabou de informar.
+    _email_pos = st.session_state.pop("_auth_email_pos_cadastro", None)
+    if _email_pos:
+        st.session_state.setdefault("login_email", _email_pos)
+        st.success("✅ Conta criada! Entre abaixo com seu e-mail e senha.")
     with st.form("form_login", clear_on_submit=False):
-        _email = st.text_input("E-mail", key="login_email")
+        _email = st.text_input("E-mail", key="login_email", placeholder="voce@exemplo.com")
         _senha = st.text_input("Senha", type="password", key="login_senha")
         _enviar = st.form_submit_button("Entrar", use_container_width=True, type="primary")
     if _enviar:
@@ -300,7 +306,35 @@ def _tela_perfil():
     if _perfil is None:
         st.error("Não foi possível carregar seu perfil no momento — tente novamente em instantes.")
     else:
-        st.caption(f"E-mail de login atual: **{_user['email']}**")
+        # [Perfil UX] Cartão-resumo da conta: identidade num relance (iniciais, nome, e-mail,
+        # membro desde, última atualização) — dados REAIS do perfil, formatação defensiva e
+        # tudo escapado (o conteúdo é do próprio usuário, mas escapamos por higiene de HTML).
+        import html as _html
+        from datetime import datetime as _dt
+        _nome_disp = (_perfil.get("nome_completo") or "").strip() or "—"
+        _iniciais = ("".join(p[0] for p in _nome_disp.split()[:2]).upper()
+                     if _nome_disp != "—" else "👤") or "👤"
+
+        def _fmt_data(_v):
+            try:
+                return _dt.fromisoformat(str(_v).replace("Z", "+00:00")).strftime("%d/%m/%Y")
+            except Exception:
+                return None
+        _desde = _fmt_data(_perfil.get("created_at"))
+        _atual = _fmt_data(_perfil.get("updated_at"))
+        _meta_bits = ([f"Membro desde {_desde}"] if _desde else []) + ([f"Atualizado em {_atual}"] if _atual else [])
+        _meta_html = _html.escape(" · ".join(_meta_bits))
+        st.markdown(
+            "<div style='display:flex;align-items:center;gap:16px;background:var(--sf-2,#1E232F);"
+            "border:1px solid var(--sf-3,#2D3342);border-radius:14px;padding:16px 18px;margin-bottom:10px'>"
+            "<div style='flex:0 0 auto;width:56px;height:56px;border-radius:50%;background:var(--brand,#3B82F6);"
+            "color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.25rem;font-weight:700'>"
+            + _html.escape(_iniciais) + "</div>"
+            "<div style='min-width:0'>"
+            "<div style='color:var(--tx-1,#F9FAFB);font-weight:700;font-size:1.05rem'>" + _html.escape(_nome_disp) + "</div>"
+            "<div style='color:var(--tx-3,#9CA3AF);font-size:.85rem'>✉️ " + _html.escape(_user['email'] or '—') + "</div>"
+            + ("<div style='color:var(--tx-4,#6B7280);font-size:.78rem;margin-top:2px'>" + _meta_html + "</div>" if _meta_html else "")
+            + "</div></div>", unsafe_allow_html=True)
         with st.form("form_editar_perfil"):
             _nome = st.text_input("Nome completo*", value=_perfil.get("nome_completo") or "")
             _telefone = st.text_input("Telefone (com DDD)*", value=_perfil.get("telefone") or "",
@@ -366,9 +400,17 @@ def _tela_perfil():
                 st.error(_res.mensagem)
 
     st.markdown("---")
-    if st.button("← Voltar para a aplicação"):
-        st.session_state["_mostrar_perfil"] = False
-        st.rerun()
+    # [Perfil UX] Sair da conta direto do perfil (além da sidebar) — bloqueio real de sessão.
+    _cv1, _cv2 = st.columns(2)
+    with _cv1:
+        if st.button("← Voltar para a aplicação", use_container_width=True):
+            st.session_state["_mostrar_perfil"] = False
+            st.rerun()
+    with _cv2:
+        if st.button("🚪 Sair da conta", use_container_width=True):
+            encerrar_sessao()
+            st.session_state["_mostrar_perfil"] = False
+            st.rerun()
 
 
 def _renderizar_tela_autenticacao():
@@ -379,12 +421,28 @@ def _renderizar_tela_autenticacao():
     # pena criar a conta. Adicionada uma frase de propósito, com a mesma linguagem já usada no
     # cartão "Comece por aqui" (onboarding pós-login) — não inventa uma descrição nova.
     st.markdown(
-        "<div style='max-width:440px;margin:40px auto 0;text-align:center'>"
+        "<div style='max-width:560px;margin:40px auto 0;text-align:center'>"
         "<h1 style='margin-bottom:0;color:var(--tx-1, #F9FAFB)'>🗺️ Motor Nacional de Inteligência Logística</h1>"
         "<p style='color:var(--tx-2, #E5E7EB);margin:10px 0 2px'>Analisa quanto cada candidato "
         "precisa se deslocar até seu local de prova e ajuda a decidir onde ela deve ser "
         "aplicada.</p>"
         "<p style='color:var(--tx-3, #9CA3AF)'>Entre ou crie sua conta para continuar.</p>"
+        # [Login UX] Faixa de recursos REAIS da aplicação (regra dos 5 segundos): comunica
+        # valor concreto antes do cadastro, sem inventar funcionalidade. Responsiva (flex-wrap).
+        "<div style='display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:18px'>"
+        + "".join(
+            "<div style='flex:1 1 160px;min-width:150px;background:var(--sf-2, #1E232F);"
+            "border:1px solid var(--sf-3, #2D3342);border-radius:12px;padding:12px 14px;text-align:left'>"
+            f"<div style='font-size:1.4rem;line-height:1'>{_ic}</div>"
+            f"<div style='color:var(--tx-1, #F9FAFB);font-weight:600;margin-top:6px'>{_ti}</div>"
+            f"<div style='color:var(--tx-3, #9CA3AF);font-size:.82rem;margin-top:2px'>{_de}</div>"
+            "</div>"
+            for _ic, _ti, _de in (
+                ("🛣️", "Distância real por estrada", "Rota viária multi-motor, não linha reta."),
+                ("⛴️", "Detecta balsas e barreiras", "Rios, pontes e travessias que afetam o trajeto."),
+                ("📊", "Melhor local de prova", "Recomenda o polo que minimiza o deslocamento."),
+            ))
+        + "</div>"
         "</div>", unsafe_allow_html=True)
     _col_esq, _col_mid, _col_dir = st.columns([1, 2, 1])
     with _col_mid:
