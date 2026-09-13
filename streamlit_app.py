@@ -54125,7 +54125,8 @@ if _secao == _SECOES[4]:   # tab_analytics
                     col_k3.metric("Tempo Acumulado", f"{tempo_total_str}")
                     col_k4.metric("Distância Média/Rota", f"{round(dist_media, 1)} km")
                     col_k5.metric("Tempo Médio/Rota", f"{tempo_medio_str}")
-                    col_k6.metric("Score Geodésico Médio", f"{round(df_sucesso['Score Final Global'].mean(), 1) if not df_sucesso.empty else 0}/100")
+                    col_k6.metric("Score Geodésico Médio", f"{round(df_sucesso['Score Final Global'].mean(), 1) if not df_sucesso.empty else 0}/100",
+                                  help="Média do Score Final Global das rotas (0–100): qualidade geral de cada rota, combinando concordância entre fontes, integridade das coordenadas e plausibilidade física. Quanto maior, mais confiável o conjunto.")
                     st.divider()
                     
                     col_k7, col_k8, col_k9, col_k10, col_k11, col_k12 = st.columns(6)
@@ -54139,8 +54140,10 @@ if _secao == _SECOES[4]:   # tab_analytics
                     col_k8.metric("Estados Alcançados (UFs)", f"{ufs_atendidas}")
                     col_k9.metric("Maior Viagem Mapeada", f"{round(df_cf['Distancia'].max(), 1)} km")
                     col_k10.metric("Rotas Fluviais (Balsa)", f"{rotas_balsa}")
-                    col_k11.metric("Taxa de Sucesso (Roteamento)", f"{taxa_sucesso}%")
-                    col_k12.metric("Confiança 'Altíssima'", f"{len(df_cf[df_cf['Confianca Destino'] == 'ALTISSIMA'])}")
+                    col_k11.metric("Taxa de Sucesso (Roteamento)", f"{taxa_sucesso}%",
+                                   help="Percentual das rotas que obtiveram uma rota viária real (Google/OSRM), em vez de cair na estimativa geodésica por linha reta. Quanto maior, mais rotas medidas por estrada de fato.")
+                    col_k12.metric("Confiança 'Altíssima'", f"{len(df_cf[df_cf['Confianca Destino'] == 'ALTISSIMA'])}",
+                                   help="Quantas rotas tiveram a identificação do destino no nível máximo de confiança (ALTÍSSIMA) — geocodificação corroborada por várias fontes independentes.")
                 
                 # [STORYTELLING-DASH - 253ª geração] Narrativa analítica AO VIVO do recorte filtrado.
                 # Lê df_cf (o mesmo recorte dos KPIs/gráficos) e conta a história como um analista faria:
