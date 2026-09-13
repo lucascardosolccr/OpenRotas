@@ -1508,21 +1508,22 @@ st.markdown("""
        brilho. Nível 2 (seção) = painel que "expande" abaixo do grupo (borda-acento à
        esquerda + reveal animado), com as seções como pílulas secundárias. Verificado
        em galeria isolada (render + interação) antes de aplicar. */
-    .st-key-nav_grupo [role="radiogroup"] { gap: 8px; flex-wrap: wrap; margin-bottom: 2px; }
-    .st-key-nav_grupo [role="radiogroup"] > label {
-        background: var(--sf-2); border: 1px solid var(--sf-3); border-radius: 12px;
-        padding: 9px 16px; margin: 0; cursor: pointer; font-weight: 600; color: var(--tx-2);
-        transition: transform .15s ease, border-color .15s ease, background .15s ease, box-shadow .15s ease;
+    /* Nível 1 (Área) = caixa de seleção premium. Rótulo em versalete; caixa com superfície
+       interna, cantos suaves e realce de marca no hover/foco. */
+    .st-key-nav_grupo label p {
+        font-size: .72rem; text-transform: uppercase; letter-spacing: .06em;
+        color: var(--tx-3); font-weight: 700;
     }
-    .st-key-nav_grupo [role="radiogroup"] > label > div:first-child { display: none !important; }
-    .st-key-nav_grupo [role="radiogroup"] > label:hover {
-        border-color: var(--brand-2); transform: translateY(-1px); background: var(--sf-3);
+    .st-key-nav_grupo [data-baseweb="select"] > div {
+        background: var(--sf-2) !important; border: 1px solid var(--sf-3) !important;
+        border-radius: 12px !important; min-height: 46px !important;
+        box-shadow: 0 2px 10px -6px rgba(0,0,0,.6); transition: border-color .15s ease, box-shadow .15s ease;
     }
-    .st-key-nav_grupo [role="radiogroup"] > label:has(input:checked) {
-        background: var(--grad-brand); border-color: transparent; color: #fff;
-        box-shadow: 0 6px 18px rgba(37,99,235,.45); transform: translateY(-1px);
+    .st-key-nav_grupo [data-baseweb="select"] > div:hover { border-color: var(--brand-2) !important; }
+    .st-key-nav_grupo [data-baseweb="select"] > div:focus-within {
+        border-color: var(--brand) !important; box-shadow: 0 0 0 3px rgba(59,130,246,.25) !important;
     }
-    .st-key-nav_grupo [role="radiogroup"] > label:has(input:checked) p { color: #fff !important; }
+    .st-key-nav_grupo [data-baseweb="select"] div[value] { font-weight: 700; font-size: 1rem; color: var(--tx-1); }
 
     [class*="st-key-nav_sec_g"] {
         background: var(--sf-1); border: 1px solid var(--sf-3); border-left: 3px solid var(--brand);
@@ -43271,8 +43272,15 @@ if st.session_state.get("_pending_nav_grupo"):
 # classe de bug que me custou a 137ª. O invariante existe exatamente para isso.)
 st.markdown('<div class="nav-topo"></div>', unsafe_allow_html=True)
 st.sidebar.caption(f"🏷️ **{_VERSAO_SELO}**")
-_grupo = st.radio("Grupo", list(_GRUPOS_NAV), key="nav_grupo", horizontal=True,
-                  label_visibility="collapsed", disabled=_PROC_ATIVO)
+# [NAV-DROPDOWN] Nível 1 (Área) como CAIXA DE SELEÇÃO (menu suspenso): clique abre a lista de
+# áreas — compacto, moderno e melhor no celular do que 8 pílulas quebrando em várias linhas.
+# Troca segura: selectbox mantém a MESMA chave de estado (nav_grupo), então índice, navegação
+# programática (_pending_nav_grupo grava nav_grupo) e o disable durante o processamento seguem
+# idênticos ao radio anterior. Restrito a ~1/3 da largura por st.columns para não ocupar a linha
+# inteira. Nível 2 (Seção) segue como pílulas, que "expandem" abaixo da área escolhida.
+_nav_col_grp, _nav_col_resto = st.columns([2, 5])
+with _nav_col_grp:
+    _grupo = st.selectbox("Área", list(_GRUPOS_NAV), key="nav_grupo", disabled=_PROC_ATIVO)
 _idx_g = list(_GRUPOS_NAV).index(_grupo)
 _secao = st.radio("Seção", [_SECOES[_i] for _i in _GRUPOS_NAV[_grupo]],
                   key=f"nav_sec_g{_idx_g}", horizontal=True,
