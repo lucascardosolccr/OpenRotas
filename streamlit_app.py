@@ -59153,7 +59153,30 @@ if _secao == _SECOES[17]:   # tab_hidrografia
                     key="hidro_est_sel")
             with _col_s2:
                 _tipo_serie = st.selectbox("📊 Tipo de série", ["Cotas", "Vazões", "Sedimentos", "Qualidade", "Curvas descarga", "Chuvas"], key="hidro_tipo_sel")
-            
+
+            # [Expansão de conteúdo - Cotas & Vazões] Ficha LOCAL da estação (sem rede): metadados +
+            # localização no mapa, para conhecer a estação antes de (ou sem) chamar a API externa.
+            # Usa o catálogo já carregado. Guardado por presença de coluna.
+            if _est_sel and _est_sel != "(nenhuma)":
+                try:
+                    _cod_sel = _est_sel.split(" - ")[0]
+                    _row_est = _est_df[_est_df["codigo"].astype(str) == _cod_sel] if "codigo" in _est_df.columns else _est_df.iloc[0:0]
+                    if not _row_est.empty:
+                        _re = _row_est.iloc[0]
+                        _m1, _m2, _m3, _m4 = st.columns(4)
+                        _m1.metric("Rio", str(_re.get("rio", "—")))
+                        _m2.metric("Bacia", str(_re.get("bacia", "—")))
+                        _m3.metric("UF", str(_re.get("uf", "—")))
+                        _m4.metric("Tipo", str(_re.get("tipo", "—")),
+                                   help="Telemétrica = transmissão automática (dados quase em tempo real); Convencional = leitura manual periódica.")
+                        _lat_e = _num_seguro(_re.get("lat", _re.get("latitude")))
+                        _lon_e = _num_seguro(_re.get("lon", _re.get("longitude")))
+                        if _lat_e and _lon_e and _lat_e != 0 and _lon_e != 0:
+                            st.caption("📍 Localização da estação (código %s)" % _cod_sel)
+                            st.map(pd.DataFrame([{"lat": float(_lat_e), "lon": float(_lon_e)}]), zoom=6)
+                except Exception:
+                    logger.debug("[HYDRO-COTAS] Ficha local da estação isolada falhou (aditivo).", exc_info=True)
+
             if st.button("🔍 Consultar API SNIRH", key="hidro_consultar_api"):
                 if _est_sel != "(nenhuma)":
                     _cod = _est_sel.split(" - ")[0]
