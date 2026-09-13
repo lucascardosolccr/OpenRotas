@@ -236,6 +236,20 @@ def test_obter_perfil_sucesso(monkeypatch):
     assert _perfil == {"id": "uid-1", "nome_completo": "Fulano"}
 
 
+def test_obter_perfil_aplica_sessao_do_usuario_para_rls(monkeypatch):
+    """A leitura do perfil DEVE aplicar a sessão do usuário (set_session com os tokens) antes
+    de consultar — senão a RLS (auth.uid() = id) bloqueia e o perfil 'some'. Regressão do bug
+    'Não foi possível carregar seu perfil' no login social."""
+    _cliente = _cliente_falso()
+    _query = _cliente.table.return_value.select.return_value.eq.return_value.limit.return_value
+    _query.execute.return_value = SimpleNamespace(data=[{"id": "uid-1", "nome_completo": "Fulano"}])
+    monkeypatch.setattr(auth_service, "obter_cliente", lambda: _cliente)
+
+    _perfil = auth_service.obter_perfil("uid-1", access_token="AT", refresh_token="RT")
+    assert _perfil == {"id": "uid-1", "nome_completo": "Fulano"}
+    _cliente.auth.set_session.assert_called_once_with("AT", "RT")
+
+
 def test_obter_perfil_nao_encontrado_e_none(monkeypatch):
     _cliente = _cliente_falso()
     _query = _cliente.table.return_value.select.return_value.eq.return_value.limit.return_value

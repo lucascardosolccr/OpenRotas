@@ -40,6 +40,13 @@ def usuario_atual() -> dict | None:
     }
 
 
+def _tokens_sessao() -> tuple[str, str]:
+    """(access_token, refresh_token) da sessão atual — necessários para as operações que
+    passam por RLS (perfil, estudos, anotações, avatar). ('','') se não autenticado."""
+    return (st.session_state.get("auth_access_token", "") or "",
+            st.session_state.get("auth_refresh_token", "") or "")
+
+
 def _iniciar_sessao(user_id: str, email: str, access_token: str, refresh_token: str):
     st.session_state["auth_user_id"] = user_id
     st.session_state["auth_email"] = email
@@ -211,7 +218,9 @@ def _tela_cadastro():
                 # [ENDEREÇO] gravado no perfil logo após o cadastro (o trigger do banco já
                 # criou a linha com nome/telefone/e-mail; aqui só completamos o endereço).
                 try:
-                    auth_service.atualizar_perfil(_res.dados["user_id"], _end_norm)
+                    auth_service.atualizar_perfil(
+                        _res.dados["user_id"], _end_norm,
+                        _res.dados.get("access_token", ""), _res.dados.get("refresh_token", ""))
                 except Exception:
                     logger.debug("[AUTH] Falha ao gravar endereço logo após o cadastro (não bloqueia o fluxo).",
                                 exc_info=True)
@@ -329,8 +338,9 @@ def _tela_perfil():
         st.rerun()
         return
 
+    _at, _rt = _tokens_sessao()
     with st.spinner("Carregando perfil..."):
-        _perfil = auth_service.obter_perfil(_user["user_id"])
+        _perfil = auth_service.obter_perfil(_user["user_id"], _at, _rt)
 
     if _perfil is None:
         st.error("Não foi possível carregar seu perfil no momento — tente novamente em instantes.")
@@ -436,8 +446,9 @@ def _tela_perfil():
                 _campos = dict(_end_norm)
                 _campos["nome_completo"] = _nome_norm
                 _campos["telefone"] = _tel_norm
+                _at, _rt = _tokens_sessao()
                 with st.spinner("Salvando..."):
-                    _res = auth_service.atualizar_perfil(_user["user_id"], _campos)
+                    _res = auth_service.atualizar_perfil(_user["user_id"], _campos, _at, _rt)
                 if _res.ok:
                     st.success("✅ " + _res.mensagem)
                     time.sleep(1.0)

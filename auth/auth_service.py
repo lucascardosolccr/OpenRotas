@@ -249,10 +249,14 @@ def alterar_senha_logado(email: str, senha_atual: str, nova_senha: str) -> AuthR
 # Perfil
 # ==============================================================================
 
-def obter_perfil(user_id: str) -> Optional[dict]:
+def obter_perfil(user_id: str, access_token: str = "", refresh_token: str = "") -> Optional[dict]:
     """Lê a linha de `public.profiles` deste usuário (criada automaticamente pelo trigger
-    no cadastro — ver auth/schema.sql). None (nunca lança) se indisponível/não encontrado."""
-    _cliente = obter_cliente()
+    no cadastro — ver auth/schema.sql). None (nunca lança) se indisponível/não encontrado.
+
+    A tabela `profiles` tem RLS (select: auth.uid() = id), então é OBRIGATÓRIO aplicar a
+    sessão do usuário (tokens) antes de ler — com o cliente anônimo, auth.uid() é nulo e a
+    consulta volta vazia. Serve tanto login por e-mail quanto login social (Google)."""
+    _cliente = _cliente_do_usuario(access_token, refresh_token)
     if _cliente is None or not user_id:
         return None
     try:
@@ -264,10 +268,12 @@ def obter_perfil(user_id: str) -> Optional[dict]:
         return None
 
 
-def atualizar_perfil(user_id: str, campos: dict) -> AuthResult:
+def atualizar_perfil(user_id: str, campos: dict,
+                     access_token: str = "", refresh_token: str = "") -> AuthResult:
     """Atualiza campos do perfil (nome/telefone/endereço) — NUNCA aceita alterar `id` ou
-    `email` por aqui (e-mail tem fluxo próprio, com confirmação — ver §10 da missão)."""
-    _cliente = obter_cliente()
+    `email` por aqui (e-mail tem fluxo próprio, com confirmação — ver §10 da missão).
+    Aplica a sessão do usuário (RLS: update exige auth.uid() = id)."""
+    _cliente = _cliente_do_usuario(access_token, refresh_token)
     if _cliente is None:
         return AuthResult(False, "Atualização de perfil indisponível no momento.")
     _campos_seguros = {k: v for k, v in (campos or {}).items() if k not in ("id", "email", "user_id")}
