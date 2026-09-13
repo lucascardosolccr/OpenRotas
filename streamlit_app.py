@@ -1715,6 +1715,18 @@ _GUIA_ABAS = {
         "erros_comuns": "Abrir sem ter processado nada (tabelas vazias); confundir com a **Auditoria da Aplicação** (saúde/XAI de geocodificação) — esta cobre a **trilha do estudo de rotas**.",
         "dicas": "É a aba da **transparência total** do estudo. Exporte/print para anexar a relatórios de auditoria.",
     },
+    # [Melhoria aba a aba - 7] Guia da aba de pesquisa de satisfação (canal de feedback).
+    "pesquisa": {
+        "o_que_faz": "É o **canal de feedback** da plataforma. Você avalia a aplicação (notas, o que gostou/não gostou, melhorias desejadas, erros encontrados) e envia direto ao produtor **por e-mail**.",
+        "quando_usar": "Sempre que quiser **elogiar, sugerir melhorias ou relatar um problema**. Seu retorno orienta as próximas versões da aplicação.",
+        "dados": "Suas respostas: *gostou?*, *resolveu?*, *indicaria?*, notas de **0–10**, textos livres (o que mais/menos gostou, melhorias, erro encontrado) e o **e-mail de destino** (do produtor, já pré-preenchido quando configurado).",
+        "preenchimento": "1. Responda as perguntas rápidas (sim/não e as notas).\n        2. Escreva os comentários que quiser — todos são opcionais.\n        3. Se encontrou um erro, descreva-o no campo próprio.\n        4. Confira o **e-mail de destino**.\n        5. Clique em **📧 Enviar avaliação**.",
+        "apos_executar": "A aplicação monta a mensagem com suas respostas e a envia ao e-mail do produtor. **Nenhum dado de estudo é afetado** — é só o envio do feedback.",
+        "interpretar": "Não há resultado a interpretar — é um **envio**. Você recebe apenas a confirmação de que a avaliação foi enviada.",
+        "exemplos": "“Nota 9; adorei a análise de balsa; senti falta de exportar em PDF.” — um resumo curto e direto já ajuda muito.",
+        "erros_comuns": "E-mail de destino vazio ou errado; esperar resposta na própria tela (o retorno vem fora da app); achar que é obrigatório preencher tudo — só as **notas** já bastam.",
+        "dicas": "Seja **específico** nas melhorias — quanto mais concreto, mais fácil implementar. Ao relatar um erro, diga **qual passo** o causou: acelera muito a correção.",
+    },
 }
 
 def renderizar_guia_aba(chave_aba: str):
@@ -57627,6 +57639,7 @@ if _secao == _SECOES[11]:   # tab_auditoria
 
 if _secao == _SECOES[12]:   # tab_pesquisa
     st.markdown("### ⭐ Pesquisa de Satisfação")
+    renderizar_guia_aba("pesquisa")
 
     # [PESQUISA - 73ª geração / item #5] E-mail do produtor: pré-configurável via Secrets
     # (EMAIL_PRODUTOR); senão, campo editável. Acesso defensivo (Secrets pode não existir).
