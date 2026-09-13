@@ -1114,8 +1114,13 @@ st.markdown("""
        próprio BaseWeb, no caso do slider), mas os st.text_area (sugestão de anomalia, feedback,
        registro de derrotas) ficavam sem NENHUMA indicação visível ao navegar por teclado — medido
        via Playwright (outline:none e box-shadow:none no foco). Adicionado à mesma regra. */
+    /* [Melhoria aba a aba - 11] `summary` (cabeçalho de expander <details>) era o único controle
+       interativo restante sem o anel de foco da marca: ao navegar por teclado recebia apenas o
+       contorno padrão do navegador (1px), destoando dos 3px de todos os demais — medido via
+       Playwright (outline 1px vs. 3px). Os selectbox/multiselect/date/number já resolvem para um
+       <input> interno e por isso já eram cobertos por `input:focus-visible`; só o expander faltava. */
     button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible,
-    [data-baseweb="tab"]:focus-visible, select:focus-visible {
+    [data-baseweb="tab"]:focus-visible, select:focus-visible, summary:focus-visible {
         outline: 3px solid var(--brand-2) !important;
         outline-offset: 2px !important;
         border-radius: 6px;
