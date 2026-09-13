@@ -1069,20 +1069,33 @@ st.markdown("""
     }
     
     .corporate-header {
-        background: linear-gradient(135deg, var(--sf-1) 0%, var(--sf-2) 100%);
-        padding: 24px;
-        border-radius: 12px;
+        position: relative;
+        overflow: hidden;
+        background:
+            radial-gradient(1200px 200px at 0% -40%, rgba(59,130,246,.18), transparent 70%),
+            linear-gradient(135deg, var(--sf-1) 0%, var(--sf-2) 100%);
+        padding: 26px 28px;
+        border-radius: 16px;
         margin-bottom: 30px;
+        border: 1px solid var(--sf-3);
         border-left: 6px solid var(--brand);
-        box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        box-shadow: 0 18px 40px -22px rgba(0,0,0,.6), 0 2px 8px rgba(0,0,0,.25);
     }
-    
+    /* fio de luz superior sutil (acabamento premium) */
+    .corporate-header::before {
+        content: ""; position: absolute; inset: 0 0 auto 0; height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(96,165,250,.55), transparent);
+    }
+
     .corporate-title {
-        color: var(--tx-1);
         margin: 0;
-        font-weight: 700;
-        font-size: 24px;
-        letter-spacing: -0.5px;
+        font-weight: 800;
+        font-size: 26px;
+        letter-spacing: -0.6px;
+        background: linear-gradient(92deg, var(--tx-1) 0%, var(--brand-2) 120%);
+        -webkit-background-clip: text; background-clip: text;
+        -webkit-text-fill-color: transparent;
+        color: var(--tx-1); /* fallback quando background-clip não é suportado */
     }
     
     .corporate-subtitle {
