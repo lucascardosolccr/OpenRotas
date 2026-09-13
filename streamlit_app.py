@@ -58537,7 +58537,8 @@ if _secao == _SECOES[15]:   # tab_route_intel
                                 _row_orig = _rotas_proc.iloc[_ix] if _ix < len(_rotas_proc) else None
                                 _ic_val = _val_linha(_row_orig, _col_ic, padrao="—") if (_row_orig is not None and _col_ic) else "—"
                                 _fonte_val = _val_linha(_row_orig, _col_fonte, padrao="—") if (_row_orig is not None and _col_fonte) else "—"
-                                _c8.metric("Índice Confiança", _ic_val if _ic_val == "—" else ("%.0f/100" % _num_seguro(_ic_val, 0.0)))
+                                _c8.metric("Índice Confiança", _ic_val if _ic_val == "—" else ("%.0f/100" % _num_seguro(_ic_val, 0.0)),
+                                           help="Confiança geral da rota (0–100): combina a concordância entre as fontes de mapa e a integridade das coordenadas. Quanto maior, mais segura é a identificação e o cálculo desta rota.")
                                 _c9.metric("Fonte Rota", str(_fonte_val) or "—")
                             with _cc2:
                                 if _ic_val != "—":
@@ -58574,11 +58575,14 @@ if _secao == _SECOES[15]:   # tab_route_intel
                                     _c12.metric("Travessias aquaviárias", int(_qt_t) if _qt_t is not None else "—")
                                     _c13, _c14, _c15 = st.columns(3)
                                     _dep_v = _num_seguro(_row_orig.get("Dependencia Aquaviaria"))
-                                    _c13.metric("Dependência aquaviária", f"{_dep_v:.0f}/100" if _dep_v is not None else "—")
+                                    _c13.metric("Dependência aquaviária", f"{_dep_v:.0f}/100" if _dep_v is not None else "—",
+                                                help="Quanto a rota depende de travessia por água (0–100): 0 = puramente rodoviária; valores altos indicam forte dependência de balsa/ferry, com impacto em tempo, custo e previsibilidade.")
                                     _conf_v = _num_seguro(_row_orig.get("Confianca Geografica"))
-                                    _c14.metric("Confiança geográfica", f"{_conf_v:.0f}/100" if _conf_v is not None else "—")
+                                    _c14.metric("Confiança geográfica", f"{_conf_v:.0f}/100" if _conf_v is not None else "—",
+                                                help="Confiança do enriquecimento geográfico (0–100): quão bem o contexto da rota (bacia, pontes, travessias) foi identificado. Quanto maior, mais completa e confiável a informação geográfica.")
                                     _cplx_v = _num_seguro(_row_orig.get("Complexidade Geografica"))
-                                    _c15.metric("Complexidade geográfica", f"{_cplx_v:.0f}/100" if _cplx_v is not None else "—")
+                                    _c15.metric("Complexidade geográfica", f"{_cplx_v:.0f}/100" if _cplx_v is not None else "—",
+                                                help="Complexidade física do trajeto (0–100): combina rios cruzados, pontes, travessias e sinuosidade. Quanto maior, mais barreiras a rota enfrenta — e mais atenção logística ela exige.")
                                     _pontes_txt = str(_row_orig.get("Pontes no Cruzamento") or "").strip()
                                     if _pontes_txt and _pontes_txt not in ("—", "nan"):
                                         st.caption(f"🌉 Ponte(s): {_pontes_txt}")
