@@ -59006,10 +59006,46 @@ if _secao == _SECOES[17]:   # tab_hidrografia
         st.subheader("🏞️ Bacias Hidrográficas")
         if not _bacias_df.empty:
             st.caption(f"Fonte: {_bacias_df['fonte'].iloc[0] if 'fonte' in _bacias_df.columns else 'Desconhecida'} | Total: {len(_bacias_df)} bacias")
-            st.dataframe(_bacias_df, use_container_width=True, hide_index=True)
-            
+
+            # [Expansão de conteúdo - Bacias] Junta a CONTAGEM REAL de rios por região (do CSV de
+            # rios, via baciaCodigo → registroID) e remove colunas de metadado de importação
+            # (_links, importado, dataAlt... = ruído). Defensivo: se as colunas não existirem,
+            # cai no comportamento anterior. Nada fabricado.
+            _bac_view = _bacias_df.copy()
+            try:
+                _bcol = next((c for c in ["baciaCodigo", "bacia", "nome_bacia"]
+                              if _rios_df is not None and not _rios_df.empty and c in _rios_df.columns), None)
+                if _bcol and "registroID" in _bac_view.columns:
+                    _cont_rios = (_rios_df[_bcol].dropna().apply(lambda _x: int(_x) if pd.notna(_x) else None)
+                                  .value_counts())
+                    _bac_view["Rios catalogados"] = _bac_view["registroID"].map(
+                        lambda _k: int(_cont_rios.get(int(_k), 0)) if pd.notna(_k) else 0)
+            except Exception:
+                logger.debug("[HYDRO-BACIAS] Junção de contagem de rios isolada falhou (aditivo).", exc_info=True)
+
+            _noise_cols = {"_links", "importado", "importadoRepetido", "removido", "respAlt",
+                           "temporario", "dataAlt", "dataIns"}
+            _cols_keep = [c for c in _bac_view.columns if c not in _noise_cols]
+            _bac_view = _bac_view[_cols_keep]
+            st.dataframe(_bac_view, use_container_width=True, hide_index=True)
+
+            try:
+                if "Rios catalogados" in _bac_view.columns and _bac_view["Rios catalogados"].sum() > 0:
+                    _bac_ord = _bac_view.sort_values("Rios catalogados", ascending=False)
+                    _nome_col = next((c for c in ["nome", "codigoNome"] if c in _bac_ord.columns), None)
+                    _topr = _bac_ord.iloc[0]
+                    if _nome_col:
+                        st.caption("Região com mais rios catalogados: **%s** (%s rios)."
+                                   % (str(_topr[_nome_col]),
+                                      f"{int(_topr['Rios catalogados']):,}".replace(",", ".")))
+                    st.caption("Rios catalogados por região")
+                    _idx_col = _nome_col or "registroID"
+                    st.bar_chart(_bac_ord.set_index(_idx_col)["Rios catalogados"])
+            except Exception:
+                logger.debug("[HYDRO-BACIAS] Resumo/gráfico isolado falhou (aditivo).", exc_info=True)
+
             # Botões de exportação (bloco único DRY — [Melhoria4-EXCEL 453ª · M3])
-            _botoes_exportacao_geo("bacias_hidrograficas", _bacias_df, sheet_name="Bacias")
+            _botoes_exportacao_geo("bacias_hidrograficas", _bac_view, sheet_name="Bacias")
         else:
             st.warning("Nenhum dado de bacias disponível.")
     
