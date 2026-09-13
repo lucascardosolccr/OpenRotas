@@ -324,17 +324,55 @@ def _tela_perfil():
         _atual = _fmt_data(_perfil.get("updated_at"))
         _meta_bits = ([f"Membro desde {_desde}"] if _desde else []) + ([f"Atualizado em {_atual}"] if _atual else [])
         _meta_html = _html.escape(" · ".join(_meta_bits))
+        # [Perfil] Avatar: usa a FOTO enviada (avatar_url) quando existir; senão, as iniciais.
+        _avatar_url = (_perfil.get("avatar_url") or "").strip()
+        if _avatar_url:
+            _av_html = ("<img src='" + _html.escape(_avatar_url) + "' alt='avatar' "
+                        "style='flex:0 0 auto;width:56px;height:56px;border-radius:50%;object-fit:cover;"
+                        "border:2px solid var(--brand,#3B82F6)'/>")
+        else:
+            _av_html = ("<div style='flex:0 0 auto;width:56px;height:56px;border-radius:50%;background:var(--brand,#3B82F6);"
+                        "color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.25rem;font-weight:700'>"
+                        + _html.escape(_iniciais) + "</div>")
         st.markdown(
             "<div style='display:flex;align-items:center;gap:16px;background:var(--sf-2,#1E232F);"
             "border:1px solid var(--sf-3,#2D3342);border-radius:14px;padding:16px 18px;margin-bottom:10px'>"
-            "<div style='flex:0 0 auto;width:56px;height:56px;border-radius:50%;background:var(--brand,#3B82F6);"
-            "color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.25rem;font-weight:700'>"
-            + _html.escape(_iniciais) + "</div>"
+            + _av_html +
             "<div style='min-width:0'>"
             "<div style='color:var(--tx-1,#F9FAFB);font-weight:700;font-size:1.05rem'>" + _html.escape(_nome_disp) + "</div>"
             "<div style='color:var(--tx-3,#9CA3AF);font-size:.85rem'>✉️ " + _html.escape(_user['email'] or '—') + "</div>"
             + ("<div style='color:var(--tx-4,#6B7280);font-size:.78rem;margin-top:2px'>" + _meta_html + "</div>" if _meta_html else "")
             + "</div></div>", unsafe_allow_html=True)
+
+        # [Perfil] Foto de perfil — enviar/atualizar/remover (Supabase Storage, bucket 'avatars').
+        with st.expander("🖼️ Foto de perfil", expanded=False):
+            _at = st.session_state.get("auth_access_token", "")
+            _rt = st.session_state.get("auth_refresh_token", "")
+            _foto = st.file_uploader("Escolha uma imagem (PNG, JPG, WEBP ou GIF, até ~3 MB)",
+                                     type=["png", "jpg", "jpeg", "webp", "gif"], key="perfil_avatar_up")
+            _fc1, _fc2 = st.columns(2)
+            if _fc1.button("Enviar foto", use_container_width=True, disabled=_foto is None):
+                if _foto is not None:
+                    _bytes = _foto.getvalue()
+                    if len(_bytes) > 3 * 1024 * 1024:
+                        st.error("Imagem muito grande (máx. ~3 MB). Reduza e tente novamente.")
+                    else:
+                        with st.spinner("Enviando foto..."):
+                            _res = auth_service.enviar_avatar(_user["user_id"], _bytes,
+                                                              _foto.type or "image/png", _at, _rt)
+                        if _res.ok:
+                            st.success("✅ " + _res.mensagem)
+                            time.sleep(0.8)
+                            st.rerun()
+                        else:
+                            st.error(_res.mensagem)
+            if _avatar_url and _fc2.button("Remover foto", use_container_width=True):
+                with st.spinner("Removendo..."):
+                    _res = auth_service.remover_avatar(_user["user_id"], _at, _rt)
+                (st.success if _res.ok else st.error)(("✅ " if _res.ok else "") + _res.mensagem)
+                if _res.ok:
+                    time.sleep(0.8)
+                    st.rerun()
         with st.form("form_editar_perfil"):
             _nome = st.text_input("Nome completo*", value=_perfil.get("nome_completo") or "")
             _telefone = st.text_input("Telefone (com DDD)*", value=_perfil.get("telefone") or "",
@@ -429,6 +467,50 @@ def _tela_perfil():
                 st.info(_res.mensagem)
             else:
                 st.error(_res.mensagem)
+
+    st.markdown("---")
+    # [Perfil] MINHAS ANOTAÇÕES — CRUD salvo na conta (tabela public.anotacoes, RLS por usuário).
+    st.markdown("#### 📝 Minhas anotações")
+    _at = st.session_state.get("auth_access_token", "")
+    _rt = st.session_state.get("auth_refresh_token", "")
+    with st.form("form_nova_anotacao", clear_on_submit=True):
+        _an_titulo = st.text_input("Título", placeholder="Ex.: Observações do estudo de setembro")
+        _an_conteudo = st.text_area("Anotação", height=90, placeholder="Escreva sua anotação...")
+        _an_salvar = st.form_submit_button("Salvar anotação", type="primary")
+    if _an_salvar:
+        with st.spinner("Salvando..."):
+            _res = auth_service.criar_anotacao(_user["user_id"], _an_titulo, _an_conteudo, _at, _rt)
+        if _res.ok:
+            st.success("✅ " + _res.mensagem)
+            time.sleep(0.6)
+            st.rerun()
+        else:
+            st.error(_res.mensagem)
+    try:
+        _anotacoes = auth_service.listar_anotacoes(_user["user_id"], _at, _rt)
+    except Exception:
+        _anotacoes = []
+    if _anotacoes:
+        st.caption(f"{len(_anotacoes)} anotação(ões) salva(s).")
+        for _an in _anotacoes:
+            _an_id = _an.get("id")
+            _tit = (_an.get("titulo") or "").strip() or "(sem título)"
+            with st.expander(f"📝 {_tit}", expanded=False):
+                _e_tit = st.text_input("Título", value=_an.get("titulo") or "", key=f"an_tit_{_an_id}")
+                _e_con = st.text_area("Anotação", value=_an.get("conteudo") or "", height=90, key=f"an_con_{_an_id}")
+                _ac1, _ac2 = st.columns(2)
+                if _ac1.button("💾 Atualizar", key=f"an_upd_{_an_id}", use_container_width=True):
+                    _r = auth_service.atualizar_anotacao(_user["user_id"], _an_id, _e_tit, _e_con, _at, _rt)
+                    (st.success if _r.ok else st.error)(("✅ " if _r.ok else "") + _r.mensagem)
+                    if _r.ok:
+                        time.sleep(0.6); st.rerun()
+                if _ac2.button("🗑️ Excluir", key=f"an_del_{_an_id}", use_container_width=True):
+                    _r = auth_service.excluir_anotacao(_user["user_id"], _an_id, _at, _rt)
+                    (st.success if _r.ok else st.error)(("✅ " if _r.ok else "") + _r.mensagem)
+                    if _r.ok:
+                        time.sleep(0.6); st.rerun()
+    else:
+        st.caption("Você ainda não tem anotações salvas.")
 
     st.markdown("---")
     # [Perfil UX] Sair da conta direto do perfil (além da sidebar) — bloqueio real de sessão.

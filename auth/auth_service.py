@@ -297,3 +297,193 @@ def solicitar_alteracao_email(novo_email: str) -> AuthResult:
     except Exception:
         logger.error("[AUTH] Falha ao solicitar alteração de e-mail.", exc_info=True)
         return AuthResult(False, "Não foi possível iniciar a alteração de e-mail no momento.")
+
+
+# ==============================================================================
+# [RECURSOS DO USUÁRIO] Anotações, estudos salvos e foto de perfil
+# ------------------------------------------------------------------------------
+# Estas operações mexem em tabelas protegidas por Row Level Security (auth.uid()
+# = user_id). Como obter_cliente() devolve um cliente ANÔNIMO sem sessão, é
+# obrigatório aplicar a sessão do usuário (set_session com os tokens guardados no
+# app) ANTES de ler/gravar — senão auth.uid() é nulo e a RLS bloqueia tudo. Todas
+# as funções são defensivas: nunca levantam, degradam com AuthResult/valor vazio.
+# ==============================================================================
+
+def _cliente_do_usuario(access_token: str = "", refresh_token: str = ""):
+    """Cliente Supabase com a SESSÃO do usuário aplicada (para respeitar a RLS).
+    None quando indisponível. Nunca levanta."""
+    _c = obter_cliente()
+    if _c is None:
+        return None
+    try:
+        if access_token and refresh_token:
+            _c.auth.set_session(access_token, refresh_token)
+    except Exception:
+        logger.debug("[AUTH] Falha ao aplicar sessão no cliente do usuário.", exc_info=True)
+    return _c
+
+
+# ---- Anotações ---------------------------------------------------------------
+def listar_anotacoes(user_id: str, access_token: str = "", refresh_token: str = "") -> list:
+    _c = _cliente_do_usuario(access_token, refresh_token)
+    if _c is None or not user_id:
+        return []
+    try:
+        _r = (_c.table("anotacoes").select("*").eq("user_id", user_id)
+              .order("updated_at", desc=True).limit(200).execute())
+        return _r.data or []
+    except Exception:
+        logger.error("[AUTH] Falha ao listar anotações.", exc_info=True)
+        return []
+
+
+def criar_anotacao(user_id: str, titulo: str, conteudo: str,
+                   access_token: str = "", refresh_token: str = "") -> AuthResult:
+    _c = _cliente_do_usuario(access_token, refresh_token)
+    if _c is None:
+        return AuthResult(False, "Anotações indisponíveis no momento.")
+    if not (titulo or "").strip() and not (conteudo or "").strip():
+        return AuthResult(False, "Escreva um título ou um conteúdo para a anotação.")
+    try:
+        _c.table("anotacoes").insert({
+            "user_id": user_id, "titulo": (titulo or "").strip()[:200],
+            "conteudo": (conteudo or "").strip()[:20000]}).execute()
+        return AuthResult(True, "Anotação salva.")
+    except Exception:
+        logger.error("[AUTH] Falha ao criar anotação.", exc_info=True)
+        return AuthResult(False, "Não foi possível salvar a anotação (a tabela 'anotacoes' já foi criada no Supabase?).")
+
+
+def atualizar_anotacao(user_id: str, anotacao_id: str, titulo: str, conteudo: str,
+                       access_token: str = "", refresh_token: str = "") -> AuthResult:
+    _c = _cliente_do_usuario(access_token, refresh_token)
+    if _c is None:
+        return AuthResult(False, "Anotações indisponíveis no momento.")
+    try:
+        (_c.table("anotacoes").update({
+            "titulo": (titulo or "").strip()[:200], "conteudo": (conteudo or "").strip()[:20000]})
+         .eq("id", anotacao_id).eq("user_id", user_id).execute())
+        return AuthResult(True, "Anotação atualizada.")
+    except Exception:
+        logger.error("[AUTH] Falha ao atualizar anotação.", exc_info=True)
+        return AuthResult(False, "Não foi possível atualizar a anotação.")
+
+
+def excluir_anotacao(user_id: str, anotacao_id: str,
+                     access_token: str = "", refresh_token: str = "") -> AuthResult:
+    _c = _cliente_do_usuario(access_token, refresh_token)
+    if _c is None:
+        return AuthResult(False, "Anotações indisponíveis no momento.")
+    try:
+        _c.table("anotacoes").delete().eq("id", anotacao_id).eq("user_id", user_id).execute()
+        return AuthResult(True, "Anotação excluída.")
+    except Exception:
+        logger.error("[AUTH] Falha ao excluir anotação.", exc_info=True)
+        return AuthResult(False, "Não foi possível excluir a anotação.")
+
+
+# ---- Estudos salvos ----------------------------------------------------------
+def listar_estudos(user_id: str, access_token: str = "", refresh_token: str = "") -> list:
+    _c = _cliente_do_usuario(access_token, refresh_token)
+    if _c is None or not user_id:
+        return []
+    try:
+        _r = (_c.table("estudos_salvos").select("id,nome,tipo,resumo,created_at")
+              .eq("user_id", user_id).order("created_at", desc=True).limit(50).execute())
+        return _r.data or []
+    except Exception:
+        logger.error("[AUTH] Falha ao listar estudos salvos.", exc_info=True)
+        return []
+
+
+def salvar_estudo(user_id: str, nome: str, tipo: str, resumo: dict, dados,
+                  access_token: str = "", refresh_token: str = "") -> AuthResult:
+    _c = _cliente_do_usuario(access_token, refresh_token)
+    if _c is None:
+        return AuthResult(False, "Salvar estudos indisponível no momento.")
+    try:
+        _c.table("estudos_salvos").insert({
+            "user_id": user_id, "nome": (nome or "Estudo sem nome").strip()[:200],
+            "tipo": (tipo or "lote")[:40], "resumo": resumo or {}, "dados": dados}).execute()
+        return AuthResult(True, "Estudo salvo na sua conta.")
+    except Exception:
+        logger.error("[AUTH] Falha ao salvar estudo.", exc_info=True)
+        return AuthResult(False, "Não foi possível salvar o estudo (a tabela 'estudos_salvos' já foi criada no Supabase?).")
+
+
+def carregar_estudo(user_id: str, estudo_id: str,
+                    access_token: str = "", refresh_token: str = "") -> dict | None:
+    _c = _cliente_do_usuario(access_token, refresh_token)
+    if _c is None:
+        return None
+    try:
+        _r = (_c.table("estudos_salvos").select("*").eq("id", estudo_id)
+              .eq("user_id", user_id).limit(1).execute())
+        _linhas = _r.data or []
+        return _linhas[0] if _linhas else None
+    except Exception:
+        logger.error("[AUTH] Falha ao carregar estudo salvo.", exc_info=True)
+        return None
+
+
+def excluir_estudo(user_id: str, estudo_id: str,
+                   access_token: str = "", refresh_token: str = "") -> AuthResult:
+    _c = _cliente_do_usuario(access_token, refresh_token)
+    if _c is None:
+        return AuthResult(False, "Excluir estudos indisponível no momento.")
+    try:
+        _c.table("estudos_salvos").delete().eq("id", estudo_id).eq("user_id", user_id).execute()
+        return AuthResult(True, "Estudo excluído.")
+    except Exception:
+        logger.error("[AUTH] Falha ao excluir estudo salvo.", exc_info=True)
+        return AuthResult(False, "Não foi possível excluir o estudo.")
+
+
+# ---- Foto de perfil (avatar) -------------------------------------------------
+def enviar_avatar(user_id: str, conteudo_bytes: bytes, content_type: str,
+                  access_token: str = "", refresh_token: str = "") -> AuthResult:
+    """Envia a foto ao bucket 'avatars' (caminho <user_id>/avatar.<ext>) e grava a
+    URL pública em profiles.avatar_url. Requer o bucket 'avatars' público criado no
+    Supabase (ver schema.sql)."""
+    _c = _cliente_do_usuario(access_token, refresh_token)
+    if _c is None:
+        return AuthResult(False, "Envio de foto indisponível no momento.")
+    _ext = {"image/png": "png", "image/jpeg": "jpg", "image/jpg": "jpg",
+            "image/webp": "webp", "image/gif": "gif"}.get((content_type or "").lower())
+    if _ext is None:
+        return AuthResult(False, "Formato não suportado. Use PNG, JPG, WEBP ou GIF.")
+    _caminho = f"{user_id}/avatar.{_ext}"
+    try:
+        _c.storage.from_("avatars").upload(
+            _caminho, conteudo_bytes,
+            {"content-type": content_type, "upsert": "true", "cache-control": "3600"})
+    except Exception:
+        logger.error("[AUTH] Falha ao enviar avatar ao Storage.", exc_info=True)
+        return AuthResult(False, "Não foi possível enviar a foto (o bucket 'avatars' já foi criado no Supabase?).")
+    try:
+        _url = _c.storage.from_("avatars").get_public_url(_caminho)
+        # cache-busting para a imagem nova aparecer na hora
+        import time as _t
+        _url_cb = f"{_url}?v={int(_t.time())}"
+        _c.table("profiles").update({"avatar_url": _url_cb}).eq("id", user_id).execute()
+        return AuthResult(True, "Foto de perfil atualizada.", {"avatar_url": _url_cb})
+    except Exception:
+        logger.error("[AUTH] Falha ao registrar URL do avatar.", exc_info=True)
+        return AuthResult(False, "A foto foi enviada, mas não foi possível registrar a URL no perfil.")
+
+
+def remover_avatar(user_id: str, access_token: str = "", refresh_token: str = "") -> AuthResult:
+    _c = _cliente_do_usuario(access_token, refresh_token)
+    if _c is None:
+        return AuthResult(False, "Operação indisponível no momento.")
+    try:
+        for _ext in ("png", "jpg", "webp", "gif"):
+            try:
+                _c.storage.from_("avatars").remove([f"{user_id}/avatar.{_ext}"])
+            except Exception:
+                pass
+        _c.table("profiles").update({"avatar_url": None}).eq("id", user_id).execute()
+        return AuthResult(True, "Foto de perfil removida.")
+    except Exception:
+        logger.error("[AUTH] Falha ao remover avatar.", exc_info=True)
+        return AuthResult(False, "Não foi possível remover a foto.")

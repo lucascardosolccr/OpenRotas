@@ -131,3 +131,91 @@ drop trigger if exists on_profile_updated on public.profiles;
 create trigger on_profile_updated
     before update on public.profiles
     for each row execute function public.handle_profile_updated_at();
+
+-- ==============================================================================
+-- [RECURSOS DO USUÁRIO] Anotações, estudos salvos e foto de perfil
+-- ------------------------------------------------------------------------------
+-- Mesmas garantias das profiles: Row Level Security por usuário (cada um só vê/
+-- edita o que é seu), e updated_at mantido pelo banco. Rode este bloco junto do
+-- restante do arquivo (é idempotente: create ... if not exists / drop policy if
+-- exists). Se você NÃO rodar, a aplicação degrada com elegância — os recursos
+-- aparecem como "indisponíveis" em vez de quebrar.
+-- ==============================================================================
+
+-- Foto de perfil: só a URL pública fica no perfil; o arquivo em si vive no
+-- Storage (bucket 'avatars'). Coluna adicionada de forma idempotente.
+alter table public.profiles add column if not exists avatar_url text;
+
+-- ------------------------------------------------------------------------------
+-- Anotações do usuário
+-- ------------------------------------------------------------------------------
+create table if not exists public.anotacoes (
+    id uuid primary key default gen_random_uuid(),
+    user_id uuid not null references auth.users (id) on delete cascade,
+    titulo text not null default '',
+    conteudo text not null default '',
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+create index if not exists anotacoes_user_idx on public.anotacoes (user_id, updated_at desc);
+alter table public.anotacoes enable row level security;
+
+drop policy if exists "anotacoes: dono le" on public.anotacoes;
+create policy "anotacoes: dono le" on public.anotacoes for select using (auth.uid() = user_id);
+drop policy if exists "anotacoes: dono insere" on public.anotacoes;
+create policy "anotacoes: dono insere" on public.anotacoes for insert with check (auth.uid() = user_id);
+drop policy if exists "anotacoes: dono atualiza" on public.anotacoes;
+create policy "anotacoes: dono atualiza" on public.anotacoes for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "anotacoes: dono exclui" on public.anotacoes;
+create policy "anotacoes: dono exclui" on public.anotacoes for delete using (auth.uid() = user_id);
+
+drop trigger if exists on_anotacao_updated on public.anotacoes;
+create trigger on_anotacao_updated
+    before update on public.anotacoes
+    for each row execute function public.handle_profile_updated_at();
+
+-- ------------------------------------------------------------------------------
+-- Estudos salvos (últimos resultados que o usuário decide guardar)
+-- `resumo` = metadados leves (nome, contagens, KPIs) em JSON para listar rápido;
+-- `dados` = a tabela de resultado serializada (JSON) para restaurar depois.
+-- ------------------------------------------------------------------------------
+create table if not exists public.estudos_salvos (
+    id uuid primary key default gen_random_uuid(),
+    user_id uuid not null references auth.users (id) on delete cascade,
+    nome text not null default 'Estudo sem nome',
+    tipo text not null default 'lote',
+    resumo jsonb not null default '{}'::jsonb,
+    dados jsonb,
+    created_at timestamptz not null default now()
+);
+create index if not exists estudos_user_idx on public.estudos_salvos (user_id, created_at desc);
+alter table public.estudos_salvos enable row level security;
+
+drop policy if exists "estudos: dono le" on public.estudos_salvos;
+create policy "estudos: dono le" on public.estudos_salvos for select using (auth.uid() = user_id);
+drop policy if exists "estudos: dono insere" on public.estudos_salvos;
+create policy "estudos: dono insere" on public.estudos_salvos for insert with check (auth.uid() = user_id);
+drop policy if exists "estudos: dono exclui" on public.estudos_salvos;
+create policy "estudos: dono exclui" on public.estudos_salvos for delete using (auth.uid() = user_id);
+
+-- ------------------------------------------------------------------------------
+-- Storage: bucket público 'avatars' para as fotos de perfil.
+-- (Rode também, se preferir criar o bucket por SQL. Alternativa: crie o bucket
+--  'avatars' pelo painel Storage do Supabase, marcando-o como público.)
+-- ------------------------------------------------------------------------------
+insert into storage.buckets (id, name, public)
+values ('avatars', 'avatars', true)
+on conflict (id) do nothing;
+
+drop policy if exists "avatars: leitura publica" on storage.objects;
+create policy "avatars: leitura publica" on storage.objects for select
+    using (bucket_id = 'avatars');
+drop policy if exists "avatars: dono envia" on storage.objects;
+create policy "avatars: dono envia" on storage.objects for insert
+    with check (bucket_id = 'avatars' and auth.uid()::text = (storage.foldername(name))[1]);
+drop policy if exists "avatars: dono atualiza" on storage.objects;
+create policy "avatars: dono atualiza" on storage.objects for update
+    using (bucket_id = 'avatars' and auth.uid()::text = (storage.foldername(name))[1]);
+drop policy if exists "avatars: dono exclui" on storage.objects;
+create policy "avatars: dono exclui" on storage.objects for delete
+    using (bucket_id = 'avatars' and auth.uid()::text = (storage.foldername(name))[1]);
