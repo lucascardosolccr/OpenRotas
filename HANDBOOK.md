@@ -1,11 +1,11 @@
 # HANDBOOK — Motor Nacional de Inteligência Logística para Exames
 ## Manual do Usuário e Documentação Técnica Completa
 
-> **Versão:** 4.36 (Build 436)  
-> **Data:** 2026-09-06  
+> **Versão:** geração 446 (selo interno `_VERSAO_APP`)  
+> **Data:** 2026-09-14  
 > **Status:** ✅ Produção — Gates: 239 OK / 0 FALHAS | `decidir` 38/38 | `relatorio` 203 linhas | enriquecimento: -41% derrotas residuais  
 > **Branch:** `main` → `origin/main` (up to date)  
-> **Commit:** `c75eb1c` — feat(aquaviaria 436)
+> **Branch:** `main` (produção)
 
 ---
 
@@ -292,7 +292,7 @@ export FOSSGIS_URL="https://routing.openstreetmap.de/routed-car/route/v1"  # FOS
 
 ```
 new_rotas-main/
-├── streamlit_app.py              # Código principal (~54k linhas)
+├── streamlit_app.py              # Código principal (~60k linhas)
 ├── _testes_motor_rotas.py        # Testes + relatório + decisão
 ├── _REGISTRO_DERROTAS.md         # Registro histórico (890 linhas)
 ├── _RELATORIO_ANTES_DEPOIS.md    # Relatório comparativo (203 linhas)
@@ -413,8 +413,8 @@ grep "RESGATE-FERRIES\|FLUVIAL-ROTA\|FLUVIAL-SWEEP" logs/*.log
 
 - **Repositório:** https://github.com/lucascardosolccr/OpenRotas
 - **Branch:** `main` (protegida)
-- **Commits:** 19 gerações (421-436)
-- **Último deploy:** `c75eb1c` — feat(aquaviaria 436)
+- **Selo interno atual:** geração 446 (`_VERSAO_APP`)
+- **Suíte de testes:** motor 239/239 OK + 320 testes pytest (319 OK; 1 falha pré-existente, test_cache_read)
 
 ---
 

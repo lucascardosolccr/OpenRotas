@@ -4,7 +4,7 @@
 > Combina dados oficiais brasileiros (IBGE, ANA/SNIRH, DNIT, ANTAQ, ANTT) para encontrar a **menor rota válida e operacionalmente benéfica** entre município de origem e polo de destino.
 
 > **Status:** ✅ Produção — Gates: 239 OK / 0 FALHAS | `decidir` 38/38 | `relatorio` 203 linhas  
-> **Versão:** 4.36 (Build 436) | **Branch:** `main` | **Commit:** `c75eb1c`
+> **Versão:** geração 446 (selo interno `_VERSAO_APP`) | **Branch:** `main`
 
 ---
 
@@ -145,7 +145,7 @@ Login por **e-mail/senha** e **Google** (OAuth PKCE, Supabase Auth); perfil com 
 
 ## 📊 Resultados Alcançados
 
-| Métrica | Baseline | Final (436) | Δ |
+| Métrica | Baseline | Final (baseline geração 436) | Δ |
 |---------|----------|-------------|---|
 | **Derrotas Reference** | 109 | **~88** | **−21** |
 | **Aplicação** | 23 | **~43** | **+20** |
@@ -163,7 +163,7 @@ Login por **e-mail/senha** e **Google** (OAuth PKCE, Supabase Auth); perfil com 
 
 ```
 new_rotas-main/
-├── streamlit_app.py              # Código principal (~54k linhas)
+├── streamlit_app.py              # Código principal (~60k linhas)
 ├── _testes_motor_rotas.py        # Testes + relatório + decisão
 ├── _REGISTRO_DERROTAS.md         # Registro histórico (890 linhas)
 ├── _RELATORIO_ANTES_DEPOIS.md    # Relatório comparativo (203 linhas)
@@ -247,8 +247,8 @@ Uso interno — Dados oficiais brasileiros (domínio público / licenças aberta
 
 - **Repositório:** https://github.com/lucascardosolccr/OpenRotas
 - **Branch:** `main` (protegida)
-- **Último deploy:** `c75eb1c` — feat(aquaviaria 436)
+- **Selo interno atual:** geração 446 (`_VERSAO_APP`)
 
 ---
 
-> **Última atualização:** 2026-09-06 | **Versão:** 4.36 | **Build:** 436
+> **Última atualização:** 2026-09-14 | **Selo interno:** geração 446
