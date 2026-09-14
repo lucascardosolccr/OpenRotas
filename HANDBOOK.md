@@ -3,7 +3,7 @@
 
 > **Versão:** 4.36 (Build 436)  
 > **Data:** 2026-09-06  
-> **Status:** ✅ Produção — Gates: 192 OK / 0 FALHAS | `decidir` 38/38 | `relatorio` 203 linhas | enriquecimento: -41% derrotas residuais  
+> **Status:** ✅ Produção — Gates: 239 OK / 0 FALHAS | `decidir` 38/38 | `relatorio` 203 linhas | enriquecimento: -41% derrotas residuais  
 > **Branch:** `main` → `origin/main` (up to date)  
 > **Commit:** `c75eb1c` — feat(aquaviaria 436)
 
@@ -94,6 +94,25 @@ Localidades Hidrologia Pavimento
 | **Densidade Adaptativa** | Raio 50-500km baseado em densidade hidrográfica |
 | **Sweep Otimizado** | Raio 300km, multi-hop nativo, prioridade por componente/confluência |
 
+### 3.5 Reconhecimento de Endereços (100% Gratuito)
+
+**Diretriz:** o reconhecimento de endereços usa **apenas fontes gratuitas, sem chave e sem cota** — nada de camadas pagas ou de "free tier" com limite diário.
+
+| Camada | Fontes (todas gratuitas) |
+|--------|--------------------------|
+| **Base oficial** | IBGE (municípios/sedes embarcados, resolução O(1); prioridade absoluta do código IBGE) |
+| **Geocoders de endereço** | ArcGIS · Nominatim · Photon (consenso Bayesiano/DBSCAN de votos independentes) |
+| **CEP** | BrasilAPI · ViaCEP · OpenCEP · Postmon (texto) + BrasilAPI/Nominatim (coordenadas) |
+| **Pré-processamento** | Expansão de abreviações (Av./R./Estr./Pres./Dr./Eng.…) com blindagem das 27 UFs |
+
+- **Expansão de abreviações:** logradouros e honoríficos são escritos por extenso antes de consultar os geocoders — melhora o casamento em todas as fontes. As siglas de UF ficam blindadas (ex.: "Santana do Ipanema, AL" nunca vira "Alameda"); cada regra foi verificada contra os 5.570 nomes oficiais do IBGE (o caso "Venha-Ver/RN" foi preservado).
+- **CEP com recuperação de coordenadas:** texto e coordenadas são buscados de forma independente e mesclados — se uma fonte conhece o endereço mas não o ponto, outra gratuita fornece as coordenadas.
+- **Geocodificação estruturada do CEP:** com logradouro/bairro/município/UF resolvidos, a consulta usa os **endpoints estruturados** (campos separados) e anexa o **número da casa** ao logradouro, para o ponto cair no imóvel e não no centro da rua.
+
+### 3.6 Conta do Usuário (Login, Perfil, Estudos Salvos)
+
+Autenticação via **Supabase Auth** (e-mail/senha + **login social Google**, OAuth PKCE). Segurança: isolamento por usuário (RLS), política de senha reforçada (≥8 caracteres, 3 de 4 classes, rejeição de triviais, proibição de conter o próprio e-mail/nome), senha nunca tratada pelo app (bcrypt no Supabase). O usuário pode **salvar estudos** (atrelados à conta, não ao navegador), anexar **foto de perfil** e salvar **anotações**. Ver `auth/` (`auth_service.py`, `session_manager.py`, `validators.py`, `schema.sql`).
+
 ---
 
 ## 4. DADOS OFICIAIS INTEGRADOS
@@ -131,9 +150,9 @@ snirh_estados.csv         # 39 estados
 # Compilação
 py -X utf8 -m py_compile streamlit_app.py _testes_motor_rotas.py
 
-# Testes unitários (192 testes)
+# Testes unitários (239 testes)
 py -X utf8 _testes_motor_rotas.py validar
-# RESULTADO: 192 OK / 0 FALHAS
+# RESULTADO: 239 OK / 0 FALHAS
 
 # Decisão real (38 casos críticos)
 py -X utf8 _testes_motor_rotas.py decidir
@@ -370,7 +389,7 @@ grep "RESGATE-FERRIES\|FLUVIAL-ROTA\|FLUVIAL-SWEEP" logs/*.log
 - [x] **XAI Formatter (Task 7)** — `inteligencia_geoespacial/xai_formatter.py` (`formatar_confianca`, `formatar_ponto`, `formatar_enriquecimento` em Markdown + `formatar_enriquecimento_html`) e integração na SEÇÃO 22: botão "⚡ Gerar enriquecimento auditável (IBGE local)" renderiza o painel XAI no app. Testes: `test_xai.py` (6 casos; total do pacote 46/47, única falha é a pré-existente `test_cache_read`).
 - [x] **Provider unificado (Task 4)** — `providers/ibge_derivadas_provider.py` (`IBGEDerivadasProvider`: `fetch(lat, lon, camada, raio_km, limite, filtros)` sobre `bases_locais`, `validate`, `transform` para o schema padrão, `to_geojson`, helper `wkb_para_geojson`; camada especial `municipios` = point-in-polygon) + `providers/factory.py` (`ProviderFactory.criar("ibge_der_*")` com resolução automática e `registrar_tipo`). Testes: `test_provider_ibge_derivadas.py` (13 casos).
 - [x] **Enriquecimento ligado à rota real (Task 6 no app)** — SEÇÃO 18 "Rotas com Balsa": card "🧠 Enriquecimento geoespacial da rota" que lê as coordenadas reais de `ultima_rota_individual` (ou da 1ª linha do estudo), roda `enriquecer_rota(raio)` em demanda (sem atrasar o roteamento) e renderiza o XAI completo.
-- [x] **Gates de zero regressão (Task 8)** — `_testes_motor_rotas.py` com marcadores de fase (PHASE 6): `validar` permanece **192 OK / 0 FALHAS**, `decidir` permanece **100% das propriedades da missão**, `relatorio` regera `_RELATORIO_ANTES_DEPOIS.md` (203 linhas). Nenhuma das tasks de enriquecimento alterou estes números.
+- [x] **Gates de zero regressão (Task 8)** — `_testes_motor_rotas.py` com marcadores de fase (PHASE 6): `validar` permanece **239 OK / 0 FALHAS**, `decidir` permanece **100% das propriedades da missão**, `relatorio` regera `_RELATORIO_ANTES_DEPOIS.md` (203 linhas). Nenhuma das tasks de enriquecimento alterou estes números.
 - [x] **Avaliação ANTES×DEPOIS (Task 9)** — `inteligencia_geoespacial/evaluation.py` (CLI `py -X utf8 -m inteligencia_geoespacial.evaluation --max 0 --write on`) mede o impacto nas 163 derrotas do baseline: **96 residuais (-41% derrotas explicáveis por balsa/fluvial/infra), 72 balsas confirmadas (baseline 21; alvo 35+), 100% de explicação auditável (alvo ≥95%)**. Resultado persistido em `docs/ANTES_DEPOIS_ENRIQUECIMENTO.md`.
 - [x] **Documentação de arquitetura e integração (Task 10)** — `docs/ARQUITETURA_INTELIGENCIA.md` (diagrama, módulos, cache/TTL, cotas, benchmarks, troubleshooting) e `docs/GUIA_INTEGRACAO_NOVOS_DADOS.md` (passo-a-passo para novas fontes).
 - [ ] **Self-hosted Valhalla** (Docker + Brazil PBF 4GB+)
@@ -399,7 +418,7 @@ grep "RESGATE-FERRIES\|FLUVIAL-ROTA\|FLUVIAL-SWEEP" logs/*.log
 
 ---
 
-> **Última atualização:** 2026-09-06  
+> **Última atualização:** 2026-09-14 — reconhecimento de endereços 100% gratuito (§3.5), conta do usuário (§3.6)  
 > **Próxima revisão:** Após integração de novos datasets (OSM PBF, Valhalla self-hosted, BC250 completo)
 
 ---

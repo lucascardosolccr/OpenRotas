@@ -3,7 +3,7 @@
 > **Sistema de roteamento inteligente para alocação de candidatos a exames**  
 > Combina dados oficiais brasileiros (IBGE, ANA/SNIRH, DNIT, ANTAQ, ANTT) para encontrar a **menor rota válida e operacionalmente benéfica** entre município de origem e polo de destino.
 
-> **Status:** ✅ Produção — Gates: 192 OK / 0 FALHAS | `decidir` 38/38 | `relatorio` 203 linhas  
+> **Status:** ✅ Produção — Gates: 239 OK / 0 FALHAS | `decidir` 38/38 | `relatorio` 203 linhas  
 > **Versão:** 4.36 (Build 436) | **Branch:** `main` | **Commit:** `c75eb1c`
 
 ---
@@ -74,9 +74,9 @@ pip install -r requirements.txt
 # 2. Compilar e validar
 py -X utf8 -m py_compile streamlit_app.py _testes_motor_rotas.py
 
-# 3. Testes completos (192 testes)
+# 3. Testes completos (239 testes)
 py -X utf8 _testes_motor_rotas.py validar
-# ✅ 192 OK / 0 FALHAS
+# ✅ 239 OK / 0 FALHAS
 
 # 4. Decisão real (38 casos críticos)
 py -X utf8 _testes_motor_rotas.py decidir
@@ -96,7 +96,7 @@ streamlit run streamlit_app.py
 | Gate | Comando | Critério de Sucesso |
 |-----|---------|---------------------|
 | **Compilação** | `py -X utf8 -m py_compile streamlit_app.py _testes_motor_rotas.py` | Sem erros |
-| **Testes unitários** | `py -X utf8 _testes_motor_rotas.py validar` | **192 OK / 0 FALHAS** |
+| **Testes unitários** | `py -X utf8 _testes_motor_rotas.py validar` | **239 OK / 0 FALHAS** |
 | **Decisão real** | `py -X utf8 _testes_motor_rotas.py decidir` | **38/38 pass** |
 | **Relatório** | `py -X utf8 _testes_motor_rotas.py relatorio` | 203 linhas |
 
@@ -135,6 +135,12 @@ streamlit run streamlit_app.py
 | **Densidade Adaptativa** | Raio 50-500km baseado em densidade hidrográfica |
 | **Sweep Otimizado** | Raio 300km, multi-hop nativo, prioridade por componente/confluência |
 
+### Reconhecimento de Endereços (100% Gratuito)
+Somente fontes **gratuitas, sem chave e sem cota**: base oficial do **IBGE** (municípios/sedes, O(1)) + geocoders **ArcGIS · Nominatim · Photon** em consenso, e cascata de **CEP** (**BrasilAPI · ViaCEP · OpenCEP · Postmon · Nominatim**). Pré-processamento com **expansão de abreviações** (Av./R./Estr./Pres./Dr./Eng.…, com blindagem das 27 UFs) e **geocodificação estruturada do CEP** (endpoints por campo + número da casa).
+
+### Conta do Usuário
+Login por **e-mail/senha** e **Google** (OAuth PKCE, Supabase Auth); perfil com isolamento por usuário (**RLS**), política de senha reforçada, **estudos salvos** persistentes (atrelados à conta), foto de perfil e anotações. Ver `auth/`.
+
 ---
 
 ## 📊 Resultados Alcançados
@@ -149,7 +155,7 @@ streamlit run streamlit_app.py
 | **Grafo Nós** | 1.216M | **1.467M** | **+251K** |
 | **Grafo Arestas** | 1.223M | **1.724M** | **+501K** |
 
-**Gates:** ✅ 192 OK / 0 FALHAS | `decidir` 38/38 | `relatorio` 203 linhas
+**Gates:** ✅ 239 OK / 0 FALHAS | `decidir` 38/38 | `relatorio` 203 linhas
 
 ---
 
@@ -193,7 +199,7 @@ new_rotas-main/
 ```bash
 # Compilação e testes
 py -X utf8 -m py_compile streamlit_app.py _testes_motor_rotas.py
-py -X utf8 _testes_motor_rotas.py validar    # 192 OK / 0 FALHAS
+py -X utf8 _testes_motor_rotas.py validar    # 239 OK / 0 FALHAS
 py -X utf8 _testes_motor_rotas.py decidir    # 38/38 pass
 py -X utf8 _testes_motor_rotas.py relatorio  # 203 linhas
 
@@ -209,7 +215,7 @@ streamlit run streamlit_app.py
 | Gate | Status |
 |------|--------|
 | **Compilação** | ✅ |
-| **Testes unitários (192)** | ✅ 192 OK / 0 FALHAS |
+| **Testes unitários (239)** | ✅ 239 OK / 0 FALHAS |
 | **Decisão real (38 casos)** | ✅ 38/38 pass |
 | **Relatório comparativo** | ✅ 203 linhas |
 | **Zero regressão** | ✅ Garantido por arquitetura aditiva |
