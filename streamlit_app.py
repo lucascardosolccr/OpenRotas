@@ -38507,6 +38507,36 @@ def _dist_ponto_segmento_km(lat, lon, a, b):
         return None
 
 
+def _nome_corpo_hidrico_ibge(lat, lon, raio_km=4.0):
+    """[CORPO-HIDRICO · IBGE massas d'água] Nomeia LAGOS/REPRESAS/LAGOAS/BAÍAS quando a travessia NÃO cai
+    sobre um rio nomeado do grafo de drenagem. Consulta a base oficial IBGE `massas_dagua` (polígonos
+    nomeados) via bases_locais (leitura com poda por bbox; distância ponto→geometria real). Devolve o corpo
+    NOMEADO mais próximo dentro do raio: {'nome','tipo','dist_km'} ou None. Determinístico, defensivo, e
+    100% offline. NUNCA inventa nome — só devolve o que a base traz."""
+    try:
+        _bl = globals().get("_bases_locais_ibge")
+        if _bl is None:
+            return None
+        _la = _num(lat); _lo = _num(lon)
+        if _la is None or _lo is None:
+            return None
+        _raio = max(0.1, float(raio_km))
+        _res = _bl.mais_proximos("massas_dagua", float(_lo), float(_la), _raio, limite=8, refinar_linhas=True)
+        for _r in (_res or []):
+            _nm = str(_r.get("nome") or "").strip()
+            if not _nm or _nm.lower() in ("none", "nan", "sem nome", "-"):
+                continue  # só corpos com nome oficial (incerteza permanece explícita quando não há)
+            _d = _r.get("distancia_km")
+            _d = float(_d) if _d is not None else None
+            if _d is not None and _d <= _raio:
+                _tp = str(_r.get("tipomassad") or "").strip() or "corpo d'água"
+                return {"nome": _nm, "tipo": _tp, "dist_km": round(_d, 2)}
+            return None  # a lista vem ordenada por distância; o 1º nomeado já é o mais próximo
+        return None
+    except Exception:
+        return None
+
+
 def _nome_rio_na_travessia(lat, lon, raio_km=4.0, g=None):
     """[TRAVESSIA-RIO · MISSÃO §5/§8 · 403ª geração] Identificação geoespacial do CORPO D'ÁGUA atravessado:
     cruza o ponto da travessia com o grafo hidrográfico REAL (nacional/Amazônia). [413ª melhoria] passa a
@@ -38591,7 +38621,17 @@ def _nome_rio_na_travessia(lat, lon, raio_km=4.0, g=None):
         if _melhor_nome and float(_melhor_dist_nome) <= _raio:
             return {"nome_rio": _melhor_nome, "nomes_rios": _nomes_dentro,
                     "dist_km": round(float(_melhor_dist_nome), 2),
-                    "confianca": "alta" if float(_melhor_dist_nome) <= 1.0 else "media"}
+                    "confianca": "alta" if float(_melhor_dist_nome) <= 1.0 else "media",
+                    "tipo_corpo": "rio"}
+        # [CORPO-HIDRICO] Nenhum RIO nomeado no raio → a travessia pode ser sobre um LAGO/REPRESA/LAGOA/BAÍA.
+        # A base IBGE massas_dagua (polígonos nomeados) resolve esses casos que o grafo de drenagem não nomeia.
+        # Rios continuam com prioridade (só chega aqui quando o grafo fluvial não achou nome). 100% offline.
+        _cb = _nome_corpo_hidrico_ibge(_la, _lo, _raio)
+        if _cb:
+            return {"nome_rio": _cb["nome"], "nomes_rios": [_cb["nome"]],
+                    "dist_km": _cb["dist_km"],
+                    "confianca": "alta" if float(_cb["dist_km"]) <= 1.0 else "media",
+                    "tipo_corpo": _cb["tipo"]}
         _cots = [x for x in (_min_dist_seg, _n_dist_min) if x is not None]
         _cotado = min(_cots) if _cots else None
         if _cotado is not None and _cotado <= _raio:
