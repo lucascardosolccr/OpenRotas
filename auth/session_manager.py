@@ -204,7 +204,7 @@ def _tela_cadastro():
         _erros.extend(_erros_end)
         if not validators.senhas_conferem(_senha, _senha2):
             _erros.append("As senhas não conferem.")
-        _ok_senha, _erro_senha, _ = validators.validar_forca_senha(_senha)
+        _ok_senha, _erro_senha, _ = validators.validar_forca_senha(_senha, _email_norm, _nome_norm)
         if not _ok_senha:
             _erros.append(_erro_senha)
 
@@ -296,7 +296,8 @@ def _tela_recuperar():
             _erros = []
             if not validators.senhas_conferem(_nova, _nova2):
                 _erros.append("As senhas não conferem.")
-            _ok_senha, _erro_senha, _ = validators.validar_forca_senha(_nova)
+            _ok_senha, _erro_senha, _ = validators.validar_forca_senha(
+                _nova, st.session_state.get("_auth_recuperacao_email", ""))
             if not _ok_senha:
                 _erros.append(_erro_senha)
             if _erros:
@@ -471,7 +472,8 @@ def _tela_perfil():
             _erros_s.append("Informe a senha atual.")
         if not validators.senhas_conferem(_nova_senha, _nova_senha2):
             _erros_s.append("A nova senha e a confirmação não conferem.")
-        _ok_forca, _erro_forca, _ = validators.validar_forca_senha(_nova_senha)
+        _ok_forca, _erro_forca, _ = validators.validar_forca_senha(
+            _nova_senha, (_user or {}).get("email", ""))
         if not _ok_forca:
             _erros_s.append(_erro_forca)
         if _senha_atual and _nova_senha and _senha_atual == _nova_senha:

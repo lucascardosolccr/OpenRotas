@@ -225,6 +225,38 @@ def test_validar_forca_senha_excede_tamanho_maximo():
     assert "máximo" in motivo.lower()
 
 
+def test_validar_forca_senha_retrocompativel_sem_contexto():
+    # Chamada antiga (só a senha) continua funcionando igual.
+    ok, _, _ = v.validar_forca_senha("C0rreto!Cavalo#Bateria")
+    assert ok
+
+
+def test_validar_forca_senha_rejeita_conter_email():
+    # Uma senha que passaria nas classes, mas contém o começo do e-mail, é recusada.
+    ok, motivo, _ = v.validar_forca_senha("Joao.silva@2024", email="joao.silva@exemplo.com")
+    assert not ok
+    assert "e-mail" in motivo.lower()
+
+
+def test_validar_forca_senha_rejeita_conter_nome():
+    ok, motivo, _ = v.validar_forca_senha("Fernanda#2024", nome="Fernanda Souza")
+    assert not ok
+    assert "nome" in motivo.lower()
+
+
+def test_validar_forca_senha_nome_curto_nao_gera_falso_positivo():
+    # Tokens de nome com <4 caracteres não bloqueiam (ex.: "Ana", "Sá").
+    ok, _, _ = v.validar_forca_senha("Trib0!Xy#Kw9", nome="Ana Sá")
+    assert ok
+
+
+def test_validar_forca_senha_novo_trivial_que_passa_classes():
+    # "Senha@123" passa nas 3 classes, mas é comum — deve cair na lista de triviais.
+    ok, motivo, _ = v.validar_forca_senha("Senha@123")
+    assert not ok
+    assert "comum" in motivo.lower()
+
+
 def test_senhas_conferem_iguais():
     assert v.senhas_conferem("MinhaSenha123!", "MinhaSenha123!") is True
 

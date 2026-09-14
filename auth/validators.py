@@ -185,14 +185,23 @@ _SENHA_MIN_LEN = 8
 _SENHAS_TRIVIAIS = {
     "12345678", "123456789", "password", "senha123", "qwerty123", "11111111",
     "00000000", "abc12345", "12345678900", "iloveyou", "admin123", "senhasenha",
+    # Comuns que PASSAM na regra das 3 classes (é aqui que a lista realmente ajuda —
+    # as puramente numéricas/minúsculas já caem na checagem de classes abaixo):
+    "senha@123", "senha123!", "p@ssw0rd", "password1!", "qwerty@123", "admin@123",
+    "master@123", "brasil@123", "brasil@2024", "mudar@123", "trocar@123", "senha@2024",
 }
 
 
-def validar_forca_senha(senha: str):
+def validar_forca_senha(senha: str, email: str = "", nome: str = ""):
     """Política de senha: >=8 caracteres, pelo menos 3 das 4 classes (maiúscula,
-    minúscula, dígito, símbolo), rejeita a lista de senhas triviais. Retorna
-    (ok, motivo, nivel) — nivel in {'fraca','media','forte'} para feedback visual
-    mesmo quando ok=True (senha aceitável mas não necessariamente forte)."""
+    minúscula, dígito, símbolo), rejeita a lista de senhas triviais e — quando
+    `email`/`nome` são informados — rejeita senhas que CONTENHAM o e-mail ou o nome
+    do próprio usuário (vetor comum de senha fraca). Retorna (ok, motivo, nivel) —
+    nivel in {'fraca','media','forte'} para feedback visual mesmo quando ok=True
+    (senha aceitável mas não necessariamente forte).
+
+    `email`/`nome` são OPCIONAIS e retrocompatíveis: chamadas antigas
+    (`validar_forca_senha(senha)`) seguem funcionando exatamente igual."""
     if senha is None:
         return False, "Senha é obrigatória.", "fraca"
     _s = str(senha)
@@ -202,6 +211,16 @@ def validar_forca_senha(senha: str):
         return False, "Senha excede o tamanho máximo permitido (128 caracteres).", "fraca"
     if _s.lower() in _SENHAS_TRIVIAIS:
         return False, "Senha muito comum/óbvia — escolha outra.", "fraca"
+    # [HARDENING] Não deixe a senha conter o próprio e-mail ou nome (ex.: senha = "Joao@2024"
+    # para o usuário João, ou o começo do e-mail). Só considera pedaços com >=4 caracteres,
+    # para não gerar falso-positivo com nomes/logins muito curtos.
+    _sl = _s.lower()
+    _local = str(email or "").split("@")[0].strip().lower()
+    if len(_local) >= 4 and _local in _sl:
+        return False, "A senha não pode conter o seu e-mail — escolha outra.", "fraca"
+    for _tok in str(nome or "").split():
+        if len(_tok) >= 4 and _tok.lower() in _sl:
+            return False, "A senha não pode conter o seu nome — escolha outra.", "fraca"
     _tem_maiuscula = any(c.isupper() for c in _s)
     _tem_minuscula = any(c.islower() for c in _s)
     _tem_digito = any(c.isdigit() for c in _s)
