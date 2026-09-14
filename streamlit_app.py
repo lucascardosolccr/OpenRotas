@@ -9869,6 +9869,7 @@ def _geodiv_html(diag, reais_por_origem=None):
 # _geo_duelo_agregado (294a-298a) + geometria REAL (decodifica polyline). MAPA interativo
 # via <iframe srcdoc>. Retorna o conteudo interno (o gerador embrulha em <section>). PURA.
 # ==============================================================================
+@st.cache_data(show_spinner=False)
 def _geo_html_locais(df):
     import html as _he
     try:
@@ -10137,6 +10138,7 @@ def _geo_xlsx_bytes(rows):
         return None
 
 
+@st.cache_data(show_spinner=False)
 def _df_para_geojson(df):
     """[EXPORT-GIS - 24ª geração] Converte o DataFrame de rotas processadas em GeoJSON
     (padrão aberto RFC 7946). Cada rota vira: um ponto de origem, um ponto de destino e
@@ -10144,7 +10146,7 @@ def _df_para_geojson(df):
     Earth, Mapbox, Leaflet, kepler.gl, etc. Puramente aditivo: lê colunas já existentes
     (Lat/Lon Origem/Destino), sem afetar o processamento. Coordenadas em [lon, lat]."""
     features = []
-    for _, row in df.iterrows():
+    for row in df.to_dict("records"):  # [PERF] records em vez de iterrows (loop só lê a linha)
         try:
             lat_o = float(row.get('Lat Origem', 0) or 0); lon_o = float(row.get('Lon Origem', 0) or 0)
             lat_d = float(row.get('Lat Destino', 0) or 0); lon_d = float(row.get('Lon Destino', 0) or 0)
@@ -10190,6 +10192,7 @@ def _escapar_js(texto):
              .replace("<", "&lt;").replace(">", "&gt;")
              .replace("\n", " ").replace("\r", " ").replace("\u2028", " ").replace("\u2029", " "))
 
+@st.cache_data(show_spinner=False)
 def _df_para_kml(df):
     """[EXPORT-GIS - 24ª geração] Converte o DataFrame em KML (Google Earth/Maps). Cada
     rota vira um Placemark de origem, um de destino e uma linha conectando-os. Abre
@@ -10199,7 +10202,7 @@ def _df_para_kml(df):
               '<name>Deslocamentos de Candidatos - Motor Nacional de Inteligencia Logistica para Exames</name>',
               '<Style id="origem"><IconStyle><color>ff16a34a</color></IconStyle></Style>',
               '<Style id="rota"><LineStyle><color>ffeb6325</color><width>3</width></LineStyle></Style>']
-    for _, row in df.iterrows():
+    for row in df.to_dict("records"):  # [PERF] records em vez de iterrows (loop só lê a linha)
         try:
             lat_o = float(row.get('Lat Origem', 0) or 0); lon_o = float(row.get('Lon Origem', 0) or 0)
             lat_d = float(row.get('Lat Destino', 0) or 0); lon_d = float(row.get('Lon Destino', 0) or 0)
@@ -10221,6 +10224,7 @@ def _df_para_kml(df):
     linhas.append('</Document></kml>')
     return "\n".join(linhas)
 
+@st.cache_data(show_spinner=False)
 def _df_para_gpx(df):
     """[EXPORT-GIS - 24ª geração] Converte o DataFrame em GPX (GPS Exchange Format), para
     dispositivos GPS, Garmin, e apps de navegação. Cada rota vira um waypoint de origem,
@@ -10228,7 +10232,7 @@ def _df_para_gpx(df):
     linhas = ['<?xml version="1.0" encoding="UTF-8"?>',
               '<gpx version="1.1" creator="Motor Nacional de Inteligencia Logistica para Exames" xmlns="http://www.topografix.com/GPX/1/1">']
     rotas_xml = []
-    for idx, row in df.iterrows():
+    for row in df.to_dict("records"):  # [PERF] records em vez de iterrows (loop só lê a linha)
         try:
             lat_o = float(row.get('Lat Origem', 0) or 0); lon_o = float(row.get('Lon Origem', 0) or 0)
             lat_d = float(row.get('Lat Destino', 0) or 0); lon_d = float(row.get('Lon Destino', 0) or 0)
@@ -10287,11 +10291,7 @@ def _botoes_exportacao_geo(base_nome, df, sheet_name="Sheet1"):
             pass
     with _col_exp5:
         try:
-            import io
-            _xlsx_buf = io.BytesIO()
-            with pd.ExcelWriter(_xlsx_buf, engine='xlsxwriter') as _writer:
-                df.to_excel(_writer, index=False, sheet_name=sheet_name)
-            st.download_button("📊 XLSX", data=_xlsx_buf.getvalue(), file_name=f"{base_nome}.xlsx",
+            st.download_button("📊 XLSX", data=_xlsx_simples_bytes(df, sheet_name), file_name=f"{base_nome}.xlsx",
                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                use_container_width=True)
         except Exception:
@@ -15467,6 +15467,20 @@ def _xlsx_travessias_bytes(df):
     return _buf.getvalue()
 
 
+@st.cache_data(show_spinner=False)
+def _xlsx_simples_bytes(df, sheet_name="Sheet1"):
+    """[PERF-EXPORT] Bytes de um .xlsx de UMA aba, SEM aba institucional — memoizado por conteúdo.
+    Usado pelo bloco DRY de exportação geográfica (_botoes_exportacao_geo), que antes remontava o
+    XLSX a CADA rerun (xlsxwriter é caro e o arquivo carrega timestamp interno ⇒ bytes sempre novos
+    ⇒ churn de DOM no download_button). Preserva exatamente o formato anterior (uma aba, sem extras)."""
+    import io as _io
+    _buf = _io.BytesIO()
+    with pd.ExcelWriter(_buf, engine='xlsxwriter') as _writer:
+        df.to_excel(_writer, index=False, sheet_name=sheet_name)
+    return _buf.getvalue()
+
+
+@st.cache_data(show_spinner=False)
 def _xlsx_bytes(df, sheet_name="Dados"):
     """[UI-ESTAVEL - 137ª geração] Gera os bytes de um .xlsx UMA ÚNICA VEZ e os memoriza.
     CAUSA RAIZ do removeChild "ao digitar": vários st.download_button recebiam `data=` de um XLSX
