@@ -13943,8 +13943,23 @@ class MotorEnderecoCanônico:
             # UF; "Alameda" é raro e quase sempre escrito por extenso. Além disso, siglas de UF são
             # agora BLINDADAS contra qualquer expansão (ver _normalizar_impl).
             r'\bTR\b': 'TRAVESSA', r'\bTV\b': 'TRAVESSA',
-            r'\bPCA\b': 'PRACA', r'\bPQ\b': 'PARQUE', r'\bSQN\b': 'SUPERQUADRA NORTE', 
-            r'\bSQS\b': 'SUPERQUADRA SUL', r'\bCLN\b': 'COMERCIO LOCAL NORTE', r'\bCLS\b': 'COMERCIO LOCAL SUL'
+            r'\bPCA\b': 'PRACA', r'\bPQ\b': 'PARQUE', r'\bSQN\b': 'SUPERQUADRA NORTE',
+            r'\bSQS\b': 'SUPERQUADRA SUL', r'\bCLN\b': 'COMERCIO LOCAL NORTE', r'\bCLS\b': 'COMERCIO LOCAL SUL',
+            # [RECON-ENDERECO] Tipos de logradouro adicionais comuns no Brasil (melhoram o casamento
+            # nos geocoders; nenhum colide com sigla de UF — as UFs seguem blindadas em _normalizar_impl).
+            r'\bESTR\b': 'ESTRADA', r'\bLRG\b': 'LARGO', r'\bVL\b': 'VILA', r'\bJD\b': 'JARDIM',
+            r'\bLAD\b': 'LADEIRA', r'\bLADR\b': 'LADEIRA', r'\bBC\b': 'BECO', r'\bTREV\b': 'TREVO',
+            r'\bPROL\b': 'PROLONGAMENTO', r'\bFAZ\b': 'FAZENDA', r'\bSIT\b': 'SITIO', r'\bNUC\b': 'NUCLEO',
+            r'\bCOND\b': 'CONDOMINIO', r'\bRESID\b': 'RESIDENCIAL', r'\bEDIF\b': 'EDIFICIO',
+            r'\bGAL\b': 'GALERIA', r'\bDISTR\b': 'DISTRITO', r'\bPOV\b': 'POVOADO', r'\bVLA\b': 'VIELA',
+            # Honoríficos frequentes em nomes de vias ("Av. Pres. Vargas", "R. Dr. Xavier",
+            # "Praça Cel. Fernandes") — por extenso, os geocoders casam melhor. Todos com \b.
+            r'\bDR\b': 'DOUTOR', r'\bDRA\b': 'DOUTORA', r'\bPROF\b': 'PROFESSOR', r'\bPROFA\b': 'PROFESSORA',
+            r'\bPRES\b': 'PRESIDENTE', r'\bGOV\b': 'GOVERNADOR', r'\bCEL\b': 'CORONEL', r'\bGEN\b': 'GENERAL',
+            r'\bCAP\b': 'CAPITAO', r'\bSGT\b': 'SARGENTO', r'\bDEP\b': 'DEPUTADO', r'\bSEN\b': 'SENADOR',
+            # NOTA: 'VER'→'VEREADOR' foi PROPOSITALMENTE deixado de fora — colide com o município
+            # "Venha-Ver/RN" (viraria "Venha-Vereador"). Verificado contra os 5.570 nomes oficiais.
+            r'\bVISC\b': 'VISCONDE', r'\bENG\b': 'ENGENHEIRO', r'\bMONS\b': 'MONSENHOR',
         }
         self.abreviacoes = {re.compile(k): v for k, v in abreviacoes_raw.items()}
         # [FIX-UF-NORMALIZA - 46ª geração] Conjunto das 27 UFs para BLINDAGEM: um token que é sigla
