@@ -54884,7 +54884,7 @@ if _secao == _SECOES[5]:   # tab_calculadora
                     _zip_buffer = io.BytesIO()
                     _errors = []
 
-                    with zipfile.ZipFile(io.BytesIO(), 'w', zipfile.ZIP_DEFLATED) as _zip:
+                    with zipfile.ZipFile(_zip_buffer, 'w', zipfile.ZIP_DEFLATED) as _zip:
                         # 1. CSV
                         try:
                             _csv_data = _df.to_csv(index=False).encode('utf-8-sig')
@@ -54892,14 +54892,11 @@ if _secao == _SECOES[5]:   # tab_calculadora
                         except Exception as _e:
                             _errors.append(f"CSV: {_e}")
 
-                        # 2. XLSX
+                        # 2. XLSX (helper cacheado — gera os bytes corretamente, sem tocar internals do xlsxwriter)
                         try:
-                            _xlsx_buf = io.BytesIO()
-                            with pd.ExcelWriter(io.BytesIO(), engine='xlsxwriter') as _writer:
-                                _df.to_excel(_writer, index=False, sheet_name='Rotas')
-                                _xlsx_bytes = _writer.book._writer._buffer.getvalue() if hasattr(_writer.book, '_writer') else None
-                            if _xlsx_bytes:
-                                _zip.writestr(f"{_base_name}.xlsx", _xlsx_bytes)
+                            _xb = _xlsx_simples_bytes(_df, "Rotas")
+                            if _xb:
+                                _zip.writestr(f"{_base_name}.xlsx", _xb)
                         except Exception as _e:
                             _errors.append(f"XLSX: {_e}")
 
@@ -54965,7 +54962,11 @@ Gerado pelo Motor Nacional de Inteligência Logística para Exames v4.36
 """
                         _zip.writestr("README.md", _readme.encode('utf-8'))
 
-                        return _zip.getvalue(), "; ".join(_errors) if _errors else "Sucesso"
+                    # [FIX] O ZIP só fica completo (diretório central escrito) ao FECHAR o `with`.
+                    # Antes: `return _zip.getvalue()` DENTRO do with — mas ZipFile não tem getvalue()
+                    # e ainda estava incompleto; e o ZipFile era criado sobre um BytesIO anônimo, então
+                    # os bytes se perdiam. Agora lemos o buffer real, já finalizado, fora do with.
+                    return _zip_buffer.getvalue(), "; ".join(_errors) if _errors else "Sucesso"
 
                 # UI para Exportação Unificada
                 with st.expander("📦 Exportação Unificada Multi-Formato (HTML + GeoJSON + KML + KML + GPX + XLSX + CSV + KML + KMZ + GPX)", expanded=False):
