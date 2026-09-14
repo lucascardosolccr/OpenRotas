@@ -38551,15 +38551,21 @@ def _nome_rio_na_travessia(lat, lon, raio_km=4.0, g=None):
         _la = _num(lat); _lo = _num(lon)
         if _la is None or _lo is None:
             return {"nome_rio": None, "nomes_rios": [], "dist_km": None, "confianca": "nao_determinado"}
+        _raio = max(0.1, float(raio_km))
         if g is None:
             g = _grafo_fluvial_memoizado()
-        if not g:
-            return {"nome_rio": None, "nomes_rios": [], "dist_km": None, "confianca": "indisponivel"}
-        _C = g.get("C")
+        _C = g.get("C") if g else None
         if _C is None or len(_C) == 0:
-            return {"nome_rio": None, "nomes_rios": [], "dist_km": None, "confianca": "nao_determinado"}
+            # [CORPO-HIDRICO] Sem grafo fluvial (ou vazio): a base IBGE massas_dagua é INDEPENDENTE do grafo,
+            # então ainda tenta nomear lago/represa/lagoa/baía antes de desistir — antes, "sem grafo" perdia
+            # também os corpos nomeados que o IBGE conhece.
+            _cb0 = _nome_corpo_hidrico_ibge(_la, _lo, _raio)
+            if _cb0:
+                return {"nome_rio": _cb0["nome"], "nomes_rios": [_cb0["nome"]], "dist_km": _cb0["dist_km"],
+                        "confianca": "alta" if float(_cb0["dist_km"]) <= 1.0 else "media", "tipo_corpo": _cb0["tipo"]}
+            return {"nome_rio": None, "nomes_rios": [], "dist_km": None,
+                    "confianca": "indisponivel" if not g else "nao_determinado"}
         import numpy as _np
-        _raio = max(0.1, float(raio_km))
         _tree = g.get("tree")
         _M = g.get("M"); _edic = g.get("edic"); _NMS = g.get("names")
         _no = [_lo, _la]
