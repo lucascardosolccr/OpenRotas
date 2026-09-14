@@ -14405,58 +14405,70 @@ def _distancia_consenso_km(lat1, lon1, lat2, lon2):
         return 0.0
 
 def cascata_postal_tripla(cep_limpo):
+    """[CEP - 100% grátis, sem chave e sem cota] Resolve um CEP em (logradouro, bairro, cidade, uf,
+    lat, lon) combinando VÁRIAS fontes públicas gratuitas e ILIMITADAS:
+      • Texto do endereço: BrasilAPI v2 → ViaCEP → OpenCEP → Postmon (a 1ª que responder vence).
+      • Coordenadas: BrasilAPI v2 (quando traz), senão Nominatim por CEP (também grátis).
+    Antes, o BrasilAPI retornava CEDO mesmo SEM coordenadas — então CEPs cujo endereço o BrasilAPI
+    conhece mas cuja coordenada ele não tem voltavam com (0,0), desperdiçando a etapa gratuita do
+    Nominatim. Agora o texto e as coordenadas são buscados de forma independente e mesclados."""
     if cep_limpo in cache_cep:
         d = cache_cep[cep_limpo]
-        if len(d) == 4: 
+        if len(d) == 4:
             return d[0], d[1], d[2], d[3], 0.0, 0.0
         return d
-        
+
     lat, lon = 0.0, 0.0
+    _rua = _bairro = _cidade = _uf = ""
+
+    # 1) BrasilAPI v2 — bom texto do endereço e, quando disponível, coordenadas embutidas.
     try:
         r = session.get(f"https://brasilapi.com.br/api/cep/v2/{cep_limpo}", timeout=4).json()
-        if "city" in r:
-            loc = r.get("location", {}).get("coordinates", {})
-            if loc and "latitude" in loc and "longitude" in loc:
-                try: 
+        if isinstance(r, dict) and "city" in r:
+            loc = r.get("location", {}).get("coordinates", {}) or {}
+            if "latitude" in loc and "longitude" in loc:
+                try:
                     lat, lon = float(loc["latitude"]), float(loc["longitude"])
-                except (ValueError, TypeError): 
+                except (ValueError, TypeError):
                     pass
-            d = (r.get('street', ''), r.get('neighborhood', ''), r.get('city', ''), r.get('state', ''), lat, lon)
-            cache_cep.set(cep_limpo, d, expire=2592000)
-            return d
-    except Exception: 
+            _rua, _bairro = r.get('street', ''), r.get('neighborhood', '')
+            _cidade, _uf = r.get('city', ''), r.get('state', '')
+    except Exception:
         pass
-        
-    try:
-        def _nom_cep():
-            _throttle_nominatim()
-            url = f"https://nominatim.openstreetmap.org/search?format=json&postalcode={cep_limpo}&countrycodes=br&limit=1"
-            return session.get(url, headers={"User-Agent": "RotasEnterprise/8.0"}, timeout=4).json()
-        r_nom = FILA_NOMINATIM.submit(_nom_cep).result()
-        if r_nom: 
-            lat, lon = float(r_nom[0]['lat']), float(r_nom[0]['lon'])
-    except Exception: 
-        pass
-        
-    try:
-        r = session.get(f"https://viacep.com.br/ws/{cep_limpo}/json/", timeout=4).json()
-        if "erro" not in r:
-            d = (r.get('logradouro', ''), r.get('bairro', ''), r.get('localidade', ''), r.get('uf', ''), lat, lon)
-            cache_cep.set(cep_limpo, d, expire=2592000)
-            return d
-    except Exception: 
-        pass
-        
-    try:
-        r = session.get(f"https://opencep.com/v1/{cep_limpo}", timeout=4).json()
-        if "error" not in r:
-            d = (r.get('logradouro', ''), r.get('bairro', ''), r.get('localidade', ''), r.get('uf', ''), lat, lon)
-            cache_cep.set(cep_limpo, d, expire=2592000)
-            return d
-    except Exception: 
-        pass
-        
-    return "", "", "", "", 0.0, 0.0
+
+    # 2) Coordenadas ainda faltando? Nominatim por CEP (grátis/sem cota) fornece o ponto do CEP.
+    if not (lat and lon):
+        try:
+            def _nom_cep():
+                _throttle_nominatim()
+                url = f"https://nominatim.openstreetmap.org/search?format=json&postalcode={cep_limpo}&countrycodes=br&limit=1"
+                return session.get(url, headers={"User-Agent": "RotasEnterprise/8.0"}, timeout=4).json()
+            r_nom = FILA_NOMINATIM.submit(_nom_cep).result()
+            if r_nom:
+                lat, lon = float(r_nom[0]['lat']), float(r_nom[0]['lon'])
+        except Exception:
+            pass
+
+    # 3) Texto do endereço ainda faltando? ViaCEP → OpenCEP → Postmon (todos grátis e ilimitados).
+    if not _cidade:
+        for _url, _f_rua, _f_bairro, _f_cidade, _f_uf in (
+            (f"https://viacep.com.br/ws/{cep_limpo}/json/", "logradouro", "bairro", "localidade", "uf"),
+            (f"https://opencep.com/v1/{cep_limpo}", "logradouro", "bairro", "localidade", "uf"),
+            (f"https://api.postmon.com.br/v1/cep/{cep_limpo}", "logradouro", "bairro", "cidade", "estado"),
+        ):
+            try:
+                r = session.get(_url, timeout=4).json()
+                if isinstance(r, dict) and "erro" not in r and "error" not in r and r.get(_f_cidade):
+                    _rua, _bairro = r.get(_f_rua, ''), r.get(_f_bairro, '')
+                    _cidade, _uf = r.get(_f_cidade, ''), r.get(_f_uf, '')
+                    break
+            except Exception:
+                pass
+
+    d = (_rua, _bairro, _cidade, _uf, lat, lon)
+    if _cidade:
+        cache_cep.set(cep_limpo, d, expire=2592000)
+    return d
 
 # [AUDITORIA-184] Função morta 'validar_consistencia_administrativa' aposentada (nome ocorria 1× no arquivo — sem qualquer referência). Recuperável no histórico de versões.
 
