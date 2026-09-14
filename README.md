@@ -4,7 +4,7 @@
 > Combina dados oficiais brasileiros (IBGE, ANA/SNIRH, DNIT, ANTAQ, ANTT) para encontrar a **menor rota válida e operacionalmente benéfica** entre município de origem e polo de destino.
 
 > **Status:** ✅ Produção — Gates: 239 OK / 0 FALHAS | `decidir` 38/38 | `relatorio` 203 linhas  
-> **Versão:** geração 446 (selo interno `_VERSAO_APP`) | **Branch:** `main`
+> **Versão:** geração 447 (selo interno `_VERSAO_APP`) | **Branch:** `main`
 
 ---
 
@@ -61,6 +61,7 @@ Localidades Hidrologia Pavimento
 | | Estados | 39 | ✅ |
 | **IBGE** | BC250/BC100/BCIM | 1.46M nós | ✅ Shapefile/GPKG/PostGIS |
 | | Malhas Municipais 2025 | 5.570 | ✅ |
+| | Agregados — Censo 2022 (pop./densidade/área) | 5.570 | ✅ API v3 (gratuita, sem chave) |
 | **Rodoviária** | OSRM/FOSSGIS/Valhalla | Tempo real | ✅ API |
 
 ---
@@ -137,6 +138,9 @@ streamlit run streamlit_app.py
 
 ### Reconhecimento de Endereços (100% Gratuito)
 Somente fontes **gratuitas, sem chave e sem cota**: base oficial do **IBGE** (municípios/sedes, O(1)) + geocoders **ArcGIS · Nominatim · Photon** em consenso, e cascata de **CEP** (**BrasilAPI · ViaCEP · OpenCEP · Postmon · Nominatim**). Pré-processamento com **expansão de abreviações** (Av./R./Estr./Pres./Dr./Eng.…, com blindagem das 27 UFs) e **geocodificação estruturada do CEP** (endpoints por campo + número da casa).
+
+### Perfil Estatístico do Município (IBGE Censo 2022)
+Aproveitamento máximo da API já usada do IBGE: além de `/localidades` e `/malhas`, o **Explorador Global** passa a consultar sob demanda a **API v3 de Agregados** (agregado 4714, Censo 2022) e mostra **população**, **densidade demográfica** e **área territorial** (derivada exata: `área = população ÷ densidade`) quando o filtro isola um único município. Cacheado 7 dias, **fail-open** (se a API não responder, o cartão só não aparece) e **nunca inventa** — só números oficiais. Fonte gratuita, sem chave e sem cota.
 
 ### Conta do Usuário
 Login por **e-mail/senha** e **Google** (OAuth PKCE, Supabase Auth); perfil com isolamento por usuário (**RLS**), política de senha reforçada, **estudos salvos** persistentes (atrelados à conta), foto de perfil e anotações. Ver `auth/`.
@@ -247,8 +251,8 @@ Uso interno — Dados oficiais brasileiros (domínio público / licenças aberta
 
 - **Repositório:** https://github.com/lucascardosolccr/OpenRotas
 - **Branch:** `main` (protegida)
-- **Selo interno atual:** geração 446 (`_VERSAO_APP`)
+- **Selo interno atual:** geração 447 (`_VERSAO_APP`)
 
 ---
 
-> **Última atualização:** 2026-09-14 | **Selo interno:** geração 446
+> **Última atualização:** 2026-09-14 | **Selo interno:** geração 447

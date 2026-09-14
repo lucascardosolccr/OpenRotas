@@ -1,6 +1,6 @@
 # ==============================================================================
 # Motor Nacional de Inteligência Logística para Exames — Plataforma integrada
-# VERSÃO (rótulo): 4.18   ·   SELO INTERNO: _VERSAO_APP = "446"   ·   DATA: 2026-08
+# VERSÃO (rótulo): 4.18   ·   SELO INTERNO: _VERSAO_APP = "447"   ·   DATA: 2026-09
 # [Rodada 1 · itens 11/16/19] Comparador: núcleo de decisão PURO e testado
 #   (_decidir_vencedor_distancia) com invariante anti-inversão de vitória, rastro
 #   de decisão e tolerância relativa opcional. 100% aditivo e não-regressivo:
@@ -42540,6 +42540,134 @@ def _validar_ponto_no_municipio(lat, lon, cod_ibge, fornecedor_aneis=None):
 
 
 # ==============================================================================
+# [IBGE-AGREGADOS - 447ª geração] Estatísticas oficiais do município (Censo 2022) via API SIDRA/v3
+# de Agregados do IBGE (servicodados.ibge.gov.br/api/v3/agregados). Fonte 100% GRATUITA, sem chave e
+# sem cota. Extrai o MÁXIMO da API já usada pela app (que hoje só consumia /localidades e /malhas):
+# população residente, densidade demográfica e — derivada exata da definição do próprio IBGE
+# (densidade = população/área) — a área territorial em km².
+#
+# Arquitetura idêntica às malhas: NÚCLEO DE PARSING 100% PURO e testável (sem rede), com o download
+# abstraído num invólucro cacheado e FAIL-OPEN (nunca inventa; em qualquer falha devolve {} e a UI
+# simplesmente não mostra o cartão). On-demand no dossiê do Explorador — JAMAIS no hot path de lote.
+# Agregado 4714 = "População residente, Variação... e Densidade demográfica" (Censo 2022); variáveis
+# 93 = População residente (Pessoas) e 5934 = Densidade demográfica (hab/km²).
+# ==============================================================================
+IBGE_ESTATISTICAS_ATIVO = True   # mestra: ativa o enriquecimento estatístico on-demand (requer rede à API do IBGE)
+_IBGE_AGREGADO_CENSO = "4714"
+_IBGE_PERIODO_CENSO = "2022"
+_IBGE_VAR_POPULACAO = "93"
+_IBGE_VAR_DENSIDADE = "5934"
+
+
+def _ibge_valor_numerico(bruto):
+    """[IBGE-AGREGADOS] Converte um valor de série do IBGE (sempre string) em float, tratando os
+    sentinelas oficiais de indisponibilidade: '...' (não disponível), '-' (zero/não aplicável),
+    'X' (confidencial), '..' e vazio. Devolve None quando não é um número real. PURO."""
+    if bruto is None:
+        return None
+    s = str(bruto).strip()
+    if s in ("", "-", "...", "..", "X", "x"):
+        return None
+    s = s.replace(".", "").replace(",", ".") if ("," in s) else s
+    try:
+        return float(s)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_ibge_agregado(payload, cod_ibge):
+    """[IBGE-AGREGADOS] Núcleo PURO de parsing da resposta v3 de Agregados do IBGE (lista de variáveis).
+    Para o município `cod_ibge`, extrai o valor mais recente de cada variável. Devolve
+    {var_id: {"nome", "unidade", "valor", "periodo"}} apenas para valores numéricos reais.
+    Robusto a formatos parciais/ausentes — nunca levanta exceção, nunca inventa valor."""
+    out = {}
+    if not isinstance(payload, list):
+        return out
+    alvo = str(cod_ibge).strip()
+    for var in payload:
+        if not isinstance(var, dict):
+            continue
+        vid = str(var.get("id") or "").strip()
+        nome = str(var.get("variavel") or "").strip()
+        unidade = str(var.get("unidade") or "").strip()
+        for res in (var.get("resultados") or []):
+            if not isinstance(res, dict):
+                continue
+            for serie in (res.get("series") or []):
+                if not isinstance(serie, dict):
+                    continue
+                loc = serie.get("localidade") or {}
+                if str(loc.get("id") or "").strip() != alvo:
+                    continue
+                dados = serie.get("serie") or {}
+                if not isinstance(dados, dict) or not dados:
+                    continue
+                # período mais recente disponível (chaves são anos como string)
+                try:
+                    periodos_ord = sorted(dados.keys(), key=lambda p: int(str(p)))
+                except (TypeError, ValueError):
+                    periodos_ord = list(dados.keys())
+                for periodo in reversed(periodos_ord):
+                    val = _ibge_valor_numerico(dados.get(periodo))
+                    if val is not None:
+                        out[vid] = {"nome": nome, "unidade": unidade, "valor": val,
+                                    "periodo": str(periodo)}
+                        break
+    return out
+
+
+def _consolidar_estatisticas_ibge(parsed):
+    """[IBGE-AGREGADOS] A partir do dict PURO de _parse_ibge_agregado, monta o resumo amigável do
+    município: população, densidade e ÁREA territorial (derivada exata: área = população/densidade,
+    pela própria definição do IBGE). Devolve {} se nada numérico veio. PURO, sem rede."""
+    pop = (parsed.get(_IBGE_VAR_POPULACAO) or {}).get("valor")
+    dens = (parsed.get(_IBGE_VAR_DENSIDADE) or {}).get("valor")
+    if pop is None and dens is None:
+        return {}
+    resumo = {"fonte": "IBGE — Censo Demográfico 2022", "cod_ibge": None}
+    periodo = ((parsed.get(_IBGE_VAR_POPULACAO) or {}).get("periodo")
+               or (parsed.get(_IBGE_VAR_DENSIDADE) or {}).get("periodo") or _IBGE_PERIODO_CENSO)
+    resumo["periodo"] = periodo
+    if pop is not None:
+        resumo["populacao"] = int(round(pop))
+    if dens is not None:
+        resumo["densidade"] = round(float(dens), 2)
+    if pop is not None and dens not in (None, 0):
+        try:
+            resumo["area_km2"] = round(float(pop) / float(dens), 2)
+        except (TypeError, ValueError, ZeroDivisionError):
+            pass
+    return resumo
+
+
+@st.cache_data(show_spinner=False, ttl=604800)
+def _ibge_estatisticas_municipio(cod_ibge):
+    """[IBGE-AGREGADOS - 447ª geração] Estatísticas oficiais do município (população, densidade e área
+    territorial derivada) via API v3 de Agregados do IBGE — Censo 2022. Cacheado 7 dias. FAIL-OPEN:
+    devolve {} se DESLIGADO, sem código válido ou em qualquer falha de rede/parse. REQUER rede à API
+    do IBGE (servicodados.ibge.gov.br). NUNCA inventa: só devolve números que a API oficial retornou."""
+    if not IBGE_ESTATISTICAS_ATIVO:
+        return {}
+    cod = str(cod_ibge or "").strip()
+    if not cod.isdigit() or len(cod) < 7:
+        return {}
+    try:
+        import requests as _rq
+        _vars = f"{_IBGE_VAR_POPULACAO}|{_IBGE_VAR_DENSIDADE}"
+        _u = (f"https://servicodados.ibge.gov.br/api/v3/agregados/{_IBGE_AGREGADO_CENSO}"
+              f"/periodos/{_IBGE_PERIODO_CENSO}/variaveis/{_vars}?localidades=N6[{cod}]")
+        _r = _rq.get(_u, timeout=8)
+        _r.raise_for_status()
+        _resumo = _consolidar_estatisticas_ibge(_parse_ibge_agregado(_r.json(), cod))
+        if _resumo:
+            _resumo["cod_ibge"] = cod
+        return _resumo
+    except Exception as _e_ag:
+        logger.error(f"[IBGE-AGREGADOS] Falha ao obter estatísticas do município {cod}: {_e_ag}")
+        return {}
+
+
+# ==============================================================================
 
 
 @st.cache_data(show_spinner=False)
@@ -55812,6 +55940,25 @@ if _secao == _SECOES[7]:   # tab_proximidade
                                 "Cód. IBGE": m['codigo_ibge'] or "—"}
                     st.dataframe(pd.DataFrame([_linha_exp(m) for m in _exp_fatia]),
                                  use_container_width=True, hide_index=True)
+                    # [IBGE-AGREGADOS - 447ª geração] Dossiê estatístico oficial (Censo 2022) quando o
+                    # filtro isola UM único município com código IBGE. On-demand, cacheado 7 dias e
+                    # fail-open: se a API do IBGE não responder, o cartão simplesmente não aparece.
+                    _uni = _exp_filtrada[0] if len(_exp_filtrada) == 1 else None
+                    _cod_uni = str((_uni or {}).get("codigo_ibge") or "").strip()
+                    if _uni and _cod_uni.isdigit() and len(_cod_uni) >= 7:
+                        _est = _ibge_estatisticas_municipio(_cod_uni)
+                        if _est:
+                            st.markdown(f"#### 📊 {_uni['municipio']} — {_uni['uf']} · perfil oficial")
+                            _ke = st.columns(3)
+                            if _est.get("populacao") is not None:
+                                _ke[0].metric("👥 População (Censo 2022)", f"{_est['populacao']:,}".replace(",", "."))
+                            if _est.get("area_km2") is not None:
+                                _ke[1].metric("📐 Área territorial", f"{_est['area_km2']:,.1f} km²".replace(",", "X").replace(".", ",").replace("X", "."))
+                            if _est.get("densidade") is not None:
+                                _ke[2].metric("🏙️ Densidade", f"{_est['densidade']:,.2f} hab/km²".replace(",", "X").replace(".", ",").replace("X", "."))
+                            st.caption(f"Fonte: {_est['fonte']} (período {_est.get('periodo', '2022')}) · "
+                                       f"API v3 de Agregados do IBGE — gratuita, sem chave · código {_cod_uni}. "
+                                       "Área derivada da definição oficial (área = população ÷ densidade).")
                     # Export do conjunto FILTRADO inteiro (não apenas a página exibida)
                     _df_exp_full = pd.DataFrame([_linha_exp(m) for m in _exp_filtrada])
                     _cx1, _cx2 = st.columns(2)
