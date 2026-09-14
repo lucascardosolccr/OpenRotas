@@ -48195,8 +48195,14 @@ if _secao == _SECOES[2]:   # tab_alocacao
         df_dest = _ler_planilha_upload(file_dest.getvalue())
         
         col_s1, col_s2 = st.columns(2)
-        with col_s1: 
-            dest_col_name = st.selectbox("Coluna com os municípios de origem dos candidatos:", df_dest.columns)
+        with col_s1:
+            # [AUTO-COL] Pré-seleciona a coluna provável (acento/caixa-insensível). `index` só define o
+            # PADRÃO inicial — a escolha manual do usuário é preservada nos reruns seguintes.
+            _cols_dest = list(df_dest.columns)
+            _auto_dest = _detectar_coluna(_cols_dest, ['municipio', 'município', 'cidade', 'origem', 'nome'])
+            _idx_dest = _cols_dest.index(_auto_dest) if _auto_dest in _cols_dest else 0
+            dest_col_name = st.selectbox("Coluna com os municípios de origem dos candidatos:", df_dest.columns,
+                                         index=_idx_dest)
             # [INSCRITOS - 141ª geração] Terceira coluna OPCIONAL: quantidade de inscritos por município de
             # origem. Sem ela, tudo funciona como antes (peso 1 por município). COM ela, toda a análise passa
             # a ser ponderada por CANDIDATO — que é a unidade que importa num exame nacional. A coluna já é
@@ -48215,8 +48221,13 @@ if _secao == _SECOES[2]:   # tab_alocacao
                      "acessibilidade crítica e simulação de abertura de polos.")
             st.session_state['alo_col_inscritos'] = (
                 insc_col_name if insc_col_name in df_dest.columns else None)
-        with col_s2: 
-            hub_col_name = st.selectbox("Coluna com os polos de aplicação (locais de prova):", df_hubs.columns)
+        with col_s2:
+            _cols_hub = list(df_hubs.columns)
+            _auto_hub = _detectar_coluna(_cols_hub, ['polo', 'local', 'prova', 'aplicac', 'municipio',
+                                                     'município', 'cidade', 'destino', 'nome'])
+            _idx_hub = _cols_hub.index(_auto_hub) if _auto_hub in _cols_hub else 0
+            hub_col_name = st.selectbox("Coluna com os polos de aplicação (locais de prova):", df_hubs.columns,
+                                        index=_idx_hub)
             # [CAPACIDADE - 152ª geração] Coluna OPCIONAL: quantos candidatos cada polo COMPORTA. Sem ela,
             # tudo funciona como antes (capacidade infinita). COM ela, a alocação passa a RESPEITAR a
             # realidade física — e é aqui que os inscritos finalmente MUDAM a decisão (os municípios passam
