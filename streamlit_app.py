@@ -10096,18 +10096,35 @@ def _geo_montar_df_xlsx(rows):
     return pd.DataFrame(_lin, columns=_GEOXLSX_COLS)
 
 def _geo_xlsx_bytes(rows):
-    """Gera o .xlsx estilizado da Análise Geográfica. bytes|None. Reusa helpers do app quando existem."""
-    import io
-    import pandas as pd
+    """Gera o .xlsx estilizado da Análise Geográfica. bytes|None. Reusa helpers do app quando existem.
+    [PERF-EXPORT] Monta o DataFrame (barato) e delega a escrita CARA do xlsx a um helper memoizado
+    por conteúdo do df (_geo_xlsx_bytes_do_df) — antes o arquivo era remontado a CADA rerun, mesmo
+    sem clique no download. O cache é keado no df (hashável de forma confiável), não na lista `rows`."""
     try:
         if not rows:
             return None
         _df = _geo_montar_df_xlsx(rows)
         if _df is None or len(_df) == 0:
             return None
+        return _geo_xlsx_bytes_do_df(_df)
+    except Exception:
+        logger.error("[GEO-XLSX] Falha ao gerar o xlsx (isolada).", exc_info=True)
+        return None
+
+
+@st.cache_data(show_spinner=False)
+def _geo_xlsx_bytes_do_df(dfx):
+    """[PERF-EXPORT] Parte cara e memoizada de _geo_xlsx_bytes: escreve+estiliza o xlsx a partir do
+    DataFrame já montado. Cacheado por conteúdo do df ⇒ bytes idênticos entre reruns (zero churn de
+    DOM no download_button, zero CPU desperdiçada com xlsxwriter). Puro/defensivo: None em falha.
+    OBS: o parâmetro NÃO pode começar com '_' — o st.cache_data ignora args com prefixo '_' na
+    chave do cache, o que devolveria bytes de um df antigo para um df diferente."""
+    import io
+    import pandas as pd
+    try:
         _buf = io.BytesIO()
         with pd.ExcelWriter(_buf, engine="xlsxwriter") as _w:
-            _df.to_excel(_w, index=False, sheet_name="Análise Geográfica")
+            dfx.to_excel(_w, index=False, sheet_name="Análise Geográfica")
             try:
                 _wb = getattr(_w, "book", None)
                 _ws = _w.sheets.get("Análise Geográfica")
@@ -10116,19 +10133,19 @@ def _geo_xlsx_bytes(rows):
                 _numfmt = globals().get("_num_formatos_por_coluna")
                 if _wb is not None and _ws is not None and _fmt_inst and _estilizar:
                     _fmts = _fmt_inst(_wb)
-                    _estilizar(_ws, _wb, _df, _fmts,
-                               formatos_col=(_numfmt(_df) if _numfmt else None))
+                    _estilizar(_ws, _wb, dfx, _fmts,
+                               formatos_col=(_numfmt(dfx) if _numfmt else None))
                 elif _ws is not None:
                     # fallback mínimo de estilo: cabeçalho em negrito + freeze + autofilter + larguras
                     _hf = _wb.add_format({"bold": True, "bg_color": "#0E2A3B", "font_color": "#FFFFFF",
                                           "border": 1, "font_name": "Arial"}) if _wb else None
                     if _hf:
-                        for _ci, _cn in enumerate(_df.columns):
+                        for _ci, _cn in enumerate(dfx.columns):
                             _ws.write(0, _ci, _cn, _hf)
                     _ws.freeze_panes(1, 0)
-                    _ws.autofilter(0, 0, len(_df), len(_df.columns) - 1)
-                    for _ci, _cn in enumerate(_df.columns):
-                        _wid = min(48, max(12, int(_df[_cn].astype(str).str.len().max() if len(_df) else 12) + 2, len(str(_cn)) + 2))
+                    _ws.autofilter(0, 0, len(dfx), len(dfx.columns) - 1)
+                    for _ci, _cn in enumerate(dfx.columns):
+                        _wid = min(48, max(12, int(dfx[_cn].astype(str).str.len().max() if len(dfx) else 12) + 2, len(str(_cn)) + 2))
                         _ws.set_column(_ci, _ci, _wid)
             except Exception:
                 logger.error("[GEO-XLSX] Falha ao estilizar (isolada; planilha já escrita).", exc_info=True)
