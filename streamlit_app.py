@@ -58923,11 +58923,8 @@ if _secao == _SECOES[15]:   # tab_route_intel
                                     pass
                             with _col_exp5:
                                 try:
-                                    import io
-                                    _xlsx_buf = io.BytesIO()
-                                    with pd.ExcelWriter(_xlsx_buf, engine='xlsxwriter') as _writer:
-                                        _df_single.to_excel(_writer, index=False, sheet_name='Rota')
-                                    st.download_button("📊 XLSX", data=_xlsx_buf.getvalue(), file_name=f"{_base_fn}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+                                    # [PERF] helper cacheado — não remonta o xlsx a cada rerun
+                                    st.download_button("📊 XLSX", data=_xlsx_simples_bytes(_df_single, "Rota"), file_name=f"{_base_fn}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
                                 except Exception:
                                     pass
                             with _col_exp6:
@@ -59081,12 +59078,9 @@ if _secao == _SECOES[16]:   # tab_data_sources
 
         _col_e1, _col_e2 = st.columns(2)
         with _col_e1:
-            import io
-            _xlsx_buf = io.BytesIO()
-            with pd.ExcelWriter(_xlsx_buf, engine='xlsxwriter') as _writer:
-                _df_fontes.to_excel(_writer, index=False, sheet_name='Fontes')
+            # [PERF] helper cacheado — não remonta o xlsx do catálogo a cada rerun
             st.download_button("📊 XLSX (com abas)",
-                data=_xlsx_buf.getvalue(),
+                data=_xlsx_simples_bytes(_df_fontes, "Fontes"),
                 file_name="fontes_dados_completo.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True)
