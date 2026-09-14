@@ -33139,14 +33139,26 @@ def _obter_coordenadas_e_endereco_oficial_core(localidade):
                     _cache_set_seguro(cache_geo, cache_key, {"lat": lat_corrigida_c, "lon": lon_corrigida_c, "endereco": addr_c, "confianca": "ALTISSIMA", "score_num": 100, "distrito": bair, "municipio": loca, "fonte": "BrasilAPI/OSM Postal"}, expire=2592000)
                     return res_final
                     
-                res_arc = API_ArcGIS(addr_c)
+                # [CEP-ESTRUTURADO] O CEP já nos deu logradouro/bairro/município/UF. Em vez de mandar
+                # só o texto solto, consultamos os geocoders pelos ENDPOINTS ESTRUTURADOS (Address/City/
+                # Region no ArcGIS; street/city/state no Nominatim) — mais precisos, sobretudo com número
+                # de casa (que anexamos ao logradouro). ArcGIS 1º; Nominatim como 2º voto (ambos grátis,
+                # sem cota). Sem logradouro (CEP de cidade inteira) mantém a consulta por texto (antigo).
+                if logr:
+                    _num_cep = parsed_comp.get("numero", "")
+                    _logr_cep = f"{logr} {_num_cep}".strip() if _num_cep else logr
+                    _ctx_cep = {"logradouro": _logr_cep, "bairro": bair, "municipio": loca, "uf": uf, "cep": cep_limpo}
+                    res_arc = API_ArcGIS(addr_c, ctx=_ctx_cep) or API_Nominatim(addr_c, ctx=_ctx_cep)
+                else:
+                    res_arc = API_ArcGIS(addr_c)
                 if res_arc:
-                    if isinstance(res_arc, list): 
+                    if isinstance(res_arc, list):
                         res_arc = res_arc[0]
                     val_arc, lat_corrigida_arc, lon_corrigida_arc = validar_coordenada_brasil(res_arc["lat"], res_arc["lon"])
                     if val_arc:
-                        res_final = (lat_corrigida_arc, lon_corrigida_arc, addr_c, "ALTISSIMA", 100, bair, loca, "ViaCEP/ArcGIS", ["Cascata Postal Complementada por ArcGIS."])
-                        _cache_set_seguro(cache_geo, cache_key, {"lat": lat_corrigida_arc, "lon": lon_corrigida_arc, "endereco": addr_c, "confianca": "ALTISSIMA", "score_num": 100, "distrito": bair, "municipio": loca, "fonte": "ViaCEP/ArcGIS"}, expire=2592000)
+                        _fonte_cep = f"CEP-estruturado/{res_arc.get('fonte', 'ARCGIS')}"
+                        res_final = (lat_corrigida_arc, lon_corrigida_arc, addr_c, "ALTISSIMA", 100, bair, loca, _fonte_cep, ["Endereço estruturado do CEP geocodificado por endpoint estruturado."])
+                        _cache_set_seguro(cache_geo, cache_key, {"lat": lat_corrigida_arc, "lon": lon_corrigida_arc, "endereco": addr_c, "confianca": "ALTISSIMA", "score_num": 100, "distrito": bair, "municipio": loca, "fonte": _fonte_cep}, expire=2592000)
                         return res_final
                         
     def disparar_apis_paralelas(tarefas):
