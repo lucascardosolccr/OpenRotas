@@ -15199,116 +15199,6 @@ def API_Photon(query):
 
 
 # ==============================================================================
-# [GEOCODERS EXTRAS — OPCIONAIS, ativados só se houver chave em st.secrets]
-# ------------------------------------------------------------------------------
-# Provedores adicionais que entram como VOTOS INDEPENDENTES no consenso (mesma
-# interface das APIs acima: recebem (query, ctx=None) e devolvem lista de dicts
-# {lat, lon, fonte, score_base, cidade, estado, bairro, logradouro, numero, cep}
-# ou None). Sem chave configurada, retornam None IMEDIATAMENTE (zero rede, zero
-# custo, comportamento idêntico ao de hoje). Mais fontes independentes ⇒ consenso
-# mais robusto (Bayesiano/DBSCAN) e melhor reconhecimento de endereços difíceis.
-#   LocationIQ (grátis ~5.000/dia):  st.secrets["LOCATIONIQ_API_KEY"]
-#   Geoapify   (grátis ~3.000/dia):  st.secrets["GEOAPIFY_API_KEY"]
-# ==============================================================================
-def _secret_str(nome):
-    """Lê um segredo de st.secrets como string limpa; '' se ausente. Nunca lança."""
-    try:
-        return str(st.secrets.get(nome, "") or "").strip()
-    except Exception:
-        return ""
-
-
-def API_LocationIQ(query, ctx=None):
-    """[GEOCODER EXTRA] LocationIQ (baseado em OSM/Nominatim, mesma forma de resposta).
-    No-op sem LOCATIONIQ_API_KEY. Respeita o filtro de país (BR) e devolve até 5 candidatos."""
-    _key = _secret_str("LOCATIONIQ_API_KEY")
-    if not _key:
-        return None
-    start_t = time.time()
-    try:
-        if ctx and ctx.get("logradouro") and ctx.get("municipio"):
-            _rua = requests.utils.quote(ctx["logradouro"]); _cid = requests.utils.quote(ctx["municipio"])
-            _est = requests.utils.quote(ctx.get("uf", ""))
-            url = (f"https://us1.locationiq.com/v1/search?key={_key}&street={_rua}&city={_cid}"
-                   f"&state={_est}&country=Brazil&format=json&limit=5&addressdetails=1&countrycodes=br&normalizecity=1")
-        else:
-            url = (f"https://us1.locationiq.com/v1/search?key={_key}&q={requests.utils.quote(query)}"
-                   f"&format=json&limit=5&addressdetails=1&countrycodes=br&normalizecity=1")
-        r = session.get(url, timeout=4).json()
-        resultados = []
-        if isinstance(r, list):
-            for a in r[:5]:
-                addr = a.get("address", {}) if isinstance(a, dict) else {}
-                resultados.append({
-                    "lat": float(a["lat"]), "lon": float(a["lon"]), "fonte": "LOCATIONIQ", "score_base": 26,
-                    "cidade": (addr.get("city") or addr.get("town") or addr.get("municipality") or "").upper(),
-                    "estado": (addr.get("state") or "").upper(),
-                    "bairro": (addr.get("neighbourhood") or addr.get("suburb") or "").upper(),
-                    "logradouro": (addr.get("road") or "").upper(),
-                    "numero": str(addr.get("house_number", "")).upper(),
-                    "cep": str(addr.get("postcode", "")).replace("-", ""),
-                })
-            registrar_telemetria("LOCATIONIQ", True, time.time() - start_t)
-        return resultados if resultados else None
-    except Exception:
-        pass
-    registrar_telemetria("LOCATIONIQ", False, time.time() - start_t)
-    return None
-
-
-def API_Geoapify(query, ctx=None):
-    """[GEOCODER EXTRA] Geoapify. No-op sem GEOAPIFY_API_KEY. Filtra por país BR e devolve
-    até 5 candidatos, mapeados para a mesma forma das demais APIs."""
-    _key = _secret_str("GEOAPIFY_API_KEY")
-    if not _key:
-        return None
-    start_t = time.time()
-    try:
-        url = (f"https://api.geoapify.com/v1/geocode/search?text={requests.utils.quote(query)}"
-               f"&filter=countrycode:br&lang=pt&limit=5&format=json&apiKey={_key}")
-        r = session.get(url, timeout=4).json()
-        resultados = []
-        for a in (r.get("results") or [])[:5]:
-            _lat, _lon = a.get("lat"), a.get("lon")
-            if _lat is None or _lon is None:
-                continue
-            resultados.append({
-                "lat": float(_lat), "lon": float(_lon), "fonte": "GEOAPIFY", "score_base": 27,
-                "cidade": (a.get("city") or a.get("municipality") or "").upper(),
-                "estado": (a.get("state_code") or a.get("state") or "").upper(),
-                "bairro": (a.get("suburb") or a.get("district") or a.get("neighbourhood") or "").upper(),
-                "logradouro": (a.get("street") or "").upper(),
-                "numero": str(a.get("housenumber", "")).upper(),
-                "cep": str(a.get("postcode", "")).replace("-", ""),
-            })
-        if resultados:
-            registrar_telemetria("GEOAPIFY", True, time.time() - start_t)
-        return resultados if resultados else None
-    except Exception:
-        pass
-    registrar_telemetria("GEOAPIFY", False, time.time() - start_t)
-    return None
-
-
-_GEOCODERS_EXTRAS_CACHE = None
-
-
-def _geocoders_extras():
-    """Tupla dos provedores extras ATIVOS (com chave configurada em st.secrets). Vazia por
-    padrão ⇒ comportamento idêntico ao de hoje. Cacheada por processo (segredos não mudam
-    durante a execução). Nunca lança."""
-    global _GEOCODERS_EXTRAS_CACHE
-    if _GEOCODERS_EXTRAS_CACHE is None:
-        _lst = []
-        if _secret_str("LOCATIONIQ_API_KEY"):
-            _lst.append(API_LocationIQ)
-        if _secret_str("GEOAPIFY_API_KEY"):
-            _lst.append(API_Geoapify)
-        _GEOCODERS_EXTRAS_CACHE = tuple(_lst)
-    return _GEOCODERS_EXTRAS_CACHE
-
-
-# ==============================================================================
 # [GOOGLE-GEOCODE - 188ª geração] GEOCODIFICAÇÃO PELO GOOGLE, SEM CHAVE — OPT-IN, MÁXIMA SEGURANÇA
 # ------------------------------------------------------------------------------
 # O usuário AUTORIZOU EXPLICITAMENTE o trade-off de ToS/fragilidade deste recurso, pedindo a forma "mais
@@ -30497,10 +30387,8 @@ def forcar_geocodificacao_hierarquica_estrita(texto_cru, modo_oficial=None):
     f1 = EXECUTOR_APIS.submit(API_ArcGIS, texto_norm)
     f2 = EXECUTOR_APIS.submit(API_Nominatim, texto_norm)
     f3 = EXECUTOR_APIS.submit(API_Photon, texto_norm)
-    # [GEOCODERS EXTRAS] Votos independentes adicionais (LocationIQ/Geoapify), só quando há chave.
-    _futs = [f1, f2, f3] + [EXECUTOR_APIS.submit(_apx, texto_norm) for _apx in _geocoders_extras()]
 
-    for f in as_completed(_futs):
+    for f in as_completed([f1, f2, f3]):
         res = f.result()
         if res:
             candidatos.extend(res)
@@ -32639,7 +32527,7 @@ def _melhor_coordenada_para_osrm(texto_local, mun_nome, uf, lat_atual, lon_atual
         _box = BOUNDING_BOXES_UF.get(uf) if uf else None
         _q = semantica.normalizar(texto_local)
         _alts = []
-        for _api in (API_ArcGIS, API_Nominatim, API_Photon) + _geocoders_extras():
+        for _api in (API_ArcGIS, API_Nominatim, API_Photon):
             try:
                 _r = _api(_q)
                 if _r:
