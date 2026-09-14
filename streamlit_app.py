@@ -105,7 +105,9 @@ def _linha_mapa_kw(width=2, color="blue", dash=None):
 from unidecode import unidecode
 from rapidfuzz import process, fuzz
 from diskcache import Cache
-from sklearn.cluster import DBSCAN
+# [PERF-COLDSTART] scikit-learn (DBSCAN) é o import MAIS pesado do app e só é usado no consenso
+# espacial da GEOCODIFICAÇÃO — nunca na tela de login nem na navegação. Importado sob demanda
+# (ver _get_dbscan_cls) para não penalizar o carregamento inicial. Cacheado por processo.
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -10976,12 +10978,33 @@ def _alo_painel_equivalencia():
 
 
 
-# [M20] Pré-instanciar 3 DBSCANs com eps fixos — elimina instanciação por geocodificação
-_DBSCAN_PRESETS = {
-    0.5:  DBSCAN(eps=0.5 / 6371.0,  min_samples=2, metric='haversine'),
-    2.0:  DBSCAN(eps=2.0 / 6371.0,  min_samples=2, metric='haversine'),
-    10.0: DBSCAN(eps=10.0 / 6371.0, min_samples=2, metric='haversine'),
-}
+# [M20] Pré-instanciar 3 DBSCANs com eps fixos — elimina instanciação por geocodificação.
+# [PERF-COLDSTART] Import e presets do sklearn são criados SOB DEMANDA (na 1ª geocodificação),
+# não no cold start — a tela de login e a navegação não usam clustering. Cacheado por processo.
+_DBSCAN_CLS = None
+_DBSCAN_PRESETS_CACHE = None
+
+
+def _get_dbscan_cls():
+    """Classe DBSCAN do scikit-learn, importada sob demanda (import pesado). Cacheada por processo."""
+    global _DBSCAN_CLS
+    if _DBSCAN_CLS is None:
+        from sklearn.cluster import DBSCAN as _DB
+        _DBSCAN_CLS = _DB
+    return _DBSCAN_CLS
+
+
+def _get_dbscan_presets():
+    """3 instâncias DBSCAN com eps fixos, criadas uma única vez na primeira chamada."""
+    global _DBSCAN_PRESETS_CACHE
+    if _DBSCAN_PRESETS_CACHE is None:
+        _DB = _get_dbscan_cls()
+        _DBSCAN_PRESETS_CACHE = {
+            0.5:  _DB(eps=0.5 / 6371.0,  min_samples=2, metric='haversine'),
+            2.0:  _DB(eps=2.0 / 6371.0,  min_samples=2, metric='haversine'),
+            10.0: _DB(eps=10.0 / 6371.0, min_samples=2, metric='haversine'),
+        }
+    return _DBSCAN_PRESETS_CACHE
 
 # [M22] Migração por schema: não limpar caches válidos entre sessões
 # Apenas marca a sessão atual como inicializada; dados persistem entre reloads
@@ -32574,8 +32597,11 @@ def processar_consenso_dinamico(candidatos, tipo_entrada, texto_cru):
     if len(coords_matriz) >= 2:
         coords_rad = np.radians(coords_matriz)
         eps_angular = raio_cluster_km / 6371.0
-        # [M20] Reutiliza instâncias DBSCAN pré-criadas (elimina alocação sklearn por chamada)
-        db_model = _DBSCAN_PRESETS.get(raio_cluster_km, DBSCAN(eps=eps_angular, min_samples=2, metric='haversine'))
+        # [M20] Reutiliza instâncias DBSCAN pré-criadas (elimina alocação sklearn por chamada).
+        # [PERF-COLDSTART] Acessor lazy: importa/instancia o sklearn só aqui, na 1ª geocodificação.
+        db_model = _get_dbscan_presets().get(raio_cluster_km)
+        if db_model is None:  # raio fora dos presets: instancia sob medida (sem custo em cold start)
+            db_model = _get_dbscan_cls()(eps=eps_angular, min_samples=2, metric='haversine')
         db_model = db_model.fit(coords_rad)
         labels = db_model.labels_
         valid_labels = [l for l in labels if l != -1]
