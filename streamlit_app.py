@@ -40,7 +40,28 @@ import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import NamedTuple, List
-import altair as alt
+
+
+# [PERF-COLDSTART] Altair (~1s de import) só é usado dentro de funções que desenham gráficos —
+# nunca na tela de login, na navegação ou no processamento. Este proxy adia o import de verdade
+# até o PRIMEIRO acesso a `alt.<algo>` (ex.: alt.Chart), então todas as ~126 chamadas `alt.X`
+# continuam iguais, mas o custo só é pago quando um gráfico Altair é realmente construído.
+class _ImportPreguicoso:
+    """Módulo carregado sob demanda: importa de verdade no 1º acesso a um atributo e cacheia."""
+    __slots__ = ("_nome", "_mod")
+
+    def __init__(self, nome):
+        self._nome = nome
+        self._mod = None
+
+    def __getattr__(self, attr):
+        if self._mod is None:
+            import importlib
+            object.__setattr__(self, "_mod", importlib.import_module(self._nome))
+        return getattr(self._mod, attr)
+
+
+alt = _ImportPreguicoso("altair")
 import plotly.express as px
 import plotly.graph_objects as go
 import plotly.io as _pio
