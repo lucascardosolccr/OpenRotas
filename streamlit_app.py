@@ -54914,10 +54914,14 @@ if _secao == _SECOES[5]:   # tab_calculadora
                         except Exception as _e:
                             _errors.append(f"KML: {_e}")
 
-                        # 4. KML (duplicate for KMZ)
+                        # 4b. KMZ — um KMZ é um ZIP contendo o KML como `doc.kml` (convenção do
+                        # Google Earth). Antes era gravado como KML puro com extensão .kmz, que o
+                        # Google Earth não abre. Aqui empacotamos de verdade: zip interno com doc.kml.
                         try:
-                            _kml = _df_para_kml(_df)
-                            _zip.writestr(f"{_base_name}.kmz", _kml.encode('utf-8'))
+                            _kmz_buf = io.BytesIO()
+                            with zipfile.ZipFile(_kmz_buf, 'w', zipfile.ZIP_DEFLATED) as _kmz:
+                                _kmz.writestr("doc.kml", _df_para_kml(_df).encode('utf-8'))
+                            _zip.writestr(f"{_base_name}.kmz", _kmz_buf.getvalue())
                         except Exception as _e:
                             _errors.append(f"KMZ: {_e}")
 
