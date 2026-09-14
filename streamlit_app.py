@@ -52885,19 +52885,35 @@ if _secao == _SECOES[3]:   # tab_comparador
                     _erros_nw.append(f"⛔ **'{_nm}' está VAZIO** (zero linhas).")
                     continue
                 _cols_nw = ["—"] + list(_df_nw.columns)
+                # [AUTO-COL] Pré-mapeia cada coluna pela palavra-chave (inclui formatos oficiais
+                # INEP/IBGE: NO_MUNICIPIO, NO_MUN_PROX, CO_MUNICIPIO). `index` só define o padrão inicial;
+                # a escolha manual do usuário é preservada. Sem correspondência → "—" (índice 0).
+                def _ix_nw(*_pal):
+                    _c = _detectar_coluna(list(_df_nw.columns), list(_pal))
+                    return _cols_nw.index(_c) if _c in _cols_nw else 0
                 _m1, _m2, _m3, _m4 = st.columns(4)
                 _mapa_nw = {
                     "origem": _m1.selectbox(f"Município de origem · {_nm}", _cols_nw,
+                                            index=_ix_nw('no_municipio', 'municipio', 'município', 'cidade', 'origem'),
                                             key=f"nw_o_{_k}"),
-                    "uf_origem": _m2.selectbox(f"UF · {_nm}", _cols_nw, key=f"nw_u_{_k}"),
-                    "ibge_origem": _m3.selectbox(f"Código IBGE · {_nm}", _cols_nw, key=f"nw_i_{_k}"),
-                    "destino": _m4.selectbox(f"Local de prova · {_nm}", _cols_nw, key=f"nw_d_{_k}"),
+                    "uf_origem": _m2.selectbox(f"UF · {_nm}", _cols_nw,
+                                               index=_ix_nw('sg_uf', 'uf', 'estado'), key=f"nw_u_{_k}"),
+                    "ibge_origem": _m3.selectbox(f"Código IBGE · {_nm}", _cols_nw,
+                                                 index=_ix_nw('co_municipio', 'ibge', 'geocodigo', 'cod_mun'),
+                                                 key=f"nw_i_{_k}"),
+                    "destino": _m4.selectbox(f"Local de prova · {_nm}", _cols_nw,
+                                             index=_ix_nw('no_mun_prox', 'mun_prox', 'destino', 'prova', 'aplicac', 'polo'),
+                                             key=f"nw_d_{_k}"),
                 }
                 _m5, _m6, _m7 = st.columns(3)
                 _mapa_nw["distancia"] = _m5.selectbox(f"Distância (km) · {_nm}", _cols_nw,
-                                                      key=f"nw_dist_{_k}")
-                _mapa_nw["inscritos"] = _m6.selectbox(f"Inscritos · {_nm}", _cols_nw, key=f"nw_ins_{_k}")
-                _mapa_nw["tempo"] = _m7.selectbox(f"Tempo · {_nm}", _cols_nw, key=f"nw_t_{_k}")
+                                                      index=_ix_nw('dist', 'km', 'rota'), key=f"nw_dist_{_k}")
+                _mapa_nw["inscritos"] = _m6.selectbox(f"Inscritos · {_nm}", _cols_nw,
+                                                      index=_ix_nw('inscrit', 'candidat', 'matricul', 'quantidade', 'qtd', 'demanda'),
+                                                      key=f"nw_ins_{_k}")
+                _mapa_nw["tempo"] = _m7.selectbox(f"Tempo · {_nm}", _cols_nw,
+                                                  index=_ix_nw('tempo', 'duracao', 'duração', 'minuto', 'hora'),
+                                                  key=f"nw_t_{_k}")
                 _mapa_nw = {_a: (_b if _b != "—" else None) for _a, _b in _mapa_nw.items()}
 
                 if not _mapa_nw.get("destino") or not _mapa_nw.get("distancia"):
