@@ -54866,7 +54866,7 @@ if _secao == _SECOES[5]:   # tab_calculadora
                 # [UNIFIED-EXPORT - 445ª] Exportação Unificada Multi-Formato
                 # ==============================================================================
                 st.markdown("---")
-                st.markdown("#### 📦 Exportação Unificada Multi-Formato (HTML + GeoJSON + KML + GPX + XLSX + CSV + KML + KMZ + GPX)")
+                st.markdown("#### 📦 Exportação Unificada Multi-Formato (HTML + GeoJSON + KML + KMZ + GPX + XLSX + CSV)")
                 st.caption("Exportação unificada que combina todos os formatos de exportação em um único pacote. Inclui: HTML Interativo (mapa navegável), GeoJSON (QGIS/Mapbox), KML/KMZ (Google Earth), GPX (GPS), XLSX (Excel com múltiplas abas), CSV.")
 
                 def _gerar_pacote_exportacao_unificada(df_base, df_filtrado=None):
@@ -54949,7 +54949,7 @@ Filtros aplicados: {len(_df)} rotas processadas
 ## Formatos incluídos:
 - CSV: Dados tabulares completos
 - XLSX: Planilha Excel com formatação
-- GeoJSON: Para QGIS, QGIS, Mapbox, Leaflet, kepler.gl
+- GeoJSON: Para QGIS, Mapbox, Leaflet, kepler.gl
 - KML: Google Earth, Google My Maps
 - GPX: GPS Exchange Format (GPS, Garmin, apps de navegação)
 - HTML: Mapa interativo navegável (Leaflet)
@@ -54973,8 +54973,8 @@ Gerado pelo Motor Nacional de Inteligência Logística para Exames v4.36
                     return _zip_buffer.getvalue(), "; ".join(_errors) if _errors else "Sucesso"
 
                 # UI para Exportação Unificada
-                with st.expander("📦 Exportação Unificada Multi-Formato (HTML + GeoJSON + KML + KML + GPX + XLSX + CSV + KML + KMZ + GPX)", expanded=False):
-                    st.caption("📦 **Exportação Unificada Multi-Formato** — Gera um único ZIP contendo TODOS os formatos: HTML Interativo (mapa navegável), GeoJSON (QGIS/Mapbox), KML/KMZ (Google Earth), GPX (GPS), XLSX (Excel multi-abas), CSV, GeoJSON, KML, KML, GPX, Tudo em um único ZIP.")
+                with st.expander("📦 Exportação Unificada Multi-Formato (HTML + GeoJSON + KML + KMZ + GPX + XLSX + CSV)", expanded=False):
+                    st.caption("📦 **Exportação Unificada Multi-Formato** — Gera um único ZIP contendo todos os formatos: HTML Interativo (mapa navegável), GeoJSON (QGIS/Mapbox), KML/KMZ (Google Earth), GPX (GPS), XLSX (Excel multi-abas) e CSV.")
 
                     _col_exp1, _col_exp2, _col_exp3 = st.columns(3)
 
@@ -55012,7 +55012,7 @@ Gerado pelo Motor Nacional de Inteligência Logística para Exames v4.36
                         st.caption("📋 **Formatos incluídos no ZIP:**")
                         st.markdown("""
                         - 🌐 **HTML Interativo** — Mapa navegável (Leaflet) com origens, destinos, rotas, balsas
-                        - 🌐 **GeoJSON** — QGIS, QGIS, Mapbox, Leaflet, kepler.gl (RFC 7946)
+                        - 🌐 **GeoJSON** — QGIS, Mapbox, Leaflet, kepler.gl (RFC 7946)
                         - 🗺️ **KML/KMZ** — Google Earth, Google My Maps
                         - 📍 **GPX** — GPS Exchange Format (Garmin, apps de navegação)
                         - 📊 **XLSX** — Excel multi-abas (Resumo, Dados, Gráficos)
