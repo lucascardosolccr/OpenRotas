@@ -15109,6 +15109,65 @@ def executar_reverse_geocoding_multimotor(lat, lon):
         
     return res
 
+
+# ==============================================================================
+# [GEO-PRECISAO - 447ª geração] Extração do sinal de QUALIDADE que cada geocoder já devolve mas a app
+# descartava: o ArcGIS informa `Addr_type` (PointAddress=rooftop, StreetAddress=interpolado por número,
+# StreetName=via sem número, Locality/Postal/POI=aproximado) e um `score` 0-100; o Nominatim informa
+# `type`/`class`; o Photon informa `type`/`osm_key`. Traduzimos isso num RÓTULO e num TIER de precisão
+# amigáveis — PUROS e testáveis — para a explicabilidade/dossiê. NÃO altera a pontuação de consenso já
+# calibrada (score_base): é ADITIVO (novas chaves no dict do candidato).
+# ==============================================================================
+_ARCGIS_ADDR_TIER = {
+    "POINTADDRESS": ("exato", "Endereço exato (rooftop)"),
+    "SUBADDRESS": ("exato", "Unidade dentro do endereço"),
+    "STREETADDRESS": ("via_numero", "Via com número (interpolado)"),
+    "STREETADDRESSEXT": ("via_numero", "Via com número (interpolado)"),
+    "STREETINT": ("via", "Cruzamento de vias"),
+    "STREETNAME": ("via", "Via (sem número)"),
+    "DISTANCEMARKER": ("via", "Marco quilométrico"),
+    "POI": ("aproximado", "Ponto de interesse"),
+    "LOCALITY": ("aproximado", "Localidade/centro"),
+    "POSTAL": ("aproximado", "Centro do CEP"),
+    "POSTALEXT": ("aproximado", "Centro do CEP"),
+}
+_TIER_ORDEM = {"exato": 4, "via_numero": 3, "via": 2, "aproximado": 1, "": 0}
+
+
+def _precisao_geocoder(cand):
+    """[GEO-PRECISAO - 447ª geração] Traduz os metadados de qualidade de um candidato de geocoder no
+    par (tier, rótulo). PURO. Reconhece o `addr_type` do ArcGIS (autoritativo) e, na ausência dele,
+    infere do próprio candidato (tem número → via com número; tem logradouro → via; senão aproximado).
+    Nunca levanta exceção; entrada desconhecida → ('', '')."""
+    if not isinstance(cand, dict):
+        return ("", "")
+    at = str(cand.get("addr_type", "") or "").strip().upper()
+    if at in _ARCGIS_ADDR_TIER:
+        return _ARCGIS_ADDR_TIER[at]
+    # Fallback determinístico pelos campos já resolvidos (vale p/ Nominatim/Photon/qualquer fonte).
+    if str(cand.get("numero", "") or "").strip():
+        return ("via_numero", "Via com número")
+    if str(cand.get("logradouro", "") or "").strip():
+        return ("via", "Via (sem número)")
+    if str(cand.get("bairro", "") or "").strip():
+        return ("aproximado", "Bairro/centro")
+    if str(cand.get("cidade", "") or "").strip():
+        return ("aproximado", "Localidade/centro")
+    return ("", "")
+
+
+def _rotular_precisao(cand):
+    """[GEO-PRECISAO - 447ª geração] Enriquece o dict do candidato IN-PLACE com `precisao_tier`,
+    `precisao_rotulo` e `precisao_rank` (aditivo; nunca sobrescreve score_base). Devolve o próprio dict."""
+    if not isinstance(cand, dict):
+        return cand
+    tier, rotulo = _precisao_geocoder(cand)
+    cand["precisao_tier"] = tier
+    cand["precisao_rotulo"] = rotulo
+    cand["precisao_rank"] = _TIER_ORDEM.get(tier, 0)
+    return cand
+
+
 def API_ArcGIS(query, ctx=None):
     start_t = time.time()
     try:
@@ -15127,12 +15186,15 @@ def API_ArcGIS(query, ctx=None):
         if r.get('candidates'):
             for c in r['candidates'][:5]:
                 attr = c.get('attributes', {})
-                resultados.append({
-                    "lat": float(c['location']['y']), "lon": float(c['location']['x']), "fonte": "ARCGIS", "score_base": 30, 
-                    "cidade": attr.get('City', '').upper(), "estado": attr.get('RegionAbbr', '').upper(), 
-                    "bairro": attr.get('Neighborhood', '').upper(), "logradouro": attr.get('StName', attr.get('Address', '')).upper(), 
-                    "numero": str(attr.get('AddNum', '')).upper(), "cep": attr.get('Postal', '')
-                })
+                resultados.append(_rotular_precisao({
+                    "lat": float(c['location']['y']), "lon": float(c['location']['x']), "fonte": "ARCGIS", "score_base": 30,
+                    "cidade": attr.get('City', '').upper(), "estado": attr.get('RegionAbbr', '').upper(),
+                    "bairro": attr.get('Neighborhood', '').upper(), "logradouro": attr.get('StName', attr.get('Address', '')).upper(),
+                    "numero": str(attr.get('AddNum', '')).upper(), "cep": attr.get('Postal', ''),
+                    # [GEO-PRECISAO] sinais de qualidade do próprio ArcGIS (antes descartados):
+                    "addr_type": attr.get('Addr_type', ''), "match_addr": attr.get('Match_addr', ''),
+                    "score_fonte": (float(c.get('score')) if c.get('score') is not None else None),
+                }))
             registrar_telemetria("ARCGIS", True, time.time() - start_t)
         return resultados if resultados else None
     except Exception: 
@@ -15159,12 +15221,15 @@ def API_Nominatim(query, ctx=None):
         if r:
             for a in r[:5]:
                 addr = a.get("address", {})
-                resultados.append({
-                    "lat": float(a['lat']), "lon": float(a['lon']), "fonte": "NOMINATIM", "score_base": 25, 
-                    "cidade": addr.get('city', addr.get('town', '')).upper(), "estado": addr.get('state', '').upper(), 
-                    "bairro": addr.get('neighbourhood', addr.get('suburb', '')).upper(), "logradouro": addr.get('road', '').upper(), 
-                    "numero": str(addr.get('house_number', '')).upper(), "cep": addr.get('postcode', '').replace("-", "")
-                })
+                resultados.append(_rotular_precisao({
+                    "lat": float(a['lat']), "lon": float(a['lon']), "fonte": "NOMINATIM", "score_base": 25,
+                    "cidade": addr.get('city', addr.get('town', '')).upper(), "estado": addr.get('state', '').upper(),
+                    "bairro": addr.get('neighbourhood', addr.get('suburb', '')).upper(), "logradouro": addr.get('road', '').upper(),
+                    "numero": str(addr.get('house_number', '')).upper(), "cep": addr.get('postcode', '').replace("-", ""),
+                    # [GEO-PRECISAO] sinais de qualidade do OSM/Nominatim (antes descartados):
+                    "osm_tipo": str(a.get('type', '') or ''), "osm_classe": str(a.get('class', '') or ''),
+                    "score_fonte": (round(float(a['importance']) * 100.0, 1) if a.get('importance') is not None else None),
+                }))
             registrar_telemetria("NOMINATIM", True, time.time() - start_t,
                                  uf=str(((ctx or {}).get("uf")) or "").strip().upper())
         return resultados if resultados else None
@@ -15184,12 +15249,15 @@ def API_Photon(query):
             for f in r["features"][:5]:
                 lon, lat = f["geometry"]["coordinates"]
                 props = f.get("properties", {})
-                resultados.append({
-                    "lat": lat, "lon": lon, "fonte": "PHOTON", "score_base": 20, 
-                    "cidade": props.get("city", "").upper(), "estado": props.get("state", "").upper(), 
-                    "bairro": props.get("district", "").upper(), "logradouro": props.get("street", "").upper(), 
-                    "numero": str(props.get("housenumber", "")).upper(), "cep": props.get("postcode", "").replace("-", "")
-                })
+                resultados.append(_rotular_precisao({
+                    "lat": lat, "lon": lon, "fonte": "PHOTON", "score_base": 20,
+                    "cidade": props.get("city", "").upper(), "estado": props.get("state", "").upper(),
+                    "bairro": props.get("district", "").upper(), "logradouro": props.get("street", "").upper(),
+                    "numero": str(props.get("housenumber", "")).upper(), "cep": props.get("postcode", "").replace("-", ""),
+                    # [GEO-PRECISAO] sinais de qualidade do OSM/Photon (antes descartados):
+                    "osm_tipo": str(props.get("type", "") or props.get("osm_value", "") or ''),
+                    "osm_classe": str(props.get("osm_key", "") or ''),
+                }))
             registrar_telemetria("PHOTON", True, time.time() - start_t)
         return resultados if resultados else None
     except Exception:
@@ -42306,11 +42374,16 @@ def _votar_consenso(candidatos, limiar_km=3.0):
         _rep = max(_grupo, key=lambda c: c.get("score_base", 0))
         _lat_c = sum(c["lat"] for c in _grupo) / len(_grupo)
         _lon_c = sum(c["lon"] for c in _grupo) / len(_grupo)
+        # [GEO-PRECISAO - 447ª geração] Melhor granularidade de casamento no cluster (rooftop > via c/
+        # número > via > aproximado). Aditivo: sinal auditável de precisão do endereço resolvido.
+        _mais_preciso = max(_grupo, key=lambda c: c.get("precisao_rank", 0))
         _cc = {
             "lat": round(_lat_c, 6), "lon": round(_lon_c, 6), "nome": _rep.get("nome", ""),
             "nivel": _rep.get("nivel", ""), "fontes": _fontes, "votos": len(_fontes),
             "uf": _rep.get("estado", ""),
             "score_consenso": min(99, 40 + 15 * len(_fontes)), "_rep_score": _rep.get("score_base", 0),
+            "precisao_tier": _mais_preciso.get("precisao_tier", ""),
+            "precisao_rotulo": _mais_preciso.get("precisao_rotulo", ""),
         }
         if (_melhor is None or _cc["votos"] > _melhor["votos"]
                 or (_cc["votos"] == _melhor["votos"] and _cc["_rep_score"] > _melhor["_rep_score"])):
@@ -45568,9 +45641,11 @@ if _secao == _SECOES[0]:   # tab_individual
                                         _det_txt = (f" · componentes: txt {_det_c.get('textual','?')} / consenso "
                                                     f"{_det_c.get('consenso','?')} / uf {_det_c.get('uf','?')} / nível "
                                                     f"{_det_c.get('nivel','?')}") if _det_c else ""
+                                        _prec_txt = (f" · precisão: **{_cs.get('precisao_rotulo')}**"
+                                                     if _cs.get('precisao_rotulo') else "")
                                         st.caption(f"{_lbl_c}: **{_cs['nome']}** ({_cs['nivel']}) · votos: {_cs['votos']} "
-                                                   f"[{', '.join(_cs['fontes'])}] · score {_cs['score_consenso']} · "
-                                                   f"`{_cs['lat']:.5f}, {_cs['lon']:.5f}`"
+                                                   f"[{', '.join(_cs['fontes'])}] · score {_cs['score_consenso']}"
+                                                   + _prec_txt + f" · `{_cs['lat']:.5f}, {_cs['lon']:.5f}`"
                                                    + ("  ·  ✅ **assumiria** (melhor que o atual)" if _rc['assume'] else "  ·  mantém o atual")
                                                    + _det_txt)
                                     else:
