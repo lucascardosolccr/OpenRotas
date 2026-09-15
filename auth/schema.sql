@@ -146,6 +146,12 @@ create trigger on_profile_updated
 -- Storage (bucket 'avatars'). Coluna adicionada de forma idempotente.
 alter table public.profiles add column if not exists avatar_url text;
 
+-- [COMPARTILHAR] Instante em que o usuário viu pela última vez a seção "Estudos recebidos".
+-- Serve ao badge de notificação: estudos compartilhados com created_at posterior a esta data são
+-- "novos". Fica no PRÓPRIO perfil (que o usuário pode atualizar via RLS), sem tornar as linhas de
+-- compartilhamento graváveis pelo destinatário.
+alter table public.profiles add column if not exists estudos_recebidos_vistos_em timestamptz;
+
 -- ------------------------------------------------------------------------------
 -- Anotações do usuário
 -- ------------------------------------------------------------------------------

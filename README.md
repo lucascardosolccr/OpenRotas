@@ -149,7 +149,7 @@ Aproveitamento máximo da API já usada do IBGE: além de `/localidades` e `/mal
 Login por **e-mail/senha** e **Google** (OAuth PKCE, Supabase Auth); perfil com isolamento por usuário (**RLS**), política de senha reforçada, **estudos salvos** persistentes (atrelados à conta), foto de perfil e anotações. Ver `auth/`.
 
 ### Compartilhamento de Estudos entre Perfis
-Um estudo salvo pode ser **compartilhado com outro perfil pelo e-mail** do destinatário — que passa a **ver e baixar** o estudo (abrir na aplicação ou exportar CSV) na seção **📥 Estudos recebidos**. Tudo sob **RLS** (sem `service_role`): o dono nunca precisa descobrir o id do outro usuário (casa-se por e-mail); uma tabela `estudos_compartilhados` liga o estudo ao e-mail e uma policy de SELECT adicional em `estudos_salvos` libera a leitura só para o destinatário certo. O dono vê com quem compartilhou e pode **revogar** a qualquer momento.
+Um estudo salvo pode ser **compartilhado com outro perfil pelo e-mail** do destinatário — que passa a **ver e baixar** o estudo (abrir na aplicação ou exportar CSV) na seção **📥 Estudos recebidos**. Tudo sob **RLS** (sem `service_role`): o dono nunca precisa descobrir o id do outro usuário (casa-se por e-mail); uma tabela `estudos_compartilhados` liga o estudo ao e-mail e uma policy de SELECT adicional em `estudos_salvos` libera a leitura só para o destinatário certo. O dono vê com quem compartilhou e pode **revogar** a qualquer momento. **Notificações:** ao receber um estudo, o destinatário vê um **badge 📥 no botão Perfil** (quantos há de novo) e recebe um **e-mail** de aviso (mesmo relay SMTP do cadastro; best-effort, nunca bloqueia). O badge zera quando ele abre a seção (marca-se a data no próprio perfil).
 
 ---
 

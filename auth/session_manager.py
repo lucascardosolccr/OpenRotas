@@ -47,6 +47,25 @@ def _tokens_sessao() -> tuple[str, str]:
             st.session_state.get("auth_refresh_token", "") or "")
 
 
+def badge_estudos_recebidos() -> int:
+    """[COMPARTILHAR - 448ª geração] Nº de estudos recebidos AINDA NÃO VISTOS (para o badge do menu).
+    Cacheado por sessão com validade curta (evita bater na rede a cada rerun da sidebar). 0 se não logado."""
+    _u = usuario_atual()
+    if not _u:
+        return 0
+    try:
+        _agora = time.time()
+        _ult = st.session_state.get("_badge_recebidos_ts", 0.0)
+        if "_badge_recebidos" not in st.session_state or (_agora - _ult) > 60:
+            _at, _rt = _tokens_sessao()
+            st.session_state["_badge_recebidos"] = auth_service.contar_estudos_recebidos_novos(
+                _u.get("user_id", ""), _u.get("email", ""), _at, _rt)
+            st.session_state["_badge_recebidos_ts"] = _agora
+        return int(st.session_state.get("_badge_recebidos", 0) or 0)
+    except Exception:
+        return 0
+
+
 def _iniciar_sessao(user_id: str, email: str, access_token: str, refresh_token: str):
     st.session_state["auth_user_id"] = user_id
     st.session_state["auth_email"] = email
@@ -640,7 +659,10 @@ def _tela_perfil():
                     _msg_sh = st.text_input("Mensagem (opcional)", key=f"es_share_msg_{_es_id}",
                                             placeholder="Ex.: segue o estudo do ENEM para conferência")
                     if st.form_submit_button("🔗 Compartilhar", use_container_width=True):
-                        _r = auth_service.compartilhar_estudo(_user["user_id"], _es_id, _dest, _msg_sh, _at, _rt)
+                        _rem_nome = (_perfil.get("nome_completo") if isinstance(_perfil, dict) else "") or ""
+                        _r = auth_service.compartilhar_estudo(
+                            _user["user_id"], _es_id, _dest, _msg_sh, _at, _rt,
+                            remetente_nome=_rem_nome, remetente_email=_user.get("email", ""))
                         (st.success if _r.ok else st.error)(("✅ " if _r.ok else "") + _r.mensagem)
                         if _r.ok:
                             time.sleep(0.8); st.rerun()
@@ -669,6 +691,13 @@ def _tela_perfil():
         _recebidos = auth_service.listar_estudos_recebidos(_user.get("email", ""), _at, _rt)
     except Exception:
         _recebidos = []
+    # [COMPARTILHAR - 448ª] o usuário abriu esta seção → marca os recebidos como VISTOS (zera o badge).
+    try:
+        auth_service.marcar_recebidos_como_vistos(_user["user_id"], _at, _rt)
+        st.session_state["_badge_recebidos"] = 0
+        st.session_state["_badge_recebidos_ts"] = time.time()
+    except Exception:
+        pass
     if _recebidos:
         st.caption(f"{len(_recebidos)} estudo(s) recebido(s).")
         for _rb in _recebidos:

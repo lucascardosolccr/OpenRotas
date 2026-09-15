@@ -19,12 +19,20 @@ class _FakeQuery:
         self._rec.setdefault("inserts", []).append((self._tabela, payload))
         return self
 
+    def update(self, payload):
+        self._rec.setdefault("updates", []).append((self._tabela, payload))
+        return self
+
     def delete(self):
         self._rec.setdefault("deletes", []).append(self._tabela)
         return self
 
     def eq(self, col, val):
         self._rec.setdefault("eq", []).append((self._tabela, col, val))
+        return self
+
+    def gt(self, col, val):
+        self._rec.setdefault("gt", []).append((self._tabela, col, val))
         return self
 
     def in_(self, col, vals):
@@ -119,3 +127,64 @@ def test_carregar_por_id_nao_filtra_por_user(monkeypatch):
     _eqs = rec.get("eq", [])
     assert ("estudos_salvos", "id", "e9") in _eqs
     assert not any(col == "user_id" for _t, col, _v in _eqs)
+
+
+# ---- notificação: badge + e-mail ---------------------------------------------
+def test_compartilhar_com_o_proprio_email_e_recusado(monkeypatch):
+    # se o destinatário é o próprio remetente, recusa ANTES de tocar no banco
+    monkeypatch.setattr(auth_service, "_cliente_do_usuario",
+                        lambda at="", rt="": (_ for _ in ()).throw(AssertionError("não deveria chamar o cliente")))
+    r = auth_service.compartilhar_estudo("u1", "e1", "eu@x.com", remetente_email="Eu@X.com")
+    assert not r.ok
+
+
+def test_compartilhar_dispara_email_best_effort(monkeypatch):
+    rec = _mock(monkeypatch, dados={"estudos_salvos": [{"id": "e1", "nome": "ENEM 2026"}]})
+    _enviados = {}
+
+    def _fake_envia(dest, nome, mail, estudo, msg=""):
+        _enviados.update({"dest": dest, "estudo": estudo, "remetente": nome})
+        return True
+    import auth.email_service as _es
+    monkeypatch.setattr(_es, "enviar_notificacao_compartilhamento", _fake_envia)
+    r = auth_service.compartilhar_estudo("u1", "e1", "colega@x.com", "olha isso",
+                                         remetente_nome="Ana", remetente_email="ana@x.com")
+    assert r.ok
+    assert _enviados.get("dest") == "colega@x.com"
+    assert _enviados.get("estudo") == "ENEM 2026"
+
+
+def test_email_falho_nao_derruba_compartilhamento(monkeypatch):
+    _mock(monkeypatch, dados={"estudos_salvos": [{"id": "e1", "nome": "X"}]})
+    import auth.email_service as _es
+    monkeypatch.setattr(_es, "enviar_notificacao_compartilhamento",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("smtp caiu")))
+    r = auth_service.compartilhar_estudo("u1", "e1", "colega@x.com", remetente_email="ana@x.com")
+    assert r.ok  # o compartilhamento já foi persistido; e-mail é cortesia
+
+
+def test_contar_recebidos_novos_email_invalido_zero(monkeypatch):
+    _mock(monkeypatch)
+    assert auth_service.contar_estudos_recebidos_novos("u1", "nao-eh-email") == 0
+
+
+def test_contar_recebidos_novos_conta_lista(monkeypatch):
+    rec = _mock(monkeypatch, dados={
+        "profiles": [{"estudos_recebidos_vistos_em": None}],
+        "estudos_compartilhados": [{"id": "s1", "created_at": "2024-01-02"},
+                                   {"id": "s2", "created_at": "2024-01-03"}]})
+    n = auth_service.contar_estudos_recebidos_novos("u1", "eu@x.com")
+    assert n == 2
+    # filtra pelo e-mail normalizado do destinatário
+    assert ("estudos_compartilhados", "destinatario_email", "eu@x.com") in rec.get("eq", [])
+
+
+def test_marcar_vistos_atualiza_profile(monkeypatch):
+    rec = _mock(monkeypatch)
+    assert auth_service.marcar_recebidos_como_vistos("u1") is True
+    # faz um UPDATE em profiles com a data de visualização, filtrando pelo próprio id
+    _tabs_upd = [t for t, _p in rec.get("updates", [])]
+    assert "profiles" in _tabs_upd
+    _payload = dict(rec["updates"][0][1])
+    assert "estudos_recebidos_vistos_em" in _payload
+    assert ("profiles", "id", "u1") in rec.get("eq", [])

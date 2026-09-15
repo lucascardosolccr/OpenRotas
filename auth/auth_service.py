@@ -596,16 +596,20 @@ def excluir_estudo(user_id: str, estudo_id: str,
 # que casa o e-mail do compartilhamento com o e-mail do próprio perfil de quem consulta. Sem
 # service_role, sem vazamento: tudo continua sob RLS.
 def compartilhar_estudo(user_id: str, estudo_id: str, destinatario_email: str, mensagem: str = "",
-                        access_token: str = "", refresh_token: str = "") -> AuthResult:
+                        access_token: str = "", refresh_token: str = "",
+                        remetente_nome: str = "", remetente_email: str = "") -> AuthResult:
     """Compartilha um estudo do usuário com outro perfil, identificado pelo E-MAIL. Valida o e-mail,
     impede autocompartilhamento e exige que o estudo seja do próprio usuário. Idempotente por
-    (estudo_id, destinatario_email) quando o índice único existir. Defensivo/fail-open."""
+    (estudo_id, destinatario_email) quando o índice único existir. Após persistir, dispara (best-effort)
+    um e-mail de notificação ao destinatário. Defensivo/fail-open."""
     from auth.validators import validar_email
     _ok_mail, _email_norm, _msg = validar_email(destinatario_email)
     if not _ok_mail:
         return AuthResult(False, _msg or "E-mail do destinatário inválido.")
     if not (user_id and estudo_id):
         return AuthResult(False, "Estudo inválido para compartilhar.")
+    if _email_norm == (remetente_email or "").strip().lower():
+        return AuthResult(False, "Você já é o dono deste estudo — informe o e-mail de OUTRO perfil.")
     _c = _cliente_do_usuario(access_token, refresh_token)
     if _c is None:
         return AuthResult(False, "Compartilhar estudos indisponível no momento.")
@@ -613,11 +617,20 @@ def compartilhar_estudo(user_id: str, estudo_id: str, destinatario_email: str, m
         # confirma a posse do estudo (também dá o nome para a mensagem)
         _dono = (_c.table("estudos_salvos").select("id,nome").eq("id", estudo_id)
                  .eq("user_id", user_id).limit(1).execute())
-        if not (_dono.data or []):
+        _linhas_dono = _dono.data or []
+        if not _linhas_dono:
             return AuthResult(False, "Só é possível compartilhar um estudo da sua própria conta.")
         _c.table("estudos_compartilhados").insert({
             "estudo_id": estudo_id, "owner_id": user_id,
             "destinatario_email": _email_norm, "mensagem": (mensagem or "").strip()[:500]}).execute()
+        # notificação por e-mail (cortesia; nunca bloqueia — o compartilhamento já foi persistido)
+        try:
+            from auth import email_service
+            email_service.enviar_notificacao_compartilhamento(
+                _email_norm, remetente_nome, remetente_email,
+                (_linhas_dono[0].get("nome") or "Estudo"), mensagem)
+        except Exception:
+            logger.warning("[AUTH] Notificação de compartilhamento por e-mail falhou (ignorado).", exc_info=True)
         return AuthResult(True, f"Estudo compartilhado com {_email_norm}.", dados={"email": _email_norm})
     except Exception as _e:
         _txt = str(_e).lower()
@@ -712,6 +725,56 @@ def carregar_estudo_por_id(estudo_id: str, access_token: str = "", refresh_token
     except Exception:
         logger.error("[AUTH] Falha ao carregar estudo por id.", exc_info=True)
         return None
+
+
+def contar_estudos_recebidos_novos(user_id: str, email: str,
+                                   access_token: str = "", refresh_token: str = "") -> int:
+    """[COMPARTILHAR - 448ª geração] Conta quantos estudos foram compartilhados com o usuário DEPOIS da
+    última vez que ele viu a seção "Estudos recebidos" (marca no próprio perfil). Para o badge do menu.
+    0 em falha/sem e-mail. O teto de 99 evita varrer listas enormes só para um contador."""
+    from auth.validators import validar_email
+    _ok, _email_norm, _ = validar_email(email)
+    if not _ok or not user_id:
+        return 0
+    _c = _cliente_do_usuario(access_token, refresh_token)
+    if _c is None:
+        return 0
+    try:
+        _visto = None
+        try:
+            _p = (_c.table("profiles").select("estudos_recebidos_vistos_em")
+                  .eq("id", user_id).limit(1).execute())
+            _visto = (_p.data or [{}])[0].get("estudos_recebidos_vistos_em") if (_p.data or []) else None
+        except Exception:
+            _visto = None
+        _q = (_c.table("estudos_compartilhados").select("id,created_at")
+              .eq("destinatario_email", _email_norm))
+        if _visto:
+            _q = _q.gt("created_at", _visto)
+        _r = _q.limit(99).execute()
+        return len(_r.data or [])
+    except Exception:
+        logger.error("[AUTH] Falha ao contar estudos recebidos novos.", exc_info=True)
+        return 0
+
+
+def marcar_recebidos_como_vistos(user_id: str,
+                                 access_token: str = "", refresh_token: str = "") -> bool:
+    """[COMPARTILHAR - 448ª geração] Marca no perfil do usuário o instante em que ele viu a seção
+    "Estudos recebidos" (zera o badge). Atualiza a PRÓPRIA linha de profiles (RLS permite). Fail-open."""
+    if not user_id:
+        return False
+    _c = _cliente_do_usuario(access_token, refresh_token)
+    if _c is None:
+        return False
+    try:
+        from datetime import datetime as _dt, timezone as _tz
+        _c.table("profiles").update(
+            {"estudos_recebidos_vistos_em": _dt.now(_tz.utc).isoformat()}).eq("id", user_id).execute()
+        return True
+    except Exception:
+        logger.error("[AUTH] Falha ao marcar estudos recebidos como vistos.", exc_info=True)
+        return False
 
 
 # ---- Foto de perfil (avatar) -------------------------------------------------

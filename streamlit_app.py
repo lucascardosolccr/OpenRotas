@@ -42381,13 +42381,22 @@ with st.sidebar:
             "<div class='sb-user-email' title='" + _sb_html.escape(_sb_email) + "'>"
             + _sb_html.escape(_sb_email) + "</div></div></div>",
             unsafe_allow_html=True)
+        # [COMPARTILHAR - 448ª] badge de estudos recebidos ainda não vistos no botão Perfil.
+        try:
+            _badge_rec = session_manager.badge_estudos_recebidos()
+        except Exception:
+            _badge_rec = 0
+        _lbl_perfil = f"Perfil 📥 {_badge_rec}" if _badge_rec > 0 else "Perfil"
         _auth_c1, _auth_c2 = st.columns(2)
-        if _auth_c1.button("Perfil", key="_auth_btn_perfil", use_container_width=True):
+        if _auth_c1.button(_lbl_perfil, key="_auth_btn_perfil", use_container_width=True,
+                           type=("primary" if _badge_rec > 0 else "secondary")):
             session_manager.abrir_perfil()
             st.rerun()
         if _auth_c2.button("Sair", key="_auth_btn_logout", use_container_width=True):
             session_manager.encerrar_sessao()
             st.rerun()
+        if _badge_rec > 0:
+            st.caption(f"📥 Você tem **{_badge_rec}** estudo(s) recebido(s) novo(s) — abra o Perfil para ver.")
         st.markdown("---")
 
     # [OFFLINE - 144ª geração] Controle do curto-circuito oficial. Ligado por padrão porque a sede do
