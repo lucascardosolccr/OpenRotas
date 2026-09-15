@@ -72,12 +72,19 @@ def _iniciar_sessao(user_id: str, email: str, access_token: str, refresh_token: 
     st.session_state["auth_access_token"] = access_token
     st.session_state["auth_refresh_token"] = refresh_token
     st.session_state["auth_login_ts"] = time.time()
+    # [COMPARTILHAR - 448ª] invalida o cache do badge de recebidos: a contagem deve refletir a conta
+    # que ACABOU de entrar (evita herdar a contagem/estado de uma sessão anterior neste navegador).
+    st.session_state.pop("_badge_recebidos", None)
+    st.session_state.pop("_badge_recebidos_ts", None)
 
 
 def encerrar_sessao():
     auth_service.fazer_logout()
     for _k in _SESSION_KEYS:
         st.session_state.pop(_k, None)
+    # [COMPARTILHAR - 448ª] zera o cache do badge de recebidos ao sair (não vazar contagem entre contas).
+    st.session_state.pop("_badge_recebidos", None)
+    st.session_state.pop("_badge_recebidos_ts", None)
     # [§24 - SESSÃO EXPIRADA] limpa também qualquer estado de aplicação sensível ao usuário
     # anterior, mas preserva chaves que não começam com "auth_"/dados de formulário em
     # edição não é objetivo aqui — o logout intencional pode perder rascunhos, é esperado.
