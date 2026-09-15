@@ -10477,6 +10477,8 @@ def _df_para_geojson(df):
             "municipio_origem": str(row.get('Municipio Origem', '')),
             "municipio_destino": str(row.get('Municipio Destino', '')),
         }
+        for _k_ex, _v_ex in _export_extra_pares(row):   # [MARGEM-SAIDA] balsa/risco/antecedência (se houver)
+            props_base[_k_ex.lower()] = _v_ex
         if lat_o != 0 or lon_o != 0:
             features.append({"type": "Feature",
                 "properties": {**props_base, "tipo": "origem", "marker-color": "#16a34a"},
@@ -10506,6 +10508,23 @@ def _escapar_js(texto):
              .replace("<", "&lt;").replace(">", "&gt;")
              .replace("\n", " ").replace("\r", " ").replace("\u2028", " ").replace("\u2029", " "))
 
+
+def _export_extra_pares(row):
+    """[MARGEM-SAIDA - 447\u00aa gera\u00e7\u00e3o] PURO. Extrai de uma linha de resultado os pares (r\u00f3tulo, valor) de
+    conting\u00eancia que valem a pena levar aos export\u00e1veis GIS: Balsa, Risco operacional e Anteced\u00eancia
+    recomendada \u2014 apenas os que existem e t\u00eam valor. Devolve lista de (str, str). Sem efeito colateral."""
+    _out = []
+    _b = row.get("Balsas")
+    if _b is not None and str(_b).strip() and str(_b).strip().lower() not in ("nan", "n\u00e3o informado", "none"):
+        _out.append(("Balsa", str(_b).strip()))
+    _ri = row.get("Risco Operacional")
+    if _ri is not None and str(_ri).strip() and str(_ri).strip().lower() not in ("nan", "none"):
+        _out.append(("Risco", str(_ri).strip()))
+    _an = row.get("Anteced\u00eancia Recomendada")
+    if _an is not None and str(_an).strip() and str(_an).strip().lower() not in ("nan", "none"):
+        _out.append(("Anteced\u00eancia", str(_an).strip()))
+    return _out
+
 @st.cache_data(show_spinner=False)
 def _df_para_kml(df):
     """[EXPORT-GIS - 24ª geração] Converte o DataFrame em KML (Google Earth/Maps). Cada
@@ -10527,7 +10546,8 @@ def _df_para_kml(df):
         org = _escapar_xml(row.get('Endereco Oficial Origem', row.get('Origem', '')))
         dst = _escapar_xml(row.get('Endereco Oficial Destino', row.get('Destino', '')))
         dist = _escapar_xml(row.get('Distancia', '')); tmp = _escapar_xml(row.get('Tempo', ''))
-        desc = f"<description>Distancia: {dist} km | Tempo: {tmp}</description>"
+        _extra_kml = "".join(f" | {_escapar_xml(_k)}: {_escapar_xml(_v)}" for _k, _v in _export_extra_pares(row))
+        desc = f"<description>Distancia: {dist} km | Tempo: {tmp}{_extra_kml}</description>"
         if lat_o != 0 or lon_o != 0:
             linhas.append(f'<Placemark><name>Origem: {org}</name>{desc}<Point><coordinates>{lon_o},{lat_o},0</coordinates></Point></Placemark>')
         if lat_d != 0 or lon_d != 0:
@@ -10556,12 +10576,14 @@ def _df_para_gpx(df):
             continue
         org = _escapar_xml(row.get('Municipio Origem', row.get('Origem', '')))
         dst = _escapar_xml(row.get('Municipio Destino', row.get('Destino', '')))
+        _extra_gpx = " | ".join(f"{_escapar_xml(_k)}: {_escapar_xml(_v)}" for _k, _v in _export_extra_pares(row))
+        _desc_gpx = f"<desc>{_extra_gpx}</desc>" if _extra_gpx else ""
         if lat_o != 0 or lon_o != 0:
-            linhas.append(f'<wpt lat="{lat_o}" lon="{lon_o}"><name>{org}</name></wpt>')
+            linhas.append(f'<wpt lat="{lat_o}" lon="{lon_o}"><name>{org}</name>{_desc_gpx}</wpt>')
         if lat_d != 0 or lon_d != 0:
-            linhas.append(f'<wpt lat="{lat_d}" lon="{lon_d}"><name>{dst}</name></wpt>')
+            linhas.append(f'<wpt lat="{lat_d}" lon="{lon_d}"><name>{dst}</name>{_desc_gpx}</wpt>')
         if (lat_o != 0 or lon_o != 0) and (lat_d != 0 or lon_d != 0):
-            rotas_xml.append(f'<rte><name>{org} - {dst}</name>'
+            rotas_xml.append(f'<rte><name>{org} - {dst}</name>{_desc_gpx}'
                              f'<rtept lat="{lat_o}" lon="{lon_o}"><name>{org}</name></rtept>'
                              f'<rtept lat="{lat_d}" lon="{lon_d}"><name>{dst}</name></rtept></rte>')
     linhas.extend(rotas_xml)
@@ -15763,6 +15785,23 @@ def _montar_planilha_lote_xlsx(df_final):
                                        formatos_col=_num_formatos_por_coluna(_df_rotas_lote))
         except Exception:
             logger.error("[EXPORT-PADRAO] Falha ao estilizar aba Rotas do Lote", exc_info=True)
+        # [MARGEM-SAIDA - 447ª] Realce condicional do risco operacional na aba Rotas: crítico em vermelho,
+        # alto em âmbar — o planejador enxerga na hora as rotas que exigem contingência. Defensivo/isolado.
+        try:
+            _ws_rr = _w.sheets.get("Rotas")
+            _wb_rr = getattr(_w, "book", None)
+            _cols_rr = list(_df_rotas_lote.columns)
+            if _ws_rr is not None and _wb_rr is not None and "Risco Operacional" in _cols_rr and len(_df_rotas_lote) > 0:
+                _ci_rr = _cols_rr.index("Risco Operacional")
+                _n_rr = len(_df_rotas_lote)
+                _fmt_crit = _wb_rr.add_format({"bg_color": "#FFC7CE", "font_color": "#9C0006", "bold": True})
+                _fmt_alto = _wb_rr.add_format({"bg_color": "#FFEB9C", "font_color": "#9C6500"})
+                _ws_rr.conditional_format(1, _ci_rr, _n_rr, _ci_rr,
+                                          {"type": "text", "criteria": "containing", "value": "crítico", "format": _fmt_crit})
+                _ws_rr.conditional_format(1, _ci_rr, _n_rr, _ci_rr,
+                                          {"type": "text", "criteria": "containing", "value": "alto", "format": _fmt_alto})
+        except Exception:
+            logger.error("[MARGEM-SAIDA] Falha ao realçar risco na aba Rotas", exc_info=True)
         try:
             # [CAPA-LOTE - 184ª geração] Portada formatada (mesmo padrão da planilha de Locais): título grande,
             # totais e metodologia. Isolada em try próprio — se falhar, a aba 'Rotas' já está escrita.
