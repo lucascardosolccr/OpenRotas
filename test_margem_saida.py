@@ -32,6 +32,32 @@ def test_secao_html_sem_colunas_retorna_vazio():
     assert m._secao_risco_margem_html(pd.DataFrame()) == ""
 
 
+def _df_risco():
+    return pd.DataFrame({"Origem": ["A", "B", "C", "D"],
+                         "Risco Operacional": ["crítico (78)", "alto (52)", "moderado (30)", "baixo (10)"]})
+
+
+def test_filtro_risco_todos_e_identidade():
+    df = _df_risco()
+    assert len(m._filtrar_por_risco_operacional(df, "todos")) == 4
+
+
+def test_filtro_risco_alto_critico():
+    out = m._filtrar_por_risco_operacional(_df_risco(), "alto_critico")
+    assert set(out["Origem"]) == {"A", "B"}
+
+
+def test_filtro_risco_so_critico():
+    out = m._filtrar_por_risco_operacional(_df_risco(), "critico")
+    assert list(out["Origem"]) == ["A"]
+
+
+def test_filtro_risco_sem_coluna_devolve_tudo():
+    df = pd.DataFrame({"Origem": ["A", "B"]})
+    assert len(m._filtrar_por_risco_operacional(df, "critico")) == 2  # sem a coluna → não filtra
+    assert m._filtrar_por_risco_operacional(None, "critico") is None
+
+
 def test_base_minima_sem_risco():
     r = m._margem_saida_recomendada(60, risco=None)
     # base 30 + 10% de 60 = 6 → 36 de folga; lead = 60 + 36

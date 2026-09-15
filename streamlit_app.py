@@ -21677,6 +21677,30 @@ def _margem_de_fatos(dist_viaria_km, dist_reta_km=None, tempo_min=None, balsa=Fa
     return _out
 
 
+def _nivel_da_coluna_risco(serie):
+    """[MARGEM-SAIDA - 448ª geração] Extrai o nível ('crítico'/'alto'/...) da coluna 'Risco Operacional'
+    (formato 'nivel (score)'). Devolve uma Series de níveis minúsculos. PURO."""
+    return serie.astype(str).str.extract(r"^\s*(\w+)")[0].str.lower()
+
+
+def _filtrar_por_risco_operacional(df, modo="todos"):
+    """[MARGEM-SAIDA - 448ª geração] Filtra um DataFrame de rotas pela coluna 'Risco Operacional'.
+    modo: 'todos' (identidade), 'alto_critico' (só alto+crítico) ou 'critico' (só crítico). PURO e
+    defensivo: sem a coluna, ou modo desconhecido, devolve o df inteiro (nunca quebra a tela)."""
+    try:
+        if (modo == "todos" or df is None or not hasattr(df, "columns")
+                or "Risco Operacional" not in df.columns):
+            return df
+        _niv = _nivel_da_coluna_risco(df["Risco Operacional"])
+        if modo == "critico":
+            return df[_niv == "crítico"]
+        if modo == "alto_critico":
+            return df[_niv.isin(["crítico", "alto"])]
+        return df
+    except Exception:
+        return df
+
+
 def _motor_curto(fonte_rota):
     """Nome curto e legível do motor de rota a partir da 'Fonte da Rota'. PURO."""
     _f = str(fonte_rota or "").upper()
@@ -55718,16 +55742,31 @@ if _secao == _SECOES[4]:   # tab_analytics
                                        "*Antecedência Recomendada* (planeje saída antecipada / transporte reserva).")
                     except Exception:
                         pass
-                tabela_h = min(800, max(300, len(df_cf) * 35 + 43))
+                # [MARGEM-SAIDA - 448ª] filtro rápido: isolar as rotas que precisam de contingência.
+                _df_expl = df_cf
+                if 'Risco Operacional' in df_cf.columns:
+                    _op_risco = {"Todas as rotas": "todos",
+                                 "🟠🔴 Só risco alto + crítico": "alto_critico",
+                                 "🔴 Só risco crítico": "critico"}
+                    _sel_risco = st.radio("Filtrar por risco operacional", list(_op_risco.keys()),
+                                          horizontal=True, key="filtro_risco_explorer")
+                    _df_expl = _filtrar_por_risco_operacional(df_cf, _op_risco.get(_sel_risco, "todos"))
+                    if _op_risco.get(_sel_risco) != "todos":
+                        st.caption(f"Mostrando **{len(_df_expl):,}** de {len(df_cf):,} rota(s) no filtro de risco."
+                                   .replace(",", "."))
+                tabela_h = min(800, max(300, len(_df_expl) * 35 + 43))
                 # [MARGEM-SAIDA - 448ª] traz o Risco Operacional e a Antecedência para a tabela em tela
                 # (antes só apareciam no Excel/HTML) — é onde o planejador olha primeiro. Aditivo: só entram
                 # quando existem, entre Tempo e o status, sem reordenar o resto.
                 _cols_expl = ['Origem', 'Destino', 'Distancia', 'Linha Reta', 'Tempo']
                 for _c_extra in ('Risco Operacional', 'Antecedência Recomendada'):
-                    if _c_extra in df_cf.columns:
+                    if _c_extra in _df_expl.columns:
                         _cols_expl.append(_c_extra)
                 _cols_expl += ['Status da Rota', 'Status Linha Reta', 'Link da Rota']
-                st.dataframe(df_cf[_cols_expl], use_container_width=True, height=tabela_h, column_config={"Link da Rota": st.column_config.LinkColumn("🗺️ Abrir no Maps")}, hide_index=True)
+                if _df_expl.empty:
+                    st.info("Nenhuma rota no filtro de risco selecionado.")
+                else:
+                    st.dataframe(_df_expl[_cols_expl], use_container_width=True, height=tabela_h, column_config={"Link da Rota": st.column_config.LinkColumn("🗺️ Abrir no Maps")}, hide_index=True)
                 
             st.markdown("#### ✅ Controle de Qualidade de Dados (Auditoria Geodésica e de Falhas)")
             with st.container(border=True):
