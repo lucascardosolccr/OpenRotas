@@ -76,3 +76,64 @@ def test_secao_html():
     assert h and "Candidato-km total" in h and "Estudo" not in h.split("<h3")[0][:5]
     assert m._secao_impacto_candidatos_html({"tem_candidatos": False}) == ""
     assert m._secao_impacto_candidatos_html(None) == ""
+
+
+def test_pareto_iniquidade_e_faixa_central():
+    e = m._estudo_impacto_candidatos(_df())
+    # quantis ponderados por candidato: metade central e caudas
+    assert e["p25_candidato_km"] == 80.0 and e["p75_candidato_km"] == 300.0
+    assert e["mediana_candidato_km"] == 300.0
+    # razão P95/mediana (iniquidade de acesso)
+    assert e["razao_p95_mediana"] == 1.0
+    # Pareto: com A dominando o candidato-km, 1 município já concentra 50% e 80%
+    assert e["pareto"]["municipios_para_50pct"] == 1
+    assert e["pareto"]["municipios_para_80pct"] == 1
+    assert e["pareto"]["pct_municipios_para_80pct"] == 25.0
+
+
+def test_tempo_ponderado_por_candidato():
+    e = m._estudo_impacto_candidatos(_df())
+    # min ponderado: (360*5000 + 30*100 + 480*50 + 60*2000)/7150 = 1.947.000/7150 ≈ 272.3
+    assert abs(e["tempo_medio_ponderado_min"] - 272.3) < 0.5
+    assert e["mediana_tempo_min"] == 360.0
+
+
+def test_dupla_exposicao_balsa_e_risco():
+    e = m._estudo_impacto_candidatos(_df())
+    # só A tem balsa E risco crítico ao mesmo tempo → 5000 candidatos
+    assert e["balsa_e_risco"]["candidatos"] == 5000
+    assert e["balsa_e_risco"]["municipios"] == 1
+
+
+def test_share_acumulado_nos_top_municipios():
+    e = m._estudo_impacto_candidatos(_df())
+    tm = e["top_municipios_peso"]
+    assert tm[0]["share_acumulado"] < 100.0            # o 1º não fecha 100%
+    assert abs(tm[-1]["share_acumulado"] - 100.0) < 0.2  # o último acumula ~100%
+
+
+def _df_grande():
+    import pandas as pd
+    # 12 municípios com pesos e distâncias variados → habilita a curva de Lorenz (≥10)
+    return pd.DataFrame({
+        "Origem": [f"M{i}" for i in range(12)],
+        "UF Origem": ["AM"] * 6 + ["SP"] * 6,
+        "Distancia": [500, 400, 300, 250, 200, 150, 120, 100, 80, 60, 40, 20.0],
+        "Inscritos": [3000, 100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 5],
+    })
+
+
+def test_lorenz_por_decil_com_massa():
+    e = m._estudo_impacto_candidatos(_df_grande())
+    lz = e["lorenz_deciles"]
+    assert len(lz) == 10
+    assert lz[-1]["share_acumulado"] == 100.0            # o último decil fecha 100%
+    assert abs(sum(d["share_km_candidato"] for d in lz) - 100.0) < 0.6  # marginais somam ~100
+    # a seção HTML deve trazer a curva de Lorenz e a leitura de Pareto quando há massa
+    h = m._secao_impacto_candidatos_html(e)
+    assert "Lorenz" in h and "acumulado" in h
+
+
+def test_lorenz_ausente_sem_massa():
+    # com poucos municípios (4) não há curva de Lorenz
+    assert m._estudo_impacto_candidatos(_df())["lorenz_deciles"] == []

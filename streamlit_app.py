@@ -5409,12 +5409,18 @@ def _estudo_impacto_candidatos(df, limiar_longo_km=200.0):
         _desloc_simples = float(_d["_dist"].mean())
         _pares = list(zip(_d["_dist"].tolist(), _d["_cand"].tolist()))
         _mediana = _quantil_ponderado(_pares, 0.5)
+        _p25 = _quantil_ponderado(_pares, 0.25)
+        _p75 = _quantil_ponderado(_pares, 0.75)
         _p90 = _quantil_ponderado(_pares, 0.90)
         _p95 = _quantil_ponderado(_pares, 0.95)
         _max_desloc = float(_d["_dist"].max())
+        # iniquidade de acesso: quanto os 5% mais distantes percorrem em relação à mediana (razão P95/mediana)
+        _razao_p95_med = (round(_p95 / _mediana, 2) if (_p95 and _mediana and _mediana > 0) else None)
 
-        # tempo total candidato-hora (se houver coluna de tempo interpretável)
+        # tempo total candidato-hora + tempo médio/mediano PONDERADO por candidato (se houver coluna de tempo)
         _cand_hora = None
+        _tempo_medio_pond_min = None
+        _mediana_tempo_min = None
         _col_tempo = next((c for c in ("Tempo", "Tempo Estimado", "Tempo (min)") if c in _d.columns), None)
         if _col_tempo is not None:
             try:
@@ -5423,6 +5429,9 @@ def _estudo_impacto_candidatos(df, limiar_longo_km=200.0):
                 _min = _pd.to_numeric(_min, errors="coerce").fillna(0.0)
                 _min = _min.where(_min < 900000, 0.0)  # descarta sentinela 999999 do parser
                 _cand_hora = float((_min * _d["_cand"]).sum() / 60.0)
+                if _tot_cand > 0 and float(_min.sum()) > 0:
+                    _tempo_medio_pond_min = float((_min * _d["_cand"]).sum() / _tot_cand)
+                    _mediana_tempo_min = _quantil_ponderado(list(zip(_min.tolist(), _d["_cand"].tolist())), 0.5)
             except Exception:
                 _cand_hora = None
 
@@ -5456,11 +5465,38 @@ def _estudo_impacto_candidatos(df, limiar_longo_km=200.0):
             _risco = {"municipios": int(_mr.sum()), "candidatos": int(_cr),
                       "pct_candidatos": round(_cr / _tot_cand * 100.0, 1) if _tot_cand else 0.0}
 
+        # recorte combinado (dupla exposição): candidatos que enfrentam balsa E risco alto/crítico ao mesmo tempo
+        _balsa_e_risco = None
+        if "Balsas" in _d.columns and "Risco Operacional" in _d.columns:
+            _mbr = _d["Balsas"].apply(_bool_balsa) & _nivel_da_coluna_risco(_d["Risco Operacional"]).isin(
+                ["crítico", "alto"])
+            _cbr = float(_d.loc[_mbr, "_cand"].sum())
+            _balsa_e_risco = {"municipios": int(_mbr.sum()), "candidatos": int(_cbr),
+                              "pct_candidatos": round(_cbr / _tot_cand * 100.0, 1) if _tot_cand else 0.0}
+
         # concentração: Gini do candidato-km entre municípios + participação dos 10% que mais pesam
         _gini_kmc = round(_gini(_d["_kmcand"].tolist()), 3)
         _ordk = _d.sort_values("_kmcand", ascending=False)
         _top10n = max(1, int(round(_n_mun * 0.10)))
         _share_top10 = round(float(_ordk["_kmcand"].head(_top10n).sum()) / _kmcand_total * 100.0, 1) if _kmcand_total else 0.0
+        # Pareto (80/20): quantos municípios concentram 50% e 80% de todo o candidato-km
+        _cum = _ordk["_kmcand"].cumsum()
+        _mun_50 = min(int((_cum < 0.50 * _kmcand_total).sum()) + 1, _n_mun) if _kmcand_total else 0
+        _mun_80 = min(int((_cum < 0.80 * _kmcand_total).sum()) + 1, _n_mun) if _kmcand_total else 0
+        _pareto = {"municipios_para_50pct": _mun_50, "municipios_para_80pct": _mun_80,
+                   "pct_municipios_para_80pct": round(_mun_80 / _n_mun * 100.0, 1) if _n_mun else 0.0}
+        # curva de concentração (Lorenz) por decil de municípios ordenados do que mais pesa ao que menos pesa —
+        # só com massa suficiente (≥10 municípios); share marginal e acumulado do candidato-km em cada decil
+        _lorenz = []
+        if _n_mun >= 10 and _kmcand_total > 0:
+            _vals_desc = _ordk["_kmcand"].tolist()
+            _prev = 0
+            for _k in range(1, 11):
+                _lim = max(_prev, min(int(round(_n_mun * _k / 10.0)), _n_mun))
+                _lorenz.append({"decil": _k, "municipios": _lim - _prev,
+                                "share_km_candidato": round(sum(_vals_desc[_prev:_lim]) / _kmcand_total * 100.0, 1),
+                                "share_acumulado": round(sum(_vals_desc[:_lim]) / _kmcand_total * 100.0, 1)})
+                _prev = _lim
 
         # por UF (ponderado por candidato)
         _por_uf = []
@@ -5478,12 +5514,15 @@ def _estudo_impacto_candidatos(df, limiar_longo_km=200.0):
         # top municípios por peso logístico (candidato-km)
         _col_org = next((c for c in ("Origem", "Municipio Origem") if c in _d.columns), None)
         _top_mun = []
+        _acc_km = 0.0
         for _r in _ordk.head(15).to_dict("records"):
+            _acc_km += float(_r.get("_kmcand", 0))
             _top_mun.append({
                 "origem": str(_r.get(_col_org, "—")) if _col_org else "—",
                 "uf": str(_r.get(_col_uf, "")) if _col_uf else "",
                 "candidatos": int(_r.get("_cand", 0)), "distancia_km": round(float(_r.get("_dist", 0)), 1),
-                "km_candidato": round(float(_r.get("_kmcand", 0)), 1)})
+                "km_candidato": round(float(_r.get("_kmcand", 0)), 1),
+                "share_acumulado": round(_acc_km / _kmcand_total * 100.0, 1) if _kmcand_total else 0.0})
 
         # frases-resumo (narrativa executiva)
         _fr = []
@@ -5505,8 +5544,19 @@ def _estudo_impacto_candidatos(df, limiar_longo_km=200.0):
         if _risco and _risco["candidatos"]:
             _fr.append(f"{_risco['candidatos']:,} candidato(s) ({_risco['pct_candidatos']:.0f}%) estão em "
                        f"rotas de risco operacional alto/crítico.".replace(",", "."))
+        if _balsa_e_risco and _balsa_e_risco["candidatos"]:
+            _fr.append(f"Dupla exposição: {_balsa_e_risco['candidatos']:,} candidato(s) "
+                       f"({_balsa_e_risco['pct_candidatos']:.0f}%) enfrentam balsa E risco alto/crítico ao mesmo "
+                       f"tempo — o público prioritário para contingência.".replace(",", "."))
         _fr.append(f"O esforço logístico é concentrado (Gini {_gini_kmc:.2f}): os 10% de municípios que mais "
                    f"pesam respondem por {_share_top10:.0f}% de todo o candidato-km.")
+        _fr.append(f"Concentração de Pareto: {_mun_80} município(s) "
+                   f"({_pareto['pct_municipios_para_80pct']:.0f}% do total) concentram 80% de todo o "
+                   f"candidato-km — priorizá-los rende o maior retorno logístico.")
+        if _razao_p95_med:
+            _fr.append(f"Iniquidade de acesso: os 5% mais distantes percorrem {_razao_p95_med:.1f}× o que a "
+                       f"mediana dos candidatos percorre" + (" — dispersão elevada." if _razao_p95_med >= 3.0
+                                                             else "."))
 
         return {
             "tem_candidatos": True, "col_candidatos": str(_col_cand),
@@ -5515,14 +5565,22 @@ def _estudo_impacto_candidatos(df, limiar_longo_km=200.0):
             "deslocamento_medio_ponderado": round(_desloc_pond, 1),
             "deslocamento_medio_simples": round(_desloc_simples, 1),
             "mediana_candidato_km": (round(_mediana, 1) if _mediana is not None else None),
+            "p25_candidato_km": (round(_p25, 1) if _p25 is not None else None),
+            "p75_candidato_km": (round(_p75, 1) if _p75 is not None else None),
             "p90_candidato_km": (round(_p90, 1) if _p90 is not None else None),
             "p95_candidato_km": (round(_p95, 1) if _p95 is not None else None),
+            "razao_p95_mediana": _razao_p95_med,
             "max_deslocamento_km": round(_max_desloc, 1),
             "candidatos_longo": int(_cand_longo), "limiar_longo_km": float(limiar_longo_km),
             "pct_candidatos_longo": round(_cand_longo / _tot_cand * 100.0, 1) if _tot_cand else 0.0,
             "candidato_hora_total": (round(_cand_hora, 0) if _cand_hora is not None else None),
+            "tempo_medio_ponderado_min": (round(_tempo_medio_pond_min, 1)
+                                          if _tempo_medio_pond_min is not None else None),
+            "mediana_tempo_min": (round(_mediana_tempo_min, 1) if _mediana_tempo_min is not None else None),
             "distribuicao_faixas": _faixas, "balsa": _balsa, "risco": _risco,
+            "balsa_e_risco": _balsa_e_risco,
             "concentracao": {"gini_km_candidato": _gini_kmc, "share_top10pct_municipios": _share_top10},
+            "pareto": _pareto, "lorenz_deciles": _lorenz,
             "por_uf": _por_uf, "top_municipios_peso": _top_mun, "resumo_frases": _fr,
         }
     except Exception:
@@ -5548,6 +5606,11 @@ def _secao_impacto_candidatos_html(estudo):
             _kpis.append(("Mediana (por candidato)", f"{estudo['mediana_candidato_km']:.0f} km"))
         if estudo.get("p90_candidato_km") is not None:
             _kpis.append(("p90 (10% andam mais que)", f"{estudo['p90_candidato_km']:.0f} km"))
+        if estudo.get("razao_p95_mediana"):
+            _kpis.append(("Iniquidade (P95÷mediana)", f"{estudo['razao_p95_mediana']:.1f}×"))
+        _par = estudo.get("pareto") or {}
+        if _par.get("municipios_para_80pct"):
+            _kpis.append(("Municípios com 80% da carga", _mil(_par["municipios_para_80pct"])))
         _kh = "".join(f"<div class='kpi'><div class='kpi-v'>{_he.escape(str(_v))}</div>"
                       f"<div class='kpi-l'>{_he.escape(_l)}</div></div>" for _l, _v in _kpis)
         _out = ["<p class='lead'>Este estudo pesa por <b>candidato</b>, não por município: mede o esforço "
@@ -5556,15 +5619,27 @@ def _secao_impacto_candidatos_html(estudo):
                 f"<div class='kpis'>{_kh}</div>"]
         _out.append("<ul>" + "".join(f"<li>{_he.escape(_s)}</li>" for _s in (estudo.get("resumo_frases") or []))
                     + "</ul>")
-        # distribuição por faixa
+        # dupla exposição (balsa + risco) — destaque de contingência
+        _ber = estudo.get("balsa_e_risco") or {}
+        if _ber.get("candidatos"):
+            _out.append(
+                "<div style='background:#fef2f2;border-left:4px solid #b91c1c;padding:12px 16px;"
+                "border-radius:8px;margin:10px 0'><b>⚠️ Dupla exposição (público prioritário):</b> "
+                f"{_mil(_ber['candidatos'])} candidato(s) ({_ber['pct_candidatos']:.0f}%) enfrentam "
+                "<b>balsa</b> e <b>risco operacional alto/crítico</b> na mesma rota.</div>")
+        # distribuição por faixa — com mini-barras proporcionais ao % de candidatos (sem biblioteca)
         _fx = estudo.get("distribuicao_faixas") or []
         if _fx:
+            _pmax = max((f["pct_candidatos"] for f in _fx), default=0) or 1
             _rows = "".join(
                 f"<tr><td>{_he.escape(f['faixa'])}</td><td class='r'>{_mil(f['candidatos'])}</td>"
+                f"<td><div style='background:#e2e8f0;border-radius:4px;height:14px;min-width:60px'>"
+                f"<div style='background:#1e3a8a;height:14px;border-radius:4px;"
+                f"width:{max(2.0, f['pct_candidatos'] / _pmax * 100.0):.0f}%'></div></div></td>"
                 f"<td class='r'>{f['pct_candidatos']:.0f}%</td><td class='r'>{_mil(f['municipios'])}</td>"
                 f"<td class='r'>{_mil(f['km_candidato'])}</td></tr>" for f in _fx)
             _out.append("<h3 style='margin-top:14px'>Candidatos por faixa de deslocamento</h3>"
-                        "<table><thead><tr><th>Faixa</th><th class='r'>Candidatos</th>"
+                        "<table><thead><tr><th>Faixa</th><th class='r'>Candidatos</th><th>Distribuição</th>"
                         "<th class='r'>% dos candidatos</th><th class='r'>Municípios</th>"
                         f"<th class='r'>Candidato-km</th></tr></thead><tbody>{_rows}</tbody></table>")
         # por UF (top 12 por candidato-km)
@@ -5578,19 +5653,35 @@ def _secao_impacto_candidatos_html(estudo):
                         "<table><thead><tr><th>UF</th><th class='r'>Candidatos</th>"
                         "<th class='r'>Candidato-km</th><th class='r'>Deslocamento médio/candidato</th>"
                         f"</tr></thead><tbody>{_rows}</tbody></table>")
-        # top municípios por peso
+        # top municípios por peso (com % acumulado — leitura de Pareto)
         _tm = estudo.get("top_municipios_peso") or []
         if _tm:
             _rows = "".join(
                 f"<tr><td>{_he.escape(str(m['origem']))}</td><td>{_he.escape(str(m['uf']))}</td>"
                 f"<td class='r'>{_mil(m['candidatos'])}</td><td class='r'>{m['distancia_km']:.0f} km</td>"
-                f"<td class='r'>{_mil(m['km_candidato'])}</td></tr>" for m in _tm)
+                f"<td class='r'>{_mil(m['km_candidato'])}</td>"
+                f"<td class='r'>{m.get('share_acumulado', 0):.0f}%</td></tr>" for m in _tm)
             _out.append("<h3 style='margin-top:14px'>Municípios de maior peso logístico (candidato-km)</h3>"
                         "<p style='color:#64748b;font-size:13px'>Onde concentrar esforço rende mais: muitos "
-                        "candidatos e/ou muita distância.</p>"
+                        "candidatos e/ou muita distância. A coluna <b>% acumulado</b> mostra quanto do "
+                        "candidato-km total já está coberto ao descer a lista.</p>"
                         "<table><thead><tr><th>Origem</th><th>UF</th><th class='r'>Candidatos</th>"
-                        "<th class='r'>Distância</th><th class='r'>Candidato-km</th></tr></thead>"
-                        f"<tbody>{_rows}</tbody></table>")
+                        "<th class='r'>Distância</th><th class='r'>Candidato-km</th>"
+                        f"<th class='r'>% acumulado</th></tr></thead><tbody>{_rows}</tbody></table>")
+        # curva de concentração (Lorenz por decil) — só quando há massa suficiente
+        _lz = estudo.get("lorenz_deciles") or []
+        if _lz:
+            _rows = "".join(
+                f"<tr><td class='r'>{d['decil'] * 10}%</td><td class='r'>{_mil(d['municipios'])}</td>"
+                f"<td class='r'>{d['share_km_candidato']:.0f}%</td>"
+                f"<td class='r'>{d['share_acumulado']:.0f}%</td></tr>" for d in _lz)
+            _out.append("<h3 style='margin-top:14px'>Curva de concentração (Lorenz) do candidato-km</h3>"
+                        "<p style='color:#64748b;font-size:13px'>Municípios ordenados do que mais pesa ao que "
+                        "menos pesa, em decis. Se os primeiros decis já somam quase tudo, o esforço é muito "
+                        "concentrado.</p>"
+                        "<table><thead><tr><th class='r'>Top X% dos municípios</th>"
+                        "<th class='r'>Municípios no decil</th><th class='r'>% do candidato-km (decil)</th>"
+                        f"<th class='r'>% acumulado</th></tr></thead><tbody>{_rows}</tbody></table>")
         return "".join(_out)
     except Exception:
         return ""
@@ -16325,27 +16416,44 @@ def _montar_planilha_lote_xlsx(df_final):
             try:
                 _est_x = _estudo_impacto_candidatos(df_final)
                 if _est_x.get("tem_candidatos"):
+                    _par_x = _est_x.get("pareto") or {}
                     _ind = [("Total de candidatos", _est_x["total_candidatos"]),
                             ("Municípios de origem", _est_x["n_municipios"]),
                             ("Deslocamento médio por candidato (km)", _est_x["deslocamento_medio_ponderado"]),
                             ("Deslocamento médio por município (km)", _est_x["deslocamento_medio_simples"]),
+                            ("p25 por candidato (km)", _est_x.get("p25_candidato_km")),
                             ("Mediana por candidato (km)", _est_x.get("mediana_candidato_km")),
+                            ("p75 por candidato (km)", _est_x.get("p75_candidato_km")),
                             ("p90 por candidato (km)", _est_x.get("p90_candidato_km")),
                             ("p95 por candidato (km)", _est_x.get("p95_candidato_km")),
+                            ("Iniquidade de acesso (P95 ÷ mediana)", _est_x.get("razao_p95_mediana")),
                             ("Maior deslocamento (km)", _est_x.get("max_deslocamento_km")),
                             (f"Candidatos > {_est_x['limiar_longo_km']:.0f} km", _est_x["candidatos_longo"]),
                             ("% candidatos em deslocamento longo", _est_x["pct_candidatos_longo"]),
                             ("Candidato-km total", _est_x["km_candidato_total"]),
                             ("Candidato-hora total", _est_x.get("candidato_hora_total")),
+                            ("Tempo médio por candidato (min)", _est_x.get("tempo_medio_ponderado_min")),
+                            ("Mediana de tempo por candidato (min)", _est_x.get("mediana_tempo_min")),
                             ("Gini do candidato-km (concentração)", _est_x["concentracao"]["gini_km_candidato"]),
                             ("% candidato-km nos 10% de municípios que mais pesam",
-                             _est_x["concentracao"]["share_top10pct_municipios"])]
+                             _est_x["concentracao"]["share_top10pct_municipios"]),
+                            ("Municípios que concentram 50% do candidato-km",
+                             _par_x.get("municipios_para_50pct")),
+                            ("Municípios que concentram 80% do candidato-km",
+                             _par_x.get("municipios_para_80pct")),
+                            ("% dos municípios que concentram 80% do candidato-km",
+                             _par_x.get("pct_municipios_para_80pct"))]
                     if _est_x.get("balsa"):
                         _ind.append(("Candidatos dependentes de balsa", _est_x["balsa"]["candidatos"]))
                         _ind.append(("% candidatos dependentes de balsa", _est_x["balsa"]["pct_candidatos"]))
                     if _est_x.get("risco"):
                         _ind.append(("Candidatos em rota de risco alto/crítico", _est_x["risco"]["candidatos"]))
                         _ind.append(("% candidatos em risco alto/crítico", _est_x["risco"]["pct_candidatos"]))
+                    if _est_x.get("balsa_e_risco"):
+                        _ind.append(("Candidatos com dupla exposição (balsa + risco)",
+                                     _est_x["balsa_e_risco"]["candidatos"]))
+                        _ind.append(("% candidatos com dupla exposição",
+                                     _est_x["balsa_e_risco"]["pct_candidatos"]))
                     pd.DataFrame(_ind, columns=["Indicador", "Valor"]).to_excel(
                         _w, index=False, sheet_name="Impacto Candidatos")
                     if _est_x.get("distribuicao_faixas"):
@@ -16361,8 +16469,16 @@ def _montar_planilha_lote_xlsx(df_final):
                     if _est_x.get("top_municipios_peso"):
                         pd.DataFrame(_est_x["top_municipios_peso"]).rename(columns={
                             "origem": "Origem", "uf": "UF", "candidatos": "Candidatos",
-                            "distancia_km": "Distância (km)", "km_candidato": "Candidato-km"}).to_excel(
+                            "distancia_km": "Distância (km)", "km_candidato": "Candidato-km",
+                            "share_acumulado": "% acumulado do candidato-km"}).to_excel(
                             _w, index=False, sheet_name="Impacto Top Municipios")
+                    if _est_x.get("lorenz_deciles"):
+                        pd.DataFrame([{
+                            "Top X% dos municípios": f"{d['decil'] * 10}%",
+                            "Municípios no decil": d["municipios"],
+                            "% do candidato-km (decil)": d["share_km_candidato"],
+                            "% acumulado": d["share_acumulado"]} for d in _est_x["lorenz_deciles"]]).to_excel(
+                            _w, index=False, sheet_name="Impacto Concentracao")
             except Exception:
                 logger.error("[IMPACTO-CANDIDATOS] Falha ao anexar abas de impacto ao Excel do Lote", exc_info=True)
             # [EXPORT-PADRAO - 272ª geração] CONSISTÊNCIA: aplica o MESMO padrão institucional (cabeçalho,
@@ -56327,6 +56443,26 @@ if _secao == _SECOES[4]:   # tab_analytics
                     _mk2[3].metric("Concentração (Gini)", f"{_est_scr['concentracao']['gini_km_candidato']:.2f}",
                                    help=f"{_est_scr['concentracao']['share_top10pct_municipios']:.0f}% do candidato-km "
                                         "está nos 10% de municípios que mais pesam.")
+                    # terceira linha: equidade de acesso + Pareto + tempo ponderado
+                    _mk3 = st.columns(4)
+                    _par_scr = _est_scr.get("pareto") or {}
+                    if _est_scr.get("razao_p95_mediana"):
+                        _mk3[0].metric("Iniquidade (P95÷mediana)", f"{_est_scr['razao_p95_mediana']:.1f}×",
+                                       help="Quantas vezes os 5% mais distantes percorrem em relação à mediana. "
+                                            "Quanto maior, mais desigual é o acesso.")
+                    if _est_scr.get("p25_candidato_km") is not None and _est_scr.get("p75_candidato_km") is not None:
+                        _mk3[1].metric("Faixa central (P25–P75)",
+                                       f"{_est_scr['p25_candidato_km']:.0f}–{_est_scr['p75_candidato_km']:.0f} km",
+                                       help="Metade central dos candidatos se desloca dentro desta faixa.")
+                    if _par_scr.get("municipios_para_80pct"):
+                        _mk3[2].metric("Municípios com 80% da carga", _fmt_i(_par_scr["municipios_para_80pct"]),
+                                       help=f"{_par_scr.get('pct_municipios_para_80pct', 0):.0f}% dos municípios "
+                                            "concentram 80% de todo o candidato-km (Pareto). Priorize-os.")
+                    if _est_scr.get("tempo_medio_ponderado_min") is not None:
+                        _tm_min = _est_scr["tempo_medio_ponderado_min"]
+                        _mk3[3].metric("Tempo médio/candidato",
+                                       (f"{_tm_min / 60.0:.1f} h" if _tm_min >= 60 else f"{_tm_min:.0f} min"),
+                                       help="Tempo de deslocamento médio ponderado por candidato.")
                     if _est_scr.get("balsa") and _est_scr["balsa"]["candidatos"]:
                         st.warning(f"⛴️ **{_fmt_i(_est_scr['balsa']['candidatos'])}** candidato(s) "
                                    f"({_est_scr['balsa']['pct_candidatos']:.0f}%) dependem de travessia por balsa.")
@@ -56334,11 +56470,22 @@ if _secao == _SECOES[4]:   # tab_analytics
                         st.error(f"🔴 **{_fmt_i(_est_scr['risco']['candidatos'])}** candidato(s) "
                                  f"({_est_scr['risco']['pct_candidatos']:.0f}%) estão em rotas de risco "
                                  "operacional alto/crítico.")
-                    _timp1, _timp2, _timp3 = st.tabs(["Por faixa de deslocamento", "Por estado (UF)",
-                                                      "Municípios de maior peso"])
+                    if _est_scr.get("balsa_e_risco") and _est_scr["balsa_e_risco"]["candidatos"]:
+                        st.error(f"⚠️ **Dupla exposição:** **{_fmt_i(_est_scr['balsa_e_risco']['candidatos'])}** "
+                                 f"candidato(s) ({_est_scr['balsa_e_risco']['pct_candidatos']:.0f}%) enfrentam "
+                                 "balsa **e** risco alto/crítico na mesma rota — público prioritário para "
+                                 "contingência.")
+                    _timp1, _timp2, _timp3, _timp4 = st.tabs(
+                        ["Por faixa de deslocamento", "Por estado (UF)", "Municípios de maior peso",
+                         "Concentração (Pareto)"])
                     with _timp1:
                         if _est_scr.get("distribuicao_faixas"):
-                            st.dataframe(pd.DataFrame(_est_scr["distribuicao_faixas"]).rename(columns={
+                            _df_fx = pd.DataFrame(_est_scr["distribuicao_faixas"])
+                            try:
+                                st.bar_chart(_df_fx.set_index("faixa")["candidatos"], height=220)
+                            except Exception:
+                                pass
+                            st.dataframe(_df_fx.rename(columns={
                                 "faixa": "Faixa", "municipios": "Municípios", "candidatos": "Candidatos",
                                 "pct_candidatos": "% dos candidatos", "km_candidato": "Candidato-km"}),
                                 use_container_width=True, hide_index=True)
@@ -56354,8 +56501,36 @@ if _secao == _SECOES[4]:   # tab_analytics
                         if _est_scr.get("top_municipios_peso"):
                             st.dataframe(pd.DataFrame(_est_scr["top_municipios_peso"]).rename(columns={
                                 "origem": "Origem", "uf": "UF", "candidatos": "Candidatos",
-                                "distancia_km": "Distância (km)", "km_candidato": "Candidato-km"}),
+                                "distancia_km": "Distância (km)", "km_candidato": "Candidato-km",
+                                "share_acumulado": "% acumulado"}),
                                 use_container_width=True, hide_index=True)
+                    with _timp4:
+                        st.caption("Onde está concentrado o esforço logístico (candidato-km). Quanto mais os "
+                                   "primeiros decis já somam, mais concentrado — e mais eficiente é priorizar "
+                                   "poucos municípios.")
+                        if _par_scr.get("municipios_para_50pct"):
+                            st.markdown(
+                                f"- **{_fmt_i(_par_scr['municipios_para_50pct'])}** município(s) concentram "
+                                f"**50%** do candidato-km.\n"
+                                f"- **{_fmt_i(_par_scr.get('municipios_para_80pct', 0))}** município(s) "
+                                f"(**{_par_scr.get('pct_municipios_para_80pct', 0):.0f}%** do total) concentram "
+                                f"**80%** do candidato-km.")
+                        if _est_scr.get("lorenz_deciles"):
+                            _df_lz = pd.DataFrame(_est_scr["lorenz_deciles"])
+                            _df_lz["Top X% dos municípios"] = (_df_lz["decil"] * 10).astype(str) + "%"
+                            try:
+                                st.bar_chart(_df_lz.set_index("Top X% dos municípios")["share_acumulado"],
+                                             height=220)
+                            except Exception:
+                                pass
+                            st.dataframe(_df_lz[["Top X% dos municípios", "municipios", "share_km_candidato",
+                                                 "share_acumulado"]].rename(columns={
+                                "municipios": "Municípios no decil",
+                                "share_km_candidato": "% do candidato-km (decil)",
+                                "share_acumulado": "% acumulado"}),
+                                use_container_width=True, hide_index=True)
+                        else:
+                            st.caption("Curva de concentração por decil disponível a partir de 10 municípios.")
 
             st.markdown("#### 🏆 Rankings e Extremos Logísticos da Seleção Atual (Top 10)")
             with st.container(border=True):
