@@ -103,6 +103,10 @@ streamlit run streamlit_app.py
 | **Testes unitários** | `py -X utf8 _testes_motor_rotas.py validar` | **239 OK / 0 FALHAS** |
 | **Decisão real** | `py -X utf8 _testes_motor_rotas.py decidir` | **38/38 pass** |
 | **Relatório** | `py -X utf8 _testes_motor_rotas.py relatorio` | 203 linhas |
+| **Suíte pytest** | `python3 -m pytest -q` | **435 passed** |
+| **Smoke E2E da UI** | `python3 -m pytest test_smoke_painel.py` | Painel Estratégico + fragmentos renderizam **sem exceção** |
+
+O **smoke test end-to-end** (`test_smoke_painel.py`) sobe o app real na engine do Streamlit (`AppTest`) — autentica, injeta um estudo sintético, navega até o Painel Estratégico e confere que o painel inteiro (incluindo o `@st.fragment` e o fragmento aninhado do Data Explorer) renderiza sem exceção. É a única camada que pega erros no **caminho de render** (uso indevido de `st.*`, coluna quebrada, um fragmento que deixou de executar) que os testes de função pura não alcançam. Roda em **subprocesso isolado** para ficar imune ao estado global do Streamlit poluído por outros arquivos da suíte.
 
 ---
 
