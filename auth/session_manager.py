@@ -27,7 +27,7 @@ import time
 
 import streamlit as st
 
-from auth import auth_service, email_service, validators
+from auth import auth_service, browser_session, email_service, validators
 from auth.supabase_client import credenciais_configuradas, obter_cliente
 
 logger = logging.getLogger(__name__)
@@ -89,8 +89,12 @@ def _iniciar_sessao(user_id: str, email: str, access_token: str, refresh_token: 
 
 def encerrar_sessao():
     auth_service.fazer_logout()
+    # [PERSISTÊNCIA NO NAVEGADOR] apaga também a sessão guardada na sessionStorage — sair é sair
+    # em qualquer aba/rerun; não deixamos token órfão no navegador. Fail-open (no-op se indisponível).
+    browser_session.limpar()
     for _k in _SESSION_KEYS:
         st.session_state.pop(_k, None)
+    st.session_state.pop("_ultimo_token_persistido", None)
     # [COMPARTILHAR - 448ª] zera o cache do badge de recebidos ao sair (não vazar contagem entre contas).
     st.session_state.pop("_badge_recebidos", None)
     st.session_state.pop("_badge_recebidos_ts", None)
@@ -881,11 +885,38 @@ def abrir_perfil():
     st.session_state["_mostrar_perfil"] = True
 
 
+def _tentar_reidratar_sessao() -> bool:
+    """[PERSISTÊNCIA NO NAVEGADOR] Reidrata a sessão a partir da sessionStorage (F5/reconexão com a
+    aba aberta). Devolve True se conseguiu — o app deve rerodar já autenticado. Fail-open e À PROVA
+    DE LOOP: o componente de leitura devolve None na 1ª renderização (só monta e dispara um rerun) e
+    o valor na seguinte; se os tokens forem DEFINITIVAMENTE rejeitados, limpa o navegador e desiste
+    (mostra login) — nunca reidrata em círculos."""
+    if esta_autenticado() or st.session_state.get("_reidratacao_desistiu"):
+        return False
+    _rest = browser_session.tentar_restaurar()
+    if not _rest:
+        return False
+    _iniciar_sessao(_rest["user_id"], _rest["email"], _rest["access_token"], _rest["refresh_token"])
+    # valida/renova na hora: o access_token guardado pode já ter expirado (renova via refresh_token).
+    st.session_state["auth_last_check_ts"] = 0.0
+    if _sessao_expirada_no_servidor():
+        encerrar_sessao()                                  # refresh definitivamente rejeitado -> lixo
+        st.session_state["_reidratacao_desistiu"] = True   # não tenta de novo neste carregamento
+        return False
+    st.session_state["auth_last_check_ts"] = time.time()
+    return True
+
+
 def exigir_autenticacao():
     """PORTÃO da aplicação — chamar uma única vez, logo no início do script principal.
     Bloqueia (st.stop()) enquanto não houver sessão válida; nada abaixo desta chamada
     executa para quem não estiver autenticado."""
     if not esta_autenticado():
+        # [PERSISTÊNCIA NO NAVEGADOR] antes de exigir novo login, tenta reidratar do navegador —
+        # assim um F5 / reconexão com a aba aberta NÃO desloga. Fail-open: se não houver sessão
+        # guardada (ou o recurso estiver off), cai direto na tela de login como antes.
+        if _tentar_reidratar_sessao():
+            st.rerun()
         _renderizar_tela_autenticacao()
         return  # inalcançável (st.stop() acima), mantido por clareza de leitura
 
@@ -902,6 +933,16 @@ def exigir_autenticacao():
             _renderizar_tela_autenticacao()
             return
         st.session_state["auth_last_check_ts"] = time.time()
+
+    # [PERSISTÊNCIA NO NAVEGADOR] mantém a sessionStorage em dia com o token ATUAL — grava no login e
+    # após cada renovação, mas SÓ quando o access_token muda (sem churn a cada rerun). Assim um F5 na
+    # aba encontra sempre o par de tokens mais recente para reidratar. Fail-open (no-op se off).
+    _at = st.session_state.get("auth_access_token")
+    if _at and st.session_state.get("_ultimo_token_persistido") != _at:
+        browser_session.salvar(st.session_state.get("auth_user_id", ""),
+                               st.session_state.get("auth_email", ""),
+                               _at, st.session_state.get("auth_refresh_token", ""))
+        st.session_state["_ultimo_token_persistido"] = _at
 
     # [§9 da missão - PERFIL] mesma mecânica do portão: enquanto a flag estiver ligada, a
     # tela de perfil substitui o conteúdo normal (st.stop() ao final) — nunca é sobreposta

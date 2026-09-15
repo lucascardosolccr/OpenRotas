@@ -40,6 +40,10 @@ urllib3>=2.5.0
 # AUTENTICAÇÃO — Supabase (Postgres + Auth gerenciados, ver auth/README.md)
 # ------------------------------------------------------------------------------------------
 supabase==2.31.0           # import direto (auth/supabase_client.py) — versão fixada e testada localmente
+streamlit-js-eval>=1.0.0   # import direto (auth/browser_session.py) — persistência da sessão na
+                           # sessionStorage do navegador (mantém o login enquanto a aba estiver aberta,
+                           # some ao fechar). Componente leve: depende só de 'streamlit'. Fail-open — se
+                           # faltar, o app volta ao comportamento anterior (login a cada F5).
 
 # ------------------------------------------------------------------------------------------
 # GEOCODIFICAÇÃO / GEODÉSIA

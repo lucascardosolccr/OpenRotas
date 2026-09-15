@@ -124,3 +124,58 @@ def test_dados_sem_flag_transiente_faz_fail_open(monkeypatch):
     monkeypatch.setattr(session_manager.auth_service, "renovar_sessao",
                         lambda _rt: AuthResult(False, "erro qualquer", {}))
     assert session_manager._sessao_expirada_no_servidor() is False
+
+
+# ==============================================================================
+# [PERSISTÊNCIA NO NAVEGADOR] Reidratação da sessão a partir da sessionStorage (F5/reconexão com a
+# aba aberta). browser_session é stubado (o componente real depende de navegador).
+# ==============================================================================
+@pytest.fixture(autouse=True)
+def _stub_browser_session(monkeypatch):
+    # por padrão: nada guardado no navegador; salvar/limpar são no-op (não tocam o componente).
+    monkeypatch.setattr(session_manager.browser_session, "salvar", lambda *a, **k: None)
+    monkeypatch.setattr(session_manager.browser_session, "limpar", lambda *a, **k: None)
+    monkeypatch.setattr(session_manager.browser_session, "tentar_restaurar", lambda: None)
+    yield
+
+
+def _sessao_guardada():
+    return {"user_id": "u1", "email": "a@b.com", "access_token": "AT", "refresh_token": "RT"}
+
+
+def test_reidrata_quando_ha_sessao_valida_no_navegador(monkeypatch):
+    monkeypatch.setattr(session_manager.browser_session, "tentar_restaurar", _sessao_guardada)
+    monkeypatch.setattr(session_manager, "_sessao_expirada_no_servidor", lambda: False)
+    assert session_manager._tentar_reidratar_sessao() is True
+    assert session_manager.esta_autenticado() is True
+    assert session_manager.usuario_atual() == {"user_id": "u1", "email": "a@b.com"}
+
+
+def test_reidratacao_sem_nada_guardado_retorna_false():
+    # tentar_restaurar (stub padrão) devolve None -> sem reidratação, cai no login
+    assert session_manager._tentar_reidratar_sessao() is False
+    assert session_manager.esta_autenticado() is False
+
+
+def test_reidratacao_com_refresh_rejeitado_limpa_e_desiste(monkeypatch):
+    monkeypatch.setattr(session_manager.browser_session, "tentar_restaurar", _sessao_guardada)
+    monkeypatch.setattr(session_manager, "_sessao_expirada_no_servidor", lambda: True)  # rejeição real
+    monkeypatch.setattr(session_manager.auth_service, "fazer_logout", MagicMock())
+    assert session_manager._tentar_reidratar_sessao() is False
+    assert session_manager.esta_autenticado() is False
+    assert st.session_state.get("_reidratacao_desistiu") is True
+
+
+def test_reidratacao_nao_repete_apos_desistir(monkeypatch):
+    st.session_state["_reidratacao_desistiu"] = True
+    monkeypatch.setattr(session_manager.browser_session, "tentar_restaurar", _sessao_guardada)
+    # mesmo havendo sessão guardada, não tenta de novo neste carregamento
+    assert session_manager._tentar_reidratar_sessao() is False
+
+
+def test_reidratacao_nao_roda_se_ja_autenticado(monkeypatch):
+    session_manager._iniciar_sessao("u1", "a@b.com", "AT", "RT")
+    _restaurar = MagicMock(return_value=_sessao_guardada())
+    monkeypatch.setattr(session_manager.browser_session, "tentar_restaurar", _restaurar)
+    assert session_manager._tentar_reidratar_sessao() is False
+    _restaurar.assert_not_called()  # nem chega a ler o navegador
