@@ -22344,6 +22344,51 @@ def _filtrar_por_risco_operacional(df, modo="todos"):
         return df
 
 
+@st.fragment
+def _fragmento_data_explorer(df_cf):
+    """[PERF-FRAGMENT - 451ª geração] Data Explorer da seleção isolado num fragmento do Streamlit: o rádio de
+    filtro de risco só re-executa ESTE bloco, sem rerodar o painel inteiro (KPIs, gráficos, estudo de impacto,
+    narrativa, rankings). Recebe o df já filtrado pelos filtros globais; o fragmento apenas aplica o recorte de
+    risco local e desenha a tabela. Defensivo — reproduz o comportamento anterior 1:1."""
+    # resumo de contingência da seleção atual (risco alto/crítico)
+    if 'Risco Operacional' in df_cf.columns:
+        try:
+            _niv_expl = df_cf['Risco Operacional'].astype(str).str.extract(r'^\s*(\w+)')[0].str.lower()
+            _n_crit = int((_niv_expl == 'crítico').sum())
+            _n_alto = int((_niv_expl == 'alto').sum())
+            if _n_crit or _n_alto:
+                st.caption(f"⚠️ Contingência: **{_n_crit}** rota(s) de risco 🔴 crítico e **{_n_alto}** "
+                           "de risco 🟠 alto nesta seleção — veja a coluna *Risco Operacional* e a "
+                           "*Antecedência Recomendada* (planeje saída antecipada / transporte reserva).")
+        except Exception:
+            pass
+    # filtro rápido: isolar as rotas que precisam de contingência
+    _df_expl = df_cf
+    if 'Risco Operacional' in df_cf.columns:
+        _op_risco = {"Todas as rotas": "todos",
+                     "🟠🔴 Só risco alto + crítico": "alto_critico",
+                     "🔴 Só risco crítico": "critico"}
+        _sel_risco = st.radio("Filtrar por risco operacional", list(_op_risco.keys()),
+                              horizontal=True, key="filtro_risco_explorer")
+        _df_expl = _filtrar_por_risco_operacional(df_cf, _op_risco.get(_sel_risco, "todos"))
+        if _op_risco.get(_sel_risco) != "todos":
+            st.caption(f"Mostrando **{len(_df_expl):,}** de {len(df_cf):,} rota(s) no filtro de risco."
+                       .replace(",", "."))
+    tabela_h = min(800, max(300, len(_df_expl) * 35 + 43))
+    # traz o Risco Operacional e a Antecedência para a tabela em tela (aditivo: só entram quando existem)
+    _cols_expl = ['Origem', 'Destino', 'Distancia', 'Linha Reta', 'Tempo']
+    for _c_extra in ('Risco Operacional', 'Antecedência Recomendada'):
+        if _c_extra in _df_expl.columns:
+            _cols_expl.append(_c_extra)
+    _cols_expl += ['Status da Rota', 'Status Linha Reta', 'Link da Rota']
+    if _df_expl.empty:
+        st.info("Nenhuma rota no filtro de risco selecionado.")
+    else:
+        st.dataframe(_df_expl[_cols_expl], use_container_width=True, height=tabela_h,
+                     column_config={"Link da Rota": st.column_config.LinkColumn("🗺️ Abrir no Maps")},
+                     hide_index=True)
+
+
 def _motor_curto(fonte_rota):
     """Nome curto e legível do motor de rota a partir da 'Fonte da Rota'. PURO."""
     _f = str(fonte_rota or "").upper()
@@ -56556,44 +56601,10 @@ if _secao == _SECOES[4]:   # tab_analytics
                 
             st.markdown("#### 🔎 Matriz de Dados Drill-Down da Seleção (Data Explorer)")
             with st.container(border=True):
-                # [MARGEM-SAIDA - 448ª] resumo de contingência da seleção atual (risco alto/crítico).
-                if 'Risco Operacional' in df_cf.columns:
-                    try:
-                        _niv_expl = df_cf['Risco Operacional'].astype(str).str.extract(r'^\s*(\w+)')[0].str.lower()
-                        _n_crit = int((_niv_expl == 'crítico').sum())
-                        _n_alto = int((_niv_expl == 'alto').sum())
-                        if _n_crit or _n_alto:
-                            st.caption(f"⚠️ Contingência: **{_n_crit}** rota(s) de risco 🔴 crítico e **{_n_alto}** "
-                                       "de risco 🟠 alto nesta seleção — veja a coluna *Risco Operacional* e a "
-                                       "*Antecedência Recomendada* (planeje saída antecipada / transporte reserva).")
-                    except Exception:
-                        pass
-                # [MARGEM-SAIDA - 448ª] filtro rápido: isolar as rotas que precisam de contingência.
-                _df_expl = df_cf
-                if 'Risco Operacional' in df_cf.columns:
-                    _op_risco = {"Todas as rotas": "todos",
-                                 "🟠🔴 Só risco alto + crítico": "alto_critico",
-                                 "🔴 Só risco crítico": "critico"}
-                    _sel_risco = st.radio("Filtrar por risco operacional", list(_op_risco.keys()),
-                                          horizontal=True, key="filtro_risco_explorer")
-                    _df_expl = _filtrar_por_risco_operacional(df_cf, _op_risco.get(_sel_risco, "todos"))
-                    if _op_risco.get(_sel_risco) != "todos":
-                        st.caption(f"Mostrando **{len(_df_expl):,}** de {len(df_cf):,} rota(s) no filtro de risco."
-                                   .replace(",", "."))
-                tabela_h = min(800, max(300, len(_df_expl) * 35 + 43))
-                # [MARGEM-SAIDA - 448ª] traz o Risco Operacional e a Antecedência para a tabela em tela
-                # (antes só apareciam no Excel/HTML) — é onde o planejador olha primeiro. Aditivo: só entram
-                # quando existem, entre Tempo e o status, sem reordenar o resto.
-                _cols_expl = ['Origem', 'Destino', 'Distancia', 'Linha Reta', 'Tempo']
-                for _c_extra in ('Risco Operacional', 'Antecedência Recomendada'):
-                    if _c_extra in _df_expl.columns:
-                        _cols_expl.append(_c_extra)
-                _cols_expl += ['Status da Rota', 'Status Linha Reta', 'Link da Rota']
-                if _df_expl.empty:
-                    st.info("Nenhuma rota no filtro de risco selecionado.")
-                else:
-                    st.dataframe(_df_expl[_cols_expl], use_container_width=True, height=tabela_h, column_config={"Link da Rota": st.column_config.LinkColumn("🗺️ Abrir no Maps")}, hide_index=True)
-                
+                # [PERF-FRAGMENT - 451ª] isolado num st.fragment: o filtro de risco re-executa só este bloco,
+                # sem rerodar todo o painel (KPIs, gráficos, estudo de impacto, narrativa, rankings).
+                _fragmento_data_explorer(df_cf)
+
             st.markdown("#### ✅ Controle de Qualidade de Dados (Auditoria Geodésica e de Falhas)")
             with st.container(border=True):
                 df_suspeitas = df_cf[(df_cf['Score Final Global'] < 70) | (df_cf['Status da Rota'] == "Erro") | (df_cf['Confianca Origem'] == "BAIXA") | ((df_cf['Linha Reta'] <= 0.01) & (df_cf['Origem'] != df_cf['Destino']))]
