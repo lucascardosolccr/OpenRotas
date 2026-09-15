@@ -21328,18 +21328,38 @@ def _aba_mapa_calor_alocacao(writer, df):
 # ==============================================================================
 
 def _num_seguro(v, padrao=None):
-    """Converte para float com segurança. PURO."""
+    """Converte para float com segurança total (fail-open → `padrao`). Também trata a string 'nan' e
+    qualquer objeto cujo float() falhe. PURO. [447ª: definição ÚNICA — antes havia uma cópia divergente
+    mais adiante no arquivo que sombreava esta e tratava 'nan' de forma diferente]."""
     try:
-        if v is None or (isinstance(v, float) and v != v):
+        if v is None:
             return padrao
-        return float(v)
-    except (TypeError, ValueError):
+        f = float(v)
+        return f if f == f else padrao
+    except Exception:
         return padrao
 
 
 def _bool_balsa(v):
-    """Interpreta o campo balsa em bool. PURO."""
-    return str(v or "").strip().lower() in ("sim", "yes", "true", "1", "com balsa")
+    """Interpreta 'Balsas'/'Balsa' (texto da rota OSRM, lista, bool) como booleano. PURO. [447ª:
+    definição ÚNICA — antes havia uma cópia divergente mais adiante que sombreava esta e NÃO reconhecia
+    a lista de travessias do OSRM ('[...]'/'ferry'/'travessia')]."""
+    if isinstance(v, bool):
+        return v
+    if v is None:
+        return False
+    try:
+        if isinstance(v, float) and pd.isna(v):
+            return False
+    except Exception:
+        pass
+    _s = str(v).strip().lower()
+    if not _s or _s in ("nan", "none", "false", "não", "nao", "0", "0.0", "falso", "[]"):
+        return False
+    if _s in ("1", "true", "sim", "verdadeiro", "verdad"):
+        return True
+    # texto tipo '[{"nome": ...}]' do OSRM → presença de travessia
+    return ("[" in _s or "balsa" in _s or "ferry" in _s or "travessia" in _s)
 
 
 def _motor_curto(fonte_rota):
@@ -58690,35 +58710,9 @@ def _val_linha(row, *candidatos, padrao="—"):
     return padrao
 
 
-def _num_seguro(v, padrao=None):
-    """Converte para float com segurança total (fail-open → `padrao`)."""
-    try:
-        if v is None:
-            return padrao
-        f = float(v)
-        return f if f == f else padrao
-    except Exception:
-        return padrao
-
-
-def _bool_balsa(v):
-    """Interpreta 'Balsas'/'Balsa' (texto da rota OSRM, lista, bool) como booleano."""
-    if isinstance(v, bool):
-        return v
-    if v is None:
-        return False
-    try:
-        if isinstance(v, float) and pd.isna(v):
-            return False
-    except Exception:
-        pass
-    _s = str(v).strip().lower()
-    if not _s or _s in ("nan", "none", "false", "não", "nao", "0", "0.0", "falso", "[]"):
-        return False
-    if _s in ("1", "true", "sim", "verdadeiro", "verdad"):
-        return True
-    # texto tipo '[{"nome": ...}]' do OSRM → presença de travessia
-    return ("[" in _s or "balsa" in _s or "ferry" in _s or "travessia" in _s)
+# [447ª] _num_seguro e _bool_balsa foram UNIFICADOS numa definição única no início do arquivo
+# (a cópia que existia aqui sombreava a de cima e divergia no tratamento de 'nan' e da lista de
+# travessias do OSRM — fonte de comportamento inconsistente conforme o ponto de chamada).
 
 
 def _enriquecer_linha_rio(lat_o, lon_o, lat_d=None, lon_d=None, g=None):
