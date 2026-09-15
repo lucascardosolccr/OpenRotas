@@ -142,7 +142,9 @@ class BaseProvider(ABC):
             self.last_fetch_time = datetime.now()
             self.fetch_count += 1
 
-            return transformed_data
+            # Normaliza para a MESMA forma que voltaria do cache (JSON), garantindo que o retorno de
+            # fetch_with_cache() seja idêntico com ou sem cache (fresco == cache). Ver _normalizar_json.
+            return self._normalizar_json(transformed_data)
         except ProviderException:
             # Re-raise provider exceptions as-is
             raise
@@ -176,6 +178,22 @@ class BaseProvider(ABC):
         except Exception as e:
             self.last_error = str(e)
             return None
+
+    @staticmethod
+    def _normalizar_json(data):
+        """Normaliza o dado transformado para a MESMA forma canônica em que ele volta do cache (JSON).
+
+        BUG que isto corrige: o cache é JSON e o JSON não preserva tuplas — um `transform()` que devolve
+        `coordenadas` como tupla `(lon, lat)` retorna tupla na 1ª chamada (dado fresco) mas lista
+        `[lon, lat]` na 2ª (lido do cache). O resultado de `fetch_with_cache()` passava a depender de
+        HAVER cache ou não — quebrando igualdade e qualquer consumidor sensível a tipo. Passando o dado
+        fresco por um round-trip JSON, `fetch_with_cache()` devolve SEMPRE a mesma forma (fresco == cache),
+        seja qual for a convenção do provider (tupla ou lista). Defensivo: em falha, devolve o dado como está.
+        Não afeta `transform()`/`to_geojson()`, que continuam com o contrato original."""
+        try:
+            return json.loads(json.dumps(data, ensure_ascii=False))
+        except Exception:
+            return data
 
     def _save_cache(self, query_hash: str, data: List[Dict[str, Any]]) -> None:
         """Save transformed data to cache file.
