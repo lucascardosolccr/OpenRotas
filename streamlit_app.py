@@ -21462,6 +21462,83 @@ def _risco_operacional_resumo(risco):
     return f"{_emoji} Risco operacional {risco['nivel'].upper()} ({risco['score']}) — {_fatores}"
 
 
+# ==============================================================================
+# [MARGEM-SAIDA - 447ª geração] Margem de Saída Recomendada — traduz tempo de viagem + risco operacional
+# numa FOLGA de segurança (minutos) para o candidato chegar ANTES do fechamento dos portões, e, se dado o
+# horário da prova, no HORÁRIO DE SAÍDA sugerido. Domínio: portões de exames fecham no horário — atraso =
+# eliminação. NÚCLEO 100% PURO. Reaproveita o índice de risco (balsa/pavimento/etc.) já calculado.
+# ==============================================================================
+def _margem_saida_recomendada(tempo_viagem_min, risco=None):
+    """[MARGEM-SAIDA - 447ª geração] Folga de segurança (min) ALÉM do tempo de viagem, e o tempo total de
+    antecedência recomendado. Base fixa (check-in/estacionamento) + proporcional à viagem + acréscimos por
+    fator de risco (balsa é o maior — janelas de partida). Devolve {margem_min, lead_total_min,
+    componentes:[{fator,min}]}. PURO; defensivo a entradas ausentes."""
+    _tv = _num_seguro(tempo_viagem_min, 0.0) or 0.0
+    if _tv < 0:
+        _tv = 0.0
+    componentes = [{"fator": "Base (check-in, estacionamento, imprevistos)", "min": 30}]
+    margem = 30.0
+    _prop = min(60.0, _tv * 0.10)   # 10% da viagem, teto 60 min
+    if _prop >= 1.0:
+        margem += _prop
+        componentes.append({"fator": "Proporcional à viagem (10%)", "min": round(_prop)})
+    # acréscimos por fator de risco (mapeados dos componentes do índice de risco)
+    _ADIC = {"travessia por balsa": (45, "Janela de partida da balsa + fila"),
+             "trecho não pavimentado": (20, "Piso de terra reduz a velocidade real"),
+             "trajeto sinuoso/indireto": (15, "Trajeto indireto acumula atrasos"),
+             "distância longa": (15, "Paradas e fadiga em viagem longa"),
+             "geocodificação imprecisa": (10, "Ponto real pode estar mais longe")}
+    if isinstance(risco, dict):
+        for _c in (risco.get("componentes") or []):
+            _fk = str(_c.get("fator", "")).strip().lower()
+            if _fk in _ADIC:
+                _add, _motivo = _ADIC[_fk]
+                margem += _add
+                componentes.append({"fator": _c.get("fator"), "min": _add, "motivo": _motivo})
+    margem = round(margem)
+    return {"margem_min": margem, "lead_total_min": round(_tv) + margem, "componentes": componentes}
+
+
+def _horario_saida_sugerido(hora_prova, lead_total_min):
+    """[MARGEM-SAIDA - 447ª geração] Dado o horário da prova ('HH:MM' ou 'HHhMM'/'HH:MM:SS') e o lead total
+    (min), devolve o horário de saída sugerido 'HH:MM' (D-1 sinalizado quando cruza a meia-noite), ou "" se
+    a hora for inválida. PURO. Não faz suposição de data — só aritmética de relógio."""
+    import re as _re
+    _s = str(hora_prova or "").strip()
+    _m = _re.match(r"^(\d{1,2})[:h](\d{2})", _s)
+    if not _m:
+        return ""
+    try:
+        _hh, _mm = int(_m.group(1)), int(_m.group(2))
+        _lead = int(_num_seguro(lead_total_min, 0) or 0)
+    except (TypeError, ValueError):
+        return ""
+    if not (0 <= _hh <= 23 and 0 <= _mm <= 59):
+        return ""
+    _total = _hh * 60 + _mm - _lead
+    _dia_anterior = _total < 0
+    _total %= (24 * 60)
+    _out = f"{_total // 60:02d}:{_total % 60:02d}"
+    return f"{_out} (véspera)" if _dia_anterior else _out
+
+
+def _margem_saida_resumo(margem, hora_prova=None):
+    """[MARGEM-SAIDA - 447ª geração] PURO. Frase curta da recomendação de saída, ou "" se vazio. Se
+    `hora_prova` for informada, inclui o horário de saída sugerido."""
+    if not isinstance(margem, dict) or not margem.get("lead_total_min"):
+        return ""
+    def _hm(_min):
+        _min = int(_min)
+        return (f"{_min // 60}h{_min % 60:02d}" if _min >= 60 else f"{_min} min")
+    _txt = (f"🕒 Antecedência recomendada: **{_hm(margem['lead_total_min'])}** "
+            f"(viagem + {_hm(margem['margem_min'])} de folga)")
+    if hora_prova:
+        _hs = _horario_saida_sugerido(hora_prova, margem["lead_total_min"])
+        if _hs:
+            _txt += f" · para prova às {hora_prova}, sair até **{_hs}**"
+    return _txt
+
+
 def _motor_curto(fonte_rota):
     """Nome curto e legível do motor de rota a partir da 'Fonte da Rota'. PURO."""
     _f = str(fonte_rota or "").upper()
@@ -46887,6 +46964,23 @@ if _secao == _SECOES[0]:   # tab_individual
                                     st.caption("Índice 0–100 que sintetiza os fatores que exigem contingência (saída antecipada, "
                                                "transporte reserva, checar operação da balsa): 🟢 baixo <20 · 🟡 moderado 20–44 · "
                                                "🟠 alto 45–69 · 🔴 crítico ≥70. Não altera a rota escolhida — é apoio à decisão.")
+                                    # [MARGEM-SAIDA - 447ª] traduz o risco + tempo de viagem em antecedência recomendada.
+                                    try:
+                                        _tempo_raw = getattr(res_ind, "tempo", None)
+                                        _tv_min = (parse_tempo_minutos(_tempo_raw) if isinstance(_tempo_raw, str)
+                                                   else _num_seguro(_tempo_raw))
+                                        if _tv_min is not None and _tv_min < 999999:
+                                            _hora_prova = st.text_input(
+                                                "Horário da prova (opcional, ex.: 13:00) — calcula o horário de saída",
+                                                key=f"hora_prova_{hash(str(_fve.get('origem',''))+str(_fve.get('destino','')))}",
+                                                placeholder="HH:MM")
+                                            _mrg = _margem_saida_recomendada(_tv_min, _risco_fv)
+                                            st.markdown(f"**{_margem_saida_resumo(_mrg, _hora_prova or None)}**")
+                                            st.caption("Folga = tempo de check-in/estacionamento + 10% da viagem + acréscimos por "
+                                                       "risco (a balsa é o maior, por causa da janela de partida). Estimativa de "
+                                                       "planejamento, não garantia — confira o edital e o horário da balsa.")
+                                    except Exception:
+                                        logger.debug("[MARGEM-SAIDA] painel isolado falhou (aditivo).", exc_info=True)
                     except Exception:
                         logger.error("[FONTE-VERDADE-UI] Falha ao renderizar (isolada).", exc_info=True)
             else:
