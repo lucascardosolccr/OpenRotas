@@ -285,3 +285,53 @@ def test_atualizar_perfil_sem_campos_validos_nao_chama_update(monkeypatch):
     _res = auth_service.atualizar_perfil("uid-1", {"email": "outro@b.com", "id": "x"})
     assert not _res.ok
     _cliente.table.return_value.update.assert_not_called()
+
+
+# ==============================================================================
+# [PERSISTÊNCIA DE SESSÃO] _falha_transiente: classifica a falha de renovação para NÃO derrubar
+# a sessão por soluço de rede — só uma rejeição definitiva do refresh_token encerra.
+# ==============================================================================
+from auth import auth_service as _svc  # noqa: E402
+
+
+class _ErroComStatus(Exception):
+    def __init__(self, msg, status=None, code=None):
+        super().__init__(msg)
+        if status is not None:
+            self.status = status
+        if code is not None:
+            self.code = code
+
+
+def test_falha_transiente_status_4xx_e_definitiva():
+    assert _svc._falha_transiente(_ErroComStatus("bad", status=401)) is False
+    assert _svc._falha_transiente(_ErroComStatus("bad", status=400)) is False
+    assert _svc._falha_transiente(_ErroComStatus("bad", status=403)) is False
+
+
+def test_falha_transiente_texto_de_rejeicao_e_definitiva():
+    assert _svc._falha_transiente(Exception("invalid_grant: refresh token revoked")) is False
+    assert _svc._falha_transiente(Exception("refresh_token_not_found")) is False
+    assert _svc._falha_transiente(Exception("Refresh token already used")) is False
+
+
+def test_falha_transiente_rede_e_5xx_sao_transientes():
+    assert _svc._falha_transiente(Exception("Connection timed out")) is True
+    assert _svc._falha_transiente(_ErroComStatus("upstream", status=503)) is True
+    assert _svc._falha_transiente(Exception("Temporary failure in name resolution")) is True
+
+
+def test_falha_transiente_desconhecida_faz_fail_open():
+    assert _svc._falha_transiente(Exception("algo inesperado sem pista")) is True
+
+
+def test_renovar_sessao_sem_cliente_e_transiente(monkeypatch):
+    monkeypatch.setattr(_svc, "obter_cliente", lambda: None)
+    _r = _svc.renovar_sessao("ref")
+    assert _r.ok is False and _r.dados.get("transiente") is True
+
+
+def test_renovar_sessao_sem_refresh_token_e_definitiva(monkeypatch):
+    monkeypatch.setattr(_svc, "obter_cliente", lambda: object())
+    _r = _svc.renovar_sessao("")
+    assert _r.ok is False and _r.dados.get("transiente") is False

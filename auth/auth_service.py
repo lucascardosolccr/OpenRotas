@@ -121,27 +121,62 @@ def fazer_login(email: str, senha: str) -> AuthResult:
         return AuthResult(False, _mensagem_login_generica())
 
 
+def _falha_transiente(exc) -> bool:
+    """[PERSISTÊNCIA DE SESSÃO] Classifica a falha de renovação: True se ela parece TEMPORÁRIA
+    (rede/servidor) — nesse caso a sessão NÃO deve ser derrubada; False se é uma rejeição
+    DEFINITIVA do refresh_token (revogado/expirado/já usado), aí sim a sessão acabou. Na dúvida
+    devolve True (fail-open) — enquanto o navegador estiver aberto, um soluço de rede nunca deve
+    desconectar o usuário. PURO/defensivo — nunca levanta."""
+    try:
+        _status = getattr(exc, "status", None)
+        if not isinstance(_status, int):
+            _status = getattr(exc, "status_code", None)
+        _txt = (f"{type(exc).__name__} {getattr(exc, 'message', '')} {exc} "
+                f"{getattr(exc, 'code', '') or ''}").lower()
+        # rejeições DEFINITIVAS do Supabase Auth (o refresh token não vale mais)
+        _def = (isinstance(_status, int) and _status in (400, 401, 403, 422)) or any(_s in _txt for _s in (
+            "invalid refresh", "refresh_token_not_found", "refresh token not found", "already used",
+            "invalid_grant", "revoked", "session_not_found", "session not found", "unauthorized",
+            "jwt expired", "bad_jwt"))
+        # Definitivo => a sessão realmente acabou. Todo o resto (5xx, timeout, connection reset,
+        # DNS, SSL handshake, ou qualquer causa desconhecida) é tratado como transiente: fail-open.
+        return not _def
+    except Exception:
+        return True
+
+
 def renovar_sessao(refresh_token: str) -> AuthResult:
     """[PERSISTÊNCIA DE SESSÃO] Troca um refresh_token ainda válido por um novo par de
     tokens, sem exigir novo login. O access_token do Supabase é um JWT de vida curta
     (~1h por padrão) — isso é normal e esperado, não uma sessão "expirada" de verdade; é
     o refresh_token (vida bem mais longa) quem garante que o usuário continue logado
     enquanto o navegador permanecer aberto. Usado por `session_manager` na revalidação
-    periódica, para renovar silenciosamente em vez de derrubar a sessão."""
+    periódica, para renovar silenciosamente em vez de derrubar a sessão.
+
+    Em falha, `dados["transiente"]` diz se a causa foi TEMPORÁRIA (rede/servidor → manter a
+    sessão) ou DEFINITIVA (refresh token rejeitado → encerrar). Assim uma queda de rede não
+    desconecta ninguém com o navegador aberto."""
     _cliente = obter_cliente()
-    if _cliente is None or not refresh_token:
-        return AuthResult(False, "Não foi possível renovar a sessão no momento.")
+    if _cliente is None:
+        # Supabase indisponível/não configurado agora: temporário, não é o token que falhou.
+        return AuthResult(False, "Não foi possível renovar a sessão no momento.", {"transiente": True})
+    if not refresh_token:
+        return AuthResult(False, "Sessão não pôde ser renovada — faça login novamente.",
+                          {"transiente": False})
     try:
         _resp = _cliente.auth.refresh_session(refresh_token)
         if _resp.session is None or _resp.user is None:
-            return AuthResult(False, "Sessão não pôde ser renovada — faça login novamente.")
+            # o servidor respondeu e RECUSOU renovar — rejeição definitiva
+            return AuthResult(False, "Sessão não pôde ser renovada — faça login novamente.",
+                              {"transiente": False})
         return AuthResult(True, "Sessão renovada.", {
             "user_id": _resp.user.id, "email": _resp.user.email,
             "access_token": _resp.session.access_token, "refresh_token": _resp.session.refresh_token,
         })
-    except Exception:
+    except Exception as _e:
         logger.debug("[AUTH] Falha ao renovar sessão via refresh_token.", exc_info=True)
-        return AuthResult(False, "Sessão não pôde ser renovada — faça login novamente.")
+        return AuthResult(False, "Sessão não pôde ser renovada — faça login novamente.",
+                          {"transiente": _falha_transiente(_e)})
 
 
 def fazer_logout() -> AuthResult:

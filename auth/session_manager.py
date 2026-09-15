@@ -7,12 +7,21 @@ ela renderiza a tela de login/cadastro/recuperação e chama `st.stop()` enquant
 uma sessão válida — nenhum código abaixo dela roda para um visitante não autenticado. Isso
 é proteção REAL (nada executa), não ocultação visual de menu.
 
-LIMITAÇÃO CONHECIDA (documentada, não escondida): a sessão vive em `st.session_state`, que
-é por ABA/conexão do navegador — um F5 na mesma aba mantém a sessão (Streamlit reidrata o
-mesmo `session_state` na maioria dos casos), mas fechar e reabrir o navegador exige novo
-login. Uma persistência tipo "lembrar-me" entre sessões de navegador exigiria um componente
-de cookies dedicado (ex.: streamlit-cookies-manager) — fora do escopo deste bloco inicial,
-candidato a rodada futura."""
+PERSISTÊNCIA ENQUANTO O NAVEGADOR ESTÁ ABERTO: a sessão vive em `st.session_state` (por
+aba/conexão) e é renovada silenciosamente pelo `refresh_token` — o access_token é um JWT de
+vida curta (~1h) e expirar é normal. A revalidação periódica (`_sessao_expirada_no_servidor`)
+NUNCA derruba o usuário por um soluço de rede: só encerra a sessão quando a renovação é
+REJEITADA DE FORMA DEFINITIVA (refresh token revogado/expirado/já usado). Uma falha TRANSIENTE
+(rede caiu, servidor 5xx, timeout, SSL) mantém a sessão e agenda nova tentativa em ~45 s. Assim
+o login permanece ativo enquanto o navegador continuar aberto, encerrando apenas no logout
+intencional ou numa revogação real do lado do servidor.
+
+LIMITAÇÃO CONHECIDA (documentada, não escondida): fechar e reabrir o navegador — ou um F5 que o
+Streamlit trate como conexão nova — perde o `session_state` e exige novo login. Persistência
+entre sessões de navegador (tipo "lembrar-me") exigiria guardar os tokens no navegador via um
+componente de cookies/armazenamento dedicado (ex.: streamlit-cookies-manager) — nova dependência
+com implicações de segurança (token acessível a XSS), candidata a rodada própria com o schema/UX
+combinados."""
 import logging
 import time
 
@@ -109,6 +118,7 @@ def _sessao_expirada_no_servidor() -> bool:
     try:
         _resp = _cliente.auth.get_user(st.session_state.get("auth_access_token"))
         if _resp is not None and _resp.user is not None:
+            st.session_state["_auth_recheck_curto"] = False  # tudo certo -> volta ao ritmo normal
             return False
     except Exception:
         pass  # access_token expirado/inválido -> tenta renovar com o refresh_token abaixo
@@ -117,8 +127,17 @@ def _sessao_expirada_no_servidor() -> bool:
     if _renov.ok:
         st.session_state["auth_access_token"] = _renov.dados["access_token"]
         st.session_state["auth_refresh_token"] = _renov.dados["refresh_token"]
+        st.session_state["_auth_recheck_curto"] = False
         return False
-    return True  # refresh_token também inválido -> sessão realmente expirada
+    # A renovação falhou. Só encerramos a sessão DE VERDADE quando a rejeição é DEFINITIVA
+    # (refresh token revogado/expirado/já usado). Uma falha TRANSIENTE (rede caiu, servidor 5xx,
+    # timeout, SSL) NÃO derruba o usuário: o navegador segue aberto e a sessão continua — e marcamos
+    # para revalidar EM BREVE (não daqui a 5 min), recuperando assim que a rede voltar. Fail-open:
+    # na dúvida, mantém logado. (default: transiente)
+    if _renov.dados.get("transiente", True):
+        st.session_state["_auth_recheck_curto"] = True
+        return False
+    return True
 
 
 # ==============================================================================
@@ -871,9 +890,12 @@ def exigir_autenticacao():
         return  # inalcançável (st.stop() acima), mantido por clareza de leitura
 
     # [§24 - SESSÃO EXPIRADA] revalida no servidor periodicamente (não a cada rerun, para
-    # não gerar uma chamada de rede extra a cada interação — só a cada 5 minutos).
+    # não gerar uma chamada de rede extra a cada interação — só a cada 5 minutos). Se a última
+    # revalidação foi mantida por uma falha TRANSIENTE (rede/servidor), reduz a janela para ~45 s,
+    # recuperando a sessão assim que a conectividade voltar — sem nunca ter derrubado o usuário.
+    _intervalo = 45 if st.session_state.get("_auth_recheck_curto") else 300
     _ultima_checagem = st.session_state.get("auth_last_check_ts", 0)
-    if time.time() - _ultima_checagem > 300:
+    if time.time() - _ultima_checagem > _intervalo:
         if _sessao_expirada_no_servidor():
             encerrar_sessao()
             st.warning("Sua sessão expirou — faça login novamente.")
