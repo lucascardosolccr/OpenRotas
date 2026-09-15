@@ -16413,6 +16413,7 @@ def _montar_planilha_lote_xlsx(df_final):
                 _s['% do total'] = (_s['Rotas'] / max(1, int(_s['Rotas'].sum())) * 100).round(1)
                 _s.to_excel(_w, index=False, sheet_name="Status das Rotas")
             # [IMPACTO-CANDIDATOS - 449ª] Aba(s) do Estudo de Impacto nos Candidatos (só se houver a coluna).
+            _abas_impacto = []   # (nome, df) → recebem o MESMO estilo institucional das demais abas
             try:
                 _est_x = _estudo_impacto_candidatos(df_final)
                 if _est_x.get("tem_candidatos"):
@@ -16454,31 +16455,31 @@ def _montar_planilha_lote_xlsx(df_final):
                                      _est_x["balsa_e_risco"]["candidatos"]))
                         _ind.append(("% candidatos com dupla exposição",
                                      _est_x["balsa_e_risco"]["pct_candidatos"]))
-                    pd.DataFrame(_ind, columns=["Indicador", "Valor"]).to_excel(
-                        _w, index=False, sheet_name="Impacto Candidatos")
+                    _abas_impacto.append(("Impacto Candidatos",
+                                          pd.DataFrame(_ind, columns=["Indicador", "Valor"])))
                     if _est_x.get("distribuicao_faixas"):
-                        pd.DataFrame(_est_x["distribuicao_faixas"]).rename(columns={
-                            "faixa": "Faixa", "municipios": "Municípios", "candidatos": "Candidatos",
-                            "pct_candidatos": "% dos candidatos", "km_candidato": "Candidato-km"}).to_excel(
-                            _w, index=False, sheet_name="Impacto por Faixa")
+                        _abas_impacto.append(("Impacto por Faixa", pd.DataFrame(
+                            _est_x["distribuicao_faixas"]).rename(columns={
+                                "faixa": "Faixa", "municipios": "Municípios", "candidatos": "Candidatos",
+                                "pct_candidatos": "% dos candidatos", "km_candidato": "Candidato-km"})))
                     if _est_x.get("por_uf"):
-                        pd.DataFrame(_est_x["por_uf"]).rename(columns={
+                        _abas_impacto.append(("Impacto por UF", pd.DataFrame(_est_x["por_uf"]).rename(columns={
                             "uf": "UF", "candidatos": "Candidatos", "km_candidato": "Candidato-km",
-                            "deslocamento_medio_ponderado": "Deslocamento médio/candidato (km)"}).to_excel(
-                            _w, index=False, sheet_name="Impacto por UF")
+                            "deslocamento_medio_ponderado": "Deslocamento médio/candidato (km)"})))
                     if _est_x.get("top_municipios_peso"):
-                        pd.DataFrame(_est_x["top_municipios_peso"]).rename(columns={
-                            "origem": "Origem", "uf": "UF", "candidatos": "Candidatos",
-                            "distancia_km": "Distância (km)", "km_candidato": "Candidato-km",
-                            "share_acumulado": "% acumulado do candidato-km"}).to_excel(
-                            _w, index=False, sheet_name="Impacto Top Municipios")
+                        _abas_impacto.append(("Impacto Top Municipios", pd.DataFrame(
+                            _est_x["top_municipios_peso"]).rename(columns={
+                                "origem": "Origem", "uf": "UF", "candidatos": "Candidatos",
+                                "distancia_km": "Distância (km)", "km_candidato": "Candidato-km",
+                                "share_acumulado": "% acumulado do candidato-km"})))
                     if _est_x.get("lorenz_deciles"):
-                        pd.DataFrame([{
+                        _abas_impacto.append(("Impacto Concentracao", pd.DataFrame([{
                             "Top X% dos municípios": f"{d['decil'] * 10}%",
                             "Municípios no decil": d["municipios"],
                             "% do candidato-km (decil)": d["share_km_candidato"],
-                            "% acumulado": d["share_acumulado"]} for d in _est_x["lorenz_deciles"]]).to_excel(
-                            _w, index=False, sheet_name="Impacto Concentracao")
+                            "% acumulado": d["share_acumulado"]} for d in _est_x["lorenz_deciles"]])))
+                    for _nm_imp, _df_imp in _abas_impacto:
+                        _df_imp.to_excel(_w, index=False, sheet_name=_nm_imp)
             except Exception:
                 logger.error("[IMPACTO-CANDIDATOS] Falha ao anexar abas de impacto ao Excel do Lote", exc_info=True)
             # [EXPORT-PADRAO - 272ª geração] CONSISTÊNCIA: aplica o MESMO padrão institucional (cabeçalho,
@@ -16489,9 +16490,9 @@ def _montar_planilha_lote_xlsx(df_final):
                 _wb_sec = getattr(_w, "book", None)
                 if _wb_sec is not None and hasattr(_wb_sec, "add_format"):
                     _fmts_sec = _fmt_institucional(_wb_sec)
-                    for _nm_sec, _df_sec in (("Resumo Executivo", _re_df),
+                    for _nm_sec, _df_sec in [("Resumo Executivo", _re_df),
                                              ("Distribuição de Distâncias", _dd),
-                                             ("Síntese por UF", _g), ("Status das Rotas", _s)):
+                                             ("Síntese por UF", _g), ("Status das Rotas", _s)] + _abas_impacto:
                         if _df_sec is not None and _nm_sec in _w.sheets:
                             _estilizar_tabela_xlsx(_w.sheets[_nm_sec], _wb_sec, _df_sec, _fmts_sec,
                                                    formatos_col=_num_formatos_por_coluna(_df_sec))
