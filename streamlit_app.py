@@ -6208,6 +6208,135 @@ def _estabilidade_limiar_empate(linhas, limiares=(0.0, 0.5, 1.0, 2.0, 3.0, 5.0, 
     return _out
 
 
+# ==============================================================================
+# [AUDITORIA-REF-IMPOSSIVEL - 448ª geração] Prova de que a distância da REFERÊNCIA é fisicamente
+# impossível/errada. O argumento é irrefutável e geométrico: a MENOR distância possível entre dois
+# pontos na superfície da Terra é a geodésica (linha reta sobre o elipsoide WGS-84, o "voo de pássaro").
+# Nenhuma estrada pode ser mais curta que ela. Logo, se a referência afirma uma distância viária MENOR
+# que a geodésica entre a mesma origem e o mesmo destino, o número é impossível — não é questão de
+# opinião nem de qual estudo é "melhor". NÚCLEO 100% PURO/determinístico.
+# ==============================================================================
+def _auditar_distancia_referencia(dist_ref, reta_ref_km, dist_app_viaria=None,
+                                  origem="", destino_ref=""):
+    """[AUDITORIA-REF-IMPOSSIVEL - 448ª geração] Audita a distância da referência contra o PISO FÍSICO
+    (a geodésica origem→destino da própria referência). Devolve {veredito, rotulo, explicacao, deficit_km,
+    reta_ref_km, fator}. Vereditos: 'impossivel' (< geodésica), 'implausivel' (praticamente igual à
+    geodésica — desvio rodoviário irrealista), 'plausivel', 'nao_avaliavel'. PURO; nunca levanta."""
+    _dr = _num_seguro(dist_ref)
+    _reta = _num_seguro(reta_ref_km)
+    _app = _num_seguro(dist_app_viaria)
+    _par = (f"entre {origem} e {destino_ref}" if (origem and destino_ref)
+            else "entre a origem e o destino da referência")
+    if _dr is None or _reta is None or _reta <= 0.05:
+        return {"veredito": "nao_avaliavel", "rotulo": "—", "explicacao": "",
+                "deficit_km": None, "reta_ref_km": (round(_reta, 2) if _reta else None), "fator": None}
+    _fator = (_dr / _reta) if _reta > 0 else None
+    _corrobora_app = ""
+    if _app is not None and _app > 0:
+        _corrobora_app = (f" Para o mesmo corredor, o motor desta aplicação mediu uma rota viária real de "
+                          f"{_app:.0f} km — coerente com a geodésica, ao contrário da referência.")
+    # 1) distância nula/negativa para um par de municípios distintos
+    if _dr <= 0:
+        return {"veredito": "impossivel", "rotulo": "IMPOSSÍVEL — distância nula/negativa",
+                "deficit_km": round(_reta, 1), "reta_ref_km": round(_reta, 2), "fator": 0.0,
+                "explicacao": (f"A referência registra distância {('zero' if _dr == 0 else 'negativa')} "
+                               f"{_par}, mas os dois municípios são distintos e estão a pelo menos "
+                               f"{_reta:.0f} km em linha reta (geodésica WGS-84). Uma distância nula entre "
+                               f"pontos distintos é impossível — provável célula vazia, erro de digitação "
+                               f"ou destino trocado na planilha da referência.")}
+    # 2) MENOR que a geodésica → fisicamente impossível (tolerância de 2% para ruído de arredondamento)
+    if _dr < _reta * 0.98:
+        _def = _reta - _dr
+        _pct = (_def / _reta * 100.0) if _reta > 0 else 0.0
+        return {"veredito": "impossivel", "rotulo": "IMPOSSÍVEL — menor que a linha reta",
+                "deficit_km": round(_def, 1), "reta_ref_km": round(_reta, 2), "fator": round(_fator, 3),
+                "explicacao": (
+                    f"A referência afirma {_dr:.0f} km por estrada {_par}, mas a MENOR distância "
+                    f"geometricamente possível entre esses dois pontos — a linha reta geodésica sobre o "
+                    f"elipsoide WGS-84 (o 'voo de pássaro') — é {_reta:.0f} km. Como nenhuma estrada pode "
+                    f"ser mais curta que a linha reta, o valor da referência é FISICAMENTE IMPOSSÍVEL: "
+                    f"faltam {_def:.0f} km ({_pct:.0f}% abaixo do piso físico). "
+                    f"Causas prováveis: erro de digitação, unidade trocada (m×km), destino trocado ou "
+                    f"medição em outro par de coordenadas.{_corrobora_app}")}
+    # 3) praticamente igual à geodésica → implausível (desvio rodoviário real costuma ser 1,2–1,4×)
+    if _fator is not None and _fator < 1.05:
+        return {"veredito": "implausivel", "rotulo": "Implausível — reta demais para ser estrada",
+                "deficit_km": round(_reta * 1.2 - _dr, 1), "reta_ref_km": round(_reta, 2),
+                "fator": round(_fator, 3),
+                "explicacao": (
+                    f"A referência afirma {_dr:.0f} km {_par}, praticamente igual à linha reta geodésica "
+                    f"({_reta:.0f} km, fator {_fator:.2f}×). Estradas reais entre municípios raramente ficam "
+                    f"abaixo de ~1,2× a linha reta (relevo, contorno de rios, traçado). Um valor tão colado "
+                    f"à geodésica é altamente improvável — provável medição em linha reta em vez de por "
+                    f"estrada, ou destino incorreto.{_corrobora_app}")}
+    return {"veredito": "plausivel", "rotulo": "Plausível", "explicacao": "",
+            "deficit_km": None, "reta_ref_km": round(_reta, 2), "fator": round(_fator, 3)}
+
+
+def _secao_ref_impossivel_html(linhas, top=40):
+    """[AUDITORIA-REF-IMPOSSIVEL - 448ª geração] Seção HTML da COMPARAÇÃO: aponta e EXPLICA as distâncias
+    da referência que são fisicamente impossíveis (menores que a linha reta) ou implausíveis. Lê a
+    auditoria já calculada por linha. Devolve string HTML ou "" se não houver casos. PURO/defensivo."""
+    import html as _he
+    try:
+        _imp, _impl = [], []
+        for _l in (linhas or []):
+            _v = str(_l.get("Auditoria Distancia Referencia", "") or "")
+            if _v.startswith("IMPOSSÍVEL"):
+                _imp.append(_l)
+            elif _v.startswith("Implausível"):
+                _impl.append(_l)
+        if not _imp and not _impl:
+            return ""
+
+        def _num(x):
+            try:
+                return float(x)
+            except (TypeError, ValueError):
+                return None
+
+        def _defc(_l):
+            _dr = _num(_l.get("Distancia Referencia")); _rt = _num(_l.get("Linha Reta Referencia (km)"))
+            return (_rt - _dr) if (_dr is not None and _rt is not None) else 0.0
+        _imp.sort(key=_defc, reverse=True)
+
+        def _linha_html(_l):
+            _o = _he.escape(str(_l.get("Origem", "—")))
+            _dst = _he.escape(str(_l.get("Destino Referencia", "—")))
+            _dr = _num(_l.get("Distancia Referencia"))
+            _rt = _num(_l.get("Linha Reta Referencia (km)"))
+            _exp = _he.escape(str(_l.get("Explicacao Auditoria Referencia", "")))
+            _drs = f"{_dr:.0f} km" if _dr is not None else "—"
+            _rts = f"{_rt:.0f} km" if _rt is not None else "—"
+            return (f"<tr><td>{_o} → {_dst}</td><td class='r'>{_drs}</td><td class='r'>{_rts}</td>"
+                    f"<td>{_exp}</td></tr>")
+        _out = [
+            "<p class='lead'>A menor distância possível entre dois pontos é a <b>linha reta geodésica</b> "
+            "(voo de pássaro sobre o elipsoide WGS-84). <b>Nenhuma estrada pode ser mais curta que ela.</b> "
+            "Onde a distância da referência viola esse piso físico, ela está <b>comprovadamente errada</b> — "
+            "não é questão de qual estudo é melhor, é geometria.</p>",
+            f"<div class='kpis'><div class='kpi'><div class='kpi-v'>{len(_imp)}</div>"
+            "<div class='kpi-l'>Distâncias impossíveis (&lt; linha reta)</div></div>"
+            f"<div class='kpi'><div class='kpi-v'>{len(_impl)}</div>"
+            "<div class='kpi-l'>Distâncias implausíveis (reta demais)</div></div></div>",
+        ]
+        if _imp:
+            _rows = "".join(_linha_html(_l) for _l in _imp[:top])
+            _out.append("<h3 style='margin-top:14px'>🔴 Fisicamente impossíveis</h3>"
+                        "<table><thead><tr><th>Origem → Destino (referência)</th>"
+                        "<th class='r'>Distância da referência</th><th class='r'>Linha reta (piso físico)</th>"
+                        f"<th>Por que é impossível</th></tr></thead><tbody>{_rows}</tbody></table>")
+        if _impl:
+            _rows2 = "".join(_linha_html(_l) for _l in _impl[:top])
+            _out.append("<h3 style='margin-top:14px'>🟠 Implausíveis (reta demais para ser estrada)</h3>"
+                        "<table><thead><tr><th>Origem → Destino (referência)</th>"
+                        "<th class='r'>Distância da referência</th><th class='r'>Linha reta</th>"
+                        f"<th>Por que é improvável</th></tr></thead><tbody>{_rows2}</tbody></table>")
+        return "".join(_out)
+    except Exception:
+        return ""
+
+
 def _gerar_relatorio_comparacao_html(stats, aud, titulo="Relatório da Comparação", data_str="", linhas=None,
                                      diagnostico_div=None):
     """[RELATORIO-HTML-PRO - 184ª geração] Relatório HTML AUTOCONTIDO (offline) da COMPARAÇÃO entre estudos,
@@ -6289,6 +6418,14 @@ def _gerar_relatorio_comparacao_html(stats, aud, titulo="Relatório da Comparaç
         _fig_w.update_layout(height=320, margin=dict(l=40, r=20, t=16, b=40), template="plotly_white",
                              yaxis_title="% dos municípios")
         _sec.append(("vitorias", "Distribuição de Vitórias", _emb(_fig_w)))
+        # [AUDITORIA-REF-IMPOSSIVEL - 448ª] aponta e explica as distâncias da referência fisicamente
+        # impossíveis (menores que a linha reta). Só aparece quando há casos.
+        try:
+            _h_imp_ref = _secao_ref_impossivel_html(linhas)
+            if _h_imp_ref:
+                _sec.append(("ref_impossivel", "⚠️ Distâncias da referência fisicamente impossíveis", _h_imp_ref))
+        except Exception:
+            pass
         # [GEO-INTEL-COMPARADOR - fix integração] Contexto geográfico (rios, bacia, pontes, travessias,
         # rodovias, ferrovias, anomalias) que o motor de rotas já identificou para o lado da APLICAÇÃO
         # em cada município comparado — mesma leitura que a aba "Inteligência Geográfica" do Centro de
@@ -20817,6 +20954,21 @@ def _conciliar_comparativo(df_app, df_ref, mapa, limiar_fuzzy=90, limiar_empate_
                         "cálculo da referência considerou esse obstáculo.")
         except Exception:
             _sinuosidade_ref, _alerta_geo_ref = None, ""
+        # [AUDITORIA-REF-IMPOSSIVEL - 448ª] prova de impossibilidade física: a geodésica origem→destino
+        # da PRÓPRIA referência é o piso absoluto; se a distância dela for menor, é impossível. Usa as
+        # coordenadas oficiais IBGE já resolvidas (offline). Defensivo: sem coords → não avaliável.
+        _reta_ref_km = None
+        _audit_ref = {"veredito": "nao_avaliavel", "rotulo": "—", "explicacao": "", "reta_ref_km": None}
+        try:
+            if (_olat is not None and _olon is not None and _rlat is not None and _rlon is not None):
+                _reta_ref_km = calcular_distancia_linha_reta(_olat, _olon, _rlat, _rlon)
+            _audit_ref = _auditar_distancia_referencia(
+                _dist_ref, _reta_ref_km, dist_app_viaria=a.get("Distancia"),
+                origem=str(a.get("Municipio Origem") or a.get("Origem") or ""),
+                destino_ref=str(_v(r, _md, "") or ""))
+        except Exception:
+            _reta_ref_km, _audit_ref = None, {"veredito": "nao_avaliavel", "rotulo": "—", "explicacao": "",
+                                              "reta_ref_km": None}
         linhas.append({
             "Origem": a.get("Municipio Origem") or a.get("Origem"),
             "UF": a.get("UF Origem", ""),
@@ -20834,6 +20986,10 @@ def _conciliar_comparativo(df_app, df_ref, mapa, limiar_fuzzy=90, limiar_empate_
             "Sinuosidade Aplicacao": a.get("Fator Sinuosidade"),
             "Sinuosidade Referencia": _sinuosidade_ref,
             "Alerta Geografico Referencia": _alerta_geo_ref,
+            # [AUDITORIA-REF-IMPOSSIVEL - 448ª] veredito físico da distância da referência.
+            "Linha Reta Referencia (km)": (round(_reta_ref_km, 2) if _reta_ref_km else None),
+            "Auditoria Distancia Referencia": _audit_ref.get("rotulo", "—"),
+            "Explicacao Auditoria Referencia": _audit_ref.get("explicacao", ""),
             "Modo Aplicacao": a.get("Modo/Acesso", ""),
             # [GEO-GARANTIDO - 162ª geração] o tipo de distância vai JUNTO, sempre visível.
             "Tipo de Distancia": _tipo_de_distancia(a),
@@ -29317,6 +29473,40 @@ def _montar_xlsx_comparacao(linhas, stats, aud, relatorio, diagnostico_div=None)
                  "alertas": []})
 
             _escrever_aba_com_guia(_w, _df, "Comparacao")
+            # [AUDITORIA-REF-IMPOSSIVEL - 448ª] aba dedicada só com as distâncias da referência
+            # fisicamente impossíveis/implausíveis + a explicação de POR QUÊ. Só é criada se houver casos.
+            try:
+                _imp_rows = [{
+                    "Origem": _l.get("Origem"), "UF": _l.get("UF"),
+                    "Destino Referencia": _l.get("Destino Referencia"),
+                    "Distancia Referencia (km)": _l.get("Distancia Referencia"),
+                    "Linha Reta / Piso Fisico (km)": _l.get("Linha Reta Referencia (km)"),
+                    "Distancia Aplicacao (km)": _l.get("Distancia Aplicacao"),
+                    "Veredito": _l.get("Auditoria Distancia Referencia"),
+                    "Por que esta errada": _l.get("Explicacao Auditoria Referencia"),
+                } for _l in linhas
+                    if str(_l.get("Auditoria Distancia Referencia", "") or "").startswith(("IMPOSSÍVEL", "Implausível"))]
+                if _imp_rows:
+                    _imp_rows.sort(key=lambda x: (
+                        0 if str(x["Veredito"]).startswith("IMPOSSÍVEL") else 1,
+                        -((_num_seguro(x["Linha Reta / Piso Fisico (km)"], 0) or 0)
+                          - (_num_seguro(x["Distancia Referencia (km)"], 0) or 0))))
+                    _escrever_aba_com_guia(
+                        _w, pd.DataFrame(_imp_rows), "Distancias Impossiveis Ref",
+                        {"titulo": "⚠️ DISTÂNCIAS DA REFERÊNCIA FISICAMENTE IMPOSSÍVEIS",
+                         "o_que_e": "Casos em que a distância informada pela referência é MENOR que a linha "
+                                    "reta geodésica (WGS-84) entre origem e destino — o piso físico absoluto. "
+                                    "Nenhuma estrada pode ser mais curta que a linha reta, então esses valores "
+                                    "estão comprovadamente errados (não é opinião, é geometria).",
+                         "perguntas": ["Quais distâncias da referência são impossíveis?", "Por quê?"],
+                         "como_ler": ["Compare 'Distancia Referencia' com 'Linha Reta / Piso Fisico': quando a "
+                                      "primeira é menor, é impossível.",
+                                      "A coluna 'Por que esta errada' traz a explicação quantificada de cada caso."],
+                         "decisao": "Corrija esses valores na planilha de referência antes de usá-la como "
+                                    "benchmark — eles distorcem qualquer comparação.",
+                         "alertas": []})
+            except Exception:
+                logger.error("[AUDITORIA-REF-IMPOSSIVEL] Falha ao anexar aba de distâncias impossíveis", exc_info=True)
             _escrever_aba_com_guia(_w, pd.DataFrame([stats.get("brasil", {})]), "Resumo Brasil")
             _escrever_aba_com_guia(_w, pd.DataFrame(stats.get("por_uf", {})).T.reset_index().rename(
                 columns={"index": "UF"}), "Por UF")
