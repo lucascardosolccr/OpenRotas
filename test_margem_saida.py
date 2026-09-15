@@ -8,7 +8,28 @@ import logging
 
 logging.disable(logging.WARNING)
 
+import pandas as pd  # noqa: E402
+
 import streamlit_app as m  # noqa: E402
+
+
+def test_secao_html_relatorio():
+    df = pd.DataFrame([
+        {"Municipio Origem": "Barcelos", "Municipio Destino": "Manaus", "Tempo": "6 h 30 min",
+         "Risco Operacional": "crítico (78)", "Margem de Saída (min)": 150, "Antecedência Recomendada": "9h00"},
+        {"Municipio Origem": "Careiro", "Municipio Destino": "Manaus", "Tempo": "1 h",
+         "Risco Operacional": "baixo (10)", "Margem de Saída (min)": 36, "Antecedência Recomendada": "1h36"},
+    ])
+    h = m._secao_risco_margem_html(df)
+    assert h and "Antecedência" in h
+    assert "Barcelos" in h and "Manaus" in h
+    # ordenado por maior margem → a rota crítica (150 min) aparece antes da baixa (36 min)
+    assert h.index("Barcelos") < h.index("Careiro")
+
+
+def test_secao_html_sem_colunas_retorna_vazio():
+    assert m._secao_risco_margem_html(pd.DataFrame([{"Distancia": 10}])) == ""
+    assert m._secao_risco_margem_html(pd.DataFrame()) == ""
 
 
 def test_base_minima_sem_risco():
@@ -27,10 +48,37 @@ def test_balsa_aumenta_muito_a_folga():
 
 
 def test_proporcional_tem_teto():
-    # viagem de 20h (1200 min): 10% = 120, mas o teto é 60.
+    # viagem de 20h (1200 min): 10% = 120, mas o teto é 60. + descanso (teto 45).
     r = m._margem_saida_recomendada(1200, risco=None)
-    # base 30 + teto 60 = 90
-    assert r["margem_min"] == 90
+    # base 30 + teto proporcional 60 + teto descanso 45 = 135
+    assert r["margem_min"] == 135
+
+
+def test_descanso_em_viagem_longa():
+    curta = m._margem_saida_recomendada(120, risco=None)   # 2h: sem descanso
+    longa = m._margem_saida_recomendada(300, risco=None)    # 5h: com descanso
+    assert not any("descanso" in c["fator"].lower() for c in curta["componentes"])
+    assert any("descanso" in c["fator"].lower() for c in longa["componentes"])
+    assert longa["margem_min"] > curta["margem_min"]
+
+
+def test_min_para_hhmm():
+    assert m._min_para_hhmm(45) == "45 min"
+    assert m._min_para_hhmm(96) == "1h36"
+    assert m._min_para_hhmm(120) == "2h00"
+    assert m._min_para_hhmm(None) == ""
+    assert m._min_para_hhmm(-5) == ""
+
+
+def test_margem_de_fatos_para_planilha():
+    r = m._margem_de_fatos(dist_viaria_km=250.0, dist_reta_km=120.0, tempo_min=180,
+                           balsa=True, n_travessias=1, hora_prova="13:00")
+    assert r["margem_min"] > 0
+    assert r["lead_total_min"] >= 180
+    assert r["margem_rotulo"]           # formato HhMM/min
+    assert r["risco_nivel"] in ("baixo", "moderado", "alto", "crítico")
+    assert isinstance(r["risco_score"], int)
+    assert r["horario_saida"]           # calculado a partir da hora da prova
 
 
 def test_robusto_a_tempo_invalido():

@@ -5271,6 +5271,60 @@ def _secao_inteligencia_geografica_html(df):
         return ""
 
 
+def _secao_risco_margem_html(df, top=20):
+    """[MARGEM-SAIDA - 447ª geração] Seção HTML AUTOCONTIDA do relatório: Antecedência de Saída & Risco
+    Operacional por rota. Só aparece se as colunas existirem (defensivo). Resume a distribuição de risco e
+    lista as rotas de MAIOR antecedência recomendada (as que mais precisam de planejamento). PURO — lê só
+    colunas já presentes no df; devolve string HTML ou "" se não houver dados."""
+    import html as _he
+    try:
+        _cols = df.columns if hasattr(df, "columns") else []
+        if "Antecedência Recomendada" not in _cols or "Risco Operacional" not in _cols:
+            return ""
+        _sub = df[df["Antecedência Recomendada"].astype(str).str.strip().replace("", pd.NA).notna()].copy()
+        if _sub.empty:
+            return ""
+        # distribuição por nível (o valor é "nivel (score)")
+        _niv = _sub["Risco Operacional"].astype(str).str.extract(r"^\s*(\w+)")[0].str.lower()
+        _cont = _niv.value_counts()
+        _ordem = [("crítico", "#dc2626"), ("alto", "#f59e0b"), ("moderado", "#eab308"), ("baixo", "#16a34a")]
+        _chips = "".join(
+            f'<span style="display:inline-block;margin:2px 6px 2px 0;padding:3px 9px;border-radius:12px;'
+            f'background:{_cor}22;color:{_cor};font-weight:600;font-size:12px">{_he.escape(_nome.capitalize())}: '
+            f'{int(_cont.get(_nome, 0))}</span>'
+            for _nome, _cor in _ordem if int(_cont.get(_nome, 0)) > 0)
+        # ordena por minutos de margem (coluna numérica) desc, se houver
+        if "Margem de Saída (min)" in _cols:
+            _sub["_ord"] = pd.to_numeric(_sub["Margem de Saída (min)"], errors="coerce").fillna(0)
+            _sub = _sub.sort_values("_ord", ascending=False)
+        _org_c = next((c for c in ("Municipio Origem", "Origem", "Endereco Oficial Origem") if c in _cols), None)
+        _dst_c = next((c for c in ("Municipio Destino", "Destino", "Endereco Oficial Destino") if c in _cols), None)
+        _linhas = []
+        for _r in _sub.head(top).to_dict("records"):
+            _o = _he.escape(str(_r.get(_org_c, "—")) if _org_c else "—")
+            _d = _he.escape(str(_r.get(_dst_c, "—")) if _dst_c else "—")
+            _t = _he.escape(str(_r.get("Tempo", "—")))
+            _ri = _he.escape(str(_r.get("Risco Operacional", "—")))
+            _an = _he.escape(str(_r.get("Antecedência Recomendada", "—")))
+            _linhas.append(f"<tr><td>{_o}</td><td>{_d}</td><td class='r'>{_t}</td>"
+                           f"<td>{_ri}</td><td class='r'><b>{_an}</b></td></tr>")
+        _tab = ("<table><thead><tr><th>Origem</th><th>Destino</th><th class='r'>Tempo</th>"
+                "<th>Risco operacional</th><th class='r'>Antecedência recomendada</th></tr></thead>"
+                f"<tbody>{''.join(_linhas)}</tbody></table>")
+        return (
+            "<p>Para cada rota, a <b>antecedência recomendada</b> soma o tempo de viagem a uma folga de "
+            "segurança (check-in/estacionamento, proporcional à viagem, descanso em trajetos longos e "
+            "acréscimos por risco — a <b>balsa</b> é o maior, pela janela de partida). É apoio ao "
+            "planejamento para o candidato chegar <b>antes do fechamento dos portões</b> — não substitui o "
+            "edital nem o horário real da balsa.</p>"
+            f'<div style="margin:10px 0">{_chips}</div>'
+            "<p style='color:#64748b;font-size:13px'>Rotas ordenadas pela maior folga de saída (as que mais "
+            "exigem planejamento):</p>"
+            + _tab)
+    except Exception:
+        return ""
+
+
 def _gerar_relatorio_html(df, titulo="Relatório do Estudo", data_str=""):
     """[RELATORIO-HTML-PRO - 184ª geração] Relatório HTML AUTOCONTIDO (offline) de nível profissional/BI:
     capa, NAVEGAÇÃO LATERAL (sumário), cartões executivos e seções analíticas ricas — Resumo, Distribuição de
@@ -5611,6 +5665,14 @@ def _gerar_relatorio_html(df, titulo="Relatório do Estudo", data_str=""):
             _nb = int(_bm.sum())
             _cb = int(_insc[_bm].fillna(0).sum()) if _insc is not None else _nb
             _sec.append(("balsa", "Balsas", f'<div class="kpis"><div class="kpi"><div class="kpi-v">{_nb:,}</div><div class="kpi-l">Rotas que cruzam balsa</div></div><div class="kpi"><div class="kpi-v">{_cb:,}</div><div class="kpi-l">Candidatos afetados</div></div></div><p class="lead">Rotas dependentes de travessia são sensíveis a horários e condições do rio — priorize alternativas onde possível.</p>'))
+
+        # [MARGEM-SAIDA - 447ª] Antecedência de Saída & Risco Operacional (só aparece se as colunas existem).
+        try:
+            _h_margem = _secao_risco_margem_html(df)
+            if _h_margem:
+                _sec.append(("margem_saida", "Antecedência de Saída & Risco Operacional", _h_margem))
+        except Exception:
+            pass
 
         if _dist is not None and _reta is not None:
             _mm = pd.DataFrame({"r": _reta, "v": _dist}).dropna()
@@ -21482,6 +21544,13 @@ def _margem_saida_recomendada(tempo_viagem_min, risco=None):
     if _prop >= 1.0:
         margem += _prop
         componentes.append({"fator": "Proporcional à viagem (10%)", "min": round(_prop)})
+    # [447ª] descanso/fadiga: viagem longa (≥4h) precisa de parada — +15 min a cada 2h além da 1ª, teto 45.
+    if _tv >= 240:
+        _descanso = min(45.0, max(0, int(_tv // 120) - 1) * 15.0)
+        if _descanso >= 1.0:
+            margem += _descanso
+            componentes.append({"fator": "Descanso/fadiga (viagem longa)", "min": round(_descanso),
+                                "motivo": "Parada obrigatória a cada ~2h de direção"})
     # acréscimos por fator de risco (mapeados dos componentes do índice de risco)
     _ADIC = {"travessia por balsa": (45, "Janela de partida da balsa + fila"),
              "trecho não pavimentado": (20, "Piso de terra reduz a velocidade real"),
@@ -21537,6 +21606,36 @@ def _margem_saida_resumo(margem, hora_prova=None):
         if _hs:
             _txt += f" · para prova às {hora_prova}, sair até **{_hs}**"
     return _txt
+
+
+def _min_para_hhmm(total_min):
+    """[MARGEM-SAIDA - 447ª geração] PURO. Formata minutos em 'XhYY' (≥60) ou 'YY min'. '' se inválido."""
+    _m = _num_seguro(total_min)
+    if _m is None or _m < 0:
+        return ""
+    _m = int(round(_m))
+    return f"{_m // 60}h{_m % 60:02d}" if _m >= 60 else f"{_m} min"
+
+
+def _margem_de_fatos(dist_viaria_km, dist_reta_km=None, tempo_min=None, balsa=False, n_travessias=0,
+                     frac_pavimentado=None, snap_max_m=None, hora_prova=None):
+    """[MARGEM-SAIDA - 447ª geração] Conveniência para EXPORTÁVEIS (planilha/HTML): a partir dos fatos de
+    uma rota, calcula o índice de risco e a margem de saída, e devolve tudo pronto para célula:
+    {margem_min, lead_total_min, margem_rotulo ('1h36'), lead_rotulo, risco_nivel, risco_score,
+    horario_saida (se hora_prova dada)}. PURO; defensivo (campos ausentes → omitidos)."""
+    _risco = _indice_risco_operacional(dist_viaria_km, dist_reta_km, balsa=balsa,
+                                       frac_pavimentado=frac_pavimentado, snap_max_m=snap_max_m,
+                                       n_travessias=n_travessias)
+    _mrg = _margem_saida_recomendada(tempo_min, _risco)
+    _out = {
+        "margem_min": _mrg["margem_min"], "lead_total_min": _mrg["lead_total_min"],
+        "margem_rotulo": _min_para_hhmm(_mrg["margem_min"]),
+        "lead_rotulo": _min_para_hhmm(_mrg["lead_total_min"]),
+        "risco_nivel": _risco["nivel"], "risco_score": _risco["score"],
+    }
+    if hora_prova:
+        _out["horario_saida"] = _horario_saida_sugerido(hora_prova, _mrg["lead_total_min"])
+    return _out
 
 
 def _motor_curto(fonte_rota):
@@ -40318,6 +40417,23 @@ def _montar_dataframe_final(df, resultados_unicos, runner_up_map=None, hub_qual_
                     # = MAIOR valor, sempre 0-100%). Servem Lote E Alocação (mesmo _montar_dataframe_final).
                     linha_dict['Razão (V/R)'] = _razao_vr
                     linha_dict['Classificação Razão (V/R)'] = _classificar_razao_vr(_razao_vr)
+                    # [MARGEM-SAIDA - 447ª] Risco operacional + margem de saída recomendada por rota, na
+                    # planilha (Lote e Alocação). Custo ZERO — usa o risco já calculado na rota (res.risco_
+                    # operacional) ou o recalcula dos fatos; nunca faz rede. Colunas aditivas.
+                    try:
+                        _tv_pl = parse_tempo_minutos(res[1]) if isinstance(res[1], str) else _num_seguro(res[1])
+                        if _tv_pl is not None and _tv_pl < 999999:
+                            _risco_pl = getattr(res, "risco_operacional", None)
+                            if not isinstance(_risco_pl, dict):
+                                _risco_pl = _indice_risco_operacional(
+                                    _dist_v, _reta, balsa=_bool_balsa(res[3] if len(res) > 3 else None),
+                                    n_travessias=int(getattr(res, "quantidade_travessias", 0) or 0))
+                            _mrg_pl = _margem_saida_recomendada(_tv_pl, _risco_pl)
+                            linha_dict['Risco Operacional'] = f"{_risco_pl.get('nivel', '')} ({_risco_pl.get('score', '')})"
+                            linha_dict['Margem de Saída (min)'] = _mrg_pl['margem_min']
+                            linha_dict['Antecedência Recomendada'] = _min_para_hhmm(_mrg_pl['lead_total_min'])
+                    except Exception:
+                        logger.debug("[MARGEM-SAIDA] coluna de planilha isolada falhou (aditivo).", exc_info=True)
                     # [IBGE-EVERYWHERE - 54ª geração] Código IBGE como identificador oficial da
                     # localidade também na planilha (Lote e Alocação). Busca defensiva na base nacional
                     # pelo município (já resolvido) + UF (extraída do endereço oficial). Custo desprezível.
