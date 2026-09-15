@@ -62,7 +62,9 @@ Localidades Hidrologia Pavimento
 | **IBGE** | BC250/BC100/BCIM | 1.46M nós | ✅ Shapefile/GPKG/PostGIS |
 | | Malhas Municipais 2025 | 5.570 | ✅ |
 | | Agregados — Censo 2022 (pop./densidade/área) | 5.570 | ✅ API v3 (gratuita, sem chave) |
-| **Rodoviária** | OSRM/FOSSGIS/Valhalla | Tempo real | ✅ API |
+| **Rodoviária** | OSRM/FOSSGIS/Valhalla/GraphHopper | Tempo real | ✅ API |
+| **GraphHopper** | Perfil de vias (pavimento/classe/balsa) | Por trecho | ✅ path details |
+| **SNIRH/ANA HidroWeb** | Séries (cotas/vazões/chuvas) | Estatística + gráfico | ✅ API v1 |
 
 ---
 

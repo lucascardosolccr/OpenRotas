@@ -303,18 +303,25 @@ def _parsear_comparativo_provedores(s):
         return None
 
 
-def _montar_dados_graphhopper(km, tempo_min, balsa, link_maps, geo_poly):
+def _montar_dados_graphhopper(km, tempo_min, balsa, link_maps, geo_poly, perfil=None):
     """[GRAPHHOPPER-PARIDADE - 220ª geração] Codifica os dados PRÓPRIOS do GraphHopper para exibição em
     paridade com Google/OSRM. Separador '‖' (não aparece em polylines nem em texto comum) para o geo_poly
-    sobreviver ao round-trip. Formato: 'km‖tempo_min‖balsa‖link_maps‖geo_poly'. Campos ausentes viram ''."""
+    sobreviver ao round-trip. Formato: 'km‖tempo_min‖balsa‖link_maps‖geo_poly[‖perfil_json]'. Campos ausentes
+    viram ''. [447ª] `perfil` (dict do perfil de vias) vai como 6º campo JSON — ADITIVO/retrocompatível."""
     def _f(v):
         return str(v) if v is not None and v != "" else ""
-    return f"{_f(km)}‖{_f(tempo_min)}‖{_f(balsa)}‖{_f(link_maps)}‖{_f(geo_poly)}"
+    _perf = ""
+    if perfil:
+        try:
+            _perf = json.dumps(perfil, ensure_ascii=False, separators=(",", ":"))
+        except Exception:
+            _perf = ""
+    return f"{_f(km)}‖{_f(tempo_min)}‖{_f(balsa)}‖{_f(link_maps)}‖{_f(geo_poly)}‖{_perf}"
 
 
 def _parsear_dados_graphhopper(s):
     """[GRAPHHOPPER-PARIDADE - 220ª geração] Decodifica os dados do GraphHopper. Retorna dict ou None se
-    indisponível/malformado. Robusto a campos vazios."""
+    indisponível/malformado. Robusto a campos vazios. [447ª] Inclui `perfil` (6º campo) quando presente."""
     if not s or "‖" not in s:
         return None
     _p = s.split("‖")
@@ -324,14 +331,193 @@ def _parsear_dados_graphhopper(s):
         _km = float(_p[0]) if _p[0] else None
         if _km is None or _km <= 0:
             return None
+        _perfil = None
+        if len(_p) > 5 and _p[5]:
+            try:
+                _perfil = json.loads(_p[5])
+            except Exception:
+                _perfil = None
         return {
             "km": _km,
             "tempo_min": _p[1],
             "balsa": _p[2] if len(_p) > 2 else "",
             "link_maps": _p[3] if len(_p) > 3 else "",
             "geo_poly": _p[4] if len(_p) > 4 else "",
+            "perfil": _perfil,
         }
     except (ValueError, IndexError):
+        return None
+
+
+# ==============================================================================
+# [GRAPHHOPPER-PERFIL - 447ª geração] Extração do PERFIL DE VIAS que o GraphHopper devolve mas a app
+# descartava: pedindo `details=surface|road_class|road_environment`, a resposta traz, por trecho, o tipo de
+# pavimento (asfalto/terra/cascalho), a classe da via (primária/rural/trilha) e o ambiente (balsa/ponte).
+# Traduzimos isso, PONDERADO PELA DISTÂNCIA real de cada trecho, em frações auditáveis — crucial p/ logística
+# de exames: rota com muito trecho NÃO pavimentado é risco operacional (chuva/atraso). NÚCLEO 100% PURO.
+# ==============================================================================
+_GH_SURF_PAVIMENTADO = {"asphalt", "paved", "concrete", "concrete:plates", "concrete:lanes",
+                        "paving_stones", "sett", "metal", "wood", "chipseal"}
+_GH_SURF_ROTULO = {"asphalt": "asfalto", "paved": "pavimentado", "concrete": "concreto",
+                   "paving_stones": "bloquete", "sett": "paralelepípedo", "cobblestone": "paralelepípedo",
+                   "compacted": "compactado", "fine_gravel": "cascalho fino", "gravel": "cascalho",
+                   "unpaved": "não pavimentado", "ground": "terra", "dirt": "terra", "earth": "terra",
+                   "sand": "areia", "grass": "grama"}
+
+
+def _gh_perfil_rota(path):
+    """[GRAPHHOPPER-PERFIL - 447ª geração] Núcleo PURO. A partir de um `path` do GraphHopper (com
+    `points.coordinates` [lon,lat] e `details.{surface,road_class,road_environment}`), calcula, PONDERADO
+    PELA DISTÂNCIA de cada trecho, as frações de pavimento e classe de via e os km de balsa. Devolve
+    {km, surface:{val:frac}, road_class:{val:frac}, ferry_km, frac_pavimentado} ou None. Nunca levanta."""
+    if not isinstance(path, dict):
+        return None
+    coords = ((path.get("points") or {}).get("coordinates")) or []
+    det = path.get("details") or {}
+    if not coords or not isinstance(det, dict) or len(coords) < 2:
+        return None
+    import math
+
+    def _hav(a, b):
+        try:
+            lon1, lat1, lon2, lat2 = float(a[0]), float(a[1]), float(b[0]), float(b[1])
+        except (TypeError, ValueError, IndexError):
+            return 0.0
+        _r = 6371.0088
+        p1, p2 = math.radians(lat1), math.radians(lat2)
+        dphi, dl = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
+        x = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+        return 2 * _r * math.asin(min(1.0, math.sqrt(x)))
+
+    _seg = [_hav(coords[i], coords[i + 1]) for i in range(len(coords) - 1)]
+    _total = sum(_seg)
+    if _total <= 0:
+        return None
+
+    def _agg(entries):
+        acc = {}
+        for e in (entries or []):
+            if not (isinstance(e, (list, tuple)) and len(e) >= 3):
+                continue
+            try:
+                a, b = int(e[0]), int(e[1])
+            except (TypeError, ValueError):
+                continue
+            val = (str(e[2]).strip().lower() or "?")
+            if a < 0 or b > len(_seg) or a >= b:
+                continue
+            acc[val] = acc.get(val, 0.0) + sum(_seg[a:b])
+        return acc
+
+    def _fracs(acc):
+        return {k: round(v / _total, 4)
+                for k, v in sorted(acc.items(), key=lambda kv: -kv[1]) if v > 0}
+
+    _surf = _agg(det.get("surface"))
+    _rclass = _agg(det.get("road_class"))
+    _renv = _agg(det.get("road_environment"))
+    _pav = round(sum(v for k, v in _surf.items() if k in _GH_SURF_PAVIMENTADO) / _total, 4) if _surf else None
+    return {
+        "km": round(_total, 2), "surface": _fracs(_surf), "road_class": _fracs(_rclass),
+        "ferry_km": round(_renv.get("ferry", 0.0), 2),
+        "frac_pavimentado": _pav,
+    }
+
+
+def _gh_perfil_resumo(perfil):
+    """[GRAPHHOPPER-PERFIL - 447ª geração] PURO. Frase curta e amigável do perfil de vias, ou "" se vazio.
+    Ex.: 'Pavimento: 82% asfalto, 15% terra · balsa 3,1 km'. Usa rótulos pt-BR quando conhecidos."""
+    if not isinstance(perfil, dict):
+        return ""
+    partes = []
+    _surf = perfil.get("surface") or {}
+    if _surf:
+        _top = list(_surf.items())[:3]
+        _txt = ", ".join(f"{round(f * 100)}% {_GH_SURF_ROTULO.get(k, k)}" for k, f in _top)
+        partes.append(f"Pavimento: {_txt}")
+    _fp = perfil.get("frac_pavimentado")
+    if _fp is not None and not _surf:
+        partes.append(f"{round(_fp * 100)}% pavimentado")
+    _fk = perfil.get("ferry_km") or 0.0
+    if _fk and _fk > 0:
+        partes.append(f"balsa {str(round(_fk, 1)).replace('.', ',')} km")
+    return " · ".join(partes)
+
+
+# ==============================================================================
+# [ANA-SERIE - 447ª geração] Análise da SÉRIE HIDROLÓGICA bruta da API SNIRH/HidroWeb (cotas/vazões/chuvas).
+# Antes a resposta virava só uma tabela crua de até 500 linhas; agora extraímos ESTATÍSTICA e SÉRIE TEMPORAL
+# (mín/máx/média/último + data) para virar KPIs e gráfico. NÚCLEO 100% PURO e robusto à variação de schema
+# da API (nomes de coluna diferem por tipo de série), testável sem rede.
+# ==============================================================================
+_ANA_ALIAS_VALOR = {
+    "cota": ("cota", "nivel", "nível", "cotas"),
+    "vazao": ("vazao", "vazão", "vazoes", "descarga", "q"),
+    "chuva": ("chuva", "precipita", "total", "pluvio"),
+    "sedimento": ("sedimento", "concentra", "carga"),
+    "qualidade": ("valor", "resultado", "medida"),
+}
+
+
+def _ana_serie_analitica(df, tipo_serie=""):
+    """[ANA-SERIE - 447ª geração] Núcleo PURO. Dado um DataFrame da série da ANA (schema variável),
+    detecta a coluna de DATA e a de VALOR (preferindo o alias do tipo de série; senão a 1ª numérica),
+    coage os tipos e devolve {stats:{n,min,max,media,ultimo,ultimo_data,unidade_col}, serie: DataFrame
+    [data,valor] ordenado} ou None se não houver dado numérico. Nunca levanta exceção."""
+    try:
+        import pandas as _pd
+        if df is None or not hasattr(df, "empty") or df.empty:
+            return None
+        _cols = list(df.columns)
+        _low = {c: str(c).strip().lower() for c in _cols}
+        # coluna de data: nome contém data/hora/dt
+        _col_data = next((c for c in _cols if any(t in _low[c] for t in ("data", "hora", "dt", "date", "time"))), None)
+        # coluna de valor: alias do tipo de série, senão primeira numérica que não seja a data
+        _aliases = _ANA_ALIAS_VALOR.get(str(tipo_serie).strip().lower(), ())
+        _col_val = None
+        for _c in _cols:
+            if _c == _col_data:
+                continue
+            if _aliases and any(a in _low[_c] for a in _aliases):
+                _col_val = _c
+                break
+        if _col_val is None:
+            for _c in _cols:
+                if _c == _col_data:
+                    continue
+                _num = _pd.to_numeric(df[_c], errors="coerce")
+                if _num.notna().sum() >= max(1, int(0.3 * len(df))):
+                    _col_val = _c
+                    break
+        if _col_val is None:
+            return None
+        _vals = _pd.to_numeric(df[_col_val], errors="coerce")
+        _serie = _pd.DataFrame({"valor": _vals})
+        if _col_data is not None:
+            _serie["data"] = _pd.to_datetime(df[_col_data], errors="coerce", dayfirst=True)
+        _serie = _serie.dropna(subset=["valor"])
+        if _serie.empty:
+            return None
+        _ultimo, _ultimo_data = None, None
+        if "data" in _serie.columns and _serie["data"].notna().any():
+            _serie = _serie.sort_values("data")
+            _valida = _serie.dropna(subset=["data"])
+            if not _valida.empty:
+                _ultimo = float(_valida["valor"].iloc[-1])
+                _ultimo_data = _valida["data"].iloc[-1]
+        if _ultimo is None:
+            _ultimo = float(_serie["valor"].iloc[-1])
+        _stats = {
+            "n": int(_serie["valor"].notna().sum()),
+            "min": float(_serie["valor"].min()),
+            "max": float(_serie["valor"].max()),
+            "media": round(float(_serie["valor"].mean()), 3),
+            "ultimo": round(_ultimo, 3),
+            "ultimo_data": _ultimo_data,
+            "col_valor": str(_col_val),
+        }
+        return {"stats": _stats, "serie": _serie}
+    except Exception:
         return None
 
 
@@ -8227,8 +8413,16 @@ def _fonte_verdade_singleshot(res_ind):
             except Exception:
                 _gh = None
         if _gh:
+            _gh_geo_lbl = "Sim (própria)" if _gh.get("geo_poly") else "Não retornada"
+            # [GRAPHHOPPER-PERFIL - 447ª] anexa o perfil de vias (pavimento/balsa) quando o GraphHopper o trouxe.
+            try:
+                _gh_perf_txt = _gh_perfil_resumo(_gh.get("perfil")) if _gh.get("perfil") else ""
+                if _gh_perf_txt:
+                    _gh_geo_lbl = f"{_gh_geo_lbl} · {_gh_perf_txt}"
+            except Exception:
+                pass
             motores.append(_fv_linha("🚗 GraphHopper", _gh.get("km"), _gh.get("tempo_min"),
-                                     "Sim (própria)" if _gh.get("geo_poly") else "Não retornada", _gh.get("link_maps")))
+                                     _gh_geo_lbl, _gh.get("link_maps")))
         else:
             motores.append(_fv_linha("🚗 GraphHopper", None, None, "Não retornada", None))
         # ---- VALHALLA: parse do campo 42 ----
@@ -31686,8 +31880,11 @@ def API_GraphHopper_Routing(lat_o, lon_o, lat_d, lon_d):
         # [V438] rota de MENOR DISTÂNCIA só na instância PRÓPRIA (a pública free exige CH=rápida; lá o
         # parâmetro quebraria a chamada — então mantemos o motor íntegro e só pedimos "shortest" onde funciona).
         _gh_short = "&ch.disable=true&weighting=shortest" if (_ROTA_MENOR_DISTANCIA and _graphhopper_instancia_propria()) else ""
+        # [GRAPHHOPPER-PERFIL - 447ª] pede os path details (pavimento/classe/ambiente) — antes NÃO eram
+        # solicitados, então a própria detecção de balsa (que lê road_environment) vinha sempre vazia.
         _url = (f"{GRAPHHOPPER_URL}/route?point={lat_o},{lon_o}&point={lat_d},{lon_d}"
-                f"&profile=car&locale=pt&calc_points=true&points_encoded=false{_gh_short}{_key_qs}")
+                f"&profile=car&locale=pt&calc_points=true&points_encoded=false"
+                f"&details=surface&details=road_class&details=road_environment{_gh_short}{_key_qs}")
         # [HOTFIX-CHAVES-TRAVAM - 209ª geração] sessão FAIL-FAST (sem retry-storm) + timeout curto: a chave
         # gratuita do GraphHopper tem cota baixa e devolve 429 rápido; com a sessão padrão (Retry total=5,
         # backoff), cada 429 virava ~45s de espera POR ROTA, travando o app. Fail-fast → 429 vira None na hora.
@@ -31719,8 +31916,15 @@ def API_GraphHopper_Routing(lat_o, lon_o, lat_d, lon_d):
                         _balsa = "Sim"; break
             except Exception:
                 pass
+            # [GRAPHHOPPER-PERFIL - 447ª] perfil de vias ponderado por distância (aditivo, 7º elemento
+            # da tupla — consumidores existentes indexam defensivamente 0..5, então nada regride).
+            _perfil = None
+            try:
+                _perfil = _gh_perfil_rota(_p)
+            except Exception:
+                _perfil = None
             registrar_telemetria("GRAPHHOPPER", True, time.time() - start_t)
-            return (_dist_km, _tempo_min, _balsa, _n_alt, _geo_poly, None)
+            return (_dist_km, _tempo_min, _balsa, _n_alt, _geo_poly, None, _perfil)
     except Exception:
         pass
     registrar_telemetria("GRAPHHOPPER", False, time.time() - start_t)
@@ -35081,9 +35285,10 @@ def calcular_pipeline_logistico(origem, destino, perfil_rota="shortest"):
                 _gh_tmin = _res_gh[1] if len(_res_gh) > 1 else None
                 _gh_bal = _res_gh[2] if len(_res_gh) > 2 else "Não"
                 _gh_geo = _res_gh[4] if len(_res_gh) > 4 else ""
+                _gh_perfil = _res_gh[6] if len(_res_gh) > 6 else None
                 # [GRAPHHOPPER-PARIDADE-FIX - 221ª] Link do PRÓPRIO GraphHopper (mapa oficial deles), não Google.
                 _gh_link = f"https://graphhopper.com/maps/?point={lat_o}%2C{lon_o}&point={lat_d}%2C{lon_d}&profile=car"
-                _dados_gh_str = _montar_dados_graphhopper(round(_gh_km, 2), _gh_tmin, _gh_bal, _gh_link, _gh_geo)
+                _dados_gh_str = _montar_dados_graphhopper(round(_gh_km, 2), _gh_tmin, _gh_bal, _gh_link, _gh_geo, _gh_perfil)
         except Exception:
             _dados_gh_str = ""
         _res_ors = _chamar_motor_cb('ORS', API_ORS_Routing, lat_o, lon_o, lat_d, lon_d) if ORS_API_KEY else None
@@ -59819,8 +60024,39 @@ if _secao == _SECOES[17]:   # tab_hidrografia
                                 if isinstance(_emb, list):
                                     _df_ana = pd.DataFrame(_emb)
                             if _df_ana is not None and not _df_ana.empty:
-                                st.dataframe(_df_ana.head(500), use_container_width=True, hide_index=True)
-                                st.caption("Exibindo até 500 registros retornados pela API.")
+                                # [ANA-SERIE - 447ª geração] Extrai o MÁXIMO da série: estatística + gráfico
+                                # temporal (antes só a tabela crua). Fail-open: em qualquer falha, cai na tabela.
+                                _an = None
+                                try:
+                                    _an = _ana_serie_analitica(_df_ana, _tipo_serie)
+                                except Exception:
+                                    _an = None
+                                if _an:
+                                    _sa = _an["stats"]
+                                    _ka = st.columns(4)
+                                    _ka[0].metric("Leituras", f"{_sa['n']:,}".replace(",", "."))
+                                    _ka[1].metric("Mínimo", f"{_sa['min']:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                                    _ka[2].metric("Máximo", f"{_sa['max']:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                                    _ult_lbl = f"{_sa['ultimo']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                                    _ka[3].metric("Último", _ult_lbl,
+                                                  help=(f"Leitura mais recente em {_sa['ultimo_data']:%d/%m/%Y}"
+                                                        if _sa.get('ultimo_data') is not None and pd.notna(_sa.get('ultimo_data')) else None))
+                                    st.caption(f"Média da série: **{str(round(_sa['media'], 2)).replace('.', ',')}** · "
+                                               f"coluna de valor detectada: `{_sa['col_valor']}` ({_tipo_serie}).")
+                                    try:
+                                        _sdf = _an["serie"]
+                                        if "data" in _sdf.columns and _sdf["data"].notna().any():
+                                            _plot = _sdf.dropna(subset=["data"]).set_index("data")["valor"]
+                                            if len(_plot) >= 2:
+                                                st.caption("Série temporal (%s · estação %s)" % (_tipo_serie, _cod))
+                                                st.line_chart(_plot)
+                                    except Exception:
+                                        logger.debug("[HYDRO-ANA] Gráfico da série falhou (aditivo).", exc_info=True)
+                                    with st.expander("📄 Registros brutos retornados pela API (até 500)", expanded=False):
+                                        st.dataframe(_df_ana.head(500), use_container_width=True, hide_index=True)
+                                else:
+                                    st.dataframe(_df_ana.head(500), use_container_width=True, hide_index=True)
+                                    st.caption("Exibindo até 500 registros retornados pela API.")
                             else:
                                 st.json(_dados_ana if isinstance(_dados_ana, (dict, list)) else {"resposta": _dados_ana})
                         except Exception:
