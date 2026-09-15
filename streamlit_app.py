@@ -275,6 +275,11 @@ class RotaPipeline(NamedTuple):
     # lido sempre por NOME (getattr). Vazio quando indisponível.
     vias_principais: str = ""
 
+    # [RISCO-OPERACIONAL - 447ª geração] Índice de risco operacional da rota (dict {score, nivel,
+    # componentes}) — síntese explicável de balsa/sinuosidade/pavimento/distância/snap para apoiar a
+    # decisão logística. ADITIVO no FIM do NamedTuple (preserva índices); lido por NOME (getattr).
+    risco_operacional: dict = None
+
 def _montar_comparativo_provedores(km_g, tempo_g, km_o, tempo_o, fonte_vencedora):
     """[COMP-PROV - 21ª geração] Codifica os dados de comparação entre Google e OSRM
     num formato compacto e à prova de parsing (sem JSON, sem caracteres problemáticos):
@@ -21362,6 +21367,101 @@ def _bool_balsa(v):
     return ("[" in _s or "balsa" in _s or "ferry" in _s or "travessia" in _s)
 
 
+# ==============================================================================
+# [RISCO-OPERACIONAL - 447ª geração] Índice de Risco Operacional da Rota — síntese INTELIGENTE dos sinais
+# que a app já coleta (sinuosidade viária/reta, travessia por balsa e km de balsa, % não pavimentado do
+# GraphHopper, distância e qualidade do snap de geocodificação) num score 0-100 EXPLICÁVEL. Serve à decisão
+# logística: rotas de risco alto precisam de contingência (saída antecipada, transporte reserva, verificação
+# de operação da balsa). NÚCLEO 100% PURO/determinístico — não faz rede, não altera roteamento, é aditivo.
+# ==============================================================================
+def _indice_risco_operacional(dist_viaria_km, dist_reta_km=None, balsa=False, ferry_km=0.0,
+                              frac_pavimentado=None, snap_max_m=None, n_travessias=0):
+    """[RISCO-OPERACIONAL - 447ª geração] Score 0-100 de risco operacional da rota (↑ = mais contingência).
+    Combina fatores independentes, cada um com contribuição limitada e MOTIVO explícito. PURO; defensivo a
+    entradas ausentes/inválidas (fator sem dado é omitido, nunca inventado). Devolve
+    {score, nivel, componentes:[{fator, pontos, motivo}]}."""
+    _dv = _num_seguro(dist_viaria_km)
+    _dr = _num_seguro(dist_reta_km)
+    _fk = _num_seguro(ferry_km, 0.0) or 0.0
+    _fp = _num_seguro(frac_pavimentado)
+    _snap = _num_seguro(snap_max_m)
+    try:
+        _nt = int(n_travessias or 0)
+    except (TypeError, ValueError):
+        _nt = 0
+    _tem_balsa = bool(balsa) or _nt > 0 or _fk > 0
+
+    componentes, score = [], 0.0
+
+    # 1) Travessia por balsa: dependência de terceiros/horário/clima — o maior fator isolado.
+    if _tem_balsa:
+        _p = 25.0 + min(15.0, _fk * 1.5) + min(10.0, max(0, _nt - 1) * 5.0)
+        _p = min(40.0, _p)
+        _det = []
+        if _nt:
+            _det.append(f"{_nt} travessia(s)")
+        if _fk > 0:
+            _det.append(f"{str(round(_fk, 1)).replace('.', ',')} km de balsa")
+        score += _p
+        componentes.append({"fator": "Travessia por balsa", "pontos": round(_p),
+                            "motivo": "Depende de operação/horário da balsa e condições do rio"
+                                      + (" (" + ", ".join(_det) + ")" if _det else "")})
+
+    # 2) Sinuosidade (viária ÷ linha reta): trajeto indireto = mais exposição/tempo.
+    if _dr and _dr > 0 and _dv and _dv > 0:
+        _vr = _dv / _dr
+        if _vr >= 1.4:
+            _p = min(25.0, (_vr - 1.4) * 35.0)
+            score += _p
+            componentes.append({"fator": "Trajeto sinuoso/indireto", "pontos": round(_p),
+                                "motivo": f"Razão viária/reta {_vr:.2f}× (desvio rodoviário elevado)"})
+
+    # 3) Pavimento: trecho não pavimentado = risco de chuva/atoleiro/atraso.
+    if _fp is not None and 0.0 <= _fp <= 1.0:
+        _naopav = 1.0 - _fp
+        if _naopav > 0.10:
+            _p = min(20.0, _naopav * 25.0)
+            score += _p
+            componentes.append({"fator": "Trecho não pavimentado", "pontos": round(_p),
+                                "motivo": f"{round(_naopav * 100)}% da rota fora do asfalto (sensível a chuva)"})
+
+    # 4) Distância longa: fadiga/logística/janela de tempo.
+    if _dv and _dv > 300:
+        _p = min(15.0, (_dv - 300.0) / 50.0 * 3.0)
+        score += _p
+        componentes.append({"fator": "Distância longa", "pontos": round(_p),
+                            "motivo": f"{round(_dv)} km exigem janela de saída e reserva de tempo"})
+
+    # 5) Snap de geocodificação distante: incerteza sobre o ponto real de origem/destino.
+    if _snap is not None and _snap > 500:
+        _p = min(10.0, (_snap - 500.0) / 500.0 * 5.0)
+        score += _p
+        componentes.append({"fator": "Geocodificação imprecisa", "pontos": round(_p),
+                            "motivo": f"Ponto ajustado à via a {round(_snap)} m — confira o endereço exato"})
+
+    score = min(100.0, score)
+    if score >= 70:
+        nivel = "crítico"
+    elif score >= 45:
+        nivel = "alto"
+    elif score >= 20:
+        nivel = "moderado"
+    else:
+        nivel = "baixo"
+    componentes.sort(key=lambda c: -c["pontos"])
+    return {"score": round(score), "nivel": nivel, "componentes": componentes}
+
+
+def _risco_operacional_resumo(risco):
+    """[RISCO-OPERACIONAL - 447ª geração] PURO. Frase curta com emoji para o índice, ou "" se vazio.
+    Ex.: '🟠 Risco operacional ALTO (52) — Travessia por balsa; Trajeto sinuoso/indireto'."""
+    if not isinstance(risco, dict) or not risco.get("componentes"):
+        return ""
+    _emoji = {"baixo": "🟢", "moderado": "🟡", "alto": "🟠", "crítico": "🔴"}.get(risco.get("nivel"), "⚪")
+    _fatores = "; ".join(c["fator"] for c in risco["componentes"][:3])
+    return f"{_emoji} Risco operacional {risco['nivel'].upper()} ({risco['score']}) — {_fatores}"
+
+
 def _motor_curto(fonte_rota):
     """Nome curto e legível do motor de rota a partir da 'Fonte da Rota'. PURO."""
     _f = str(fonte_rota or "").upper()
@@ -35814,6 +35914,27 @@ def calcular_pipeline_logistico(origem, destino, perfil_rota="shortest"):
                 osrm_snap=_osrm_snap, validacao_espacial=validacao_espacial, mitigacao_snap=mitigacao_snap,
                 km_graphhopper=_gh_km_aud, tempo_graphhopper=_gh_tmin_aud, balsa_graphhopper=_gh_bal_aud,
                 km_osrm_real=_osrm_real_aud)
+            # [RISCO-OPERACIONAL - 447ª] síntese explicável (balsa/sinuosidade/pavimento/distância/snap)
+            # para apoiar a decisão logística. Reaproveita o perfil de vias do GraphHopper (se veio) e o
+            # snap do OSRM. Defensivo: em qualquer falha → None (a app apenas não mostra o índice).
+            _risco_op = None
+            try:
+                _ferry_km_r, _fracpav_r = 0.0, None
+                _gh_parsed_r = _parsear_dados_graphhopper(_dados_gh_str) if _dados_gh_str else None
+                _perf_r = (_gh_parsed_r or {}).get("perfil") if _gh_parsed_r else None
+                if isinstance(_perf_r, dict):
+                    _ferry_km_r = _perf_r.get("ferry_km") or 0.0
+                    _fracpav_r = _perf_r.get("frac_pavimentado")
+                _snap_max_r = None
+                if isinstance(_osrm_snap, dict):
+                    _snaps_r = [_v for _v in (_osrm_snap.get("orig_snap_dist_m"),
+                                              _osrm_snap.get("dest_snap_dist_m")) if _v is not None]
+                    _snap_max_r = max(_snaps_r) if _snaps_r else None
+                _risco_op = _indice_risco_operacional(
+                    km_rota, dist_linha_reta, balsa=_bool_balsa(balsa_rota), ferry_km=_ferry_km_r,
+                    frac_pavimentado=_fracpav_r, snap_max_m=_snap_max_r, n_travessias=_trav_qtd)
+            except Exception:
+                _risco_op = None
             # [M11] RotaPipeline NamedTuple — acesso por nome elimina bugs de índice
             retorno = RotaPipeline(
                 distancia=km_rota, tempo=tempo_rota, link_rota=link_rota, balsas=balsa_rota,
@@ -46755,6 +46876,17 @@ if _secao == _SECOES[0]:   # tab_individual
                                     st.dataframe(pd.DataFrame(_fvvel), use_container_width=True, hide_index=True)
                                     st.caption("Velocidade média implícita = distância ÷ tempo. 🔴 Suspeita = acima de 130 km/h "
                                                "(tempo ou distância provavelmente quebrado); 🟠 Atenção = abaixo de 8 km/h (pode ser balsa/tráfego urbano).")
+                                # [RISCO-OPERACIONAL - 447ª] Índice explicável de risco logístico da rota.
+                                _risco_fv = getattr(res_ind, "risco_operacional", None)
+                                if isinstance(_risco_fv, dict) and _risco_fv.get("componentes"):
+                                    st.markdown(f"**{_risco_operacional_resumo(_risco_fv)}**")
+                                    st.dataframe(pd.DataFrame([
+                                        {"Fator": _c["fator"], "Pontos": _c["pontos"], "Por quê": _c["motivo"]}
+                                        for _c in _risco_fv["componentes"]]),
+                                        use_container_width=True, hide_index=True)
+                                    st.caption("Índice 0–100 que sintetiza os fatores que exigem contingência (saída antecipada, "
+                                               "transporte reserva, checar operação da balsa): 🟢 baixo <20 · 🟡 moderado 20–44 · "
+                                               "🟠 alto 45–69 · 🔴 crítico ≥70. Não altera a rota escolhida — é apoio à decisão.")
                     except Exception:
                         logger.error("[FONTE-VERDADE-UI] Falha ao renderizar (isolada).", exc_info=True)
             else:
