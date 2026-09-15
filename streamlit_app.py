@@ -55706,8 +55706,28 @@ if _secao == _SECOES[4]:   # tab_analytics
                 
             st.markdown("#### 🔎 Matriz de Dados Drill-Down da Seleção (Data Explorer)")
             with st.container(border=True):
+                # [MARGEM-SAIDA - 448ª] resumo de contingência da seleção atual (risco alto/crítico).
+                if 'Risco Operacional' in df_cf.columns:
+                    try:
+                        _niv_expl = df_cf['Risco Operacional'].astype(str).str.extract(r'^\s*(\w+)')[0].str.lower()
+                        _n_crit = int((_niv_expl == 'crítico').sum())
+                        _n_alto = int((_niv_expl == 'alto').sum())
+                        if _n_crit or _n_alto:
+                            st.caption(f"⚠️ Contingência: **{_n_crit}** rota(s) de risco 🔴 crítico e **{_n_alto}** "
+                                       "de risco 🟠 alto nesta seleção — veja a coluna *Risco Operacional* e a "
+                                       "*Antecedência Recomendada* (planeje saída antecipada / transporte reserva).")
+                    except Exception:
+                        pass
                 tabela_h = min(800, max(300, len(df_cf) * 35 + 43))
-                st.dataframe(df_cf[['Origem', 'Destino', 'Distancia', 'Linha Reta', 'Tempo', 'Status da Rota', 'Status Linha Reta', 'Link da Rota']], use_container_width=True, height=tabela_h, column_config={"Link da Rota": st.column_config.LinkColumn("🗺️ Abrir no Maps")}, hide_index=True)
+                # [MARGEM-SAIDA - 448ª] traz o Risco Operacional e a Antecedência para a tabela em tela
+                # (antes só apareciam no Excel/HTML) — é onde o planejador olha primeiro. Aditivo: só entram
+                # quando existem, entre Tempo e o status, sem reordenar o resto.
+                _cols_expl = ['Origem', 'Destino', 'Distancia', 'Linha Reta', 'Tempo']
+                for _c_extra in ('Risco Operacional', 'Antecedência Recomendada'):
+                    if _c_extra in df_cf.columns:
+                        _cols_expl.append(_c_extra)
+                _cols_expl += ['Status da Rota', 'Status Linha Reta', 'Link da Rota']
+                st.dataframe(df_cf[_cols_expl], use_container_width=True, height=tabela_h, column_config={"Link da Rota": st.column_config.LinkColumn("🗺️ Abrir no Maps")}, hide_index=True)
                 
             st.markdown("#### ✅ Controle de Qualidade de Dados (Auditoria Geodésica e de Falhas)")
             with st.container(border=True):
