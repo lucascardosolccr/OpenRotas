@@ -27,7 +27,7 @@ import time
 
 import streamlit as st
 
-from auth import auth_service, browser_session, consent, email_service, validators
+from auth import auth_service, browser_session, consent, dados_pessoais, email_service, validators
 from auth.supabase_client import credenciais_configuradas, obter_cliente
 
 logger = logging.getLogger(__name__)
@@ -785,6 +785,31 @@ def _tela_perfil():
     if consent.disponivel():
         st.markdown("---")
         consent.controle_preferencias(ao_revogar=_ao_revogar_persistencia)
+
+    # [LGPD · PORTABILIDADE] Direito de acesso e portabilidade (Art. 18, IV/V): baixar uma cópia
+    # completa dos próprios dados (perfil, estudos, anotações, recebidos). Geração sob demanda.
+    st.markdown("---")
+    st.markdown("#### 📦 Meus dados (portabilidade LGPD)")
+    st.caption("Baixe uma cópia completa dos seus dados nesta aplicação — perfil, estudos salvos, "
+               "anotações e estudos recebidos — num arquivo **JSON** legível. Não inclui senhas nem "
+               "tokens de sessão. Direito de acesso e portabilidade (LGPD, Art. 18).")
+    if st.button("Gerar meus dados para download", key="btn_export_lgpd", use_container_width=True):
+        with st.spinner("Reunindo seus dados..."):
+            try:
+                _pacote = dados_pessoais.coletar(_user, _at, _rt)
+                st.session_state["_export_lgpd_bytes"] = dados_pessoais.serializar_json(_pacote)
+                st.session_state["_export_lgpd_resumo"] = _pacote.get("resumo", {})
+            except Exception:
+                st.session_state.pop("_export_lgpd_bytes", None)
+                st.warning("Não foi possível reunir seus dados agora — tente novamente em instantes.")
+    if st.session_state.get("_export_lgpd_bytes"):
+        _rz = st.session_state.get("_export_lgpd_resumo", {})
+        st.success(f"Pronto: {_rz.get('estudos_salvos', 0)} estudo(s) salvo(s), "
+                   f"{_rz.get('anotacoes', 0)} anotação(ões), {_rz.get('estudos_recebidos', 0)} "
+                   "recebido(s).")
+        st.download_button("⬇️ Baixar meus dados (.json)", data=st.session_state["_export_lgpd_bytes"],
+                           file_name="meus_dados_openrotas.json", mime="application/json",
+                           use_container_width=True, key="dl_export_lgpd")
 
     st.markdown("---")
     # [Perfil UX] Sair da conta direto do perfil (além da sidebar) — bloqueio real de sessão.
