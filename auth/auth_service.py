@@ -588,6 +588,132 @@ def excluir_estudo(user_id: str, estudo_id: str,
         return AuthResult(False, "Não foi possível excluir o estudo.")
 
 
+# ---- Compartilhamento de estudos entre perfis --------------------------------
+# Modelo: compartilha-se por E-MAIL do destinatário (o dono NÃO consegue resolver o id de outro
+# usuário — a RLS de profiles só deixa cada um ver a própria linha). A tabela public.estudos_
+# compartilhados guarda (owner_id, estudo_id, destinatario_email). O destinatário passa a poder LER
+# a linha de estudos_salvos correspondente graças a uma policy de SELECT adicional (ver schema.sql),
+# que casa o e-mail do compartilhamento com o e-mail do próprio perfil de quem consulta. Sem
+# service_role, sem vazamento: tudo continua sob RLS.
+def compartilhar_estudo(user_id: str, estudo_id: str, destinatario_email: str, mensagem: str = "",
+                        access_token: str = "", refresh_token: str = "") -> AuthResult:
+    """Compartilha um estudo do usuário com outro perfil, identificado pelo E-MAIL. Valida o e-mail,
+    impede autocompartilhamento e exige que o estudo seja do próprio usuário. Idempotente por
+    (estudo_id, destinatario_email) quando o índice único existir. Defensivo/fail-open."""
+    from auth.validators import validar_email
+    _ok_mail, _email_norm, _msg = validar_email(destinatario_email)
+    if not _ok_mail:
+        return AuthResult(False, _msg or "E-mail do destinatário inválido.")
+    if not (user_id and estudo_id):
+        return AuthResult(False, "Estudo inválido para compartilhar.")
+    _c = _cliente_do_usuario(access_token, refresh_token)
+    if _c is None:
+        return AuthResult(False, "Compartilhar estudos indisponível no momento.")
+    try:
+        # confirma a posse do estudo (também dá o nome para a mensagem)
+        _dono = (_c.table("estudos_salvos").select("id,nome").eq("id", estudo_id)
+                 .eq("user_id", user_id).limit(1).execute())
+        if not (_dono.data or []):
+            return AuthResult(False, "Só é possível compartilhar um estudo da sua própria conta.")
+        _c.table("estudos_compartilhados").insert({
+            "estudo_id": estudo_id, "owner_id": user_id,
+            "destinatario_email": _email_norm, "mensagem": (mensagem or "").strip()[:500]}).execute()
+        return AuthResult(True, f"Estudo compartilhado com {_email_norm}.", dados={"email": _email_norm})
+    except Exception as _e:
+        _txt = str(_e).lower()
+        if "duplicate" in _txt or "unique" in _txt:
+            return AuthResult(False, f"Este estudo já está compartilhado com {_email_norm}.")
+        logger.error("[AUTH] Falha ao compartilhar estudo.", exc_info=True)
+        return AuthResult(False, "Não foi possível compartilhar (a tabela 'estudos_compartilhados' já foi criada no Supabase?).")
+
+
+def listar_compartilhamentos_do_estudo(user_id: str, estudo_id: str,
+                                       access_token: str = "", refresh_token: str = "") -> list:
+    """Lista com quem um estudo do usuário está compartilhado (para exibir/revogar). [] em falha."""
+    _c = _cliente_do_usuario(access_token, refresh_token)
+    if _c is None or not (user_id and estudo_id):
+        return []
+    try:
+        _r = (_c.table("estudos_compartilhados").select("id,destinatario_email,created_at")
+              .eq("owner_id", user_id).eq("estudo_id", estudo_id)
+              .order("created_at", desc=True).limit(100).execute())
+        return _r.data or []
+    except Exception:
+        logger.error("[AUTH] Falha ao listar compartilhamentos do estudo.", exc_info=True)
+        return []
+
+
+def revogar_compartilhamento(user_id: str, share_id: str,
+                             access_token: str = "", refresh_token: str = "") -> AuthResult:
+    """Revoga (exclui) um compartilhamento que o usuário criou. Só o dono revoga (RLS + filtro)."""
+    _c = _cliente_do_usuario(access_token, refresh_token)
+    if _c is None:
+        return AuthResult(False, "Revogar compartilhamento indisponível no momento.")
+    try:
+        _c.table("estudos_compartilhados").delete().eq("id", share_id).eq("owner_id", user_id).execute()
+        return AuthResult(True, "Compartilhamento revogado.")
+    except Exception:
+        logger.error("[AUTH] Falha ao revogar compartilhamento.", exc_info=True)
+        return AuthResult(False, "Não foi possível revogar o compartilhamento.")
+
+
+def listar_estudos_recebidos(email: str, access_token: str = "", refresh_token: str = "") -> list:
+    """Lista os estudos compartilhados COM o usuário (pelo e-mail dele). Cada item traz os metadados
+    do compartilhamento e do estudo (id, nome, tipo, resumo, quem compartilhou, quando). Os dados
+    completos vêm sob demanda via carregar_estudo_por_id. [] em falha/sem e-mail."""
+    from auth.validators import validar_email
+    _ok, _email_norm, _ = validar_email(email)
+    if not _ok:
+        return []
+    _c = _cliente_do_usuario(access_token, refresh_token)
+    if _c is None:
+        return []
+    try:
+        _sh = (_c.table("estudos_compartilhados")
+               .select("id,estudo_id,owner_id,mensagem,created_at")
+               .eq("destinatario_email", _email_norm)
+               .order("created_at", desc=True).limit(100).execute())
+        _shares = _sh.data or []
+        if not _shares:
+            return []
+        _ids = list({s.get("estudo_id") for s in _shares if s.get("estudo_id")})
+        _est_por_id = {}
+        try:
+            _es = (_c.table("estudos_salvos").select("id,nome,tipo,resumo,created_at")
+                   .in_("id", _ids).execute())
+            _est_por_id = {e.get("id"): e for e in (_es.data or [])}
+        except Exception:
+            logger.error("[AUTH] Falha ao buscar estudos recebidos (RLS aplicada?).", exc_info=True)
+        _out = []
+        for _s in _shares:
+            _e = _est_por_id.get(_s.get("estudo_id"))
+            if not _e:
+                continue   # a linha do estudo não veio (revogado, excluído, ou RLS) → omite
+            _out.append({"share_id": _s.get("id"), "estudo_id": _s.get("estudo_id"),
+                         "mensagem": _s.get("mensagem") or "", "compartilhado_em": _s.get("created_at"),
+                         "nome": _e.get("nome"), "tipo": _e.get("tipo"), "resumo": _e.get("resumo") or {},
+                         "estudo_criado_em": _e.get("created_at")})
+        return _out
+    except Exception:
+        logger.error("[AUTH] Falha ao listar estudos recebidos.", exc_info=True)
+        return []
+
+
+def carregar_estudo_por_id(estudo_id: str, access_token: str = "", refresh_token: str = "") -> dict | None:
+    """Carrega um estudo APENAS pelo id, deixando a RLS decidir o acesso (dono OU destinatário de um
+    compartilhamento). Usado para abrir/baixar um estudo recebido. None se sem acesso/falha."""
+    _c = _cliente_do_usuario(access_token, refresh_token)
+    if _c is None or not estudo_id:
+        return None
+    try:
+        _r = _c.table("estudos_salvos").select("*").eq("id", estudo_id).limit(1).execute()
+        _linhas = _r.data or []
+        return _linhas[0] if _linhas else None
+    except Exception:
+        logger.error("[AUTH] Falha ao carregar estudo por id.", exc_info=True)
+        return None
+
+
 # ---- Foto de perfil (avatar) -------------------------------------------------
 def enviar_avatar(user_id: str, conteudo_bytes: bytes, content_type: str,
                   access_token: str = "", refresh_token: str = "") -> AuthResult:

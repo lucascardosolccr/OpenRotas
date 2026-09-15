@@ -199,6 +199,52 @@ drop policy if exists "estudos: dono exclui" on public.estudos_salvos;
 create policy "estudos: dono exclui" on public.estudos_salvos for delete using (auth.uid() = user_id);
 
 -- ------------------------------------------------------------------------------
+-- Compartilhamento de estudos ENTRE PERFIS (por e-mail do destinatário)
+-- ------------------------------------------------------------------------------
+-- Um estudo continua pertencendo ao DONO; compartilhar cria uma linha aqui ligando o estudo ao
+-- e-mail de outro perfil. O dono nunca precisa (nem consegue, por RLS) descobrir o id do outro
+-- usuário — casa-se por e-mail. O destinatário passa a poder LER a linha do estudo graças à policy
+-- "estudos: destinatario le compartilhado" abaixo. Tudo sob RLS, sem service_role.
+create table if not exists public.estudos_compartilhados (
+    id uuid primary key default gen_random_uuid(),
+    estudo_id uuid not null references public.estudos_salvos (id) on delete cascade,
+    owner_id uuid not null references auth.users (id) on delete cascade,
+    destinatario_email text not null,
+    mensagem text not null default '',
+    created_at timestamptz not null default now()
+);
+-- e-mail sempre em minúsculas (a aplicação normaliza; garantimos a busca case-insensitive)
+create index if not exists estudos_comp_dest_idx on public.estudos_compartilhados (lower(destinatario_email), created_at desc);
+create index if not exists estudos_comp_owner_idx on public.estudos_compartilhados (owner_id, created_at desc);
+-- não duplicar o mesmo compartilhamento (mesmo estudo para o mesmo e-mail)
+create unique index if not exists estudos_comp_uniq on public.estudos_compartilhados (estudo_id, lower(destinatario_email));
+alter table public.estudos_compartilhados enable row level security;
+
+-- o DONO gerencia (vê/cria/revoga) os compartilhamentos que criou
+drop policy if exists "comp: dono le" on public.estudos_compartilhados;
+create policy "comp: dono le" on public.estudos_compartilhados for select using (auth.uid() = owner_id);
+drop policy if exists "comp: dono insere" on public.estudos_compartilhados;
+create policy "comp: dono insere" on public.estudos_compartilhados for insert with check (auth.uid() = owner_id);
+drop policy if exists "comp: dono exclui" on public.estudos_compartilhados;
+create policy "comp: dono exclui" on public.estudos_compartilhados for delete using (auth.uid() = owner_id);
+
+-- o DESTINATÁRIO enxerga os compartilhamentos endereçados ao SEU e-mail (do próprio perfil)
+drop policy if exists "comp: destinatario le" on public.estudos_compartilhados;
+create policy "comp: destinatario le" on public.estudos_compartilhados for select
+    using (lower(destinatario_email) = lower((select p.email from public.profiles p where p.id = auth.uid())));
+
+-- policy EXTRA em estudos_salvos: o destinatário de um compartilhamento pode LER a linha do estudo.
+-- Casamos o e-mail do compartilhamento com o e-mail do próprio perfil de quem consulta (a subconsulta
+-- em profiles roda como o usuário atual e só retorna a própria linha — permitido pela RLS de profiles).
+drop policy if exists "estudos: destinatario le compartilhado" on public.estudos_salvos;
+create policy "estudos: destinatario le compartilhado" on public.estudos_salvos for select
+    using (exists (
+        select 1 from public.estudos_compartilhados c
+        where c.estudo_id = estudos_salvos.id
+          and lower(c.destinatario_email) = lower((select p.email from public.profiles p where p.id = auth.uid()))
+    ));
+
+-- ------------------------------------------------------------------------------
 -- Storage: bucket público 'avatars' para as fotos de perfil.
 -- (Rode também, se preferir criar o bucket por SQL. Alternativa: crie o bucket
 --  'avatars' pelo painel Storage do Supabase, marcando-o como público.)

@@ -632,8 +632,90 @@ def _tela_perfil():
                     (st.success if _r.ok else st.error)(("✅ " if _r.ok else "") + _r.mensagem)
                     if _r.ok:
                         time.sleep(0.6); st.rerun()
+                # [COMPARTILHAR - 448ª] Compartilhar este estudo com outro perfil (por e-mail).
+                st.markdown("**🔗 Compartilhar com outro perfil**")
+                with st.form(f"form_compartilhar_{_es_id}", clear_on_submit=True):
+                    _dest = st.text_input("E-mail de quem vai receber", key=f"es_share_mail_{_es_id}",
+                                          placeholder="colega@exemplo.com")
+                    _msg_sh = st.text_input("Mensagem (opcional)", key=f"es_share_msg_{_es_id}",
+                                            placeholder="Ex.: segue o estudo do ENEM para conferência")
+                    if st.form_submit_button("🔗 Compartilhar", use_container_width=True):
+                        _r = auth_service.compartilhar_estudo(_user["user_id"], _es_id, _dest, _msg_sh, _at, _rt)
+                        (st.success if _r.ok else st.error)(("✅ " if _r.ok else "") + _r.mensagem)
+                        if _r.ok:
+                            time.sleep(0.8); st.rerun()
+                try:
+                    _shs = auth_service.listar_compartilhamentos_do_estudo(_user["user_id"], _es_id, _at, _rt)
+                except Exception:
+                    _shs = []
+                if _shs:
+                    st.caption("Compartilhado com:")
+                    for _sh in _shs:
+                        _cs1, _cs2 = st.columns([78, 22])
+                        _cs1.caption(f"✉️ {_sh.get('destinatario_email', '—')} · {_fmt_data(_sh.get('created_at')) or ''}")
+                        if _cs2.button("Revogar", key=f"es_revk_{_sh.get('id')}", use_container_width=True):
+                            _rr = auth_service.revogar_compartilhamento(_user["user_id"], _sh.get("id"), _at, _rt)
+                            (st.success if _rr.ok else st.error)(("✅ " if _rr.ok else "") + _rr.mensagem)
+                            if _rr.ok:
+                                time.sleep(0.5); st.rerun()
     else:
         st.caption("Você ainda não salvou nenhum estudo.")
+
+    # [COMPARTILHAR - 448ª] ESTUDOS RECEBIDOS — estudos que outros perfis compartilharam comigo.
+    st.markdown("#### 📥 Estudos recebidos")
+    st.caption("Estudos que outros perfis compartilharam com o seu e-mail. Você pode abrir na "
+               "aplicação (restaurar) ou baixar a planilha.")
+    try:
+        _recebidos = auth_service.listar_estudos_recebidos(_user.get("email", ""), _at, _rt)
+    except Exception:
+        _recebidos = []
+    if _recebidos:
+        st.caption(f"{len(_recebidos)} estudo(s) recebido(s).")
+        for _rb in _recebidos:
+            _rb_id = _rb.get("estudo_id")
+            _rb_nome = (_rb.get("nome") or "Estudo").strip()
+            _rb_res = _rb.get("resumo") or {}
+            _rb_linhas = _rb_res.get("linhas_total", _rb_res.get("linhas_salvas", "?"))
+            _rb_quando = _fmt_data(_rb.get("compartilhado_em")) or ""
+            with st.expander(f"📥 {_rb_nome} — {_rb_linhas} linha(s) · recebido em {_rb_quando}", expanded=False):
+                if _rb.get("mensagem"):
+                    st.info(f"💬 {_rb['mensagem']}")
+                _rbx1, _rbx2 = st.columns(2)
+                if _rbx1.button("👁️ Abrir na aplicação", key=f"rb_open_{_rb_id}", use_container_width=True):
+                    with st.spinner("Carregando estudo recebido..."):
+                        _full = auth_service.carregar_estudo_por_id(_rb_id, _at, _rt)
+                    _rb_dados = (_full or {}).get("dados")
+                    if _rb_dados:
+                        try:
+                            st.session_state["df_processado"] = _pd.DataFrame(_rb_dados)
+                            st.session_state["_mostrar_perfil"] = False
+                            st.success("✅ Estudo recebido aberto na aplicação...")
+                            time.sleep(0.9); st.rerun()
+                        except Exception:
+                            logger.error("[PERFIL] Falha ao abrir estudo recebido.", exc_info=True)
+                            st.error("Não foi possível abrir este estudo.")
+                    else:
+                        st.error("Este estudo não tem dados para abrir (pode ter sido excluído pelo dono).")
+                # botão de download: prepara o CSV sob demanda (mantém o payload fora do rerun até clicar em Abrir)
+                if _rbx2.button("⬇️ Preparar download (CSV)", key=f"rb_prep_{_rb_id}", use_container_width=True):
+                    with st.spinner("Preparando arquivo..."):
+                        _full = auth_service.carregar_estudo_por_id(_rb_id, _at, _rt)
+                    _rb_dados = (_full or {}).get("dados")
+                    if _rb_dados:
+                        try:
+                            st.session_state[f"_rb_csv_{_rb_id}"] = _pd.DataFrame(_rb_dados).to_csv(index=False).encode("utf-8")
+                        except Exception:
+                            logger.error("[PERFIL] Falha ao preparar CSV do estudo recebido.", exc_info=True)
+                            st.error("Não foi possível preparar o arquivo.")
+                    else:
+                        st.error("Este estudo não tem dados para baixar.")
+                _csv_pronto = st.session_state.get(f"_rb_csv_{_rb_id}")
+                if _csv_pronto:
+                    st.download_button("⬇️ Baixar CSV", data=_csv_pronto,
+                                       file_name=f"{_rb_nome[:60] or 'estudo_recebido'}.csv",
+                                       mime="text/csv", key=f"rb_dl_{_rb_id}", use_container_width=True)
+    else:
+        st.caption("Nenhum estudo foi compartilhado com você ainda.")
 
     st.markdown("---")
     # [Perfil UX] Sair da conta direto do perfil (além da sidebar) — bloqueio real de sessão.
