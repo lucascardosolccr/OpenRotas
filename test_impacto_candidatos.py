@@ -137,3 +137,12 @@ def test_lorenz_por_decil_com_massa():
 def test_lorenz_ausente_sem_massa():
     # com poucos municípios (4) não há curva de Lorenz
     assert m._estudo_impacto_candidatos(_df())["lorenz_deciles"] == []
+
+
+def test_wrapper_cacheado_equivale_ao_nucleo_puro():
+    # [PERF-CACHE] o wrapper cacheado do painel deve devolver EXATAMENTE o mesmo resultado do núcleo puro —
+    # o cache é só uma camada de memoização entre reruns, nunca altera o conteúdo.
+    df = _df_grande()
+    assert m._estudo_impacto_candidatos_cached(df) == m._estudo_impacto_candidatos(df)
+    assert (m._narrativa_analitica_dashboard_cached(df)
+            == m._narrativa_analitica_dashboard(df))

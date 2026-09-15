@@ -5588,6 +5588,20 @@ def _estudo_impacto_candidatos(df, limiar_longo_km=200.0):
         return _vazio
 
 
+# [PERF-CACHE - 450ª geração] Wrappers CACHEADOS das analíticas pesadas do painel de resultados. O núcleo
+# permanece PURO/testável (as redes de segurança chamam a função sem decorador); estes memoizam entre reruns
+# do Streamlit, evitando recomputar o mesmo recorte quando o usuário só mexe num widget não relacionado.
+# Limitados (max_entries + ttl) para não crescer memória indefinidamente com muitos recortes distintos.
+@st.cache_data(show_spinner=False, ttl=1800, max_entries=16)
+def _estudo_impacto_candidatos_cached(df, limiar_longo_km=200.0):
+    return _estudo_impacto_candidatos(df, limiar_longo_km)
+
+
+@st.cache_data(show_spinner=False, ttl=1800, max_entries=16)
+def _narrativa_analitica_dashboard_cached(df, uf_col="UF_Sintetica_Origem", reg_col="Regiao_Sintetica_Origem"):
+    return _narrativa_analitica_dashboard(df, uf_col=uf_col, reg_col=reg_col)
+
+
 def _secao_impacto_candidatos_html(estudo):
     """[IMPACTO-CANDIDATOS - 449ª geração] Seção HTML do Estudo de Impacto nos Candidatos. Recebe o dict de
     _estudo_impacto_candidatos. Devolve string HTML ou "" se sem candidatos. PURO/defensivo."""
@@ -56120,7 +56134,7 @@ if _secao == _SECOES[4]:   # tab_analytics
                 # padrões, exceções, concentração, pontos de atenção e oportunidades — recalculada a cada
                 # filtro. Aditiva e defensiva (se falhar, devolve [] e nada aparece).
                 try:
-                    _narr = _narrativa_analitica_dashboard(df_cf)
+                    _narr = _narrativa_analitica_dashboard_cached(df_cf)
                     if _narr:
                         with st.container(border=True):
                             st.markdown("##### 🧠 Leitura do Analista — o que os dados do recorte estão dizendo")
@@ -56412,7 +56426,7 @@ if _secao == _SECOES[4]:   # tab_analytics
                     
             # [IMPACTO-CANDIDATOS - 449ª] Estudo de Impacto nos Candidatos (só se houver coluna de candidatos).
             try:
-                _est_scr = _estudo_impacto_candidatos(df_cf)
+                _est_scr = _estudo_impacto_candidatos_cached(df_cf)
             except Exception:
                 _est_scr = {"tem_candidatos": False}
             if _est_scr.get("tem_candidatos"):
