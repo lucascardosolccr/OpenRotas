@@ -27,7 +27,7 @@ import time
 
 import streamlit as st
 
-from auth import auth_service, browser_session, email_service, validators
+from auth import auth_service, browser_session, consent, email_service, validators
 from auth.supabase_client import credenciais_configuradas, obter_cliente
 
 logger = logging.getLogger(__name__)
@@ -776,6 +776,16 @@ def _tela_perfil():
     else:
         st.caption("Nenhum estudo foi compartilhado com você ainda.")
 
+    # [LGPD · CONSENTIMENTO] Preferências de privacidade: alterar/revogar o consentimento da
+    # persistência de sessão a qualquer momento (Art. 8, §5). Ao revogar, apaga o token guardado.
+    def _ao_revogar_persistencia():
+        browser_session.limpar()
+        st.session_state["_ultimo_token_persistido"] = None
+        st.session_state["_consent_navegador_limpo"] = False
+    if consent.disponivel():
+        st.markdown("---")
+        consent.controle_preferencias(ao_revogar=_ao_revogar_persistencia)
+
     st.markdown("---")
     # [Perfil UX] Sair da conta direto do perfil (além da sidebar) — bloqueio real de sessão.
     _cv1, _cv2 = st.columns(2)
@@ -934,15 +944,27 @@ def exigir_autenticacao():
             return
         st.session_state["auth_last_check_ts"] = time.time()
 
-    # [PERSISTÊNCIA NO NAVEGADOR] mantém a sessionStorage em dia com o token ATUAL — grava no login e
-    # após cada renovação, mas SÓ quando o access_token muda (sem churn a cada rerun). Assim um F5 na
-    # aba encontra sempre o par de tokens mais recente para reidratar. Fail-open (no-op se off).
+    # [LGPD · CONSENTIMENTO] A persistência da sessão no navegador é OPT-IN: só guardamos o token se
+    # o usuário CONSENTIR (Art. 7, I). Enquanto não decidir, mostramos um banner e NÃO persistimos.
+    _consent = consent.decisao()
     _at = st.session_state.get("auth_access_token")
-    if _at and st.session_state.get("_ultimo_token_persistido") != _at:
-        browser_session.salvar(st.session_state.get("auth_user_id", ""),
-                               st.session_state.get("auth_email", ""),
-                               _at, st.session_state.get("auth_refresh_token", ""))
-        st.session_state["_ultimo_token_persistido"] = _at
+    if _consent is True:
+        # consentiu: mantém a sessionStorage em dia com o token ATUAL (login/renovação), só quando o
+        # access_token muda (sem churn a cada rerun) — assim um F5 reidrata o par mais recente.
+        if _at and st.session_state.get("_ultimo_token_persistido") != _at:
+            browser_session.salvar(st.session_state.get("auth_user_id", ""),
+                                   st.session_state.get("auth_email", ""),
+                                   _at, st.session_state.get("auth_refresh_token", ""))
+            st.session_state["_ultimo_token_persistido"] = _at
+    elif _consent is False:
+        # recusou/revogou: garante que NADA fica guardado no navegador (uma vez só, sem churn).
+        if not st.session_state.get("_consent_navegador_limpo"):
+            browser_session.limpar()
+            st.session_state["_consent_navegador_limpo"] = True
+    elif consent.disponivel():
+        # ainda não decidiu: banner de consentimento (não bloqueante). O clique grava a escolha e o
+        # rerun natural do Streamlit aplica na sequência. Nada é persistido até então.
+        consent.banner()
 
     # [§9 da missão - PERFIL] mesma mecânica do portão: enquanto a flag estiver ligada, a
     # tela de perfil substitui o conteúdo normal (st.stop() ao final) — nunca é sobreposta
