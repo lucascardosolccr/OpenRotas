@@ -5325,6 +5325,277 @@ def _secao_risco_margem_html(df, top=20):
         return ""
 
 
+# ==============================================================================
+# [IMPACTO-CANDIDATOS - 449ª geração] Estudo de Impacto nos Candidatos. A análise operacional padrão pesa
+# por MUNICÍPIO (cada linha = 1 voto). Mas o impacto HUMANO real pesa por CANDIDATO: 1 município com 5.000
+# inscritos importa muito mais que 50 municípios com 10. Este motor calcula, PONDERADO POR CANDIDATO, o
+# deslocamento típico, a distribuição por faixa, a concentração (Gini), o peso de balsa/risco e o esforço
+# total (candidato-km e candidato-hora). NÚCLEO 100% PURO/determinístico. Só roda se houver a coluna de
+# quantidade de candidatos.
+# ==============================================================================
+_IMPACTO_COLS_CAND = ("inscritos", "quantidade de inscritos", "candidatos", "qtd candidatos",
+                      "quantidade de candidatos", "n inscritos", "numero de inscritos", "nº de inscritos",
+                      "total de inscritos", "total de candidatos")
+
+
+def _detectar_coluna_candidatos(colunas):
+    """[IMPACTO-CANDIDATOS] Detecta a coluna de quantidade de candidatos/inscritos. PURO. None se ausente."""
+    _norm = {c: unidecode(str(c)).lower().strip() for c in colunas}
+    # match exato primeiro, depois por conteúdo ('inscrit'/'candidat')
+    for _c in colunas:
+        if _norm[_c] in _IMPACTO_COLS_CAND:
+            return _c
+    for _c in colunas:
+        if "inscrit" in _norm[_c] or "candidat" in _norm[_c]:
+            return _c
+    return None
+
+
+def _quantil_ponderado(pares, q):
+    """[IMPACTO-CANDIDATOS] Quantil PONDERADO: pares (valor, peso). Devolve o valor onde o peso acumulado
+    atinge q∈[0,1] do total. PURO. None se sem peso."""
+    _ps = sorted((float(v), float(w)) for v, w in pares if v is not None and w and w > 0)
+    _tot = sum(w for _, w in _ps)
+    if _tot <= 0 or not _ps:
+        return None
+    _alvo, _acc = q * _tot, 0.0
+    for _v, _w in _ps:
+        _acc += _w
+        if _acc >= _alvo:
+            return _v
+    return _ps[-1][0]
+
+
+def _gini(vals):
+    """[IMPACTO-CANDIDATOS] Coeficiente de Gini (0 = igual, 1 = concentração total). PURO."""
+    _xs = sorted(float(v) for v in vals if v is not None and float(v) >= 0)
+    _n = len(_xs)
+    _s = sum(_xs)
+    if _n == 0 or _s == 0:
+        return 0.0
+    _idx = sum((_i + 1) * _x for _i, _x in enumerate(_xs))
+    return max(0.0, min(1.0, (2.0 * _idx) / (_n * _s) - (_n + 1.0) / _n))
+
+
+_IMPACTO_FAIXAS = ((0.0, 50.0, "0–50 km"), (50.0, 100.0, "50–100 km"), (100.0, 200.0, "100–200 km"),
+                   (200.0, 400.0, "200–400 km"), (400.0, float("inf"), "400+ km"))
+
+
+def _estudo_impacto_candidatos(df, limiar_longo_km=200.0):
+    """[IMPACTO-CANDIDATOS - 449ª geração] Estudo analítico do impacto nos CANDIDATOS a partir do
+    processamento (lote/alocação). Só produz resultado se houver coluna de candidatos. Tudo PONDERADO POR
+    CANDIDATO. Devolve dict rico (agregados + sub-tabelas + frases-resumo) ou {"tem_candidatos": False}.
+    PURO/defensivo — nunca levanta."""
+    _vazio = {"tem_candidatos": False}
+    try:
+        import pandas as _pd
+        if df is None or not hasattr(df, "columns") or "Distancia" not in df.columns:
+            return _vazio
+        _col_cand = _detectar_coluna_candidatos(df.columns)
+        if not _col_cand:
+            return _vazio
+        _d = df.copy()
+        _d["_cand"] = _pd.to_numeric(_d[_col_cand], errors="coerce").fillna(0.0)
+        _d["_dist"] = _pd.to_numeric(_d["Distancia"], errors="coerce")
+        # só linhas com candidatos > 0 e distância válida ( > 0 )
+        _d = _d[(_d["_cand"] > 0) & (_d["_dist"] > 0)]
+        if _d.empty or _d["_cand"].sum() <= 0:
+            return _vazio
+        _tot_cand = float(_d["_cand"].sum())
+        _n_mun = int(len(_d))
+        _d["_kmcand"] = _d["_dist"] * _d["_cand"]
+        _kmcand_total = float(_d["_kmcand"].sum())
+        _desloc_pond = _kmcand_total / _tot_cand if _tot_cand > 0 else 0.0
+        _desloc_simples = float(_d["_dist"].mean())
+        _pares = list(zip(_d["_dist"].tolist(), _d["_cand"].tolist()))
+        _mediana = _quantil_ponderado(_pares, 0.5)
+        _p90 = _quantil_ponderado(_pares, 0.90)
+        _p95 = _quantil_ponderado(_pares, 0.95)
+        _max_desloc = float(_d["_dist"].max())
+
+        # tempo total candidato-hora (se houver coluna de tempo interpretável)
+        _cand_hora = None
+        _col_tempo = next((c for c in ("Tempo", "Tempo Estimado", "Tempo (min)") if c in _d.columns), None)
+        if _col_tempo is not None:
+            try:
+                _min = _d[_col_tempo].apply(lambda x: parse_tempo_minutos(str(x)) if isinstance(x, str)
+                                            else (_num_seguro(x) or 0))
+                _min = _pd.to_numeric(_min, errors="coerce").fillna(0.0)
+                _min = _min.where(_min < 900000, 0.0)  # descarta sentinela 999999 do parser
+                _cand_hora = float((_min * _d["_cand"]).sum() / 60.0)
+            except Exception:
+                _cand_hora = None
+
+        # distribuição por faixa de distância (ponderada por candidato)
+        _faixas = []
+        for _lo, _hi, _lbl in _IMPACTO_FAIXAS:
+            _m = (_d["_dist"] >= _lo) & (_d["_dist"] < _hi)
+            _c = float(_d.loc[_m, "_cand"].sum())
+            _faixas.append({"faixa": _lbl, "municipios": int(_m.sum()), "candidatos": int(_c),
+                            "pct_candidatos": round(_c / _tot_cand * 100.0, 1) if _tot_cand else 0.0,
+                            "km_candidato": round(float(_d.loc[_m, "_kmcand"].sum()), 1)})
+
+        # candidatos em deslocamento longo (> limiar)
+        _m_longo = _d["_dist"] > float(limiar_longo_km)
+        _cand_longo = float(_d.loc[_m_longo, "_cand"].sum())
+
+        # balsa (ponderado por candidato)
+        _balsa = None
+        if "Balsas" in _d.columns:
+            _mb = _d["Balsas"].apply(_bool_balsa)
+            _cb = float(_d.loc[_mb, "_cand"].sum())
+            _balsa = {"municipios": int(_mb.sum()), "candidatos": int(_cb),
+                      "pct_candidatos": round(_cb / _tot_cand * 100.0, 1) if _tot_cand else 0.0}
+
+        # risco operacional alto/crítico (ponderado por candidato) — reusa a coluna já existente
+        _risco = None
+        if "Risco Operacional" in _d.columns:
+            _niv = _nivel_da_coluna_risco(_d["Risco Operacional"])
+            _mr = _niv.isin(["crítico", "alto"])
+            _cr = float(_d.loc[_mr, "_cand"].sum())
+            _risco = {"municipios": int(_mr.sum()), "candidatos": int(_cr),
+                      "pct_candidatos": round(_cr / _tot_cand * 100.0, 1) if _tot_cand else 0.0}
+
+        # concentração: Gini do candidato-km entre municípios + participação dos 10% que mais pesam
+        _gini_kmc = round(_gini(_d["_kmcand"].tolist()), 3)
+        _ordk = _d.sort_values("_kmcand", ascending=False)
+        _top10n = max(1, int(round(_n_mun * 0.10)))
+        _share_top10 = round(float(_ordk["_kmcand"].head(_top10n).sum()) / _kmcand_total * 100.0, 1) if _kmcand_total else 0.0
+
+        # por UF (ponderado por candidato)
+        _por_uf = []
+        _col_uf = next((c for c in ("UF Origem", "UF", "Estado") if c in _d.columns), None)
+        if _col_uf is not None:
+            _g = _d.groupby(_d[_col_uf].astype(str).str.upper().str.strip())
+            for _uf, _sub in _g:
+                if not _uf or _uf in ("", "NAN", "—"):
+                    continue
+                _cc = float(_sub["_cand"].sum()); _kc = float(_sub["_kmcand"].sum())
+                _por_uf.append({"uf": _uf, "candidatos": int(_cc), "km_candidato": round(_kc, 1),
+                                "deslocamento_medio_ponderado": round(_kc / _cc, 1) if _cc else 0.0})
+            _por_uf.sort(key=lambda x: -x["km_candidato"])
+
+        # top municípios por peso logístico (candidato-km)
+        _col_org = next((c for c in ("Origem", "Municipio Origem") if c in _d.columns), None)
+        _top_mun = []
+        for _r in _ordk.head(15).to_dict("records"):
+            _top_mun.append({
+                "origem": str(_r.get(_col_org, "—")) if _col_org else "—",
+                "uf": str(_r.get(_col_uf, "")) if _col_uf else "",
+                "candidatos": int(_r.get("_cand", 0)), "distancia_km": round(float(_r.get("_dist", 0)), 1),
+                "km_candidato": round(float(_r.get("_kmcand", 0)), 1)})
+
+        # frases-resumo (narrativa executiva)
+        _fr = []
+        _fr.append(f"O estudo cobre {_tot_cand:,.0f} candidatos em {_n_mun:,} município(s) de origem."
+                   .replace(",", "."))
+        _fr.append(f"O deslocamento médio PONDERADO POR CANDIDATO é {_desloc_pond:.0f} km "
+                   f"(a média simples por município é {_desloc_simples:.0f} km) — "
+                   + ("os candidatos estão, no conjunto, MAIS distantes do que a média por município sugere."
+                      if _desloc_pond > _desloc_simples * 1.05 else
+                      "próximo da média por município."))
+        if _mediana is not None:
+            _fr.append(f"Metade dos candidatos se desloca até {_mediana:.0f} km; 10% enfrentam mais de "
+                       f"{(_p90 or 0):.0f} km e 5%, mais de {(_p95 or 0):.0f} km.")
+        _fr.append(f"{_cand_longo:,.0f} candidato(s) ({_cand_longo/_tot_cand*100:.0f}%) percorrem mais de "
+                   f"{limiar_longo_km:.0f} km.".replace(",", "."))
+        if _balsa and _balsa["candidatos"]:
+            _fr.append(f"{_balsa['candidatos']:,} candidato(s) ({_balsa['pct_candidatos']:.0f}%) dependem de "
+                       f"travessia por balsa.".replace(",", "."))
+        if _risco and _risco["candidatos"]:
+            _fr.append(f"{_risco['candidatos']:,} candidato(s) ({_risco['pct_candidatos']:.0f}%) estão em "
+                       f"rotas de risco operacional alto/crítico.".replace(",", "."))
+        _fr.append(f"O esforço logístico é concentrado (Gini {_gini_kmc:.2f}): os 10% de municípios que mais "
+                   f"pesam respondem por {_share_top10:.0f}% de todo o candidato-km.")
+
+        return {
+            "tem_candidatos": True, "col_candidatos": str(_col_cand),
+            "total_candidatos": int(_tot_cand), "n_municipios": _n_mun,
+            "km_candidato_total": round(_kmcand_total, 1),
+            "deslocamento_medio_ponderado": round(_desloc_pond, 1),
+            "deslocamento_medio_simples": round(_desloc_simples, 1),
+            "mediana_candidato_km": (round(_mediana, 1) if _mediana is not None else None),
+            "p90_candidato_km": (round(_p90, 1) if _p90 is not None else None),
+            "p95_candidato_km": (round(_p95, 1) if _p95 is not None else None),
+            "max_deslocamento_km": round(_max_desloc, 1),
+            "candidatos_longo": int(_cand_longo), "limiar_longo_km": float(limiar_longo_km),
+            "pct_candidatos_longo": round(_cand_longo / _tot_cand * 100.0, 1) if _tot_cand else 0.0,
+            "candidato_hora_total": (round(_cand_hora, 0) if _cand_hora is not None else None),
+            "distribuicao_faixas": _faixas, "balsa": _balsa, "risco": _risco,
+            "concentracao": {"gini_km_candidato": _gini_kmc, "share_top10pct_municipios": _share_top10},
+            "por_uf": _por_uf, "top_municipios_peso": _top_mun, "resumo_frases": _fr,
+        }
+    except Exception:
+        logger.debug("[IMPACTO-CANDIDATOS] estudo isolado falhou (aditivo).", exc_info=True)
+        return _vazio
+
+
+def _secao_impacto_candidatos_html(estudo):
+    """[IMPACTO-CANDIDATOS - 449ª geração] Seção HTML do Estudo de Impacto nos Candidatos. Recebe o dict de
+    _estudo_impacto_candidatos. Devolve string HTML ou "" se sem candidatos. PURO/defensivo."""
+    import html as _he
+    try:
+        if not isinstance(estudo, dict) or not estudo.get("tem_candidatos"):
+            return ""
+        _mil = lambda _n: f"{int(round(_n)):,}".replace(",", ".")
+        _kpis = [("Candidatos", _mil(estudo["total_candidatos"])),
+                 ("Municípios de origem", _mil(estudo["n_municipios"])),
+                 ("Deslocamento médio por candidato", f"{estudo['deslocamento_medio_ponderado']:.0f} km"),
+                 ("Candidato-km total", _mil(estudo["km_candidato_total"]))]
+        if estudo.get("candidato_hora_total") is not None:
+            _kpis.append(("Candidato-hora total", _mil(estudo["candidato_hora_total"])))
+        if estudo.get("mediana_candidato_km") is not None:
+            _kpis.append(("Mediana (por candidato)", f"{estudo['mediana_candidato_km']:.0f} km"))
+        if estudo.get("p90_candidato_km") is not None:
+            _kpis.append(("p90 (10% andam mais que)", f"{estudo['p90_candidato_km']:.0f} km"))
+        _kh = "".join(f"<div class='kpi'><div class='kpi-v'>{_he.escape(str(_v))}</div>"
+                      f"<div class='kpi-l'>{_he.escape(_l)}</div></div>" for _l, _v in _kpis)
+        _out = ["<p class='lead'>Este estudo pesa por <b>candidato</b>, não por município: mede o esforço "
+                "de deslocamento como ele é <b>vivido pelas pessoas</b>. Um município com muitos inscritos "
+                "pesa proporcionalmente mais.</p>",
+                f"<div class='kpis'>{_kh}</div>"]
+        _out.append("<ul>" + "".join(f"<li>{_he.escape(_s)}</li>" for _s in (estudo.get("resumo_frases") or []))
+                    + "</ul>")
+        # distribuição por faixa
+        _fx = estudo.get("distribuicao_faixas") or []
+        if _fx:
+            _rows = "".join(
+                f"<tr><td>{_he.escape(f['faixa'])}</td><td class='r'>{_mil(f['candidatos'])}</td>"
+                f"<td class='r'>{f['pct_candidatos']:.0f}%</td><td class='r'>{_mil(f['municipios'])}</td>"
+                f"<td class='r'>{_mil(f['km_candidato'])}</td></tr>" for f in _fx)
+            _out.append("<h3 style='margin-top:14px'>Candidatos por faixa de deslocamento</h3>"
+                        "<table><thead><tr><th>Faixa</th><th class='r'>Candidatos</th>"
+                        "<th class='r'>% dos candidatos</th><th class='r'>Municípios</th>"
+                        f"<th class='r'>Candidato-km</th></tr></thead><tbody>{_rows}</tbody></table>")
+        # por UF (top 12 por candidato-km)
+        _uf = estudo.get("por_uf") or []
+        if _uf:
+            _rows = "".join(
+                f"<tr><td>{_he.escape(u['uf'])}</td><td class='r'>{_mil(u['candidatos'])}</td>"
+                f"<td class='r'>{_mil(u['km_candidato'])}</td>"
+                f"<td class='r'>{u['deslocamento_medio_ponderado']:.0f} km</td></tr>" for u in _uf[:12])
+            _out.append("<h3 style='margin-top:14px'>Impacto por estado (top 12 por candidato-km)</h3>"
+                        "<table><thead><tr><th>UF</th><th class='r'>Candidatos</th>"
+                        "<th class='r'>Candidato-km</th><th class='r'>Deslocamento médio/candidato</th>"
+                        f"</tr></thead><tbody>{_rows}</tbody></table>")
+        # top municípios por peso
+        _tm = estudo.get("top_municipios_peso") or []
+        if _tm:
+            _rows = "".join(
+                f"<tr><td>{_he.escape(str(m['origem']))}</td><td>{_he.escape(str(m['uf']))}</td>"
+                f"<td class='r'>{_mil(m['candidatos'])}</td><td class='r'>{m['distancia_km']:.0f} km</td>"
+                f"<td class='r'>{_mil(m['km_candidato'])}</td></tr>" for m in _tm)
+            _out.append("<h3 style='margin-top:14px'>Municípios de maior peso logístico (candidato-km)</h3>"
+                        "<p style='color:#64748b;font-size:13px'>Onde concentrar esforço rende mais: muitos "
+                        "candidatos e/ou muita distância.</p>"
+                        "<table><thead><tr><th>Origem</th><th>UF</th><th class='r'>Candidatos</th>"
+                        "<th class='r'>Distância</th><th class='r'>Candidato-km</th></tr></thead>"
+                        f"<tbody>{_rows}</tbody></table>")
+        return "".join(_out)
+    except Exception:
+        return ""
+
+
 def _gerar_relatorio_html(df, titulo="Relatório do Estudo", data_str=""):
     """[RELATORIO-HTML-PRO - 184ª geração] Relatório HTML AUTOCONTIDO (offline) de nível profissional/BI:
     capa, NAVEGAÇÃO LATERAL (sumário), cartões executivos e seções analíticas ricas — Resumo, Distribuição de
@@ -5418,6 +5689,15 @@ def _gerar_relatorio_html(df, titulo="Relatório do Estudo", data_str=""):
             "<b>candidatos</b> é o total de pessoas que se deslocarão; <b>deslocamento médio/mediano</b> mostra "
             "a distância típica que um candidato percorre até o local de prova. Quanto menores as distâncias, "
             "melhor a alocação. Os valores vêm da menor rota viária real de cada município.", "info")))
+
+        # [IMPACTO-CANDIDATOS - 449ª] Estudo de Impacto nos Candidatos (só se houver coluna de candidatos).
+        try:
+            _est_imp = _estudo_impacto_candidatos(df)
+            _h_imp = _secao_impacto_candidatos_html(_est_imp)
+            if _h_imp:
+                _sec.append(("impacto_candidatos", "👥 Estudo de Impacto nos Candidatos", _h_imp))
+        except Exception:
+            pass
 
         if _dist is not None and _dist.notna().any():
             _labs = ["0–50", "50–100", "100–150", "150–200", "200–300", "300–500", "500+"]
@@ -16041,6 +16321,50 @@ def _montar_planilha_lote_xlsx(df_final):
                 _s.columns = ['Status', 'Rotas']
                 _s['% do total'] = (_s['Rotas'] / max(1, int(_s['Rotas'].sum())) * 100).round(1)
                 _s.to_excel(_w, index=False, sheet_name="Status das Rotas")
+            # [IMPACTO-CANDIDATOS - 449ª] Aba(s) do Estudo de Impacto nos Candidatos (só se houver a coluna).
+            try:
+                _est_x = _estudo_impacto_candidatos(df_final)
+                if _est_x.get("tem_candidatos"):
+                    _ind = [("Total de candidatos", _est_x["total_candidatos"]),
+                            ("Municípios de origem", _est_x["n_municipios"]),
+                            ("Deslocamento médio por candidato (km)", _est_x["deslocamento_medio_ponderado"]),
+                            ("Deslocamento médio por município (km)", _est_x["deslocamento_medio_simples"]),
+                            ("Mediana por candidato (km)", _est_x.get("mediana_candidato_km")),
+                            ("p90 por candidato (km)", _est_x.get("p90_candidato_km")),
+                            ("p95 por candidato (km)", _est_x.get("p95_candidato_km")),
+                            ("Maior deslocamento (km)", _est_x.get("max_deslocamento_km")),
+                            (f"Candidatos > {_est_x['limiar_longo_km']:.0f} km", _est_x["candidatos_longo"]),
+                            ("% candidatos em deslocamento longo", _est_x["pct_candidatos_longo"]),
+                            ("Candidato-km total", _est_x["km_candidato_total"]),
+                            ("Candidato-hora total", _est_x.get("candidato_hora_total")),
+                            ("Gini do candidato-km (concentração)", _est_x["concentracao"]["gini_km_candidato"]),
+                            ("% candidato-km nos 10% de municípios que mais pesam",
+                             _est_x["concentracao"]["share_top10pct_municipios"])]
+                    if _est_x.get("balsa"):
+                        _ind.append(("Candidatos dependentes de balsa", _est_x["balsa"]["candidatos"]))
+                        _ind.append(("% candidatos dependentes de balsa", _est_x["balsa"]["pct_candidatos"]))
+                    if _est_x.get("risco"):
+                        _ind.append(("Candidatos em rota de risco alto/crítico", _est_x["risco"]["candidatos"]))
+                        _ind.append(("% candidatos em risco alto/crítico", _est_x["risco"]["pct_candidatos"]))
+                    pd.DataFrame(_ind, columns=["Indicador", "Valor"]).to_excel(
+                        _w, index=False, sheet_name="Impacto Candidatos")
+                    if _est_x.get("distribuicao_faixas"):
+                        pd.DataFrame(_est_x["distribuicao_faixas"]).rename(columns={
+                            "faixa": "Faixa", "municipios": "Municípios", "candidatos": "Candidatos",
+                            "pct_candidatos": "% dos candidatos", "km_candidato": "Candidato-km"}).to_excel(
+                            _w, index=False, sheet_name="Impacto por Faixa")
+                    if _est_x.get("por_uf"):
+                        pd.DataFrame(_est_x["por_uf"]).rename(columns={
+                            "uf": "UF", "candidatos": "Candidatos", "km_candidato": "Candidato-km",
+                            "deslocamento_medio_ponderado": "Deslocamento médio/candidato (km)"}).to_excel(
+                            _w, index=False, sheet_name="Impacto por UF")
+                    if _est_x.get("top_municipios_peso"):
+                        pd.DataFrame(_est_x["top_municipios_peso"]).rename(columns={
+                            "origem": "Origem", "uf": "UF", "candidatos": "Candidatos",
+                            "distancia_km": "Distância (km)", "km_candidato": "Candidato-km"}).to_excel(
+                            _w, index=False, sheet_name="Impacto Top Municipios")
+            except Exception:
+                logger.error("[IMPACTO-CANDIDATOS] Falha ao anexar abas de impacto ao Excel do Lote", exc_info=True)
             # [EXPORT-PADRAO - 272ª geração] CONSISTÊNCIA: aplica o MESMO padrão institucional (cabeçalho,
             # largura automática, congelamento, autofiltro, zebra, formatos numéricos e impressão) às abas
             # analíticas secundárias — antes escritas como DataFrame cru. Uma passada só, reusando o styler
@@ -55969,6 +56293,70 @@ if _secao == _SECOES[4]:   # tab_analytics
                 else: 
                     st.info("O filtro atual não retornou coordenadas válidas no Brasil para plotagem.")
                     
+            # [IMPACTO-CANDIDATOS - 449ª] Estudo de Impacto nos Candidatos (só se houver coluna de candidatos).
+            try:
+                _est_scr = _estudo_impacto_candidatos(df_cf)
+            except Exception:
+                _est_scr = {"tem_candidatos": False}
+            if _est_scr.get("tem_candidatos"):
+                st.markdown("#### 👥 Estudo de Impacto nos Candidatos")
+                with st.container(border=True):
+                    st.caption("Análise **ponderada por candidato** (não por município): mede o esforço de "
+                               "deslocamento como ele é vivido pelas pessoas. Coluna detectada: "
+                               f"**{_est_scr['col_candidatos']}**.")
+                    _mk = st.columns(4)
+                    _fmt_i = lambda _n: f"{int(round(_n)):,}".replace(",", ".")
+                    _mk[0].metric("Candidatos", _fmt_i(_est_scr["total_candidatos"]))
+                    _mk[1].metric("Deslocamento médio/candidato", f"{_est_scr['deslocamento_medio_ponderado']:.0f} km",
+                                  help=f"Média simples por município: {_est_scr['deslocamento_medio_simples']:.0f} km. "
+                                       "Quando o valor por candidato é maior, os candidatos estão mais distantes do "
+                                       "que a média por município sugere.")
+                    _mk[2].metric(f"> {_est_scr['limiar_longo_km']:.0f} km",
+                                  f"{_fmt_i(_est_scr['candidatos_longo'])} ({_est_scr['pct_candidatos_longo']:.0f}%)",
+                                  help="Candidatos em deslocamento longo.")
+                    _mk[3].metric("Candidato-km total", _fmt_i(_est_scr["km_candidato_total"]),
+                                  help="Soma de distância × candidatos — o esforço logístico total do estudo.")
+                    _mk2 = st.columns(4)
+                    if _est_scr.get("mediana_candidato_km") is not None:
+                        _mk2[0].metric("Mediana (por candidato)", f"{_est_scr['mediana_candidato_km']:.0f} km")
+                    if _est_scr.get("p90_candidato_km") is not None:
+                        _mk2[1].metric("p90", f"{_est_scr['p90_candidato_km']:.0f} km",
+                                       help="10% dos candidatos percorrem mais que isto.")
+                    if _est_scr.get("candidato_hora_total") is not None:
+                        _mk2[2].metric("Candidato-hora total", _fmt_i(_est_scr["candidato_hora_total"]))
+                    _mk2[3].metric("Concentração (Gini)", f"{_est_scr['concentracao']['gini_km_candidato']:.2f}",
+                                   help=f"{_est_scr['concentracao']['share_top10pct_municipios']:.0f}% do candidato-km "
+                                        "está nos 10% de municípios que mais pesam.")
+                    if _est_scr.get("balsa") and _est_scr["balsa"]["candidatos"]:
+                        st.warning(f"⛴️ **{_fmt_i(_est_scr['balsa']['candidatos'])}** candidato(s) "
+                                   f"({_est_scr['balsa']['pct_candidatos']:.0f}%) dependem de travessia por balsa.")
+                    if _est_scr.get("risco") and _est_scr["risco"]["candidatos"]:
+                        st.error(f"🔴 **{_fmt_i(_est_scr['risco']['candidatos'])}** candidato(s) "
+                                 f"({_est_scr['risco']['pct_candidatos']:.0f}%) estão em rotas de risco "
+                                 "operacional alto/crítico.")
+                    _timp1, _timp2, _timp3 = st.tabs(["Por faixa de deslocamento", "Por estado (UF)",
+                                                      "Municípios de maior peso"])
+                    with _timp1:
+                        if _est_scr.get("distribuicao_faixas"):
+                            st.dataframe(pd.DataFrame(_est_scr["distribuicao_faixas"]).rename(columns={
+                                "faixa": "Faixa", "municipios": "Municípios", "candidatos": "Candidatos",
+                                "pct_candidatos": "% dos candidatos", "km_candidato": "Candidato-km"}),
+                                use_container_width=True, hide_index=True)
+                    with _timp2:
+                        if _est_scr.get("por_uf"):
+                            st.dataframe(pd.DataFrame(_est_scr["por_uf"]).rename(columns={
+                                "uf": "UF", "candidatos": "Candidatos", "km_candidato": "Candidato-km",
+                                "deslocamento_medio_ponderado": "Deslocamento médio/candidato (km)"}),
+                                use_container_width=True, hide_index=True)
+                        else:
+                            st.caption("Sem coluna de UF para detalhar por estado.")
+                    with _timp3:
+                        if _est_scr.get("top_municipios_peso"):
+                            st.dataframe(pd.DataFrame(_est_scr["top_municipios_peso"]).rename(columns={
+                                "origem": "Origem", "uf": "UF", "candidatos": "Candidatos",
+                                "distancia_km": "Distância (km)", "km_candidato": "Candidato-km"}),
+                                use_container_width=True, hide_index=True)
+
             st.markdown("#### 🏆 Rankings e Extremos Logísticos da Seleção Atual (Top 10)")
             with st.container(border=True):
                 tab_dist_max, tab_dist_min, tab_tempo = st.tabs(["Maiores Distâncias (+)", "Menores Distâncias (-)", "Maiores Tempos (Gargalos)"])
