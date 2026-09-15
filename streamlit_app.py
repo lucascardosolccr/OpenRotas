@@ -56010,18 +56010,14 @@ if _secao == _SECOES[3]:   # tab_comparador
                                "acima está disponível como alternativa completa.")
 
 
-if _secao == _SECOES[4]:   # tab_analytics
-    renderizar_guia_aba("analytics")
-    col_d_title, col_d_btn = st.columns([80, 20])
-    with col_d_title: 
-        st.markdown("### 📊 Enterprise Analytics Dashboard")
-    with col_d_btn:
-        if st.button("🧹 Limpar Todos os Filtros", use_container_width=True):
-            keys_to_clear = ['widget_regiao', 'widget_uf', 'widget_mun', 'widget_status', 'widget_fonte', 'dash_reg', 'dash_uf', 'dash_status', 'dash_mun', 'dash_lr', 'dash_scatter', 'prev_altair_sel']
-            for k in keys_to_clear:
-                if k in st.session_state: del st.session_state[k]
-            st.rerun()
-            
+
+@st.fragment
+def _fragmento_analytics_dashboard():
+    """[PERF-FRAGMENT - 452ª geração] Painel de Analytics inteiro (filtros globais, KPIs, gráficos Altair
+    com cross-filtering, estudo de impacto, narrativa, rankings, Data Explorer e controle de qualidade)
+    isolado num st.fragment. Qualquer interação com os filtros/seleções re-executa SÓ este painel, sem
+    rerodar o restante do app (sidebar, cabeçalho, navegação). Move o corpo 1:1 — comportamento idêntico.
+    Lê st.session_state['df_processado']; nada de novo é computado."""
     if 'df_processado' in st.session_state:
         sel = extrair_selecoes_altair()
         
@@ -56617,6 +56613,20 @@ if _secao == _SECOES[4]:   # tab_analytics
         _ds_empty_state(
             "Aguardando processamento de uma planilha para ativar este painel.",
             "Vá em <b>⚙️ Estudo em Lote</b> (grupo 🔍 Consultar) e envie sua planilha — os indicadores aparecem aqui automaticamente depois.")
+
+if _secao == _SECOES[4]:   # tab_analytics
+    renderizar_guia_aba("analytics")
+    col_d_title, col_d_btn = st.columns([80, 20])
+    with col_d_title: 
+        st.markdown("### 📊 Enterprise Analytics Dashboard")
+    with col_d_btn:
+        if st.button("🧹 Limpar Todos os Filtros", use_container_width=True):
+            keys_to_clear = ['widget_regiao', 'widget_uf', 'widget_mun', 'widget_status', 'widget_fonte', 'dash_reg', 'dash_uf', 'dash_status', 'dash_mun', 'dash_lr', 'dash_scatter', 'prev_altair_sel']
+            for k in keys_to_clear:
+                if k in st.session_state: del st.session_state[k]
+            st.rerun()
+            
+    _fragmento_analytics_dashboard()
 
 # [CF-FONTE - 354a geração] Auto-suficiência das abas Calculadora/Classificação: montam a base a partir de
 # qualquer resultado (alocação/lote/processado) e expõem um seletor de fonte explícito. Aditivo, defensivo.
