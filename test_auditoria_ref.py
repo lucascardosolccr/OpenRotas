@@ -51,6 +51,27 @@ def test_corroboracao_com_rota_da_app_entra_na_explicacao():
     assert "210" in r["explicacao"]  # menciona a rota real medida pela app
 
 
+def test_unidade_trocada_metros_como_km():
+    # 200000 "km" quando a reta é 180 km → fator ~1111 → impossível por troca de unidade
+    r = m._auditar_distancia_referencia(dist_ref=200000.0, reta_ref_km=180.0)
+    assert r["veredito"] == "impossivel"
+    assert "unidade" in r["rotulo"].lower()
+    assert "METROS" in r["explicacao"] or "metros" in r["explicacao"].lower()
+
+
+def test_grosseiramente_inflada():
+    # 40000 km entre municípios cuja reta é 180 km → fator ~222 (fora da faixa de troca de unidade)
+    r = m._auditar_distancia_referencia(dist_ref=40000.0, reta_ref_km=180.0)
+    assert r["veredito"] == "impossivel"
+    assert "inflada" in r["rotulo"].lower()
+
+
+def test_reta_curta_nao_dispara_inflacao_falsa():
+    # reta < 3 km (salto intraurbano): mesmo fator alto NÃO é marcado como inflado impossível
+    r = m._auditar_distancia_referencia(dist_ref=200.0, reta_ref_km=1.0)
+    assert r["veredito"] != "impossivel"
+
+
 def test_robusto_a_entradas_ausentes():
     assert m._auditar_distancia_referencia(None, 100.0)["veredito"] == "nao_avaliavel"
     assert m._auditar_distancia_referencia(100.0, None)["veredito"] == "nao_avaliavel"

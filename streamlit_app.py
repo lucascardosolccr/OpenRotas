@@ -6258,7 +6258,26 @@ def _auditar_distancia_referencia(dist_ref, reta_ref_km, dist_app_viaria=None,
                     f"faltam {_def:.0f} km ({_pct:.0f}% abaixo do piso físico). "
                     f"Causas prováveis: erro de digitação, unidade trocada (m×km), destino trocado ou "
                     f"medição em outro par de coordenadas.{_corrobora_app}")}
-    # 3) praticamente igual à geodésica → implausível (desvio rodoviário real costuma ser 1,2–1,4×)
+    # 3) grosseiramente inflada / unidade trocada → também impossível (nenhuma estrada desvia 100× a reta).
+    #    Guardado por reta >= 3 km para não gerar falso positivo em saltos intraurbanos muito curtos.
+    if _reta >= 3.0 and _fator is not None and _fator >= 100.0:
+        _troca_unidade = (900.0 <= _fator <= 1500.0)
+        if _troca_unidade:
+            _km_prov = round(_dr / 1000.0, 1)
+            _exp = (f"A referência afirma {_dr:.0f} km {_par}, cerca de {_fator:.0f}× a linha reta "
+                    f"({_reta:.0f} km) — impossível para qualquer estrada. O padrão indica TROCA DE UNIDADE: "
+                    f"o valor parece estar em METROS rotulado como km (÷1000 daria ~{_km_prov} km, "
+                    f"compatível com a geografia).{_corrobora_app}")
+            _rot = "IMPOSSÍVEL — unidade trocada (m como km)"
+        else:
+            _exp = (f"A referência afirma {_dr:.0f} km {_par}, cerca de {_fator:.0f}× a linha reta "
+                    f"({_reta:.0f} km). Nenhuma estrada real desvia tanto (o máximo plausível é ~2–4×) — "
+                    f"valor grosseiramente inflado, provável erro de digitação ou destino trocado.{_corrobora_app}")
+            _rot = "IMPOSSÍVEL — grosseiramente inflada"
+        return {"veredito": "impossivel", "rotulo": _rot,
+                "deficit_km": round(_dr - _reta * 1.3, 1), "reta_ref_km": round(_reta, 2),
+                "fator": round(_fator, 1), "explicacao": _exp}
+    # 4) praticamente igual à geodésica → implausível (desvio rodoviário real costuma ser 1,2–1,4×)
     if _fator is not None and _fator < 1.05:
         return {"veredito": "implausivel", "rotulo": "Implausível — reta demais para ser estrada",
                 "deficit_km": round(_reta * 1.2 - _dr, 1), "reta_ref_km": round(_reta, 2),
@@ -6295,6 +6314,15 @@ def _secao_ref_impossivel_html(linhas, top=40):
             except (TypeError, ValueError):
                 return None
 
+        def _cands(_ls):
+            _t = 0
+            for _l in _ls:
+                _c = _num(_l.get("Inscritos"))
+                if _c and _c > 0:
+                    _t += int(_c)
+            return _t
+        _cand_imp = _cands(_imp)
+
         def _defc(_l):
             _dr = _num(_l.get("Distancia Referencia")); _rt = _num(_l.get("Linha Reta Referencia (km)"))
             return (_rt - _dr) if (_dr is not None and _rt is not None) else 0.0
@@ -6318,7 +6346,11 @@ def _secao_ref_impossivel_html(linhas, top=40):
             f"<div class='kpis'><div class='kpi'><div class='kpi-v'>{len(_imp)}</div>"
             "<div class='kpi-l'>Distâncias impossíveis (&lt; linha reta)</div></div>"
             f"<div class='kpi'><div class='kpi-v'>{len(_impl)}</div>"
-            "<div class='kpi-l'>Distâncias implausíveis (reta demais)</div></div></div>",
+            "<div class='kpi-l'>Distâncias implausíveis (reta demais)</div></div>"
+            + (f"<div class='kpi'><div class='kpi-v'>{_cand_imp:,}</div>".replace(",", ".")
+               + "<div class='kpi-l'>Candidatos sob distância impossível</div></div>"
+               if _cand_imp > 0 else "")
+            + "</div>",
         ]
         if _imp:
             _rows = "".join(_linha_html(_l) for _l in _imp[:top])
@@ -54375,6 +54407,32 @@ if _secao == _SECOES[3]:   # tab_comparador
                 st.warning(_vd["texto_concorrente"])
             if _vd.get("texto_hibrido"):
                 st.success(_vd["texto_hibrido"])
+
+            # [AUDITORIA-REF-IMPOSSIVEL - 448ª] alerta na tela: distâncias da referência fisicamente
+            # impossíveis (menores que a linha reta). Prova objetiva de erro na planilha de referência.
+            try:
+                _imp_ecr = [l for l in _cmp
+                            if str(l.get("Auditoria Distancia Referencia", "") or "").startswith("IMPOSSÍVEL")]
+                if _imp_ecr:
+                    _cand_ecr = sum(int(_n) for l in _imp_ecr
+                                    for _n in [_num_seguro(l.get("Inscritos"), 0) or 0] if _n > 0)
+                    _cand_txt = (f" — afetando **{_cand_ecr:,}** candidato(s)".replace(",", ".")) if _cand_ecr else ""
+                    st.error(f"🔴 **{len(_imp_ecr)} distância(s) da referência são fisicamente impossíveis** "
+                             f"(menores que a linha reta geodésica){_cand_txt}. Nenhuma estrada pode ser mais "
+                             "curta que o 'voo de pássaro' — esses valores da referência estão comprovadamente "
+                             "errados. Veja a explicação de cada caso abaixo, na planilha (aba *Distancias "
+                             "Impossiveis Ref*) e no relatório HTML.")
+                    with st.expander(f"🔎 Ver as {len(_imp_ecr)} distâncias impossíveis e por que estão erradas",
+                                     expanded=False):
+                        _tab_imp = pd.DataFrame([{
+                            "Origem": l.get("Origem"), "Destino (ref.)": l.get("Destino Referencia"),
+                            "Dist. referência (km)": l.get("Distancia Referencia"),
+                            "Linha reta / piso (km)": l.get("Linha Reta Referencia (km)"),
+                            "Por que está errada": l.get("Explicacao Auditoria Referencia"),
+                        } for l in _imp_ecr[:200]])
+                        st.dataframe(_tab_imp, use_container_width=True, hide_index=True)
+            except Exception:
+                logger.debug("[AUDITORIA-REF-IMPOSSIVEL] alerta na tela isolado falhou (aditivo).", exc_info=True)
 
             # [GEO-GARANTIDO - 162ª geração] AVISO quando há linhas GEODÉSICAS na comparação.
             _n_geo = sum(1 for l in _cmp if "Geodésica" in str(l.get("Tipo de Distancia", "")))
