@@ -269,6 +269,12 @@ class RotaPipeline(NamedTuple):
     quantidade_travessias: int = 0
     travessias_info: list = None
 
+    # [OSRM-VIAS - 447ª geração] Principais vias/rodovias da rota REAL, extraídas dos steps do OSRM (que a
+    # app já buscava com steps=true mas só usava p/ detectar balsa). Rótulo humano pronto, ex.:
+    # 'Rodovias: BR-101 (120 km) · BR-116 (85 km)'. ADITIVO no FIM do NamedTuple (preserva todos os índices);
+    # lido sempre por NOME (getattr). Vazio quando indisponível.
+    vias_principais: str = ""
+
 def _montar_comparativo_provedores(km_g, tempo_g, km_o, tempo_o, fonte_vencedora):
     """[COMP-PROV - 21ª geração] Codifica os dados de comparação entre Google e OSRM
     num formato compacto e à prova de parsing (sem JSON, sem caracteres problemáticos):
@@ -8402,8 +8408,15 @@ def _fonte_verdade_singleshot(res_ind):
                                  "Traçada por nomes (embed Google)", _g(2)))
         # ---- OSRM: métricas do comparativo; link próprio (campo 36) ----
         _o_km = comp.get("km_osrm"); _o_tempo = comp.get("tempo_osrm")
-        motores.append(_fv_linha("🛰️ OSRM", _o_km, _o_tempo,
-                                 "Sim (própria)" if _o_km not in (None, "") else "Não retornada", _g(36)))
+        _o_geo_lbl = "Sim (própria)" if _o_km not in (None, "") else "Não retornada"
+        # [OSRM-VIAS - 447ª] anexa as principais rodovias da rota real (extraídas dos steps do OSRM).
+        try:
+            _o_vias = getattr(res_ind, "vias_principais", "") or ""
+            if _o_vias:
+                _o_geo_lbl = f"{_o_geo_lbl} · {_o_vias}"
+        except Exception:
+            pass
+        motores.append(_fv_linha("🛰️ OSRM", _o_km, _o_tempo, _o_geo_lbl, _g(36)))
         # ---- GRAPHHOPPER: parse do campo 41 ----
         _gh = None
         if "_parsear_dados_graphhopper" in globals():
@@ -31690,11 +31703,17 @@ def API_OSRM_Routing(lat_o, lon_o, lat_d, lon_d):
             # mas a travessia foi detectada pela manobra, a rota AINDA usa balsa (exibição/custo coerentes).
             if _trav_u and usa_balsa == "Não":
                 usa_balsa = "Sim"
+            # [OSRM-VIAS - 447ª] principais vias/rodovias da rota (aditivo, idx 7).
+            _vias_u = None
+            try:
+                _vias_u = _osrm_vias_principais(rota)
+            except Exception:
+                _vias_u = None
             registrar_telemetria("OSRM", True, time.time() - start_t)
-            # Retorno ampliado (idx 4 = geometria, idx 5 = snap_info, idx 6 = travessias por balsa [TRAVESSIA-RIO]).
+            # Retorno ampliado (idx 4 = geometria, idx 5 = snap_info, idx 6 = travessias, idx 7 = vias [OSRM-VIAS]).
             # Consumidores antigos usam res[0..5] com guarda len() — os campos novos são aditivos, sem quebrar.
             _res_osrm = (distancia_km, tempo_min, usa_balsa, n_alternativas, geometria_polyline, snap_info,
-                         _trav_u)
+                         _trav_u, _vias_u)
             try:
                 if _ck_osrm is not None:
                     cache_rotas.set(_ck_osrm, _res_osrm, expire=2592000)
@@ -32034,9 +32053,14 @@ def API_OSRM_FOSSGIS_Routing(lat_o, lon_o, lat_d, lon_d):
                     }
             except Exception:
                 _snap = None
+            _vias_u = None
+            try:
+                _vias_u = _osrm_vias_principais(_rota)
+            except Exception:
+                _vias_u = None
             registrar_telemetria("OSRM_FOSSGIS", True, time.time() - start_t)
             return (_dist_km, _tempo_min, _balsa, _n_alt, _geo_poly, _snap,
-                    _trav_u)  # idx 6 [TRAVESSIA-RIO · §5/§8]
+                    _trav_u, _vias_u)  # idx 6 travessias, idx 7 vias [OSRM-VIAS]
     except Exception:
         pass
     registrar_telemetria("OSRM_FOSSGIS", False, time.time() - start_t)
@@ -35382,6 +35406,15 @@ def calcular_pipeline_logistico(origem, destino, perfil_rota="shortest"):
                 _trav_qtd = len(_trav_info)
         except Exception:
             _trav_rio, _trav_qtd, _trav_info = [], 0, []
+        # [OSRM-VIAS - 447ª] rótulo das principais vias/rodovias da rota real (idx 7 do OSRM/contendor).
+        _vias_osrm = ""
+        try:
+            _vias_raw = (res_osrm[7] if (res_osrm and len(res_osrm) > 7 and isinstance(res_osrm[7], dict))
+                         else None)
+            if _vias_raw:
+                _vias_osrm = _osrm_vias_resumo(_vias_raw)
+        except Exception:
+            _vias_osrm = ""
         # só registra motores que REALMENTE foram consultados (evita entradas mortas no consenso/telemetria)
         if _res_gh is not None or GRAPHHOPPER_API_KEY or _graphhopper_instancia_propria():
             _motores_resultados["GRAPHHOPPER"] = _res_gh
@@ -35782,7 +35815,8 @@ def calcular_pipeline_logistico(origem, destino, perfil_rota="shortest"):
                 dados_valhalla=_dados_vlh_str,
                 travessias_rio=_trav_rio,
                 quantidade_travessias=_trav_qtd,
-                travessias_info=_trav_info
+                travessias_info=_trav_info,
+                vias_principais=_vias_osrm
             )
             CACHE_L1_ROTAS[chave_rota_cache] = retorno
             _cache_set_seguro(cache_rotas, chave_rota_cache, _ckpt_sanitizar(retorno), expire=2592000)
@@ -38754,6 +38788,78 @@ def _capturar_travessias_osrm(rota_json):
         return _out
     except Exception:
         return []
+
+
+# ==============================================================================
+# [OSRM-VIAS - 447ª geração] Extração das PRINCIPAIS VIAS/RODOVIAS da rota REAL a partir dos steps do OSRM
+# (que a app já solicitava com steps=true, mas só consumia para detectar balsa). Cada step traz `name` (nome
+# da via) e frequentemente `ref` (designação, ex.: "BR-101"); somamos a distância por via e destacamos as
+# rodovias federais/estaduais reconhecidas. NÚCLEO 100% PURO/determinístico, keyless (roda em toda rota OSRM).
+# ==============================================================================
+_UF_BR_SET = {"AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG",
+              "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"}
+
+
+def _osrm_vias_principais(rota_json, top=4):
+    """[OSRM-VIAS - 447ª geração] Núcleo PURO. Percorre legs/steps do JSON do OSRM e agrega a DISTÂNCIA por
+    via (usa `ref` quando há — ex. 'BR-101' —, senão `name`). Devolve {vias:[{nome,km}], rodovias:[{desig,km}],
+    km_total_nomeado} ou None. Reconhece rodovias BR-xxx e estaduais <UF>-xxx. Nunca levanta exceção."""
+    if not isinstance(rota_json, dict):
+        return None
+    import re
+    _acc = {}
+    for _leg in (rota_json.get("legs") or []):
+        for _step in (_leg.get("steps") or []):
+            try:
+                _dkm = float(_step.get("distance") or 0.0) / 1000.0
+            except (TypeError, ValueError):
+                _dkm = 0.0
+            if _dkm <= 0:
+                continue
+            _ref = str(_step.get("ref") or "").strip()
+            _nome = str(_step.get("name") or "").strip()
+            _chave = _ref or _nome
+            if not _chave or _chave in ("-", "—"):
+                continue
+            _acc[_chave] = _acc.get(_chave, 0.0) + _dkm
+    if not _acc:
+        return None
+    _ordenado = sorted(_acc.items(), key=lambda kv: -kv[1])
+    _vias = [{"nome": _k, "km": round(_v, 1)} for _k, _v in _ordenado[:top] if _v > 0]
+    _rod, _vistos = [], set()
+    for _k, _v in _ordenado:
+        for _m in re.findall(r"\b([A-Z]{2}\s?-?\s?\d{2,3})\b", _k.upper()):
+            _desig = re.sub(r"\s", "", _m)
+            _desig = _desig if "-" in _desig else (_desig[:2] + "-" + _desig[2:])
+            _pref = _desig[:2]
+            if (_pref == "BR" or _pref in _UF_BR_SET) and _desig not in _vistos:
+                _vistos.add(_desig)
+                _rod.append({"desig": _desig, "km": round(_v, 1)})
+    return {"vias": _vias, "rodovias": _rod[:top],
+            "km_total_nomeado": round(sum(_acc.values()), 1)}
+
+
+def _osrm_vias_resumo(payload):
+    """[OSRM-VIAS - 447ª geração] PURO. Frase curta das principais vias/rodovias, ou "" se vazio. Prioriza
+    as rodovias reconhecidas (BR/estaduais); na ausência, as vias mais longas. Aceita o dict do helper ou
+    uma lista de vias."""
+    if not payload:
+        return ""
+    if isinstance(payload, dict):
+        _rod = payload.get("rodovias") or []
+        _vias = payload.get("vias") or []
+    elif isinstance(payload, list):
+        _rod, _vias = [], payload
+    else:
+        return ""
+
+    def _fmt(_n, _k):
+        return f"{_n} ({str(round(_k, 1)).replace('.', ',')} km)"
+    if _rod:
+        return "Rodovias: " + " · ".join(_fmt(r.get("desig", ""), r.get("km", 0)) for r in _rod[:4])
+    if _vias:
+        return "Principais vias: " + " · ".join(_fmt(v.get("nome", ""), v.get("km", 0)) for v in _vias[:4])
+    return ""
 
 
 def _dist_ponto_segmento_km(lat, lon, a, b):

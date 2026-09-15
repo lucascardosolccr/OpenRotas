@@ -63,6 +63,7 @@ Localidades Hidrologia Pavimento
 | | Malhas Municipais 2025 | 5.570 | ✅ |
 | | Agregados — Censo 2022 (pop./densidade/área) | 5.570 | ✅ API v3 (gratuita, sem chave) |
 | **Rodoviária** | OSRM/FOSSGIS/Valhalla/GraphHopper | Tempo real | ✅ API |
+| **OSRM** | Principais vias/rodovias (BR/estaduais) | Por trecho (steps) | ✅ keyless |
 | **GraphHopper** | Perfil de vias (pavimento/classe/balsa) | Por trecho | ✅ path details |
 | **SNIRH/ANA HidroWeb** | Séries (cotas/vazões/chuvas) | Estatística + gráfico | ✅ API v1 |
 
