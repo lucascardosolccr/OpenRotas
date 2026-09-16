@@ -1989,6 +1989,19 @@ st.markdown("""
         border-top-color: var(--brand) !important;
         border-right-color: var(--brand) !important;
     }
+
+    /* Rótulo de SEÇÃO dentro de formulários longos (cadastro/perfil) — agrupa campos em blocos
+       legíveis: rótulo curto de marca + régua que esmaece à direita. Substitui st.caption cru. */
+    .form-section {
+        display: flex; align-items: center; gap: 10px;
+        font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+        color: var(--brand-2); margin: 14px 0 4px;
+    }
+    .form-section:first-child { margin-top: 2px; }
+    .form-section::after {
+        content: ""; flex: 1; height: 1px;
+        background: linear-gradient(90deg, var(--brd-soft), transparent);
+    }
 </style>
 """, unsafe_allow_html=True)
 

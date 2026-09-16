@@ -217,10 +217,11 @@ def _tela_login():
 def _tela_cadastro():
     st.markdown("### Criar conta")
     with st.form("form_cadastro"):
+        st.markdown("<div class='form-section'>👤 Dados pessoais</div>", unsafe_allow_html=True)
         _nome = st.text_input("Nome completo*")
         _email = st.text_input("E-mail*")
         _telefone = st.text_input("Telefone (com DDD)*", placeholder="(11) 98765-4321")
-        st.caption("Endereço")
+        st.markdown("<div class='form-section'>📍 Endereço</div>", unsafe_allow_html=True)
         _cc1, _cc2 = st.columns([3, 1])
         _logradouro = _cc1.text_input("Logradouro*")
         _numero = _cc2.text_input("Número*")
@@ -231,7 +232,7 @@ def _tela_cadastro():
         _cidade = _cc5.text_input("Cidade*")
         _cep = _cc6.text_input("CEP*", placeholder="00000-000")
         _uf = _cc7.text_input("UF*", max_chars=2, placeholder="GO")
-        st.caption("Senha")
+        st.markdown("<div class='form-section'>🔒 Senha de acesso</div>", unsafe_allow_html=True)
         _senha = st.text_input("Senha*", type="password",
                                help="Mínimo 8 caracteres, combinando ao menos 3 de: maiúscula, minúscula, número, símbolo.")
         _senha2 = st.text_input("Confirmar senha*", type="password")
@@ -463,10 +464,11 @@ def _tela_perfil():
                     time.sleep(0.8)
                     st.rerun()
         with st.form("form_editar_perfil"):
+            st.markdown("<div class='form-section'>👤 Dados pessoais</div>", unsafe_allow_html=True)
             _nome = st.text_input("Nome completo*", value=_perfil.get("nome_completo") or "")
             _telefone = st.text_input("Telefone (com DDD)*", value=_perfil.get("telefone") or "",
                                       placeholder="(11) 98765-4321")
-            st.caption("Endereço")
+            st.markdown("<div class='form-section'>📍 Endereço</div>", unsafe_allow_html=True)
             _cc1, _cc2 = st.columns([3, 1])
             _logradouro = _cc1.text_input("Logradouro*", value=_perfil.get("logradouro") or "")
             _numero = _cc2.text_input("Número*", value=_perfil.get("numero") or "")
