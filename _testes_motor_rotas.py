@@ -1868,6 +1868,31 @@ def validar():
     except Exception as _e28:
         check("GEO-CTX-GEOMETRIA: analisar_rota disponível para o teste de geometria", False)
 
+    print("== 29) HIDRO-ANA-MAPA — mapa hidrográfico desenha a hidrografia REAL do IBGE/ANA + rotas (461ª) ==")
+    # A extração puxa a MESMA base densa da detecção (drenagem BC250 + massas_dagua) por bbox e o renderizador
+    # embute rios/corpos/rotas num mapa Leaflet autocontido. Defensivo: sem base local, degrada para vazio.
+    _h29 = m._hidrografia_ana_regiao(-3.3, -2.9, -60.2, -59.8)   # janela de Manaus (Amazônia densa)
+    check("HIDRO-ANA-MAPA: extração devolve o contrato esperado (rios/massas/fonte)",
+          isinstance(_h29, dict) and set(("rios", "massas", "n_rios", "n_massas", "fonte")) <= set(_h29))
+    try:
+        from inteligencia_geoespacial import bases_locais as _bl29
+        _tem_base = bool(_bl29.camadas_disponiveis())
+    except Exception:
+        _tem_base = False
+    if _tem_base:
+        check("HIDRO-ANA-MAPA: com base local, a janela da Amazônia traz rios E corpos d'água reais",
+              _h29["n_rios"] > 0 and _h29["n_massas"] > 0)
+        check("HIDRO-ANA-MAPA: coordenadas em (lat,lon) plausíveis para o Brasil",
+              bool(_h29["rios"]) and -34 <= _h29["rios"][0][0][0] <= 6 and -74 <= _h29["rios"][0][0][1] <= -34)
+        _uri29 = m._mapa_leaflet_hidrografia_ana(_h29, rotas=[{"pts": [(-3.05, -60.05), (-3.2, -59.9)], "nome": "R"}])
+        import base64 as _b6429
+        _html29 = _b6429.b64decode(_uri29.split(",", 1)[1]).decode("utf-8") if _uri29.startswith("data:") else ""
+        check("HIDRO-ANA-MAPA: renderizador embute rios, corpos, rota e a legenda no HTML Leaflet",
+              _uri29.startswith("data:text/html") and "L.polyline" in _html29 and "L.polygon" in _html29
+              and "Hidrografia IBGE/ANA" in _html29 and '"pts"' in _html29)
+    check("HIDRO-ANA-MAPA: renderizador vazio → '' (defensivo, nunca mapa vazio)",
+          m._mapa_leaflet_hidrografia_ana({"rios": [], "massas": []}, rotas=[]) == "")
+
     print()
     print("=" * 70)
     print("RESULTADO: %d OK, %d FALHAS" % (ok, fail))

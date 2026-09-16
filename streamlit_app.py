@@ -36310,6 +36310,111 @@ map.fitBounds(linha.getBounds(),{{padding:[40,40]}});
     import base64 as _b64
     return "data:text/html;base64," + _b64.b64encode(html.encode("utf-8")).decode("ascii")
 
+def _hidrografia_ana_regiao(lat_min, lat_max, lon_min, lon_max, max_rios=1500, max_massas=500):
+    """[HIDRO-ANA-MAPA - 461ª geração] Extrai a hidrografia REAL do IBGE/ANA dentro de uma janela geográfica —
+    a MESMA base densa usada na detecção (BC250 `drenagem` = rios/córregos, 2,18 mi de linhas; `massas_dagua`
+    = lagos/represas/lagunas) — para desenhar o mapa hidrográfico de verdade (todos os corpos d'água da
+    janela), não uma amostra de pontos. Lê direto do Parquet com filtro de BBOX (pyarrow), sem carregar a
+    camada inteira. Devolve {'rios': [[(lat,lon),...]], 'massas': [[(lat,lon),...]], 'n_rios','n_massas',
+    'truncado', 'fonte'}. PURO/defensivo: em falha ou base ausente, devolve estruturas vazias."""
+    _out = {"rios": [], "massas": [], "n_rios": 0, "n_massas": 0, "truncado": False,
+            "fonte": "IBGE BC250 (drenagem) + massas d'água — mesma base da ANA/SNIRH"}
+    if not _BASES_LOCAIS_IBGE:
+        return _out
+    try:
+        import pandas as _pd
+        _bl = _bases_locais_ibge
+        _filtros = [("xmin", "<=", float(lon_max)), ("xmax", ">=", float(lon_min)),
+                    ("ymin", "<=", float(lat_max)), ("ymax", ">=", float(lat_min))]
+
+        def _linhas_de(_camada, _limite):
+            try:
+                _df = _pd.read_parquet(_bl._caminho(_camada),
+                                       columns=["geometry_wkb", "tipo_geom"], filters=_filtros)
+            except Exception:
+                return [], False
+            if _df is None or _df.empty:
+                return [], False
+            _trunc = len(_df) > _limite
+            _polis = []
+            for _w in _df["geometry_wkb"].head(_limite).tolist():
+                try:
+                    _g = _bl._deco_wkb(_w)
+                except Exception:
+                    _g = None
+                if not _g:
+                    continue
+                # LINESTRING → 1 lista; POLYGON → anéis (cada anel vira uma polilinha fechada)
+                _rings = _g if (isinstance(_g, list) and _g and isinstance(_g[0], list)) else \
+                    ([_g] if (isinstance(_g, list) and _g and isinstance(_g[0], tuple)) else [])
+                for _r in _rings:
+                    # WKB é (lon, lat) → Leaflet quer (lat, lon); recorta ao bbox por segurança visual
+                    _pts = [(round(float(_y), 5), round(float(_x), 5)) for (_x, _y) in _r]
+                    if len(_pts) >= 2:
+                        _polis.append(_pts)
+            return _polis, _trunc
+
+        _rios, _tr = _linhas_de("drenagem", max_rios)
+        _massas, _tm = _linhas_de("massas_dagua", max_massas)
+        _out["rios"] = _rios
+        _out["massas"] = _massas
+        _out["n_rios"] = len(_rios)
+        _out["n_massas"] = len(_massas)
+        _out["truncado"] = bool(_tr or _tm)
+    except Exception:
+        logger.error("[HIDRO-ANA-MAPA] Falha ao extrair hidrografia da janela (isolada).", exc_info=True)
+    return _out
+
+
+def _mapa_leaflet_hidrografia_ana(hidro, rotas=None, altura=620):
+    """[HIDRO-ANA-MAPA - 461ª geração] Mapa Leaflet AUTOCONTIDO que desenha a hidrografia REAL (rios da
+    `drenagem` IBGE/ANA + corpos d'água de `massas_dagua`) da janela e SOBREPÕE as rotas processadas
+    (lista de {'pts':[(lat,lon),...], 'nome':...}). `hidro` vem de `_hidrografia_ana_regiao`. Retorna um
+    data-URI (base64) do HTML. PURO/defensivo: '' se não houver nada para desenhar."""
+    try:
+        import json as _json
+        _rios = (hidro or {}).get("rios") or []
+        _massas = (hidro or {}).get("massas") or []
+        _rotas = rotas or []
+        if not _rios and not _massas and not _rotas:
+            return ""
+        _rios_js = _json.dumps(_rios[:1500])
+        _massas_js = _json.dumps(_massas[:500])
+        _rotas_js = _json.dumps([{"pts": r.get("pts") or [], "nome": str(r.get("nome") or "Rota")}
+                                 for r in _rotas if r.get("pts")][:400])
+        _html = """<!DOCTYPE html><html><head><meta charset="utf-8"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>html,body,#map{height:100%;margin:0;padding:0}#map{width:100%;height:100%}
+.lg{position:absolute;bottom:10px;left:10px;z-index:1000;background:rgba(255,255,255,.92);padding:6px 10px;
+border-radius:8px;font:12px system-ui;color:#0E2A3B}</style></head><body>
+<div class="lg"><b>Hidrografia IBGE/ANA</b><br><span style="color:#2563eb">▬</span> rios/córregos &nbsp;
+<span style="color:#0891b2">▬</span> corpos d'água &nbsp; <span style="color:#e11d48">▬</span> rotas processadas</div>
+<div id="map"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+padding:16px;text-align:center;font:14px system-ui;color:#0E2A3B;background:#eef2f5">
+<div><div style="font-size:1.6em">🗺️⚠️</div><b>Mapa indisponível offline</b><br>
+<span style="font-size:.9em">A biblioteca de mapas ou os ladrilhos não carregaram (sem internet/CDN bloqueado). Os dados da hidrografia estão completos; só a visualização precisa de conexão.</span></div></div></div><script>
+var RIOS=__RIOS__, MASSAS=__MASSAS__, ROTAS=__ROTAS__;
+var map=L.map('map');
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap · Hidrografia IBGE/ANA'}).addTo(map);
+var all=[];
+var gRios=L.layerGroup(), gMassas=L.layerGroup(), gRotas=L.layerGroup();
+MASSAS.forEach(function(p){var pl=L.polygon(p,{color:'#0891b2',weight:1,fillColor:'#22d3ee',fillOpacity:.25});pl.addTo(gMassas);all.push(pl);});
+RIOS.forEach(function(p){var pl=L.polyline(p,{color:'#2563eb',weight:1.2,opacity:.75});pl.addTo(gRios);all.push(pl);});
+ROTAS.forEach(function(r){if(r.pts&&r.pts.length>=2){var pl=L.polyline(r.pts,{color:'#e11d48',weight:3,opacity:.9});pl.bindPopup(r.nome);pl.addTo(gRotas);all.push(pl);}});
+gMassas.addTo(map);gRios.addTo(map);gRotas.addTo(map);
+L.control.layers(null,{'Rios/córregos':gRios,"Corpos d'água":gMassas,'Rotas processadas':gRotas},{collapsed:false}).addTo(map);
+if(all.length){var fg=L.featureGroup(all);map.fitBounds(fg.getBounds(),{padding:[30,30]});}else{map.setView([-15,-55],4);}
+</script></body></html>"""
+        _html = (_html.replace("__RIOS__", _rios_js).replace("__MASSAS__", _massas_js)
+                 .replace("__ROTAS__", _rotas_js))
+        import base64 as _b64
+        return "data:text/html;base64," + _b64.b64encode(_html.encode("utf-8")).decode("ascii")
+    except Exception:
+        logger.error("[HIDRO-ANA-MAPA] Falha ao montar o mapa hidrográfico (isolada).", exc_info=True)
+        return ""
+
+
 def _mapa_leaflet_contexto_geografico(ctx, lat_o, lon_o, lat_d, lon_d, nome_origem="", nome_destino="",
                                        geometria_polyline="", altura=520):
     """[GEO-MAPA - Rodada 9] Mapa Leaflet da rota com CAMADAS ATIVÁVEIS (§3/§24/§25 da missão):
@@ -62285,8 +62390,79 @@ if _secao == _SECOES[17]:   # tab_hidrografia
     
     with _aba_hidro[5]:
         st.subheader("🗺️ Mapa Hidrográfico Nacional")
-        st.caption("Visualização geográfica de rios, bacias e estações hidrológicas.")
-        
+        st.caption("Hidrografia oficial IBGE/ANA (rios da drenagem BC250 + corpos d'água) desenhada de verdade, "
+                   "com as rotas processadas sobrepostas — a mesma base densa usada na detecção de cruzamentos.")
+
+        # [HIDRO-ANA-MAPA - 461ª geração] Mapa hidrográfico REAL: desenha a drenagem (rios) e as massas d'água
+        # do IBGE/ANA na janela e sobrepõe as rotas do último estudo. Antes esta aba só plotava ~500 PONTOS de
+        # rios; agora mostra a hidrografia como a ANA a mostra, com todos os corpos d'água da janela.
+        try:
+            _regioes_bbox = {
+                "Rotas do último estudo (recomendado)": None,
+                "Norte / Amazônia (Manaus)": (-6.0, 0.5, -64.0, -56.0),
+                "Amazônia Ocidental (Solimões)": (-8.0, -2.0, -73.0, -65.0),
+                "Nordeste (São Francisco)": (-12.0, -6.0, -44.0, -36.0),
+                "Centro-Oeste (Pantanal)": (-21.0, -15.0, -58.0, -52.0),
+                "Sudeste (Rio/SP)": (-24.0, -19.0, -47.0, -41.0),
+                "Sul (Bacia do Prata)": (-33.0, -26.0, -57.0, -49.0),
+            }
+            _df_hid = st.session_state.get("df_processado")
+            _tem_estudo = _df_hid is not None and len(_df_hid) > 0 and \
+                _col_existente(_df_hid, "Lat Origem") and _col_existente(_df_hid, "Lat Destino")
+            _opcoes = list(_regioes_bbox.keys())
+            if not _tem_estudo:
+                _opcoes = _opcoes[1:]  # sem estudo, esconde a opção "rotas do último estudo"
+            _sel_reg = st.selectbox("Região a desenhar", _opcoes, index=0,
+                                    help="Desenhar o Brasil inteiro de uma vez é inviável (2,18 mi de linhas); "
+                                         "escolha a janela. 'Rotas do último estudo' enquadra automaticamente onde você trabalhou.")
+            # monta as rotas processadas (traçado REAL do OSRM quando houver; senão, segmento origem→destino)
+            _rotas_hid = []
+            _bbox = _regioes_bbox.get(_sel_reg)
+            if _tem_estudo:
+                _clo = _col_existente(_df_hid, "Lat Origem"); _coo = _col_existente(_df_hid, "Lon Origem")
+                _cld = _col_existente(_df_hid, "Lat Destino"); _cod = _col_existente(_df_hid, "Lon Destino")
+                _poly_map = st.session_state.get("_geo_poly_por_coord", {}) or {}
+                _las = []; _lus = []
+                for _, _rw in _df_hid.iterrows():
+                    _a = _num_seguro(_rw.get(_clo)); _b = _num_seguro(_rw.get(_coo))
+                    _c = _num_seguro(_rw.get(_cld)); _d = _num_seguro(_rw.get(_cod))
+                    if None in (_a, _b, _c, _d) or (_a == 0 and _b == 0):
+                        continue
+                    _lnk = _poly_map.get((round(_a, 4), round(_b, 4), round(_c, 4), round(_d, 4)))
+                    _geom = _geometria_de_link_osrm(_lnk) if _lnk else None
+                    _pts = [(la, lo) for (lo, la) in _geom] if _geom else [(_a, _b), (_c, _d)]
+                    _rotas_hid.append({"pts": _pts, "nome": f"{_rw.get('Origem','?')} → {_rw.get('Destino','?')}"})
+                    _las += [_a, _c]; _lus += [_b, _d]
+                    if len(_rotas_hid) >= 400:
+                        break
+                if _sel_reg.startswith("Rotas") and _las:
+                    _mg = 0.4
+                    _bbox = (min(_las) - _mg, max(_las) + _mg, min(_lus) - _mg, max(_lus) + _mg)
+            if _bbox is None:
+                _bbox = _regioes_bbox["Norte / Amazônia (Manaus)"]
+            # clamp de segurança para não pedir uma janela gigante
+            _la0, _la1, _lo0, _lo1 = _bbox
+            if (_la1 - _la0) > 12 or (_lo1 - _lo0) > 12:
+                _cla = (_la0 + _la1) / 2; _clo2 = (_lo0 + _lo1) / 2
+                _la0, _la1, _lo0, _lo1 = _cla - 6, _cla + 6, _clo2 - 6, _clo2 + 6
+            with st.spinner("Carregando a hidrografia da janela (IBGE/ANA)…"):
+                _hid = _hidrografia_ana_regiao(_la0, _la1, _lo0, _lo1)
+            if _hid["n_rios"] or _hid["n_massas"]:
+                _uri_hid = _mapa_leaflet_hidrografia_ana(_hid, rotas=_rotas_hid)
+                if _uri_hid:
+                    import base64 as _b64hid
+                    components.html(_b64hid.b64decode(_uri_hid.split(",", 1)[1]).decode("utf-8"),
+                                    height=640, scrolling=False)
+                    st.caption(f"🌊 {_hid['n_rios']} rios/córregos e {_hid['n_massas']} corpos d'água desenhados "
+                               f"({_hid['fonte']})" + (" · janela truncada para desempenho" if _hid["truncado"] else "")
+                               + (f" · {len(_rotas_hid)} rota(s) do estudo sobreposta(s)" if _rotas_hid else ""))
+            else:
+                st.info("Sem hidrografia IBGE/ANA nesta janela (ou base local ausente neste ambiente).")
+        except Exception:
+            logger.error("[HIDRO-ANA-MAPA] Falha ao renderizar o mapa hidrográfico real (isolada).", exc_info=True)
+
+        st.markdown("---")
+        st.markdown("##### 📍 Rios e estações catalogados (pontos)")
         try:
             # Preparar dados para o mapa (combinar rios + estações)
             _map_dfs = []
