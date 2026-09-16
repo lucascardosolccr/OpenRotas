@@ -1348,7 +1348,11 @@ def validar():
               m._capturar_travessias_osrm(None) == [] and m._capturar_travessias_osrm("x") == [])
         import numpy as _np
         from scipy.sparse import csr_matrix as _csr
-        _C2 = _np.array([[-55.0, -2.0], [-54.99, -2.0], [-55.0, -2.5], [-54.5, -2.5],
+        # [HIDROVIA-LONGA - 460ª] o nó 3 (isolado, sem nome) foi movido para o cerrado SECO (-10.5, -45.5),
+        # longe de qualquer curso d'água real do IBGE. Antes ficava no meio da Amazônia (-2.5, -54.5): com a
+        # detecção de linhas longas corrigida, o fallback IBGE de _nome_rio_na_travessia passou a (corretamente)
+        # nomear o Rio Amazonas ali — o que mascarava o caso 'corpo_sem_nome' que este nó existe para testar.
+        _C2 = _np.array([[-55.0, -2.0], [-54.99, -2.0], [-55.0, -2.5], [-45.5, -10.5],
                          [-55.28, -2.0], [-55.09, -2.0]], dtype=float)
         _E2 = _np.array([[0, 1], [0, 2], [1, 2], [4, 5]], dtype=int)
         _W2 = _np.array([1.0, 1.0, 1.0, 1.0], dtype=float)
@@ -1364,7 +1368,7 @@ def validar():
         _r1 = m._nome_rio_na_travessia(-2.0, -54.99, g=_g2)
         check("rio: ponto em nó de rio NOMEADO → 'Rio Sintético', confiança alta",
               _r1["nome_rio"] == "Rio Sintético" and _r1["confianca"] == "alta")
-        _r2 = m._nome_rio_na_travessia(-2.5, -54.5, g=_g2)
+        _r2 = m._nome_rio_na_travessia(-10.5, -45.5, g=_g2)   # nó 3 movido p/ cerrado seco (sem rio real)
         check("rio: nó de água isolado (sem nome) → 'corpo_sem_nome' (incerteza EXPLÍCITA)",
               _r2["nome_rio"] is None and _r2["confianca"] == "corpo_sem_nome")
         _r3 = m._nome_rio_na_travessia(-5.0, -57.0, g=_g2)
@@ -1373,7 +1377,7 @@ def validar():
         _r5 = m._nome_rio_na_travessia(-2.0, -55.185, g=_g2)
         check("rio (413ª): travessia CRUZA rio no meio do trecho, nós a ~10 km → 'Rio Largo' alta",
               _r5["nome_rio"] == "Rio Largo" and _r5["confianca"] == "alta" and _r5["dist_km"] == 0.0)
-        _r4 = m._nome_rio_na_travessia(-2.0, -54.99, g={})
+        _r4 = m._nome_rio_na_travessia(-10.5, -45.5, g={})   # cerrado seco: sem grafo E sem corpo IBGE real
         check("rio: sem grafo → 'indisponivel' (fail-open)", _r4["confianca"] == "indisponivel")
         _en = m._enriquecer_travessias_rota(
             [{"lat": -2.0, "lon": -54.99, "km": 19.5, "ordem": 1}], g=_g2)

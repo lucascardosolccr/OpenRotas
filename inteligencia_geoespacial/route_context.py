@@ -367,25 +367,8 @@ def _consultar_rapido_camada_pequena(camada: str, lon: float, lat: float, raio_k
     if df.empty:
         return []
 
-    df = df.copy()
-    df["distancia_km"] = _bl._haversine(lon, lat, df.lon.to_numpy(), df.lat.to_numpy())
-    df = df[df.distancia_km <= raio_km].sort_values("distancia_km")
-    if df.empty:
-        return []
-
-    pool = df.head(min(len(df), max(limite * 80, 512)))
-    calc = []
-    for _, r in pool.iterrows():
-        if r.tipo_geom == "PONTO":
-            calc.append((float(r.distancia_km), r))
-            continue
-        d_bbox = _bl._dist_bbox_km(lon, lat, r.xmin, r.ymin, r.xmax, r.ymax)
-        if len(calc) >= limite and d_bbox >= calc[limite - 1][0]:
-            continue
-        d = _bl._distancia_geometria(lon, lat, r.geometry_wkb)
-        calc.append((d if d is not None else float(r.distancia_km), r))
-    calc.sort(key=lambda t: t[0])
-    return [{**dict(r), "distancia_km": d} for d, r in calc[:limite]]
+    # [HIDROVIA-LONGA - 460ª] mesma implementação única/correta de ranqueamento que mais_proximos.
+    return _bl._ranquear_por_distancia(df, lon, lat, raio_km, limite)
 
 
 # ==============================================================================
@@ -480,25 +463,9 @@ def _consultar_camada_pesada_cacheada(camada: str, lon: float, lat: float, raio_
         if df.empty:
             return []
 
-    df = df.copy()
-    df["distancia_km"] = _bl._haversine(lon, lat, df.lon.to_numpy(), df.lat.to_numpy())
-    df = df[df.distancia_km <= raio_km].sort_values("distancia_km")
-    if df.empty:
-        return []
-
-    pool = df.head(min(len(df), max(limite * 80, 512)))
-    calc = []
-    for _, r in pool.iterrows():
-        if r.tipo_geom == "PONTO":
-            calc.append((float(r.distancia_km), r))
-            continue
-        d_bbox = _bl._dist_bbox_km(lon, lat, r.xmin, r.ymin, r.xmax, r.ymax)
-        if len(calc) >= limite and d_bbox >= calc[limite - 1][0]:
-            continue
-        d = _bl._distancia_geometria(lon, lat, r.geometry_wkb)
-        calc.append((d if d is not None else float(r.distancia_km), r))
-    calc.sort(key=lambda t: t[0])
-    return [{**dict(r), "distancia_km": d} for d, r in calc[:limite]]
+    # [HIDROVIA-LONGA - 460ª] mesma implementação única/correta de ranqueamento (limite inferior por bbox
+    # para linhas longas) — a janela vem do cache, o ranqueamento é idêntico ao de mais_proximos.
+    return _bl._ranquear_por_distancia(df, lon, lat, raio_km, limite)
 
 
 _CAMADAS_COM_CACHE_AMPLO = ("drenagem", "massas_dagua", "rodovias")

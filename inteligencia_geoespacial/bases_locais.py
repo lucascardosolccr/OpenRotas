@@ -255,27 +255,9 @@ def mais_proximos(camada: str, lon: float, lat: float, raio_km: float, limite: i
             df = df[df[c].astype(object).eq(v)]
         if df.empty:
             return []
-    df["distancia_km"] = _haversine(lon, lat, df.lon.to_numpy(), df.lat.to_numpy())
-    df = df[df.distancia_km <= raio_km].sort_values("distancia_km")
-    if df.empty:
-        return []
-
-    if refinar_linhas:
-        pool = df.head(min(len(df), max(limite * 80, 512)))
-        calc = []
-        for _, r in pool.iterrows():
-            if r.tipo_geom == "PONTO":
-                calc.append((float(r.distancia_km), r))
-                continue
-            d_bbox = _dist_bbox_km(lon, lat, r.xmin, r.ymin, r.xmax, r.ymax)
-            if len(calc) >= limite and d_bbox >= calc[limite - 1][0]:
-                continue
-            d = _distancia_geometria(lon, lat, r.geometry_wkb)
-            calc.append((d if d is not None else float(r.distancia_km), r))
-        calc.sort(key=lambda t: t[0])
-        return [{**dict(r), "distancia_km": d} for d, r in calc[:limite]]
-
-    return [dict(row) for row in df.head(limite).to_dict(orient="records")]
+    # [HIDROVIA-LONGA - 460ª] ranqueamento/refinamento único e correto (limite inferior por bbox p/ linhas
+    # longas em vez do ponto representativo) — ver _ranquear_por_distancia.
+    return _ranquear_por_distancia(df, lon, lat, raio_km, limite, refinar_linhas=refinar_linhas)
 
 
 def _dist_bbox_km(lon, lat, xmin, ymin, xmax, ymax):
@@ -330,3 +312,61 @@ def _distancia_geometria(lon, lat, wkb):
     if melhor2 == float("inf"):
         return None
     return float(melhor2 ** 0.5 * 111.32)
+
+
+def _ranquear_por_distancia(df, lon, lat, raio_km, limite=10, refinar_linhas=True):
+    """[HIDROVIA-LONGA - 460ª geração] A partir de um DataFrame JÁ filtrado por bbox, ranqueia as feições
+    pela distância REAL ao ponto e devolve as `limite` mais próximas dentro de `raio_km`.
+
+    CORRIGE o bug de feição-LINHA longa (uma hidrovia/rio nacional pode ter milhares de km): o pré-filtro
+    NÃO descarta mais uma feição pela distância ao seu ponto REPRESENTATIVO único (que, numa linha enorme,
+    pode cair longe do trecho que passa perto do eixo consultado). Em vez disso usa um LIMITE INFERIOR
+    seguro por feição — a distância ao BBOX (nunca superestima a distância real) — e deixa o refinamento
+    ponto-a-segmento (`_distancia_geometria`) medir a distância real e aplicar o corte final por raio.
+    PONTO continua com sua distância exata (bbox == ponto). Extraído para uma ÚNICA implementação
+    compartilhada por `mais_proximos` e pelos atalhos em memória/cache de route_context — antes eram três
+    cópias com o mesmo pré-filtro representativo, e o bug morava nas três."""
+    import numpy as np
+
+    if df is None or df.empty:
+        return []
+    df = df.copy()
+    _d_rep = _haversine(lon, lat, df.lon.to_numpy(), df.lat.to_numpy())
+    df["distancia_km"] = _d_rep
+    _eh_ponto = (df["tipo_geom"].astype(str).to_numpy() == "PONTO")
+    _d_bbox = np.fromiter(
+        (_dist_bbox_km(lon, lat, r.xmin, r.ymin, r.xmax, r.ymax)
+         for r in df[["xmin", "ymin", "xmax", "ymax"]].itertuples(index=False)),
+        dtype=float, count=len(df))
+    # limite inferior da distância real: PONTO = distância exata; LINHA/POLÍGONO = distância ao bbox
+    _d_lim = np.where(_eh_ponto, _d_rep, _d_bbox)
+    _mask = _d_lim <= raio_km
+    if not _mask.any():
+        return []
+    df = df[_mask]
+    _d_lim = _d_lim[_mask]
+    _order = np.argsort(_d_lim, kind="stable")
+    df = df.iloc[_order]
+
+    if not refinar_linhas:
+        # Contrato antigo do modo sem refinamento: distância representativa; aplica o corte por raio nela
+        # (para linhas isso pode perder um trecho próximo — por isso o refinamento é o padrão).
+        df = df[df.distancia_km <= raio_km]
+        return [dict(row) for row in df.head(limite).to_dict(orient="records")]
+
+    pool = df.head(min(len(df), max(limite * 80, 512)))
+    calc = []
+    for _, r in pool.iterrows():
+        if r.tipo_geom == "PONTO":
+            calc.append((float(r.distancia_km), r))
+            continue
+        d_bbox = _dist_bbox_km(lon, lat, r.xmin, r.ymin, r.xmax, r.ymax)
+        if len(calc) >= limite and d_bbox >= calc[limite - 1][0]:
+            continue
+        d = _distancia_geometria(lon, lat, r.geometry_wkb)
+        dd = d if d is not None else float(r.distancia_km)
+        if dd <= raio_km:  # corte final pela distância REAL (o pré-filtro usou só o limite inferior)
+            calc.append((dd, r))
+    calc.sort(key=lambda t: t[0])
+    return [{k: v for k, v in dict(r).items() if k != "_d_lim"} | {"distancia_km": d}
+            for d, r in calc[:limite]]

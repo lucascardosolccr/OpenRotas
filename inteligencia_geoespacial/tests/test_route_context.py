@@ -105,6 +105,28 @@ def test_linha_cruza_defensivo():
     import struct
     ponto = b"\x01" + struct.pack("<I", 1) + struct.pack("<dd", 0.5, 0.5)
     assert rc._linha_cruza_geometria([(0, 0), (1, 1)], ponto) is None  # ponto não é "atravessado"
+
+
+def test_ranquear_por_distancia_alcanca_linha_longa():
+    # [HIDROVIA-LONGA - 460ª] feição-LINHA longa cujo PONTO REPRESENTATIVO cai longe do ponto consultado,
+    # mas cujo TRAÇADO passa a ~1 km: o pré-filtro por bbox (limite inferior) tem de mantê-la — antes o
+    # filtro pelo ponto representativo a descartava. Puro (DataFrame sintético, sem Parquet).
+    import pandas as pd
+    rio = _wkb_line([(0.01, -5.0), (0.01, 0.0), (0.01, 5.0)])   # rio vertical passando ~1 km do ponto (0,0)
+    df = pd.DataFrame([{
+        "geometry_wkb": rio, "lon": 0.01, "lat": 5.0,            # ponto representativo ~550 km ao norte
+        "xmin": 0.0, "ymin": -5.0, "xmax": 0.02, "ymax": 5.0,    # bbox cobre a latitude consultada
+        "tipo_geom": "LINHA", "nome": "Rio Longo", "fonte_base": "BC250", "fonte_uf": "BR"}])
+    achados = bl._ranquear_por_distancia(df, 0.0, 0.0, raio_km=10.0, limite=5)
+    assert len(achados) == 1 and achados[0]["nome"] == "Rio Longo"
+    assert achados[0]["distancia_km"] < 3.0                      # distância REAL ao traçado (~1,1 km)
+    # controle: uma linha realmente distante (bbox longe) continua fora do raio
+    rio2 = _wkb_line([(3.0, 3.0), (3.0, 4.0)])
+    df2 = pd.DataFrame([{
+        "geometry_wkb": rio2, "lon": 3.0, "lat": 4.0,
+        "xmin": 3.0, "ymin": 3.0, "xmax": 3.0, "ymax": 4.0,
+        "tipo_geom": "LINHA", "nome": "Rio Distante", "fonte_base": "BC250", "fonte_uf": "BR"}])
+    assert bl._ranquear_por_distancia(df2, 0.0, 0.0, 10.0, 5) == []
     assert rc.nivel_automatico(None, suspeita=False) == 1
 
 
@@ -815,8 +837,12 @@ def test_analisar_rota_identifica_estrada_de_ferro_vitoria_a_minas():
     ctx = rc.analisar_rota(origem, destino, distancia_km=45.0, raio_km=8.0)
     nomes = [f.nome for f in ctx.ferrovias]
     assert any("Vitória" in n or "Vitoria" in n for n in nomes)
-    for f in ctx.ferrovias:
-        assert f.fonte == "IBGE BC100 (ferrovias) — ES"
+    # [HIDROVIA-LONGA - 460ª] O pré-filtro por BBOX (limite inferior) passou a alcançar também as linhas
+    # NACIONAIS (BC250) da EFVM, cujo ponto REPRESENTATIVO caía longe do eixo e antes era descartado — a
+    # detecção ficou mais completa (recall). Ambas as fontes são reais; a extração regional (BC100-ES)
+    # continua presente. Não se exige mais que TODAS sejam BC100-ES (isso codificava o bug do pré-filtro).
+    fontes = {f.fonte for f in ctx.ferrovias}
+    assert "IBGE BC100 (ferrovias) — ES" in fontes
 
 
 # ==============================================================================
