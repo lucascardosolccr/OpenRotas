@@ -139,6 +139,47 @@ def test_lorenz_ausente_sem_massa():
     assert m._estudo_impacto_candidatos(_df())["lorenz_deciles"] == []
 
 
+def test_uf_risco_matriz_no_motor():
+    # o motor cruza UF × nível de risco (candidatos), ordenando os níveis por severidade
+    df = _df()
+    e = m._estudo_impacto_candidatos(df)
+    assert e["uf_risco"] is not None
+    assert e["uf_risco"]["niveis"][0] in ("crítico", "critico")   # crítico vem primeiro
+    # AM tem A (crítico, 5000) e B (baixo, 100); a célula AM×crítico deve refletir 5000
+    _lin = {l["uf"]: l for l in e["uf_risco"]["linhas"]}
+    assert _lin["AM"]["por_nivel"].get("crítico", 0) == 5000
+
+
+def test_svg_histograma_faixas():
+    e = m._estudo_impacto_candidatos(_df())
+    svg = m._svg_histograma_faixas(e["distribuicao_faixas"])
+    assert svg.startswith("<svg") and "<rect" in svg
+    assert m._svg_histograma_faixas([]) == "" and m._svg_histograma_faixas(None) == ""
+
+
+def test_svg_heatmap_uf_risco():
+    e = m._estudo_impacto_candidatos(_df())
+    svg = m._svg_heatmap_uf_risco(e["uf_risco"])
+    assert svg.startswith("<svg") and "<rect" in svg and "rgb(" in svg
+    assert m._svg_heatmap_uf_risco(None) == ""
+    assert m._svg_heatmap_uf_risco({"niveis": [], "linhas": []}) == ""
+
+
+def test_concentracao_divergencia_comparacao():
+    # peso = |Diferença| × Inscritos; concentra em poucos municípios
+    linhas = [{"Diferença (km)": 100.0, "Inscritos": 5000}]  # um dominante
+    linhas += [{"Diferença (km)": 1.0, "Inscritos": 10} for _ in range(15)]
+    c = m._concentracao_divergencia_comparacao(linhas)
+    assert c is not None and c["n"] == 16
+    assert c["lorenz_deciles"][0]["share_acumulado"] > 90     # o 1º decil já domina
+    assert c["gini"] > 0.6
+    # menos de 10 municípios divergentes -> None
+    assert m._concentracao_divergencia_comparacao([{"Diferença (km)": 5, "Inscritos": 10}]) is None
+    # seção HTML embute a curva
+    assert "<svg" in m._secao_concentracao_divergencia_html(c)
+    assert m._secao_concentracao_divergencia_html(None) == ""
+
+
 def test_svg_lorenz_desenha_curva_e_diagonal():
     # [VISUAL] a curva de Lorenz vira um SVG autocontido (offline) com polilinha e diagonal
     e = m._estudo_impacto_candidatos(_df_grande())

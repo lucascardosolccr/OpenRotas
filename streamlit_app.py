@@ -5511,6 +5511,24 @@ def _estudo_impacto_candidatos(df, limiar_longo_km=200.0):
                                 "deslocamento_medio_ponderado": round(_kc / _cc, 1) if _cc else 0.0})
             _por_uf.sort(key=lambda x: -x["km_candidato"])
 
+        # matriz UF × nível de risco (candidatos) — base do HEATMAP geográfico de risco: onde a
+        # exposição operacional se concentra no mapa. Colunas = níveis presentes, ordenados por severidade.
+        _uf_risco = None
+        if _col_uf is not None and "Risco Operacional" in _d.columns and _por_uf:
+            _rank = {"crítico": 0, "critico": 0, "alto": 1, "médio": 2, "medio": 2, "moderado": 2,
+                     "baixo": 3, "mínimo": 4, "minimo": 4}
+            _niv_all = _nivel_da_coluna_risco(_d["Risco Operacional"]).fillna("")
+            _ufcol = _d[_col_uf].astype(str).str.upper().str.strip()
+            _niveis = sorted({str(n) for n in _niv_all.unique() if n and str(n) not in ("nan", "")},
+                             key=lambda n: (_rank.get(n, 9), n))
+            _linhas_ufr = []
+            for _uf in [u["uf"] for u in _por_uf[:10]]:
+                _mu = _ufcol == _uf
+                _cel = {_nv: int(_d.loc[_mu & (_niv_all == _nv), "_cand"].sum()) for _nv in _niveis}
+                _linhas_ufr.append({"uf": _uf, "total": int(_d.loc[_mu, "_cand"].sum()), "por_nivel": _cel})
+            if _niveis and _linhas_ufr:
+                _uf_risco = {"niveis": _niveis, "linhas": _linhas_ufr}
+
         # top municípios por peso logístico (candidato-km)
         _col_org = next((c for c in ("Origem", "Municipio Origem") if c in _d.columns), None)
         _top_mun = []
@@ -5581,7 +5599,8 @@ def _estudo_impacto_candidatos(df, limiar_longo_km=200.0):
             "balsa_e_risco": _balsa_e_risco,
             "concentracao": {"gini_km_candidato": _gini_kmc, "share_top10pct_municipios": _share_top10},
             "pareto": _pareto, "lorenz_deciles": _lorenz,
-            "por_uf": _por_uf, "top_municipios_peso": _top_mun, "resumo_frases": _fr,
+            "por_uf": _por_uf, "uf_risco": _uf_risco,
+            "top_municipios_peso": _top_mun, "resumo_frases": _fr,
         }
     except Exception:
         logger.debug("[IMPACTO-CANDIDATOS] estudo isolado falhou (aditivo).", exc_info=True)
@@ -5645,6 +5664,137 @@ def _svg_lorenz(lorenz):
         return ""
 
 
+def _svg_histograma_faixas(faixas):
+    """[VISUAL - 454ª geração] Histograma vertical (SVG inline, offline, autocontido) da distribuição de
+    CANDIDATOS por faixa de deslocamento — quantas pessoas em cada faixa de km. '' se vazio. PURO."""
+    try:
+        import html as _h
+        if not faixas:
+            return ""
+        _W, _H, _ml, _mb, _mt = 470, 240, 22, 42, 20
+        _pw, _ph = _W - _ml - 16, _H - _mb - _mt
+        _vals = [max(0, int(f.get("candidatos", 0))) for f in faixas]
+        _labs = [str(f.get("faixa", "")) for f in faixas]
+        _vmax = max(_vals) or 1
+        _n = max(1, len(_vals))
+        _gap = _pw / _n
+        _bw = _gap * 0.66
+        _bars = []
+        for _i, (_v, _lab) in enumerate(zip(_vals, _labs)):
+            _bh = _v / _vmax * _ph
+            _bx = _ml + _i * _gap + (_gap - _bw) / 2
+            _by = _mt + (_ph - _bh)
+            _vtxt = f"{_v:,}".replace(",", ".")
+            _bars.append(
+                f"<rect x='{_bx:.1f}' y='{_by:.1f}' width='{_bw:.1f}' height='{max(0.0,_bh):.1f}' rx='3' "
+                "fill='#1e3a8a'/>"
+                f"<text x='{_bx + _bw/2:.1f}' y='{_by-4:.1f}' font-size='10' fill='#334155' "
+                f"text-anchor='middle'>{_vtxt}</text>"
+                f"<text x='{_bx + _bw/2:.1f}' y='{_H-_mb+16:.1f}' font-size='10' fill='#64748b' "
+                f"text-anchor='middle'>{_h.escape(_lab)}</text>")
+        _base = (f"<line x1='{_ml}' y1='{_mt+_ph:.1f}' x2='{_ml+_pw:.1f}' y2='{_mt+_ph:.1f}' "
+                 "stroke='#cbd5e1'/>")
+        return (f"<svg viewBox='0 0 {_W} {_H}' width='100%' style='max-width:510px;height:auto' role='img' "
+                "aria-label='Histograma de candidatos por faixa de deslocamento'>"
+                f"{_base}{''.join(_bars)}</svg>")
+    except Exception:
+        return ""
+
+
+def _svg_heatmap_uf_risco(uf_risco):
+    """[VISUAL - 454ª geração] Heatmap (SVG inline, offline) de candidatos por UF (linhas) × nível de
+    risco operacional (colunas). Célula mais intensa = mais candidatos naquele cruzamento; a cor-base
+    marca a severidade (vermelho=crítico → verde=baixo). '' se vazio. PURO/defensivo."""
+    try:
+        import html as _h
+        if not uf_risco or not uf_risco.get("linhas") or not uf_risco.get("niveis"):
+            return ""
+        _niveis, _linhas = uf_risco["niveis"], uf_risco["linhas"]
+        _cor = {"crítico": (185, 28, 28), "critico": (185, 28, 28), "alto": (234, 88, 12),
+                "médio": (202, 138, 4), "medio": (202, 138, 4), "moderado": (202, 138, 4),
+                "baixo": (22, 101, 52), "mínimo": (22, 101, 52), "minimo": (22, 101, 52)}
+        _vmax = max((max(l["por_nivel"].values()) if l["por_nivel"] else 0) for l in _linhas) or 1
+        _cw, _rh, _lx, _ty = 90, 27, 54, 42
+        _W, _H = _lx + _cw * len(_niveis) + 8, _ty + _rh * len(_linhas) + 8
+        _out = [f"<svg viewBox='0 0 {_W} {_H}' width='100%' style='max-width:{min(_W,580)}px;height:auto' "
+                "role='img' aria-label='Heatmap de candidatos por UF e nível de risco'>"]
+        for _j, _nv in enumerate(_niveis):
+            _out.append(f"<text x='{_lx + _j*_cw + _cw/2:.1f}' y='{_ty-12:.1f}' font-size='11' "
+                        f"fill='#334155' text-anchor='middle' font-weight='600'>{_h.escape(str(_nv))}</text>")
+        for _i, _l in enumerate(_linhas):
+            _ry = _ty + _i * _rh
+            _out.append(f"<text x='{_lx-8:.1f}' y='{_ry + _rh/2 + 4:.1f}' font-size='11' fill='#334155' "
+                        f"text-anchor='end' font-weight='600'>{_h.escape(str(_l['uf']))}</text>")
+            for _j, _nv in enumerate(_niveis):
+                _v = int(_l["por_nivel"].get(_nv, 0))
+                _cx = _lx + _j * _cw
+                _r, _g, _b = _cor.get(str(_nv), (30, 58, 138))
+                _a = 0.10 + 0.85 * (_v / _vmax)
+                _tcol = "#ffffff" if _a > 0.55 else "#334155"
+                _vtxt = f"{_v:,}".replace(",", ".")
+                _out.append(
+                    f"<rect x='{_cx+1:.1f}' y='{_ry+1:.1f}' width='{_cw-2}' height='{_rh-2}' rx='3' "
+                    f"fill='rgb({_r},{_g},{_b})' fill-opacity='{_a:.2f}'/>"
+                    f"<text x='{_cx + _cw/2:.1f}' y='{_ry + _rh/2 + 4:.1f}' font-size='10' fill='{_tcol}' "
+                    f"text-anchor='middle'>{_vtxt}</text>")
+        _out.append("</svg>")
+        return "".join(_out)
+    except Exception:
+        return ""
+
+
+def _concentracao_divergencia_comparacao(linhas):
+    """[VISUAL - 454ª geração] Concentração (Lorenz/Gini) da DIVERGÊNCIA candidato-ponderada entre o
+    estudo da APLICAÇÃO e o de REFERÊNCIA: o peso de cada município é |Diferença (km)| × Inscritos —
+    quanto a discordância entre os dois estudos IMPACTA pessoas. Revela se essa divergência está
+    concentrada em poucos municípios (priorizáveis) ou espalhada. Devolve {lorenz_deciles, gini, n,
+    total} ou None (precisa de ≥10 municípios com divergência). PURO/defensivo."""
+    try:
+        _pesos = []
+        for _a in (linhas or []):
+            _dif = abs(_num_seguro(_a.get("Diferença (km)"), 0.0) or 0.0)
+            _insc = _num_seguro(_a.get("Inscritos"), 0.0) or 0.0
+            _w = _dif * (_insc if _insc > 0 else 1.0)
+            if _w > 0:
+                _pesos.append(_w)
+        _n = len(_pesos)
+        _tot = sum(_pesos)
+        if _n < 10 or _tot <= 0:
+            return None
+        _desc = sorted(_pesos, reverse=True)
+        _lz, _prev = [], 0
+        for _k in range(1, 11):
+            _lim = max(_prev, min(int(round(_n * _k / 10.0)), _n))
+            _lz.append({"decil": _k, "share_acumulado": round(sum(_desc[:_lim]) / _tot * 100.0, 1)})
+            _prev = _lim
+        return {"lorenz_deciles": _lz, "gini": round(_gini(_pesos), 3), "n": _n, "total": _tot}
+    except Exception:
+        return None
+
+
+def _secao_concentracao_divergencia_html(conc):
+    """Seção HTML da concentração da divergência candidato-ponderada (curva de Lorenz + leitura). Recebe
+    o dict de _concentracao_divergencia_comparacao. '' se None. PURO/defensivo."""
+    try:
+        if not conc or not conc.get("lorenz_deciles"):
+            return ""
+        _svg = _svg_lorenz(conc["lorenz_deciles"])
+        _g = conc.get("gini")
+        _lz = conc["lorenz_deciles"]
+        _top10 = _lz[0]["share_acumulado"] if _lz else 0.0
+        return (
+            "<p class='lead'>Onde a discordância entre os dois estudos <b>pesa mais para as pessoas</b>. "
+            "Cada município entra com <b>|diferença de km| × candidatos</b>; a curva mostra se essa "
+            "divergência está concentrada em poucos municípios.</p>"
+            + (f"<p style='color:#334155'>Os <b>10% de municípios</b> de maior divergência ponderada "
+               f"respondem por <b>{_top10:.0f}%</b> de todo o impacto da discordância"
+               + (f" (Gini {_g:.2f})" if isinstance(_g, (int, float)) else "") + ". Priorizar a conferência "
+               "desses casos corrige a maior parte do desalinhamento com menos esforço.</p>")
+            + (f"<div style='margin:8px 0'>{_svg}</div>" if _svg else ""))
+    except Exception:
+        return ""
+
+
 def _secao_impacto_candidatos_html(estudo):
     """[IMPACTO-CANDIDATOS - 449ª geração] Seção HTML do Estudo de Impacto nos Candidatos. Recebe o dict de
     _estudo_impacto_candidatos. Devolve string HTML ou "" se sem candidatos. PURO/defensivo."""
@@ -5695,8 +5845,10 @@ def _secao_impacto_candidatos_html(estudo):
                 f"width:{max(2.0, f['pct_candidatos'] / _pmax * 100.0):.0f}%'></div></div></td>"
                 f"<td class='r'>{f['pct_candidatos']:.0f}%</td><td class='r'>{_mil(f['municipios'])}</td>"
                 f"<td class='r'>{_mil(f['km_candidato'])}</td></tr>" for f in _fx)
+            _hist = _svg_histograma_faixas(_fx)
             _out.append("<h3 style='margin-top:14px'>Candidatos por faixa de deslocamento</h3>"
-                        "<table><thead><tr><th>Faixa</th><th class='r'>Candidatos</th><th>Distribuição</th>"
+                        + (f"<div style='margin:8px 0'>{_hist}</div>" if _hist else "")
+                        + "<table><thead><tr><th>Faixa</th><th class='r'>Candidatos</th><th>Distribuição</th>"
                         "<th class='r'>% dos candidatos</th><th class='r'>Municípios</th>"
                         f"<th class='r'>Candidato-km</th></tr></thead><tbody>{_rows}</tbody></table>")
         # por UF (top 12 por candidato-km) — com mini-barras proporcionais ao candidato-km
@@ -5715,6 +5867,14 @@ def _secao_impacto_candidatos_html(estudo):
                         "<th class='r'>Candidato-km</th><th>Peso relativo</th>"
                         "<th class='r'>Deslocamento médio/candidato</th>"
                         f"</tr></thead><tbody>{_rows}</tbody></table>")
+        # heatmap UF × nível de risco (candidatos) — onde a exposição operacional se concentra no mapa
+        _hm = _svg_heatmap_uf_risco(estudo.get("uf_risco"))
+        if _hm:
+            _out.append("<h3 style='margin-top:14px'>Exposição a risco por estado (candidatos)</h3>"
+                        "<p style='color:#64748b;font-size:13px'>Quantos candidatos, por UF, caem em cada "
+                        "nível de risco operacional. Célula mais intensa = mais candidatos; a cor marca a "
+                        "severidade (vermelho = crítico → verde = baixo).</p>"
+                        f"<div style='margin:6px 0;overflow-x:auto'>{_hm}</div>")
         # top municípios por peso (com % acumulado — leitura de Pareto)
         _tm = estudo.get("top_municipios_peso") or []
         if _tm:
@@ -6893,6 +7053,15 @@ def _gerar_relatorio_comparacao_html(stats, aud, titulo="Relatório da Comparaç
             _h_imp_ref = _secao_ref_impossivel_html(linhas)
             if _h_imp_ref:
                 _sec.append(("ref_impossivel", "⚠️ Distâncias da referência fisicamente impossíveis", _h_imp_ref))
+        except Exception:
+            pass
+        # [VISUAL - 454ª] Concentração da divergência candidato-ponderada (curva de Lorenz): onde a
+        # discordância entre os dois estudos mais impacta pessoas. Só aparece com ≥10 municípios divergentes.
+        try:
+            _h_conc = _secao_concentracao_divergencia_html(_concentracao_divergencia_comparacao(linhas))
+            if _h_conc:
+                _sec.append(("concentracao_divergencia",
+                             "🎯 Concentração da divergência (impacto nos candidatos)", _h_conc))
         except Exception:
             pass
         # [GEO-INTEL-COMPARADOR - fix integração] Contexto geográfico (rios, bacia, pontes, travessias,
@@ -56610,6 +56779,14 @@ def _fragmento_analytics_dashboard():
                                 "uf": "UF", "candidatos": "Candidatos", "km_candidato": "Candidato-km",
                                 "deslocamento_medio_ponderado": "Deslocamento médio/candidato (km)"}),
                                 use_container_width=True, hide_index=True)
+                            # heatmap UF × nível de risco (candidatos) — onde a exposição se concentra
+                            _hm_scr = _svg_heatmap_uf_risco(_est_scr.get("uf_risco"))
+                            if _hm_scr:
+                                st.caption("Exposição a risco por estado — candidatos por UF × nível "
+                                           "(vermelho = crítico → verde = baixo):")
+                                _nlin = len(_est_scr["uf_risco"]["linhas"])
+                                components.html(f"<div style='font-family:system-ui'>{_hm_scr}</div>",
+                                                height=42 + 27 * _nlin + 24, scrolling=False)
                         else:
                             st.caption("Sem coluna de UF para detalhar por estado.")
                     with _timp3:
