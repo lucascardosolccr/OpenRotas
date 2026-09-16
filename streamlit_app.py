@@ -5602,6 +5602,49 @@ def _narrativa_analitica_dashboard_cached(df, uf_col="UF_Sintetica_Origem", reg_
     return _narrativa_analitica_dashboard(df, uf_col=uf_col, reg_col=reg_col)
 
 
+def _svg_lorenz(lorenz):
+    """[VISUAL - 453ª geração] Curva de concentração (Lorenz) do candidato-km como SVG inline —
+    autocontido, offline, sem dependência e legível em fundo claro. Recebe a lista `lorenz_deciles`
+    (decil + share_acumulado). Desenha a diagonal de igualdade (tracejada) e a curva real (com área
+    sombreada): quanto mais a curva se afasta da diagonal, mais concentrado é o esforço. Devolve o
+    SVG (string) ou '' se não houver dados. PURO/defensivo — nunca levanta."""
+    try:
+        if not lorenz:
+            return ""
+        _W, _H, _m = 440, 260, 38
+        _pw, _ph = _W - 2 * _m, _H - 2 * _m
+        _x = lambda px: _m + px / 100.0 * _pw
+        _y = lambda py: _m + (1 - py / 100.0) * _ph
+        _pts = [(0.0, 0.0)] + [(float(d["decil"]) * 10.0, float(d["share_acumulado"])) for d in lorenz]
+        _poly = " ".join(f"{_x(px):.1f},{_y(py):.1f}" for px, py in _pts)
+        _area = _poly + f" {_x(100):.1f},{_y(0):.1f} {_x(0):.1f},{_y(0):.1f}"
+        _diag = f"{_x(0):.1f},{_y(0):.1f} {_x(100):.1f},{_y(100):.1f}"
+        _tx = "".join(
+            f"<line x1='{_x(t):.1f}' y1='{_y(0):.1f}' x2='{_x(t):.1f}' y2='{_y(0)+4:.1f}' stroke='#94a3b8'/>"
+            f"<text x='{_x(t):.1f}' y='{_y(0)+16:.1f}' font-size='10' fill='#64748b' "
+            f"text-anchor='middle'>{t}%</text>" for t in (0, 25, 50, 75, 100))
+        _ty = "".join(
+            f"<line x1='{_x(0)-4:.1f}' y1='{_y(t):.1f}' x2='{_x(0):.1f}' y2='{_y(t):.1f}' stroke='#94a3b8'/>"
+            f"<text x='{_x(0)-7:.1f}' y='{_y(t)+3:.1f}' font-size='10' fill='#64748b' "
+            f"text-anchor='end'>{t}%</text>" for t in (0, 50, 100))
+        return (
+            f"<svg viewBox='0 0 {_W} {_H}' width='100%' style='max-width:480px;height:auto' role='img' "
+            "aria-label='Curva de concentração de Lorenz do candidato-km'>"
+            f"<rect x='{_m}' y='{_m}' width='{_pw}' height='{_ph}' fill='#f8fafc' stroke='#e2e8f0'/>"
+            f"<polygon points='{_area}' fill='#1e3a8a' fill-opacity='0.12'/>"
+            f"<polyline points='{_diag}' fill='none' stroke='#94a3b8' stroke-width='1.5' "
+            "stroke-dasharray='5 4'/>"
+            f"<polyline points='{_poly}' fill='none' stroke='#1e3a8a' stroke-width='2.5'/>"
+            f"{_tx}{_ty}"
+            f"<text x='{_x(50):.1f}' y='{_H-8:.1f}' font-size='11' fill='#475569' text-anchor='middle'>"
+            "Top X% dos municípios (do que mais pesa ao que menos pesa)</text>"
+            f"<text x='13' y='{_y(50):.1f}' font-size='11' fill='#475569' text-anchor='middle' "
+            f"transform='rotate(-90 13 {_y(50):.1f})'>% acumulado do candidato-km</text>"
+            "</svg>")
+    except Exception:
+        return ""
+
+
 def _secao_impacto_candidatos_html(estudo):
     """[IMPACTO-CANDIDATOS - 449ª geração] Seção HTML do Estudo de Impacto nos Candidatos. Recebe o dict de
     _estudo_impacto_candidatos. Devolve string HTML ou "" se sem candidatos. PURO/defensivo."""
@@ -5656,16 +5699,21 @@ def _secao_impacto_candidatos_html(estudo):
                         "<table><thead><tr><th>Faixa</th><th class='r'>Candidatos</th><th>Distribuição</th>"
                         "<th class='r'>% dos candidatos</th><th class='r'>Municípios</th>"
                         f"<th class='r'>Candidato-km</th></tr></thead><tbody>{_rows}</tbody></table>")
-        # por UF (top 12 por candidato-km)
+        # por UF (top 12 por candidato-km) — com mini-barras proporcionais ao candidato-km
         _uf = estudo.get("por_uf") or []
         if _uf:
+            _ufmax = max((u["km_candidato"] for u in _uf[:12]), default=0) or 1
             _rows = "".join(
                 f"<tr><td>{_he.escape(u['uf'])}</td><td class='r'>{_mil(u['candidatos'])}</td>"
                 f"<td class='r'>{_mil(u['km_candidato'])}</td>"
+                f"<td><div style='background:#e2e8f0;border-radius:4px;height:14px;min-width:60px'>"
+                f"<div style='background:#0e7490;height:14px;border-radius:4px;"
+                f"width:{max(2.0, u['km_candidato'] / _ufmax * 100.0):.0f}%'></div></div></td>"
                 f"<td class='r'>{u['deslocamento_medio_ponderado']:.0f} km</td></tr>" for u in _uf[:12])
             _out.append("<h3 style='margin-top:14px'>Impacto por estado (top 12 por candidato-km)</h3>"
                         "<table><thead><tr><th>UF</th><th class='r'>Candidatos</th>"
-                        "<th class='r'>Candidato-km</th><th class='r'>Deslocamento médio/candidato</th>"
+                        "<th class='r'>Candidato-km</th><th>Peso relativo</th>"
+                        "<th class='r'>Deslocamento médio/candidato</th>"
                         f"</tr></thead><tbody>{_rows}</tbody></table>")
         # top municípios por peso (com % acumulado — leitura de Pareto)
         _tm = estudo.get("top_municipios_peso") or []
@@ -5685,15 +5733,19 @@ def _secao_impacto_candidatos_html(estudo):
         # curva de concentração (Lorenz por decil) — só quando há massa suficiente
         _lz = estudo.get("lorenz_deciles") or []
         if _lz:
+            _svg = _svg_lorenz(_lz)
+            _gini = (estudo.get("concentracao") or {}).get("gini_km_candidato")
             _rows = "".join(
                 f"<tr><td class='r'>{d['decil'] * 10}%</td><td class='r'>{_mil(d['municipios'])}</td>"
                 f"<td class='r'>{d['share_km_candidato']:.0f}%</td>"
                 f"<td class='r'>{d['share_acumulado']:.0f}%</td></tr>" for d in _lz)
             _out.append("<h3 style='margin-top:14px'>Curva de concentração (Lorenz) do candidato-km</h3>"
-                        "<p style='color:#64748b;font-size:13px'>Municípios ordenados do que mais pesa ao que "
-                        "menos pesa, em decis. Se os primeiros decis já somam quase tudo, o esforço é muito "
-                        "concentrado.</p>"
-                        "<table><thead><tr><th class='r'>Top X% dos municípios</th>"
+                        "<p style='color:#64748b;font-size:13px'>A linha tracejada é a distribuição "
+                        "igualitária; a curva cheia é a real. Quanto maior a área entre elas, mais "
+                        "concentrado o esforço logístico"
+                        + (f" (Gini {_gini:.2f})." if isinstance(_gini, (int, float)) else ".") + "</p>"
+                        + (f"<div style='margin:8px 0'>{_svg}</div>" if _svg else "")
+                        + "<table><thead><tr><th class='r'>Top X% dos municípios</th>"
                         "<th class='r'>Municípios no decil</th><th class='r'>% do candidato-km (decil)</th>"
                         f"<th class='r'>% acumulado</th></tr></thead><tbody>{_rows}</tbody></table>")
         return "".join(_out)
@@ -56547,7 +56599,14 @@ def _fragmento_analytics_dashboard():
                                 use_container_width=True, hide_index=True)
                     with _timp2:
                         if _est_scr.get("por_uf"):
-                            st.dataframe(pd.DataFrame(_est_scr["por_uf"]).rename(columns={
+                            _df_uf = pd.DataFrame(_est_scr["por_uf"])
+                            try:
+                                st.bar_chart(_df_uf.head(12).set_index("uf")["km_candidato"], height=220)
+                                st.caption("Candidato-km por estado (top 12) — onde o esforço de "
+                                           "deslocamento pesa mais.")
+                            except Exception:
+                                pass
+                            st.dataframe(_df_uf.rename(columns={
                                 "uf": "UF", "candidatos": "Candidatos", "km_candidato": "Candidato-km",
                                 "deslocamento_medio_ponderado": "Deslocamento médio/candidato (km)"}),
                                 use_container_width=True, hide_index=True)
@@ -56574,9 +56633,18 @@ def _fragmento_analytics_dashboard():
                         if _est_scr.get("lorenz_deciles"):
                             _df_lz = pd.DataFrame(_est_scr["lorenz_deciles"])
                             _df_lz["Top X% dos municípios"] = (_df_lz["decil"] * 10).astype(str) + "%"
+                            # curva de Lorenz: real (acumulado) vs. igualdade perfeita (y=x), a partir de 0
                             try:
-                                st.bar_chart(_df_lz.set_index("Top X% dos municípios")["share_acumulado"],
-                                             height=220)
+                                _gini_scr = _est_scr["concentracao"]["gini_km_candidato"]
+                                _curva = pd.DataFrame({
+                                    "Top X% dos municípios": ["0%"] + list(_df_lz["Top X% dos municípios"]),
+                                    "Concentração real": [0.0] + list(_df_lz["share_acumulado"]),
+                                    "Igualdade perfeita": [0.0] + [d * 10.0 for d in _df_lz["decil"]],
+                                }).set_index("Top X% dos municípios")
+                                st.line_chart(_curva, height=240)
+                                st.caption("Curva de Lorenz: quanto mais a **Concentração real** se afasta da "
+                                           f"**Igualdade perfeita**, mais concentrado o esforço (Gini "
+                                           f"{_gini_scr:.2f}).")
                             except Exception:
                                 pass
                             st.dataframe(_df_lz[["Top X% dos municípios", "municipios", "share_km_candidato",

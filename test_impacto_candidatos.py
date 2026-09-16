@@ -139,6 +139,19 @@ def test_lorenz_ausente_sem_massa():
     assert m._estudo_impacto_candidatos(_df())["lorenz_deciles"] == []
 
 
+def test_svg_lorenz_desenha_curva_e_diagonal():
+    # [VISUAL] a curva de Lorenz vira um SVG autocontido (offline) com polilinha e diagonal
+    e = m._estudo_impacto_candidatos(_df_grande())
+    svg = m._svg_lorenz(e["lorenz_deciles"])
+    assert svg.startswith("<svg") and svg.rstrip().endswith("</svg>")
+    assert svg.count("<polyline") >= 2            # curva real + diagonal de igualdade
+    assert "candidato-km" in svg                  # rótulo do eixo
+    # defensivo: vazio/None não desenham nada
+    assert m._svg_lorenz([]) == "" and m._svg_lorenz(None) == ""
+    # e a seção HTML embute o SVG quando há massa
+    assert "<svg" in m._secao_impacto_candidatos_html(e)
+
+
 def test_wrapper_cacheado_equivale_ao_nucleo_puro():
     # [PERF-CACHE] o wrapper cacheado do painel deve devolver EXATAMENTE o mesmo resultado do núcleo puro —
     # o cache é só uma camada de memoização entre reruns, nunca altera o conteúdo.
