@@ -8963,7 +8963,7 @@ box-shadow:0 1px 2px rgba(0,0,0,.25),0 6px 20px rgba(0,0,0,.35)}
 .mnil .cbp .skips{font-weight:600}
 .mnil .cbp .note{margin-top:11px;font-size:12px;color:var(--slate,#9CA3AF);line-height:1.5}
 .mnil .cbp .note b{color:var(--ink,#F9FAFB)}
-/* [REDESIGN BELEZA - Rodada 6] Painel de disjuntores: superfície em gradiente e bordas hairline,
+/* [REDESIGN BELEZA - Rodada 6] Painel de saúde dos motores: superfície em gradiente e bordas hairline,
    coeso com os demais cartões. Só acabamento. */
 .mnil .cbp{
   background:linear-gradient(180deg,#232937 0%,#191E29 100%);
@@ -8976,8 +8976,8 @@ box-shadow:0 1px 2px rgba(0,0,0,.25),0 6px 20px rgba(0,0,0,.35)}
 
 def _mnil_cb_pill(status):
     m = {"fechado": ("🟢", "Ativo", "ok"),
-         "meio_aberto": ("🟠", "Testando recuperação", "att"),
-         "aberto": ("🔴", "Suspenso (cooldown)", "err")}
+         "meio_aberto": ("🟠", "Testando", "att"),
+         "aberto": ("🔴", "Suspenso (pausa breve)", "err")}
     ic, txt, cls = m.get(str(status), ("⚪", str(status or "—"), "att"))
     return f'<span class="pill {cls}">{ic} {txt}</span>'
 
@@ -9005,19 +9005,20 @@ def _render_disjuntores_status(google_estado=None, motores_resumo=None):
             _fscol = "—" if _fs is None else f"{_fs}"
             rows += (f'<tr><td><b>{_nome}</b></td><td>{_mnil_cb_pill(_status)}</td>'
                      f'<td>{_sk}</td><td>{_fscol}</td></tr>')
-        estado_geral = ("Todos os motores estão <b>ativos</b> — nenhum disjuntor aberto no momento."
+        estado_geral = ("Todos os motores estão <b>ativos</b> — nenhum foi suspenso automaticamente no momento."
                         if not _algum_aberto else
-                        "Há motor(es) <b>suspenso(s)</b>. Skips altos podem indicar timeouts de rede sendo "
-                        "contados como falha (ver Achado A da auditoria de disjuntores).")
+                        "Há motor(es) <b>pausado(s) automaticamente</b>. Muitas chamadas puladas podem indicar "
+                        "timeouts de rede sendo contados como falha.")
         return (_MNIL_CSS_CB + '<div class="mnil"><div class="cbp">'
-                '<div class="hd">🔌 Disjuntores dos motores de rota</div>'
-                '<table><thead><tr><th>Motor</th><th>Estado do disjuntor</th>'
+                '<div class="hd">🔌 Saúde dos motores de rota</div>'
+                '<table><thead><tr><th>Motor</th><th>Situação</th>'
                 '<th>Chamadas puladas</th><th>Falhas seguidas</th></tr></thead>'
                 f'<tbody>{rows}</tbody></table>'
-                f'<div class="note">📖 <b>Como ler:</b> 🟢 Ativo = disjuntor fechado (motor participando normalmente); '
-                '🟠 Testando = meio-aberto (testando recuperação); 🔴 Suspenso = aberto (motor pausado por um curto '
-                f'cooldown após falhas seguidas). <b>Chamadas puladas</b> = quantas vezes o motor foi ignorado por estar '
-                f'suspenso. {estado_geral}</div></div></div>')
+                f'<div class="note">📖 <b>Como ler:</b> 🟢 Ativo = participando normalmente; '
+                '🟠 Testando = voltando a testar após uma pausa; 🔴 Suspenso = pausado automaticamente por alguns '
+                'segundos após falhas seguidas (proteção que evita insistir num serviço fora do ar — reativa sozinho). '
+                f'<b>Chamadas puladas</b> = quantas vezes o motor foi ignorado enquanto estava pausado. '
+                f'{estado_geral}</div></div></div>')
     except Exception:
         logger.error("[CB-PANEL] Falha ao montar painel de disjuntores (isolada).", exc_info=True)
         return ""
@@ -43558,84 +43559,93 @@ with st.sidebar:
             st.caption(f"📥 Você tem **{_badge_rec}** estudo(s) recebido(s) novo(s) — abra o Perfil para ver.")
         st.markdown("---")
 
-    # [OFFLINE - 144ª geração] Controle do curto-circuito oficial. Ligado por padrão porque a sede do
-    # IBGE é a coordenada OFICIAL, determinística e auditável — e porque a nuvem, nesses casos, era
-    # chamada 3× para chegar a um ponto ~1-2 km ao lado do que já estava em memória.
-    _off_on = st.checkbox("🇧🇷 Identidade oficial IBGE (offline)", value=True, key="modo_oficial",
-                          help="Quando a entrada é INEQUIVOCAMENTE um município (nome único, ou com a UF "
-                               "informada), resolve pela base oficial do IBGE — sede do município, zero "
-                               "consulta à nuvem, resultado idêntico a cada execução. Municípios homônimos "
-                               "SEM UF, endereços e POIs continuam passando pelo pipeline completo. "
-                               "Desmarque para forçar o consenso multi-fonte em tudo.")
-    # [CONCORRENCIA - 147ª geração] NÃO grava mais na global (vazava entre sessões). O checkbox já
-    # persiste em st.session_state['modo_oficial'] via key=, e é lido por _pref_modo_oficial().
-    if _off_on:
-        st.caption("⚡ ~95% das geocodificações de município resolvem **offline** (16.713 → ~759 chamadas "
-                   "num estudo nacional).")
-    # [GOOGLE-GEOCODE - 188ª geração] OPT-IN experimental: usar a busca do Google como VOTO ADICIONAL na
-    # geocodificação (nunca autoritativo — entra no consenso Bayesiano/DBSCAN junto com ArcGIS/Nominatim/
-    # Photon/TomTom). DESLIGADO por padrão. Ligado, aumenta a assertividade quando o Google concorda; se o
-    # Google bloquear/mudar de layout, cada consulta simplesmente retorna vazio e a geocodificação segue com
-    # os demais provedores (degradação graciosa, protegida pelo mesmo disjuntor do roteamento).
-    _gg_on = st.checkbox("🧪 Validar geocodificação com o Google (experimental)", value=False,
-                         key="usar_google_geocode",
-                         help="Adiciona a busca do Google como uma fonte a MAIS no consenso de geocodificação "
-                              "(nunca decide sozinho). Aumenta a assertividade quando o Google concorda com "
-                              "as outras fontes. Use com ciência do trade-off abaixo.")
-    if _gg_on:
-        st.caption("⚠️ **Experimental.** O Google é consultado por um endpoint não-oficial (sem chave de API): "
-                   "o uso automatizado pode contrariar os Termos de Serviço do Google e é sujeito a bloqueio/"
-                   "rate-limit. Este recurso é **tolerante a falhas** — se o Google não responder, a "
-                   "geocodificação segue normalmente pelas demais fontes (ArcGIS/Nominatim/Photon/TomTom), "
-                   "sem qualquer perda. É um **voto adicional** no consenso, nunca a palavra final.")
-    # [OSRM-CONSENSO - 192ª geração] OPT-IN: 2º motor de rota SEM chave (OSRM FOSSGIS, independente do OSRM
-    # primário). Dá consenso keyless entre dois motores e pode encontrar uma rota mais curta. DESLIGADO por
-    # padrão porque a política do FOSSGIS proíbe uso pesado e limita a ≤1 req/s — num lote nacional isso
-    # deixa o estudo MAIS LENTO. Ideal para estudos menores ou conferência de casos críticos.
-    _o2_on = st.checkbox("🧭 2º motor de rota sem chave — OSRM FOSSGIS (consenso)", value=False,
-                         key="usar_osrm2",
-                         help="Consulta um SEGUNDO servidor OSRM independente (routing.openstreetmap.de) e usa "
-                              "a MENOR rota viária válida entre os dois. Melhora a precisão sem chave de API. "
-                              "É limitado a ≤1 requisição/segundo pela política do servidor, então deixa "
-                              "estudos grandes mais lentos — use em estudos menores ou para conferir casos.")
-    if _o2_on:
-        st.caption("⚠️ **Mais lento em lote.** O servidor FOSSGIS exige ≤1 requisição/segundo e proíbe uso "
-                   "pesado — por isso as chamadas são enfileiradas. Ganho: uma 2ª rota viária real, sem chave, "
-                   "para consenso. Se o servidor não responder, o estudo segue com o OSRM primário, sem perda.")
-    # [VALHALLA - 262ª geração] OPT-IN: 3º motor de rota SEM chave (Valhalla, dados OSM, independente do OSRM e
-    # do Google). Reforça o consenso "menor viária vence" com uma 3ª medição real. DESLIGADO por padrão porque
-    # a instância PÚBLICA (FOSSGIS) tem fair-use ≤1 req/s — num lote nacional isso deixa o estudo mais lento.
-    # Para produção, aponte o secret VALHALLA_URL para uma instância própria (self-host Docker) e ligue sem
-    # penalidade. Desligado → não consulta → contendor idêntico ao atual (não-regressão).
-    _vlh_on = st.checkbox("🧭 3º motor de rota sem chave — Valhalla (consenso OSM)", value=False,
-                          key="usar_valhalla",
-                          help="Consulta o Valhalla (motor open-source sobre dados do OpenStreetMap) e usa a "
-                               "MENOR rota viária válida no consenso. Voto adicional independente do OSRM e do "
-                               "Google — nunca a palavra final. Na instância pública é limitado a ≤1 req/s "
-                               "(deixa lotes grandes mais lentos); para produção nacional, configure o secret "
-                               "VALHALLA_URL com a sua própria instância (self-host) e rode sem esse limite.")
-    if _vlh_on:
-        st.caption("⚠️ **Instância pública é limitada.** O Valhalla do FOSSGIS pede ≤1 req/s (chamadas "
-                   "enfileiradas) — bom para estudos menores ou conferência de casos. Ganho: uma rota viária "
-                   "real e independente, sem chave, no consenso. Se não responder, o estudo segue com os "
-                   "demais motores, sem perda. Para lote nacional, use o secret `VALHALLA_URL` apontando à sua "
-                   "instância própria. Acompanhe a participação em **Monitor APIs → linha VALHALLA**.")
-    # [GOOGLE-REGRESSAO-FIX - 193ª geração] OPT-IN: restaura a PACIÊNCIA do Google pré-184ª. A 184ª cortou o
-    # timeout (15s→4s) e as tentativas (3→1-2) e adicionou o disjuntor — ótimo p/ velocidade, mas foi o que
-    # derrubou a participação do Google quando ele está lento/intermitente. Ligado: timeout 12s, 3 tentativas,
-    # disjuntor ignorado → Google tenta muito mais. Custa velocidade (por isso é opt-in).
-    _gagr_on = st.checkbox("🗺️ Modo Google agressivo — recuperar participação (mais lento)", value=False,
-                           key="google_agressivo",
-                           help="Devolve o comportamento das versões antigas em que o Google participava muito "
-                                "mais: espera até 12s por resposta (em vez de 4s), tenta 3 perfis de navegador "
-                                "e ignora o disjuntor que suspende o Google após falhas. Se o Google estiver "
-                                "acessível de forma intermitente no seu ambiente, ele volta a vencer rotas. "
-                                "Deixa estudos grandes mais lentos — ideal p/ estudos menores ou críticos.")
-    if _gagr_on:
-        st.caption("⚠️ **Mais lento.** Cada rota pode esperar até 12s pelo Google (×3 tentativas) antes de "
-                   "usar o OSRM. Ganho: máxima participação do Google sem chave. Confira o efeito na aba "
-                   "**Monitor APIs → linha GOOGLE_MAPS**: se a taxa de falha cair, o Google voltou ao jogo; "
-                   "se continuar ~100%, o IP do servidor está com bloqueio duro (aí só a API oficial resolve).")
+    # [DISJUNTORES-UX - 457ª geração] Antes: 5 checkboxes técnicos SOLTOS na barra lateral, visíveis em
+    # TODA tela e com avisos longos — o "paredão de disjuntores" confuso. Eles só afetam o PROCESSAMENTO
+    # (geocodificação + roteamento), então agora vivem recolhidos num único grupo de "ajustes avançados de
+    # cálculo". Zero regressão: cada checkbox mantém sua key= (persistência em session_state e o snapshot
+    # _capturar_flags_runtime abaixo seguem idênticos); o corpo do expander sempre executa, mesmo recolhido.
+    with st.expander("⚙️ Ajustes avançados de cálculo", expanded=False):
+        st.caption("Opções técnicas do **motor de rotas e de geocodificação**. Afetam apenas o "
+                   "**processamento** de estudos — os padrões abaixo já são os recomendados. Ajuste só se "
+                   "souber o efeito; passe o mouse em cada opção para o detalhe.")
+        # [OFFLINE - 144ª geração] Controle do curto-circuito oficial. Ligado por padrão porque a sede do
+        # IBGE é a coordenada OFICIAL, determinística e auditável — e porque a nuvem, nesses casos, era
+        # chamada 3× para chegar a um ponto ~1-2 km ao lado do que já estava em memória.
+        _off_on = st.checkbox("🇧🇷 Identidade oficial IBGE (offline)", value=True, key="modo_oficial",
+                              help="Quando a entrada é INEQUIVOCAMENTE um município (nome único, ou com a UF "
+                                   "informada), resolve pela base oficial do IBGE — sede do município, zero "
+                                   "consulta à nuvem, resultado idêntico a cada execução. Municípios homônimos "
+                                   "SEM UF, endereços e POIs continuam passando pelo pipeline completo. "
+                                   "Desmarque para forçar o consenso multi-fonte em tudo.")
+        # [CONCORRENCIA - 147ª geração] NÃO grava mais na global (vazava entre sessões). O checkbox já
+        # persiste em st.session_state['modo_oficial'] via key=, e é lido por _pref_modo_oficial().
+        if _off_on:
+            st.caption("⚡ ~95% das geocodificações de município resolvem **offline** (16.713 → ~759 chamadas "
+                       "num estudo nacional).")
+        # [GOOGLE-GEOCODE - 188ª geração] OPT-IN experimental: usar a busca do Google como VOTO ADICIONAL na
+        # geocodificação (nunca autoritativo — entra no consenso Bayesiano/DBSCAN junto com ArcGIS/Nominatim/
+        # Photon/TomTom). DESLIGADO por padrão. Ligado, aumenta a assertividade quando o Google concorda; se o
+        # Google bloquear/mudar de layout, cada consulta simplesmente retorna vazio e a geocodificação segue com
+        # os demais provedores (degradação graciosa, protegida pelo mesmo disjuntor do roteamento).
+        _gg_on = st.checkbox("🧪 Validar geocodificação com o Google (experimental)", value=False,
+                             key="usar_google_geocode",
+                             help="Adiciona a busca do Google como uma fonte a MAIS no consenso de geocodificação "
+                                  "(nunca decide sozinho). Aumenta a assertividade quando o Google concorda com "
+                                  "as outras fontes. Use com ciência do trade-off abaixo.")
+        if _gg_on:
+            st.caption("⚠️ **Experimental.** O Google é consultado por um endpoint não-oficial (sem chave de API): "
+                       "o uso automatizado pode contrariar os Termos de Serviço do Google e é sujeito a bloqueio/"
+                       "rate-limit. Este recurso é **tolerante a falhas** — se o Google não responder, a "
+                       "geocodificação segue normalmente pelas demais fontes (ArcGIS/Nominatim/Photon/TomTom), "
+                       "sem qualquer perda. É um **voto adicional** no consenso, nunca a palavra final.")
+        # [OSRM-CONSENSO - 192ª geração] OPT-IN: 2º motor de rota SEM chave (OSRM FOSSGIS, independente do OSRM
+        # primário). Dá consenso keyless entre dois motores e pode encontrar uma rota mais curta. DESLIGADO por
+        # padrão porque a política do FOSSGIS proíbe uso pesado e limita a ≤1 req/s — num lote nacional isso
+        # deixa o estudo MAIS LENTO. Ideal para estudos menores ou conferência de casos críticos.
+        _o2_on = st.checkbox("🧭 2º motor de rota sem chave — OSRM FOSSGIS (consenso)", value=False,
+                             key="usar_osrm2",
+                             help="Consulta um SEGUNDO servidor OSRM independente (routing.openstreetmap.de) e usa "
+                                  "a MENOR rota viária válida entre os dois. Melhora a precisão sem chave de API. "
+                                  "É limitado a ≤1 requisição/segundo pela política do servidor, então deixa "
+                                  "estudos grandes mais lentos — use em estudos menores ou para conferir casos.")
+        if _o2_on:
+            st.caption("⚠️ **Mais lento em lote.** O servidor FOSSGIS exige ≤1 requisição/segundo e proíbe uso "
+                       "pesado — por isso as chamadas são enfileiradas. Ganho: uma 2ª rota viária real, sem chave, "
+                       "para consenso. Se o servidor não responder, o estudo segue com o OSRM primário, sem perda.")
+        # [VALHALLA - 262ª geração] OPT-IN: 3º motor de rota SEM chave (Valhalla, dados OSM, independente do OSRM e
+        # do Google). Reforça o consenso "menor viária vence" com uma 3ª medição real. DESLIGADO por padrão porque
+        # a instância PÚBLICA (FOSSGIS) tem fair-use ≤1 req/s — num lote nacional isso deixa o estudo mais lento.
+        # Para produção, aponte o secret VALHALLA_URL para uma instância própria (self-host Docker) e ligue sem
+        # penalidade. Desligado → não consulta → contendor idêntico ao atual (não-regressão).
+        _vlh_on = st.checkbox("🧭 3º motor de rota sem chave — Valhalla (consenso OSM)", value=False,
+                              key="usar_valhalla",
+                              help="Consulta o Valhalla (motor open-source sobre dados do OpenStreetMap) e usa a "
+                                   "MENOR rota viária válida no consenso. Voto adicional independente do OSRM e do "
+                                   "Google — nunca a palavra final. Na instância pública é limitado a ≤1 req/s "
+                                   "(deixa lotes grandes mais lentos); para produção nacional, configure o secret "
+                                   "VALHALLA_URL com a sua própria instância (self-host) e rode sem esse limite.")
+        if _vlh_on:
+            st.caption("⚠️ **Instância pública é limitada.** O Valhalla do FOSSGIS pede ≤1 req/s (chamadas "
+                       "enfileiradas) — bom para estudos menores ou conferência de casos. Ganho: uma rota viária "
+                       "real e independente, sem chave, no consenso. Se não responder, o estudo segue com os "
+                       "demais motores, sem perda. Para lote nacional, use o secret `VALHALLA_URL` apontando à sua "
+                       "instância própria. Acompanhe a participação em **Monitor APIs → linha VALHALLA**.")
+        # [GOOGLE-REGRESSAO-FIX - 193ª geração] OPT-IN: restaura a PACIÊNCIA do Google pré-184ª. A 184ª cortou o
+        # timeout (15s→4s) e as tentativas (3→1-2) e adicionou o disjuntor — ótimo p/ velocidade, mas foi o que
+        # derrubou a participação do Google quando ele está lento/intermitente. Ligado: timeout 12s, 3 tentativas,
+        # disjuntor ignorado → Google tenta muito mais. Custa velocidade (por isso é opt-in).
+        _gagr_on = st.checkbox("🗺️ Modo Google agressivo — recuperar participação (mais lento)", value=False,
+                               key="google_agressivo",
+                               help="Devolve o comportamento das versões antigas em que o Google participava muito "
+                                    "mais: espera até 12s por resposta (em vez de 4s), tenta 3 perfis de navegador "
+                                    "e ignora o disjuntor que suspende o Google após falhas. Se o Google estiver "
+                                    "acessível de forma intermitente no seu ambiente, ele volta a vencer rotas. "
+                                    "Deixa estudos grandes mais lentos — ideal p/ estudos menores ou críticos.")
+        if _gagr_on:
+            st.caption("⚠️ **Mais lento.** Cada rota pode esperar até 12s pelo Google (×3 tentativas) antes de "
+                       "usar o OSRM. Ganho: máxima participação do Google sem chave. Confira o efeito na aba "
+                       "**Monitor APIs → linha GOOGLE_MAPS**: se a taxa de falha cair, o Google voltou ao jogo; "
+                       "se continuar ~100%, o IP do servidor está com bloqueio duro (aí só a API oficial resolve).")
     # [FLAGS-RUNTIME - 199ª geração] Snapshot dos toggles AQUI (thread principal, após os 3 widgets). Assim os
     # workers do lote leem os valores corretos via _ler_flag_runtime — corrige o bug em que os toggles caíam
     # no default no processamento em lote (st.session_state não é confiável fora da thread principal).
@@ -60044,9 +60054,10 @@ if _secao == _SECOES[11]:   # tab_auditoria
 
     # [CB-PANEL-R(UI) 285a] Observabilidade dos disjuntores — read-only (§4/§17). Aditivo, isolado.
     try:
-        with st.expander("🔌 Estado dos disjuntores dos motores de rota", expanded=False):
-            st.caption("Leitura **read-only** do estado atual dos disjuntores — não altera nenhuma decisão de roteamento. "
-                       "Responde: algum motor está sendo suspenso (deixando de participar) e com que frequência?")
+        with st.expander("🔌 Saúde dos motores de rota (ativos e suspensos)", expanded=False):
+            st.caption("Leitura **somente-informativa** — não altera nenhuma decisão de roteamento. Mostra se "
+                       "algum motor (Google, OSRM, Valhalla…) foi **pausado automaticamente** após falhas seguidas "
+                       "e com que frequência. Motores pausados voltam sozinhos; é apenas diagnóstico.")
             _cb_html = _render_disjuntores_status(_GOOGLE_CB_ESTADO, _motor_cb_status_resumo())
             if _cb_html:
                 st.markdown(_cb_html, unsafe_allow_html=True)
