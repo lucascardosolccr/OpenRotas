@@ -36200,6 +36200,37 @@ def _suspeita_geometria_rota(pontos, km_motor=None, km_reta=None, provedor=""):
         pass
     return avisos
 
+def _geometria_real_da_rota(res_ind):
+    """[GEO-CTX-GEOMETRIA - 458ª geração] Extrai a geometria REAL da rota (lista [(lat, lon)]) a partir
+    dos links de visualizador OSRM já guardados no resultado do pipeline: `link_osrm_viewer` (índice 36,
+    quando o OSRM vence) OU `link_rota_comparativo` (índice 38, quando o Google vence mas o OSRM roteou o
+    comparativo). Ambos codificam a polyline do OSRM em `?rota=osrm&g=<polyline>`. Com essa geometria, o
+    Contexto Geográfico passa a amostrar a ESTRADA real — não a corda reta origem→destino, que produzia
+    cruzamentos de rios/pontes fisicamente ausentes da rota (e omitia os reais). Retorna None quando não há
+    geometria OSRM disponível (Google puro sem contendor OSRM, fallback geodésico, ou rota longa cujo link
+    foi suprimido pela salvaguarda de tamanho) — nesse caso o motor mantém a corda reta e já sinaliza o
+    aviso honesto. PURO/defensivo: nunca levanta."""
+    try:
+        import urllib.parse as _up
+        _cands = []
+        if len(res_ind) > 36 and res_ind[36]:
+            _cands.append(res_ind[36])
+        if len(res_ind) > 38 and res_ind[38]:
+            _cands.append(res_ind[38])
+        for _lnk in _cands:
+            if not isinstance(_lnk, str) or "rota=osrm" not in _lnk or "g=" not in _lnk:
+                continue
+            _q = _lnk.split("?", 1)[1] if "?" in _lnk else _lnk
+            _g = _up.parse_qs(_q).get("g", [""])[0]
+            if not _g:
+                continue
+            _pts = _decodificar_polyline(_g)
+            if _pts and len(_pts) >= 2:
+                return _pts
+    except Exception:
+        return None
+    return None
+
 def _gerar_mapa_leaflet_rota(geometria_polyline, lat_o, lon_o, lat_d, lon_d, nome_origem="", nome_destino="", distancia_km="", tempo_str="", provedor="OSRM", cor="#2563eb", km_reta=""):
     """[VIS-NAMES - 27ª geração] Gerador UNIFICADO de mapa de rota (Leaflet+OSM) que
     DESENHA o traçado completo a partir da polyline decodificada, com rótulos por NOME
@@ -47483,9 +47514,13 @@ if _secao == _SECOES[0]:   # tab_individual
                         if (_geo_route_context is not None and _lat_o_gi is not None and _lon_o_gi is not None
                                 and _lat_d_gi is not None and _lon_d_gi is not None):
                             _dist_gi = res_ind[0] if isinstance(res_ind[0], (int, float)) else None
+                            # [GEO-CTX-GEOMETRIA - 458ª] passa a geometria REAL da rota (polyline do OSRM)
+                            # quando disponível, para o contexto seguir a ESTRADA e não a corda reta — corrige
+                            # cruzamentos "estranhos" (rios/pontes na diagonal reta, ausentes do trajeto real).
+                            _geom_gi = _geometria_real_da_rota(res_ind)
                             _ctx_gi = _geo_route_context.analisar_rota(
                                 (float(_lat_o_gi), float(_lon_o_gi)), (float(_lat_d_gi), float(_lon_d_gi)),
-                                distancia_km=_dist_gi)
+                                distancia_km=_dist_gi, geometria=_geom_gi)
                             st.session_state['ultima_rota_individual_geo'] = _ctx_gi
                             with st.expander("🧠 Contexto Geográfico da Rota (rios, bacia, pontes, travessias)",
                                              expanded=bool(_ctx_gi.rios_detectados or _ctx_gi.corpos_dagua)):

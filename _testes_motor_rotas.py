@@ -1815,6 +1815,47 @@ def validar():
     check("JOB-RUNNER: registro removido não reaparece sozinho (status permanece None)",
           m._job_status(_jid_27) is None)
 
+    print("== 28) GEO-CTX-GEOMETRIA — contexto geográfico segue a ESTRADA real, não a corda reta (Rodada 458) ==")
+    # [ACHADO] O Contexto Geográfico do Validador Rápido chamava analisar_rota SEM geometria → amostrava a
+    # corda reta origem→destino, detectando rios/pontes fisicamente ausentes da rota. _geometria_real_da_rota
+    # recupera a polyline REAL do OSRM já guardada no resultado (link_osrm_viewer idx 36 / link_rota_comparativo
+    # idx 38) e a passa a analisar_rota — que então segue a estrada e larga o aviso de "corda geodésica".
+    import urllib.parse as _up28
+    def _enc28(coords):
+        out = []; plat = 0; plon = 0
+        def _e(v):
+            v = int(round(v * 1e5)); v = ~(v << 1) if v < 0 else (v << 1); s = ""
+            while v >= 0x20:
+                s += chr((0x20 | (v & 0x1f)) + 63); v >>= 5
+            s += chr(v + 63); return s
+        for _la, _lo in coords:
+            out.append(_e(_la - plat)); out.append(_e(_lo - plon)); plat, plon = _la, _lo
+        return "".join(out)
+    _poly28 = _enc28([(-15.79, -47.88), (-16.68, -49.25)])
+    _link28 = "?rota=osrm&g=" + _up28.quote(_poly28, safe="") + "&o=A&d=B&km=100&t=1h"
+    _res28 = [0] * 40; _res28[36] = _link28
+    _g28 = m._geometria_real_da_rota(_res28)
+    check("GEO-CTX-GEOMETRIA: extrai a polyline real do OSRM (idx 36) com round-trip fiel",
+          _g28 is not None and abs(_g28[0][0] + 15.79) < 1e-4 and abs(_g28[-1][1] + 49.25) < 1e-4)
+    _res28b = [0] * 40; _res28b[38] = _link28
+    check("GEO-CTX-GEOMETRIA: usa o comparativo (idx 38) quando o Google vence e o OSRM roteou o comparativo",
+          m._geometria_real_da_rota(_res28b) is not None)
+    check("GEO-CTX-GEOMETRIA: sem geometria OSRM → None (mantém a corda reta + aviso honesto)",
+          m._geometria_real_da_rota([0] * 40) is None and m._geometria_real_da_rota([]) is None)
+    _res28c = [0] * 40; _res28c[38] = "https://www.google.com/maps/dir/?api=1&origin=A&destination=B"
+    check("GEO-CTX-GEOMETRIA: link Google navegável (sem rota=osrm) é ignorado, nunca vira geometria falsa",
+          m._geometria_real_da_rota(_res28c) is None)
+    try:
+        from inteligencia_geoespacial import route_context as _rc28
+        _c28_sem = _rc28.analisar_rota((-15.79, -47.88), (-16.68, -49.25), distancia_km=250)
+        _c28_com = _rc28.analisar_rota((-15.79, -47.88), (-16.68, -49.25), distancia_km=250,
+                                       geometria=[(-15.79, -47.88), (-15.9, -48.2), (-16.2, -48.7), (-16.68, -49.25)])
+        check("GEO-CTX-GEOMETRIA: com geometria, analisar_rota larga o aviso de 'corda geodésica'",
+              any("corda geod" in _a for _a in _c28_sem.avisos)
+              and not any("corda geod" in _a for _a in _c28_com.avisos))
+    except Exception as _e28:
+        check("GEO-CTX-GEOMETRIA: analisar_rota disponível para o teste de geometria", False)
+
     print()
     print("=" * 70)
     print("RESULTADO: %d OK, %d FALHAS" % (ok, fail))
