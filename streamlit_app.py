@@ -1209,7 +1209,59 @@ st.markdown("""
     .sb-user-meta { min-width: 0; }
     .sb-user-label { color: var(--tx-3); font-size: .66rem; text-transform: uppercase; letter-spacing: .05em; }
     .sb-user-email { color: var(--tx-1); font-size: .86rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    
+
+    /* [DOC-SIDEBAR - 458ª geração] Documentação corporativa e suporte na lateral: cartões-hero, expanders
+       polidos e formulário de suporte moderno — tudo derivado dos tokens do design system (--sf/--tx/--brand). */
+    .sb-hero {
+        position: relative; overflow: hidden;
+        background: linear-gradient(150deg, var(--sf-2) 0%, var(--sf-1) 100%);
+        border: 1px solid var(--sf-3); border-radius: 14px;
+        padding: 14px 16px 14px 18px; margin: 4px 0 12px;
+    }
+    .sb-hero::before {
+        content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+        background: var(--grad-brand);
+    }
+    .sb-hero-ic { font-size: 1.05rem; }
+    .sb-hero-tt { color: var(--tx-1); font-size: .98rem; font-weight: 700; letter-spacing: .01em;
+                  display: flex; align-items: center; gap: 8px; }
+    .sb-hero-sb { color: var(--tx-3); font-size: .76rem; line-height: 1.5; margin-top: 6px; }
+    .sb-hero-sb b { color: var(--tx-2); font-weight: 600; }
+    .sb-hero-chip {
+        display: inline-block; margin-top: 9px; padding: 3px 9px; border-radius: 999px;
+        background: rgba(59,130,246,.14); border: 1px solid rgba(59,130,246,.35);
+        color: var(--brand-2); font-size: .68rem; font-weight: 600; letter-spacing: .02em;
+    }
+    /* expanders da lateral viram cartões suaves com realce no hover */
+    [data-testid="stSidebar"] [data-testid="stExpander"] {
+        border: 1px solid var(--sf-3); border-radius: 12px;
+        background: var(--sf-2); margin-bottom: 8px;
+        transition: border-color .15s ease, box-shadow .15s ease;
+    }
+    [data-testid="stSidebar"] [data-testid="stExpander"]:hover {
+        border-color: var(--brand); box-shadow: 0 6px 18px -10px rgba(59,130,246,.55);
+    }
+    [data-testid="stSidebar"] [data-testid="stExpander"] summary { font-weight: 600; font-size: .84rem; }
+    [data-testid="stSidebar"] [data-testid="stExpander"] summary:hover { color: var(--brand-2); }
+    /* cartão de suporte + inputs modernos (cantos arredondados, foco na cor da marca) */
+    .sb-support {
+        background: linear-gradient(150deg, rgba(59,130,246,.10) 0%, var(--sf-2) 62%);
+        border: 1px solid var(--sf-3); border-radius: 14px;
+        padding: 14px 16px; margin: 6px 0 10px;
+    }
+    .sb-support-tt { color: var(--tx-1); font-size: .95rem; font-weight: 700;
+                     display: flex; align-items: center; gap: 8px; }
+    .sb-support-sb { color: var(--tx-3); font-size: .76rem; line-height: 1.5; margin-top: 6px; }
+    [data-testid="stSidebar"] textarea,
+    [data-testid="stSidebar"] [data-testid="stTextInput"] input {
+        border-radius: 10px !important;
+    }
+    [data-testid="stSidebar"] textarea:focus,
+    [data-testid="stSidebar"] [data-testid="stTextInput"] input:focus {
+        border-color: var(--brand) !important;
+        box-shadow: 0 0 0 2px rgba(59,130,246,.25) !important;
+    }
+
     /* [REDESIGN TOTAL - Rodada 5] st.radio (usado na navegação principal e em vários filtros da app)
        nunca foi tematizado — o indicador de seleção usava o vermelho padrão do Streamlit (#FF4B4B),
        destoando da marca azul (--brand) usada em botões/links/headers em todo o resto da app. Sem
@@ -43650,19 +43702,17 @@ with st.sidebar:
     # workers do lote leem os valores corretos via _ler_flag_runtime — corrige o bug em que os toggles caíam
     # no default no processamento em lote (st.session_state não é confiável fora da thread principal).
     _capturar_flags_runtime()
-    st.header("📘 Documentação Corporativa", help="Diretrizes estruturais, matemáticas e logísticas completas do motor corporativo.")
-    st.caption("📘 **Handbook técnico completo** (33 seções, navegável e com busca): aba **📖 Manual do Usuário** → *Handbook Técnico Completo* (visualize aqui dentro ou baixe o HTML).")
-    # [DOC-380 - 381ª geração] Adendo corporativo das gerações 350-380 (aditivo; os expanders seguem intactos).
-    with st.expander("🆕 Atualização corporativa — gerações 350–380 (Análise Geográfica, fluvial e observabilidade)", expanded=False):
-        st.markdown("""
-Esta atualização consolida três eixos, sob o critério absoluto de **não-regressão** (evolução exclusivamente cumulativa):
-
-1. **Inteligência territorial centrada no candidato.** A **Análise Geográfica** tornou-se a central de leitura visual, servindo Locais de Aplicação, Lote e Comparador. A métrica de decisão passou a incluir **candidato-km** (impacto humano do deslocamento), com **impacto do 2º colocado**, **curva de cobertura (SLA de acesso)**, **mapa de calor** e **narrativa didática automática** — no app e no relatório HTML.
-2. **Roteamento fluvial real (V368).** Municípios de acesso fluvial passam a receber roteamento navegável **sob demanda** sobre a hidrografia oficial (IBGE), com rios nomeados e distância real — encerrando a limitação antes registrada como \"planejada\".
-3. **Governança e observabilidade.** **Forense read-only** da vitória/derrota no Comparador (auditabilidade da decisão) e **métricas de observabilidade** (tempo por rota P50/P95/P99, throughput, resgatados) para acompanhamento operacional.
-
-O **Handbook Técnico Completo** (aba 📖 Manual do Usuário) traz o detalhamento vivo destas camadas no adendo *\"Novidades das gerações 350–380\"*.
-""")
+    # [DOC-SIDEBAR - 458ª geração] Documentação corporativa: EXPLICA o que a aplicação faz e como faz
+    # (arquitetura, motores, matemática, dados). O changelog de versões saiu daqui — atualização de produto
+    # não é documentação de referência; o histórico vivo segue no Handbook Técnico (aba Manual do Usuário).
+    st.markdown(
+        "<div class='sb-hero'>"
+        "<div class='sb-hero-tt'><span class='sb-hero-ic'>📘</span> Documentação Corporativa</div>"
+        "<div class='sb-hero-sb'>Como a plataforma <b>encontra, mede e audita</b> o deslocamento de "
+        "candidatos até os locais de prova — arquitetura, fontes de dados e método, em linguagem de "
+        "referência.</div>"
+        "<span class='sb-hero-chip'>📖 Handbook técnico completo → aba Manual do Usuário</span>"
+        "</div>", unsafe_allow_html=True)
     with st.expander("🎯 Visão Geral e Filosofia"):
         st.markdown("""
         O **Motor Nacional de Inteligência Logística para Exames** é a plataforma institucional que apoia o planejamento e a auditoria do **deslocamento de candidatos até seus locais de prova** (ENADE, ENEM, CNU, concursos públicos). Diferente de sistemas que dependem de uma única API comercial (com risco de indisponibilidade e de trocar um município por um homônimo de outro estado), esta plataforma foi projetada com a arquitetura de **Pipeline Híbrido Multimotor**, ancorada na base oficial do **IBGE**.
@@ -43675,6 +43725,26 @@ O **Handbook Técnico Completo** (aba 📖 Manual do Usuário) traz o detalhamen
         * **TomTom Logistics:** Base fundamental B2B de tráfego pesado.
         * **BrasilAPI/ViaCEP/OpenCEP:** Cascata "Postal-Tripla".
         * **Base Nacional Offline (IBGE):** Cache em memória contendo o centróide matemático de todas as 5.570 cidades.
+        """)
+    with st.expander("🛣️ Motores de Rota e Consenso Viário"):
+        st.markdown("""
+        A distância que decide é a **viária real** (por estrada), não a linha reta. Vários motores medem a
+        mesma rota em paralelo e a plataforma adota a **menor rota viária válida** (consenso "menor vence"):
+        * **OSRM (primário):** malha OpenStreetMap, resposta rápida — o motor de base.
+        * **Google (sem chave, opcional):** voto adicional quando acessível; nunca a palavra final.
+        * **OSRM FOSSGIS & Valhalla (opcionais):** 2º e 3º motores independentes, para consenso e conferência.
+        * **Estimativa geodésica (fallback):** quando nenhum motor responde, a rota nunca fica em branco.
+        * **Disjuntores automáticos:** um motor que falha em série é pausado por alguns segundos e reativado
+          sozinho — protege o estudo de travar por um serviço fora do ar (transparente quando todos estão sãos).
+        """)
+    with st.expander("🌊 Roteamento Fluvial e Multimodal"):
+        st.markdown("""
+        Em municípios de acesso por rio, a distância rodoviária não conta a realidade. A plataforma detecta
+        **barreiras hídricas, pontes e travessias de balsa** ao longo da rota e, sob demanda, calcula o
+        **trecho navegável** sobre a hidrografia oficial (**IBGE**):
+        * **Grafo fluvial nacional** (rios nomeados e nós reais) com distância navegável de verdade.
+        * **Detecção de balsa/travessia** cruzada de forma independente do motor de rotas (dupla checagem).
+        * **Alerta de dependência de balsa** e de risco operacional, levado ao estudo e aos relatórios.
         """)
     with st.expander("📐 Matemática, Geodésia e Linha Reta"):
         st.markdown("""
@@ -43694,27 +43764,44 @@ O **Handbook Técnico Completo** (aba 📖 Manual do Usuário) traz o detalhamen
           por estado (onde cada estudo leva o candidato mais perto).
         * **Estudo em Lote:** distribuição de distâncias (forma do deslocamento) e procedência das rotas
           (medida por estrada × estimativa geodésica) — leitura direta de confiabilidade.
-        * **Relatórios HTML:** os gráficos do Comparador são embarcados no documento exportado (Plotly,
-          autocontido), garantindo **coerência entre a tela e o relatório**.
-        * **Leitura assistida:** cada gráfico traz um rodapé *"Como ler / O que diz"* com conclusão calculada
-          automaticamente dos dados do próprio estudo.
+        * **Estudo de Impacto nos Candidatos:** deslocamento ponderado por pessoa (**candidato-km**),
+          concentração (Lorenz/Gini), treemap e boxplot — quem realmente sente a distância.
+        * **Relatórios HTML e Excel:** gráficos embarcados e planilhas com formatação institucional,
+          garantindo **coerência entre a tela e o documento exportado**.
         """)
-    st.markdown("---")
-    st.subheader("✉️ Suporte e Feedback")
-    st.caption("Envie uma solicitação diretamente para a equipe de Engenharia (Requer SMTP).")
-    
+    with st.expander("🛡️ Segurança, Privacidade e Resiliência"):
+        st.markdown("""
+        * **Acesso autenticado** com sessão que resiste a quedas de rede transitórias (não desloga por um
+          soluço de conexão) e persiste enquanto o navegador estiver aberto.
+        * **LGPD (Lei 13.709/2018):** consentimento explícito de cookies, transparência de uso e
+          **portabilidade** — o titular baixa os próprios dados em JSON quando quiser.
+        * **Fontes gratuitas e sem cota**, com degradação graciosa: se uma fonte falha, o estudo segue pelas
+          demais — nenhuma etapa derruba a aplicação.
+        """)
+    st.markdown(
+        "<div class='sb-support'>"
+        "<div class='sb-support-tt'><span>✉️</span> Suporte e Feedback</div>"
+        "<div class='sb-support-sb'>Encontrou uma anomalia ou tem uma ideia de melhoria? Fale direto com a "
+        "equipe de Engenharia. Descreva o caso e, se quiser retorno, deixe seu e-mail.</div>"
+        "</div>", unsafe_allow_html=True)
+
     with st.form(key="form_sugestao"):
-        sugestao_texto = st.text_area("Descreva a anomalia ou melhoria:", height=100)
-        remetente_email = st.text_input("Seu e-mail corporativo (opcional):")
-        submit_button = st.form_submit_button("📨 Enviar Ticket de Manutenção")
+        sugestao_texto = st.text_area(
+            "Mensagem", height=110, placeholder="Descreva a anomalia encontrada ou a melhoria que sugere…",
+            help="O que aconteceu, onde e o que você esperava. Quanto mais específico, mais rápido resolvemos.")
+        remetente_email = st.text_input(
+            "Seu e-mail (opcional)", placeholder="nome@instituicao.gov.br",
+            help="Deixe se quiser retorno da equipe. Não é obrigatório.")
+        submit_button = st.form_submit_button("📨 Enviar para a Engenharia", use_container_width=True,
+                                              type="primary")
         
         if submit_button:
             # [M23] Rate limit: máximo 3 tickets por sessão — previne uso abusivo do relay SMTP
             tickets_enviados = st.session_state.get('_smtp_tickets_enviados', 0)
             if tickets_enviados >= 3:
-                st.warning("⚠️ Limite de 3 tickets por sessão atingido. Reinicie a aplicação para enviar mais.")
+                st.warning("⚠️ Limite de 3 envios por sessão atingido. Reinicie a aplicação para enviar mais.")
             elif sugestao_texto.strip() == "":
-                st.warning("O ticket não pode estar vazio.")
+                st.warning("Escreva sua mensagem antes de enviar.")
             else:
                 # [M23] Sanitização básica — remove tags HTML/script do campo de texto
                 sugestao_sanitizada = re.sub(r'<[^>]+>', '', sugestao_texto.strip())[:2000]
@@ -43724,7 +43811,7 @@ O **Handbook Técnico Completo** (aba 📖 Manual do Usuário) traz o detalhamen
                     smtp_user = st.secrets.get("EMAIL_SISTEMA", "seu_email_de_envio@gmail.com") 
                     smtp_pass = st.secrets.get("SENHA_APP", "sua_senha_de_aplicativo")
                     if smtp_user == "seu_email_de_envio@gmail.com":
-                        st.info("⚠️ Modo de Demonstração: Configure 'EMAIL_SISTEMA' e 'SENHA_APP' nas variáveis de ambiente.")
+                        st.info("ℹ️ Modo de demonstração: o envio de e-mail requer configurar 'EMAIL_SISTEMA' e 'SENHA_APP' nas variáveis de ambiente. Sua mensagem não foi transmitida.")
                     else:
                         msg = MIMEMultipart()
                         msg['From'] = smtp_user
