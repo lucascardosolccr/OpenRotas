@@ -133,6 +133,91 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 # ==============================================================================
+# [CRUZAMENTO-REAL - 459ª geração] Teste de CRUZAMENTO GEOMÉTRICO real da rota
+# contra a geometria da feição (rio/corpo d'água). Distingue o que a rota
+# ATRAVESSA de fato (interseção de linhas) do que apenas MARGEIA (feição perto
+# do eixo, mas nunca cruzada). Puro Python (sem shapely) sobre o decodificador
+# WKB de bases_locais — testável sem as camadas Parquet. Coordenadas em
+# (lon, lat), a MESMA convenção do WKB do IBGE.
+# ==============================================================================
+
+def _orient(ax, ay, bx, by, cx, cy) -> float:
+    """Sinal do produto vetorial (AB × AC): >0 esquerda, <0 direita, 0 colinear."""
+    return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+
+
+def _no_retangulo(ax, ay, bx, by, px, py) -> bool:
+    """Ponto (colinear) dentro da caixa do segmento AB — usado nos casos-limite."""
+    return (min(ax, bx) - 1e-12 <= px <= max(ax, bx) + 1e-12
+            and min(ay, by) - 1e-12 <= py <= max(ay, by) + 1e-12)
+
+
+def _segmentos_cruzam(p1, p2, q1, q2) -> bool:
+    """True se os segmentos P1P2 e Q1Q2 se intersectam (inclui toque/colinear).
+    Algoritmo clássico de orientação (robusto, sem divisão). Pontos (x, y)."""
+    (p1x, p1y), (p2x, p2y) = p1, p2
+    (q1x, q1y), (q2x, q2y) = q1, q2
+    d1 = _orient(q1x, q1y, q2x, q2y, p1x, p1y)
+    d2 = _orient(q1x, q1y, q2x, q2y, p2x, p2y)
+    d3 = _orient(p1x, p1y, p2x, p2y, q1x, q1y)
+    d4 = _orient(p1x, p1y, p2x, p2y, q2x, q2y)
+    if ((d1 > 0) != (d2 > 0)) and ((d3 > 0) != (d4 > 0)):
+        return True
+    # casos-limite colineares (toque de ponta / sobreposição)
+    if d1 == 0 and _no_retangulo(q1x, q1y, q2x, q2y, p1x, p1y):
+        return True
+    if d2 == 0 and _no_retangulo(q1x, q1y, q2x, q2y, p2x, p2y):
+        return True
+    if d3 == 0 and _no_retangulo(p1x, p1y, p2x, p2y, q1x, q1y):
+        return True
+    if d4 == 0 and _no_retangulo(p1x, p1y, p2x, p2y, q2x, q2y):
+        return True
+    return False
+
+
+def _linha_cruza_geometria(linha_lonlat, wkb) -> bool | None:
+    """A polilinha da ROTA (lista de (lon, lat)) CRUZA de fato a feição do WKB?
+      • LINESTRING (rio/drenagem): interseção de qualquer segmento da rota com
+        qualquer segmento da feição.
+      • POLYGON (massa d'água): a rota ENTRA no polígono — algum vértice da rota
+        dentro, ou algum segmento da rota cruzando uma aresta de um anel.
+      • POINT: None (ponto não é "atravessado" — decisão fica com a proximidade).
+    Retorna None quando não há geometria/rota utilizável (o chamador então mantém
+    a decisão por proximidade, sem fabricar um cruzamento). PURO/defensivo."""
+    try:
+        if not linha_lonlat or len(linha_lonlat) < 2 or wkb is None:
+            return None
+        geo = _bl._deco_wkb(wkb)
+        if not geo:
+            return None
+        rota = [(float(a), float(b)) for a, b in linha_lonlat]
+        # POINT → tupla de 2 floats
+        if isinstance(geo, tuple) and len(geo) == 2 and not isinstance(geo[0], (list, tuple)):
+            return None
+        # LINESTRING → lista de pontos (tuplas)
+        if isinstance(geo, list) and geo and isinstance(geo[0], tuple):
+            linhas_feicao = [geo]
+        # POLYGON → lista de anéis (listas de pontos)
+        elif isinstance(geo, list) and geo and isinstance(geo[0], list):
+            # vértice da rota dentro do polígono → entra
+            for (lo, la) in rota:
+                if _bl._ponto_em_wkb(lo, la, wkb):
+                    return True
+            linhas_feicao = geo  # cada anel é uma polilinha fechada
+        else:
+            return None
+        for i in range(len(rota) - 1):
+            p1, p2 = rota[i], rota[i + 1]
+            for feic in linhas_feicao:
+                for j in range(len(feic) - 1):
+                    if _segmentos_cruzam(p1, p2, feic[j], feic[j + 1]):
+                        return True
+        return False
+    except Exception:
+        return None
+
+
+# ==============================================================================
 # Bacia hidrográfica oficial (ANA/SNIRH) — nunca inventa: só nome com
 # correspondência exata (normalizada) no dado oficial já usado pela app.
 # ==============================================================================
@@ -575,6 +660,13 @@ class CruzamentoHidrografico:
     # esta feição; string com 2+ nomes separados por vírgula (ex.: "BC250, BC100") quando o MESMO
     # nome normalizado foi confirmado por extrações INDEPENDENTES — corroboração real, não inventada.
     confirmado_por: str | None = None
+    # [CRUZAMENTO-REAL - 459ª geração] Relação GEOMÉTRICA da rota com a feição, quando a geometria real
+    # da rota está disponível: "cruza" = a polilinha da rota intersecta a feição de fato (atravessa);
+    # "margeia" = a feição está no raio mas a rota NÃO a cruza (corre ao lado). None = sem geometria real
+    # para decidir (mantém a leitura por proximidade, com o aviso honesto de corda reta). `cruzamento_
+    # confirmado` é True só quando geometricamente comprovado — o sinal mais forte de que a rota atravessa.
+    relacao: str | None = None
+    cruzamento_confirmado: bool | None = None
 
 
 @dataclass
@@ -809,10 +901,17 @@ def _fonte_real(item: dict, fallback: str) -> str:
 
 
 def _detectar_cruzamentos_hidro(pontos: list, repo: GeoIntelligenceRepository,
-                                 raio_km: float, distancia_total_km: float) -> list:
+                                 raio_km: float, distancia_total_km: float,
+                                 linha_rota: list | None = None) -> list:
     """Consulta as camadas hidrográficas em cada ponto amostrado e deduplica
     por (camada, nome normalizado), mantendo a MENOR distância ao eixo da
-    rota e o km acumulado (desde a origem) daquele ponto de amostra."""
+    rota e o km acumulado (desde a origem) daquele ponto de amostra.
+
+    [CRUZAMENTO-REAL - 459ª geração] Quando `linha_rota` (polilinha real da rota
+    em (lon, lat)) é fornecida, cada feição candidata é submetida ao TESTE
+    GEOMÉTRICO de cruzamento (`_linha_cruza_geometria`): confirma se a rota
+    ATRAVESSA a feição de fato ("cruza") ou apenas a MARGEIA (no raio, mas nunca
+    cruzada). Sem `linha_rota`, mantém a leitura por proximidade (relacao=None)."""
     achados: dict = {}
     # [FUSAO-FONTES - Missão 3, Rodada 18, §40] Rastreia TODAS as fonte_base vistas por chave —
     # inclusive as que perdem o dedup por distância — para poder marcar quando o MESMO nome foi
@@ -868,6 +967,9 @@ def _detectar_cruzamentos_hidro(pontos: list, repo: GeoIntelligenceRepository,
                     "salgada": (_nome(it.get("salgada")) or None) if camada == "massas_dagua" else None,
                     "dominialidade": (_nome(it.get("dominialid")) or None) if camada == "massas_dagua" else None,
                     "confirmado_por": None,
+                    "relacao": None,
+                    "cruzamento_confirmado": None,
+                    "_wkb": it.get("geometry_wkb"),  # temporário: teste de cruzamento pós-loop
                 }
     # [FUSAO-FONTES - Missão 3, Rodada 18, §40] Marca corroboração real entre extrações
     # independentes: só quando 2+ fonte_base DISTINTAS confirmaram o MESMO nome normalizado
@@ -879,6 +981,31 @@ def _detectar_cruzamentos_hidro(pontos: list, repo: GeoIntelligenceRepository,
         if _fs and len(_fs) > 1:
             _dados["confirmado_por"] = ", ".join(sorted(_fs))
             _dados["confianca"] = "alta"
+    # [CRUZAMENTO-REAL - 459ª geração] Teste geométrico de cruzamento real (só quando há a polilinha da
+    # rota). "cruza" → a rota atravessa a feição de fato (confiança ALTA, sinal mais forte). "margeia" →
+    # a feição está no raio mas a rota NÃO a cruza (rebaixa para "media": é contexto, não um cruzamento).
+    # Sem geometria da feição para testar, deixa relacao=None (decisão por proximidade, como antes).
+    for _dados in achados.values():
+        _wkb = _dados.pop("_wkb", None)
+        if not linha_rota or _wkb is None:
+            continue
+        try:
+            _cruza = _linha_cruza_geometria(linha_rota, _wkb)
+        except Exception:
+            _cruza = None
+        if _cruza is True:
+            _dados["relacao"] = "cruza"
+            _dados["cruzamento_confirmado"] = True
+            _dados["confianca"] = "alta"
+        elif _cruza is False:
+            _dados["relacao"] = "margeia"
+            _dados["cruzamento_confirmado"] = False
+            # margeia não é cruzamento: nunca deixa uma feição só-próxima passar por "alta" de proximidade
+            if _dados.get("confianca") == "alta" and not _dados.get("confirmado_por"):
+                _dados["confianca"] = "media"
+    # remove qualquer _wkb remanescente (defensivo: achados sem teste também não devem exportá-lo)
+    for _dados in achados.values():
+        _dados.pop("_wkb", None)
     return sorted(achados.values(), key=lambda x: (x["km_desde_origem"] or 0.0))
 
 
@@ -1428,14 +1555,35 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
     nivel_ef = int(nivel) if nivel is not None else nivel_automatico(dist_total, suspeita=suspeita)
     raio_ef = float(raio_km) if raio_km is not None else _raio_para_nivel(nivel_ef)
     n_pontos = _n_pontos_para_nivel(nivel_ef, dist_total)
+    # [CRUZAMENTO-REAL - 459ª geração] Com a geometria REAL da rota, densifica a amostragem para COBERTURA
+    # CONTÍGUA (passo ≲ 2×raio): sem isso, um cruzamento entre dois pontos de amostra afastados nunca vira
+    # candidato (falso negativo). Afeta sobretudo rotas curtas (nível 1: passo 30 km × raio 5 km); rotas
+    # longas já amostram denso. Só quando há geometria (a corda reta não merecia o custo extra); teto para
+    # limitar o nº de consultas em rotas muito longas.
+    if geometria:
+        try:
+            _n_cont = int((dist_total or 0.0) / max(1.0, raio_ef * 2.0)) + 2
+            n_pontos = max(n_pontos, min(_n_cont, _N_PONTOS_MAX * 2))
+        except Exception:
+            pass
 
     try:
         pontos = pontos_amostrados(lat_o, lon_o, lat_d, lon_d, geometria=geometria, n_pontos=n_pontos)
     except Exception:
         pontos = [(lat_o, lon_o, 0.0), (lat_d, lon_d, dist_total or 0.0)]
 
+    # Polilinha real da rota em (lon, lat) para o teste geométrico de cruzamento (só quando há geometria).
+    _linha_rota = None
+    if geometria:
+        try:
+            _linha_rota = [(float(p[1]), float(p[0])) for p in geometria if p and len(p) >= 2]
+            if len(_linha_rota) < 2:
+                _linha_rota = None
+        except Exception:
+            _linha_rota = None
+
     try:
-        achados = _detectar_cruzamentos_hidro(pontos, repo, raio_ef, dist_total or 0.0)
+        achados = _detectar_cruzamentos_hidro(pontos, repo, raio_ef, dist_total or 0.0, linha_rota=_linha_rota)
     except Exception:
         achados = []
 
@@ -1565,9 +1713,22 @@ def analisar_rota(origem: tuple, destino: tuple, geometria: list | None = None,
         motivo_partes.append(
             "Rodovia(s) identificada(s): %s." % ", ".join(r.sigla for r in rodovias[:5]))
     if rios:
-        motivo_partes.append(
-            "Rota cruza %d rio(s)/córrego(s) nomeado(s) (%s)." % (
-                len(rios), ", ".join(r.nome for r in rios[:3])))
+        # [CRUZAMENTO-REAL - 459ª] com geometria real, separa o que a rota ATRAVESSA do que apenas MARGEIA.
+        _cruza = [r for r in rios if r.relacao == "cruza"]
+        _margeia = [r for r in rios if r.relacao == "margeia"]
+        if _cruza or _margeia:
+            _p = []
+            if _cruza:
+                _p.append("Rota ATRAVESSA %d rio(s)/córrego(s) (%s)" % (
+                    len(_cruza), ", ".join(r.nome for r in _cruza[:3])))
+            if _margeia:
+                _p.append("margeia %d (perto do eixo, sem cruzar: %s)" % (
+                    len(_margeia), ", ".join(r.nome for r in _margeia[:2])))
+            motivo_partes.append("; ".join(_p) + ".")
+        else:
+            motivo_partes.append(
+                "Rota cruza %d rio(s)/córrego(s) nomeado(s) (%s)." % (
+                    len(rios), ", ".join(r.nome for r in rios[:3])))
     if corpos:
         motivo_partes.append(
             "%d corpo(s) d'água adicional(is) identificado(s) (%s)." % (

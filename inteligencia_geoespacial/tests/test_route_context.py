@@ -58,6 +58,53 @@ def test_nivel_automatico():
     assert rc.nivel_automatico(50.0, suspeita=False) == 1
     assert rc.nivel_automatico(500.0, suspeita=False) == 2
     assert rc.nivel_automatico(50.0, suspeita=True) == 2
+
+
+# ==============================================================================
+# [CRUZAMENTO-REAL - 459ª] Teste geométrico de cruzamento real (puro, sem Parquet).
+# ==============================================================================
+
+def _wkb_line(pts):
+    import struct
+    b = b"\x01" + struct.pack("<I", 2) + struct.pack("<I", len(pts))
+    for x, y in pts:
+        b += struct.pack("<dd", x, y)
+    return b
+
+
+def _wkb_poly(ring):
+    import struct
+    b = b"\x01" + struct.pack("<I", 3) + struct.pack("<I", 1) + struct.pack("<I", len(ring))
+    for x, y in ring:
+        b += struct.pack("<dd", x, y)
+    return b
+
+
+def test_segmentos_cruzam():
+    assert rc._segmentos_cruzam((0, 0), (2, 2), (0, 2), (2, 0)) is True   # X
+    assert rc._segmentos_cruzam((0, 0), (1, 0), (0, 1), (1, 1)) is False  # paralelos
+    assert rc._segmentos_cruzam((0, 0), (2, 0), (1, 0), (1, 1)) is True   # toque em T
+
+
+def test_linha_cruza_linestring_rio():
+    rio = _wkb_line([(0.5, 0.0), (0.5, 1.0)])            # rio vertical em lon=0.5
+    assert rc._linha_cruza_geometria([(0.0, 0.5), (1.0, 0.5)], rio) is True    # rota cruza
+    assert rc._linha_cruza_geometria([(0.9, 0.0), (0.9, 1.0)], rio) is False   # rota paralela (margeia)
+
+
+def test_linha_cruza_polygon_massa_dagua():
+    lago = _wkb_poly([(0.4, 0.4), (0.6, 0.4), (0.6, 0.6), (0.4, 0.6), (0.4, 0.4)])
+    assert rc._linha_cruza_geometria([(0.0, 0.5), (1.0, 0.5)], lago) is True   # atravessa o lago
+    assert rc._linha_cruza_geometria([(0.0, 0.9), (1.0, 0.9)], lago) is False  # passa longe
+
+
+def test_linha_cruza_defensivo():
+    rio = _wkb_line([(0.5, 0.0), (0.5, 1.0)])
+    assert rc._linha_cruza_geometria([], rio) is None                # sem rota
+    assert rc._linha_cruza_geometria([(0, 0), (1, 1)], None) is None  # sem geometria
+    import struct
+    ponto = b"\x01" + struct.pack("<I", 1) + struct.pack("<dd", 0.5, 0.5)
+    assert rc._linha_cruza_geometria([(0, 0), (1, 1)], ponto) is None  # ponto não é "atravessado"
     assert rc.nivel_automatico(None, suspeita=False) == 1
 
 

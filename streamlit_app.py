@@ -18892,7 +18892,11 @@ def _enriquecer_geo_inteligencia_df(df, forcar=False, limiar_automatico=_GEO_INT
                 for _c in _GEO_INTEL_COLUNAS:
                     _cols[_c].append(None if _c in ("Dependencia Aquaviaria", "Confianca Geografica", "Complexidade Geografica", "Confianca Fundida") or _c.startswith("QT_") else "")
                 continue
-            _cols["Rios Cruzados"].append(", ".join(r.nome for r in _ctx.rios_detectados[:3]))
+            # [CRUZAMENTO-REAL - 459ª] "Rios Cruzados" = rios que a rota ATRAVESSA de fato. Com geometria
+            # real, exclui os que apenas margeiam (relacao=="margeia"); sem geometria (relacao None),
+            # mantém todos os detectados por proximidade (leitura honesta, como antes).
+            _rios_cruz = [r for r in _ctx.rios_detectados if getattr(r, "relacao", None) != "margeia"]
+            _cols["Rios Cruzados"].append(", ".join(r.nome for r in _rios_cruz[:3]))
             _cols["Bacia Hidrografica"].append(_ctx.bacia_hidrografica or "")
             _cols["Pontes no Cruzamento"].append(", ".join(p.nome for p in _ctx.pontes[:2]))
             _cols["Travessias Aquaviarias"].append(", ".join(t.nome for t in _ctx.travessias[:2]))
@@ -47586,6 +47590,11 @@ if _secao == _SECOES[0]:   # tab_individual
                                                     _r.nome + (f" — bacia {_r.bacia}" if _r.bacia else ""),
                                                     expanded=False):
                                                 _rd = []
+                                                # [CRUZAMENTO-REAL - 459ª] relação geométrica real da rota
+                                                if getattr(_r, "relacao", None) == "cruza":
+                                                    _rd.append("**Relação com a rota:** ✅ a rota **atravessa** este curso d'água (confirmado pela geometria).")
+                                                elif getattr(_r, "relacao", None) == "margeia":
+                                                    _rd.append("**Relação com a rota:** ↔️ **margeia** (corre perto do eixo, mas a rota **não o cruza**).")
                                                 if _r.bacia:
                                                     _rd.append(f"**Bacia:** {_r.bacia}")
                                                 if _r.distancia_eixo_km is not None:
