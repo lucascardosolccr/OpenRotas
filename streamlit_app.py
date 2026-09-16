@@ -1975,6 +1975,20 @@ st.markdown("""
         display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .16em;
         text-transform: uppercase; color: var(--brand-2); margin-bottom: 6px;
     }
+
+    /* Barra de progresso — trilho discreto + preenchimento com o gradiente da marca (o padrão do
+       Streamlit usava a cor de tema chapada). Seletores confirmados no DOM real do Streamlit 1.46. */
+    [data-testid="stProgress"] div[role="progressbar"] > div {
+        background: var(--sf-3) !important;
+    }
+    [data-testid="stProgress"] div[role="progressbar"] > div > div {
+        background: var(--grad-brand) !important;
+    }
+    /* Spinner de carregamento — arco na cor da marca em vez do cinza neutro padrão. */
+    [data-testid="stSpinner"] i {
+        border-top-color: var(--brand) !important;
+        border-right-color: var(--brand) !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
