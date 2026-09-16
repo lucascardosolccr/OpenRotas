@@ -1937,6 +1937,44 @@ st.markdown("""
         outline: none !important;
         box-shadow: 0 0 0 3px rgba(59,130,246,.35), var(--bevel) !important;
     }
+
+    /* Formulários como cartões premium — o Streamlit não estilizava o CONTÊINER do form.
+       Enquadra login, cadastro, recuperação, perfil e suporte com a mesma superfície elevada,
+       borda hairline e bisel de luz do restante — coeso e polido, de uma só regra. */
+    [data-testid="stForm"] {
+        background: var(--grad-surface) !important;
+        border: 1px solid var(--brd-soft) !important;
+        border-radius: var(--r-lg) !important;
+        box-shadow: var(--sh-soft), var(--bevel) !important;
+        padding: 20px 22px !important;
+    }
+
+    /* Cartões de recurso da tela de login (primeiríssima impressão) — sobem para a linguagem
+       premium: superfície em gradiente, bisel, ícone num chip de marca e leve elevação no hover. */
+    .auth-feat {
+        flex: 1 1 160px; min-width: 150px; max-width: 240px; text-align: left;
+        background: var(--grad-surface); border: 1px solid var(--brd-soft);
+        border-radius: 14px; padding: 14px 16px;
+        box-shadow: var(--sh-soft), var(--bevel);
+        transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+    }
+    .auth-feat:hover {
+        transform: translateY(-3px);
+        box-shadow: var(--sh-lift), var(--bevel);
+        border-color: var(--brd-brand);
+    }
+    .auth-feat-ic {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 38px; height: 38px; border-radius: 10px; font-size: 1.2rem;
+        background: rgba(59,130,246,.14); border: 1px solid var(--brd-brand);
+        box-shadow: 0 4px 12px -4px rgba(59,130,246,.5);
+    }
+    .auth-feat-ti { color: var(--tx-1); font-weight: 600; margin-top: 10px; }
+    .auth-feat-de { color: var(--tx-3); font-size: .82rem; margin-top: 3px; line-height: 1.45; }
+    .auth-eyebrow {
+        display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .16em;
+        text-transform: uppercase; color: var(--brand-2); margin-bottom: 6px;
+    }
 </style>
 """, unsafe_allow_html=True)
 

@@ -873,21 +873,22 @@ def _renderizar_tela_autenticacao():
     # pena criar a conta. Adicionada uma frase de propósito, com a mesma linguagem já usada no
     # cartão "Comece por aqui" (onboarding pós-login) — não inventa uma descrição nova.
     st.markdown(
-        "<div style='max-width:560px;margin:40px auto 0;text-align:center'>"
-        "<h1 style='margin-bottom:0;color:var(--tx-1, #F9FAFB)'>🗺️ Motor Nacional de Inteligência Logística</h1>"
+        "<div style='max-width:580px;margin:40px auto 0;text-align:center'>"
+        "<span class='auth-eyebrow'>Plataforma institucional</span>"
+        "<h1 style='margin:0 0 2px;color:var(--tx-1, #F9FAFB)'>🗺️ Motor Nacional de Inteligência Logística</h1>"
         "<p style='color:var(--tx-2, #E5E7EB);margin:10px 0 2px'>Analisa quanto cada candidato "
         "precisa se deslocar até seu local de prova e ajuda a decidir onde ela deve ser "
         "aplicada.</p>"
         "<p style='color:var(--tx-3, #9CA3AF)'>Entre ou crie sua conta para continuar.</p>"
         # [Login UX] Faixa de recursos REAIS da aplicação (regra dos 5 segundos): comunica
         # valor concreto antes do cadastro, sem inventar funcionalidade. Responsiva (flex-wrap).
-        "<div style='display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:18px'>"
+        # Cartões na linguagem premium (.auth-feat) — ver CSS em streamlit_app.py.
+        "<div style='display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-top:20px'>"
         + "".join(
-            "<div style='flex:1 1 160px;min-width:150px;background:var(--sf-2, #1E232F);"
-            "border:1px solid var(--sf-3, #2D3342);border-radius:12px;padding:12px 14px;text-align:left'>"
-            f"<div style='font-size:1.4rem;line-height:1'>{_ic}</div>"
-            f"<div style='color:var(--tx-1, #F9FAFB);font-weight:600;margin-top:6px'>{_ti}</div>"
-            f"<div style='color:var(--tx-3, #9CA3AF);font-size:.82rem;margin-top:2px'>{_de}</div>"
+            "<div class='auth-feat'>"
+            f"<div class='auth-feat-ic'>{_ic}</div>"
+            f"<div class='auth-feat-ti'>{_ti}</div>"
+            f"<div class='auth-feat-de'>{_de}</div>"
             "</div>"
             for _ic, _ti, _de in (
                 ("🛣️", "Distância real por estrada", "Rota viária multi-motor, não linha reta."),
