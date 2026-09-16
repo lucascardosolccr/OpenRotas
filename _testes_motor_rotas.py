@@ -1845,6 +1845,14 @@ def validar():
     _res28c = [0] * 40; _res28c[38] = "https://www.google.com/maps/dir/?api=1&origin=A&destination=B"
     check("GEO-CTX-GEOMETRIA: link Google navegável (sem rota=osrm) é ignorado, nunca vira geometria falsa",
           m._geometria_real_da_rota(_res28c) is None)
+    # LOTE: o Contexto Geográfico do Estudo em Lote decodifica a geometria do MESMO viewer OSRM, agora
+    # indexado por coordenadas em session_state (sem coluna no DataFrame) — mesma correção do Validador Rápido.
+    check("GEO-CTX-GEOMETRIA (LOTE): _geometria_de_link_osrm decodifica o viewer OSRM em [(lat,lon)]",
+          (lambda _g: _g is not None and abs(_g[0][0] + 15.79) < 1e-4 and abs(_g[-1][1] + 49.25) < 1e-4)(
+              m._geometria_de_link_osrm(_link28)))
+    check("GEO-CTX-GEOMETRIA (LOTE): link Google/None/'' não viram geometria falsa",
+          m._geometria_de_link_osrm("https://maps.google.com/?q=1,2") is None
+          and m._geometria_de_link_osrm(None) is None and m._geometria_de_link_osrm("") is None)
     try:
         from inteligencia_geoespacial import route_context as _rc28
         _c28_sem = _rc28.analisar_rota((-15.79, -47.88), (-16.68, -49.25), distancia_km=250)

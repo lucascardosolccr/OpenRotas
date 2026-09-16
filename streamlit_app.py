@@ -18858,13 +18858,29 @@ def _enriquecer_geo_inteligencia_df(df, forcar=False, limiar_automatico=_GEO_INT
             _dist_por_chave.keys(),
             key=lambda c: (round(c[0], 1), round(c[1], 1), round(c[2], 1), round(c[3], 1)))
 
+        # [GEO-CTX-GEOMETRIA-LOTE - 458ª geração] mapa {coords → geometria REAL da rota}, montado no
+        # assembly do estudo (session_state, sem coluna no DataFrame). Quando presente, o contexto do LOTE
+        # segue a ESTRADA real em vez da corda reta — mesma correção do Validador Rápido. Ausente → mantém
+        # a corda reta + o aviso honesto de analisar_rota. Defensivo: qualquer falha degrada para None.
+        try:
+            _poly_map = st.session_state.get('_geo_poly_por_coord', {}) or {}
+        except Exception:
+            _poly_map = {}
+
         _cache: dict = {}
         for _chave in _chaves_unicas:
             _clo, _coo, _cld, _cod, _cbal = _chave
             _dist = _dist_por_chave[_chave]
+            _geom = None
+            try:
+                _lnk = _poly_map.get((_clo, _coo, _cld, _cod))
+                if _lnk:
+                    _geom = _geometria_de_link_osrm(_lnk)
+            except Exception:
+                _geom = None
             try:
                 _ctx = _geo_route_context.analisar_rota((_clo, _coo), (_cld, _cod), distancia_km=_dist,
-                                                          balsa_reportada_motor=_cbal)
+                                                          geometria=_geom, balsa_reportada_motor=_cbal)
             except Exception:
                 _ctx = None
             _cache[_chave] = _ctx
@@ -36200,6 +36216,25 @@ def _suspeita_geometria_rota(pontos, km_motor=None, km_reta=None, provedor=""):
         pass
     return avisos
 
+def _geometria_de_link_osrm(link):
+    """[GEO-CTX-GEOMETRIA - 458ª geração] Decodifica a geometria REAL da rota (lista [(lat, lon)]) a partir
+    de um link de visualizador OSRM no formato `?rota=osrm&g=<polyline>&...`. Retorna None se o link não for
+    um viewer OSRM (ex.: link Google navegável) ou não tiver polyline válida. PURO/defensivo: nunca levanta."""
+    try:
+        if not isinstance(link, str) or "rota=osrm" not in link or "g=" not in link:
+            return None
+        import urllib.parse as _up
+        _q = link.split("?", 1)[1] if "?" in link else link
+        _g = _up.parse_qs(_q).get("g", [""])[0]
+        if not _g:
+            return None
+        _pts = _decodificar_polyline(_g)
+        if _pts and len(_pts) >= 2:
+            return _pts
+    except Exception:
+        return None
+    return None
+
 def _geometria_real_da_rota(res_ind):
     """[GEO-CTX-GEOMETRIA - 458ª geração] Extrai a geometria REAL da rota (lista [(lat, lon)]) a partir
     dos links de visualizador OSRM já guardados no resultado do pipeline: `link_osrm_viewer` (índice 36,
@@ -36211,22 +36246,11 @@ def _geometria_real_da_rota(res_ind):
     foi suprimido pela salvaguarda de tamanho) — nesse caso o motor mantém a corda reta e já sinaliza o
     aviso honesto. PURO/defensivo: nunca levanta."""
     try:
-        import urllib.parse as _up
-        _cands = []
-        if len(res_ind) > 36 and res_ind[36]:
-            _cands.append(res_ind[36])
-        if len(res_ind) > 38 and res_ind[38]:
-            _cands.append(res_ind[38])
-        for _lnk in _cands:
-            if not isinstance(_lnk, str) or "rota=osrm" not in _lnk or "g=" not in _lnk:
-                continue
-            _q = _lnk.split("?", 1)[1] if "?" in _lnk else _lnk
-            _g = _up.parse_qs(_q).get("g", [""])[0]
-            if not _g:
-                continue
-            _pts = _decodificar_polyline(_g)
-            if _pts and len(_pts) >= 2:
-                return _pts
+        for _i in (36, 38):
+            if len(res_ind) > _i and res_ind[_i]:
+                _g = _geometria_de_link_osrm(res_ind[_i])
+                if _g:
+                    return _g
     except Exception:
         return None
     return None
@@ -41815,6 +41839,11 @@ def _montar_dataframe_final(df, resultados_unicos, runner_up_map=None, hub_qual_
     # estrada no mapa por origem. Reconstruído a cada estudo. Aditivo: NÃO entra no DataFrame nem na
     # exportação (fica só em session_state), então não polui planilha nem o reindex por lista branca.
     st.session_state['_geo_rotas_v329'] = {}
+    # [GEO-CTX-GEOMETRIA-LOTE - 458ª geração] mapa {coords arredondadas → link-viewer OSRM com geometria} para
+    # o Contexto Geográfico do LOTE seguir a ESTRADA real (não a corda reta). Mesma disciplina do _geo_rotas_v329:
+    # reconstruído a cada estudo, SÓ em session_state — nunca entra no DataFrame nem na exportação. A chave usa
+    # o MESMO arredondamento (4 casas) da deduplicação de _enriquecer_geo_inteligencia_df, que o consome.
+    st.session_state['_geo_poly_por_coord'] = {}
 
     for i, row in enumerate(df.itertuples(index=False, name=None)):
         # [FIX-COLUNAS-FANTASMA - 117ª geração] name=None → tuplas puras (sem namedtuple): mantém o baixo
@@ -41831,6 +41860,14 @@ def _montar_dataframe_final(df, resultados_unicos, runner_up_map=None, hub_qual_
                 try:
                     if len(res) > 36 and res[36]:
                         st.session_state['_geo_rotas_v329'][str(origem).strip().lower()] = res[36]
+                    # [GEO-CTX-GEOMETRIA-LOTE - 458ª] guarda o viewer OSRM (res[36] quando o OSRM vence, senão
+                    # res[38] no caso Google-vence-com-comparativo-OSRM) indexado pelas coords arredondadas.
+                    _lnk_poly = (res[36] if len(res) > 36 and res[36] else
+                                 (res[38] if len(res) > 38 and res[38] else None))
+                    if _lnk_poly and len(res) > 22:
+                        _kpoly = (round(float(res[19]), 4), round(float(res[20]), 4),
+                                  round(float(res[21]), 4), round(float(res[22]), 4))
+                        st.session_state['_geo_poly_por_coord'][_kpoly] = _lnk_poly
                 except Exception:
                     pass
                 linha_dict.update({
