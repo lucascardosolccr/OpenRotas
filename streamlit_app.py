@@ -1862,6 +1862,81 @@ st.markdown("""
     [data-baseweb="slider"] [role="slider"] { transition: box-shadow .15s ease, transform .12s ease; }
     [data-baseweb="slider"] [role="slider"]:hover { box-shadow: 0 0 0 6px rgba(59,130,246,.20); }
     [data-baseweb="slider"] [role="slider"]:active { transform: scale(1.08); }
+
+    /* ================================================================================
+       [REDESIGN BELEZA - Rodada 9] REFINAMENTO DE SOFISTICAÇÃO.
+       Camada final, puramente cosmética e ADITIVA, com os toques de acabamento que faltavam
+       para um ar premium (Linear/Stripe/Material-3): bisel de luz interno nas superfícies
+       elevadas, renderização tipográfica fina (ligaduras, antialias, quebra equilibrada),
+       links com sublinhado animado, hover das abas inativas, código inline e brilho superior
+       do botão primário. Sem movimento de entrada global (o Streamlit re-renderiza a cada
+       clique; animar tudo a cada rerun cansaria). Vem por último para vencer o cascateamento.
+       ================================================================================ */
+    :root { --bevel: inset 0 1px 0 rgba(255,255,255,.055); }
+
+    /* Renderização tipográfica premium: antialias, ligaduras contextuais e números tabulares
+       onde alinham. Aplica no corpo; títulos herdam. */
+    html, body, .stApp, [data-testid="stMarkdownContainer"] {
+        -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+        font-feature-settings: "cv02","cv03","cv04","calt","liga" 1;
+        text-rendering: optimizeLegibility;
+    }
+    /* Títulos com quebra equilibrada (nenhuma "viúva" de palavra) e corpo com quebra elegante. */
+    .main h1, .main h2, .main h3, [data-testid="stMarkdownContainer"] h1,
+    [data-testid="stMarkdownContainer"] h2, [data-testid="stMarkdownContainer"] h3 {
+        text-wrap: balance;
+    }
+    [data-testid="stMarkdownContainer"] p { text-wrap: pretty; }
+
+    /* Bisel de luz interno — a "borda de vidro" que dá profundidade fina às superfícies
+       elevadas (adicionado por cima das sombras que já existem, sem substituí-las). */
+    [data-testid="stMetric"], [data-testid="stExpander"],
+    div[data-testid="stAlert"], div[data-testid="stNotification"],
+    [data-testid="stVerticalBlockBorderWrapper"] > div {
+        box-shadow: var(--sh-soft), var(--bevel) !important;
+    }
+    [data-testid="stMetric"]:hover, [data-testid="stExpander"]:hover {
+        box-shadow: var(--sh-lift), var(--bevel) !important;
+    }
+
+    /* Botões: brilho superior sutil (aparência "polida"). O primário mantém o glow da marca. */
+    .stButton > button, [data-testid="stDownloadButton"] > button,
+    [data-testid="stFormSubmitButton"] > button { box-shadow: var(--bevel); }
+    [data-testid^="stBaseButton-primary"] {
+        box-shadow: 0 2px 10px -2px rgba(59,130,246,.5), var(--bevel) !important;
+    }
+    [data-testid^="stBaseButton-primary"]:hover {
+        box-shadow: 0 10px 26px -8px rgba(59,130,246,.65), var(--bevel) !important;
+    }
+
+    /* Links — sublinhado com deslocamento que cresce no hover (em vez de só trocar de cor). */
+    [data-testid="stMarkdownContainer"] a {
+        text-decoration: underline; text-decoration-color: var(--brd-brand);
+        text-underline-offset: 2px; text-decoration-thickness: 1px;
+        transition: text-decoration-color .16s ease, text-underline-offset .16s ease, color .14s ease;
+    }
+    [data-testid="stMarkdownContainer"] a:hover {
+        text-decoration-color: var(--brand-2); text-underline-offset: 3px;
+    }
+
+    /* Abas inativas — leve realce de fundo e subida no hover (a ativa já tem gradiente). */
+    [data-baseweb="tab"]:not([aria-selected="true"]):hover {
+        background: rgba(148,163,184,.08) !important;
+        transform: translateY(-1px);
+    }
+
+    /* Código inline — pílula sutil, monoespaçada, coesa com o tema. */
+    [data-testid="stMarkdownContainer"] code {
+        background: rgba(148,163,184,.14); border: 1px solid var(--brd-soft);
+        border-radius: 6px; padding: .10em .40em; font-size: .86em;
+        color: var(--brand-2); font-feature-settings: normal;
+    }
+
+    /* Foco de teclado ainda mais nítido nos controles-chave (acessibilidade + acabamento). */
+    .stButton > button:focus-visible, [data-testid="stFormSubmitButton"] > button:focus-visible {
+        outline: none !important;
+        box-shadow: 0 0 0 3px rgba(59,130,246,.35), var(--bevel) !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
