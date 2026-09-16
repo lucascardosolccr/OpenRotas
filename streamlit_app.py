@@ -2032,6 +2032,24 @@ st.markdown("""
         border: 1px solid var(--brd-soft) !important;
         box-shadow: var(--sh-lift), var(--bevel) !important;
     }
+
+    /* Envio de arquivo (arrastar-e-soltar da planilha) — a porta de entrada de todo estudo em lote.
+       Zona pontilhada com tom de marca, superfície em gradiente e ícone da marca; realce no hover.
+       Seletores confirmados no DOM real do Streamlit 1.46. */
+    [data-testid="stFileUploaderDropzone"] {
+        background: var(--grad-surface) !important;
+        border: 1.5px dashed var(--brd-brand) !important;
+        border-radius: var(--r-md) !important;
+        box-shadow: var(--bevel) !important;
+        transition: border-color .16s ease, background-color .16s ease !important;
+    }
+    [data-testid="stFileUploaderDropzone"]:hover {
+        border-color: var(--brand) !important;
+        background-color: rgba(59,130,246,.06) !important;
+    }
+    [data-testid="stFileUploaderDropzone"] svg {
+        color: var(--brand-2) !important; fill: var(--brand-2) !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
