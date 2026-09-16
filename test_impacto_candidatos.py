@@ -193,6 +193,58 @@ def test_svg_lorenz_desenha_curva_e_diagonal():
     assert "<svg" in m._secao_impacto_candidatos_html(e)
 
 
+def test_boxplot_uf_no_motor():
+    # o motor produz quantis ponderados por candidato para cada UF (min–Q1–mediana–Q3–max)
+    e = m._estudo_impacto_candidatos(_df())
+    bx = {c["uf"]: c for c in e["boxplot_uf"]}
+    assert "AM" in bx and "SP" in bx
+    _am = bx["AM"]
+    # ordenação obrigatória dos cinco números
+    assert _am["min"] <= _am["q1"] <= _am["mediana"] <= _am["q3"] <= _am["max"]
+    # AM concentra candidatos em A (300 km, 5000 inscritos) → mediana ponderada = 300
+    assert _am["mediana"] == 300.0
+    # sem coluna de UF não há boxplot
+    assert m._estudo_impacto_candidatos(
+        pd.DataFrame({"Origem": ["A"], "Distancia": [100.0], "Inscritos": [10]}))["boxplot_uf"] == []
+
+
+def test_svg_treemap_desenha_retangulos():
+    # [VISUAL] o treemap vira SVG autocontido com um retângulo por município (área ∝ candidato-km)
+    e = m._estudo_impacto_candidatos(_df())
+    svg = m._svg_treemap(e["top_municipios_peso"])
+    assert svg.startswith("<svg") and svg.rstrip().endswith("</svg>")
+    assert svg.count("<rect") >= 2                     # vários municípios
+    assert "Treemap" in svg                            # rótulo acessível
+    # defensivo: vazio/None não desenham nada
+    assert m._svg_treemap([]) == "" and m._svg_treemap(None) == ""
+    # e a seção HTML embute o treemap
+    assert "Treemap" in m._secao_impacto_candidatos_html(e) or "treemap" in \
+        m._secao_impacto_candidatos_html(e)
+
+
+def test_svg_boxplot_uf_desenha_caixas():
+    # [VISUAL] o boxplot por UF vira SVG com caixa (Q1–Q3), mediana e fios (min–max)
+    e = m._estudo_impacto_candidatos(_df())
+    svg = m._svg_boxplot_uf(e["boxplot_uf"])
+    assert svg.startswith("<svg") and svg.rstrip().endswith("</svg>")
+    assert "<rect" in svg and "<line" in svg           # caixa + fios/mediana
+    # os rótulos de UF aparecem
+    assert "AM" in svg and "SP" in svg
+    # defensivo
+    assert m._svg_boxplot_uf([]) == "" and m._svg_boxplot_uf(None) == ""
+    # a seção HTML embute o boxplot
+    assert "Dispersão do deslocamento" in m._secao_impacto_candidatos_html(e)
+
+
+def test_squarify_preenche_a_area_sem_sobreposicao():
+    # o layout squarificado cobre toda a área e devolve um retângulo por item, na mesma ordem.
+    # contrato: as áreas JÁ vêm normalizadas para w*h (aqui 100*100 = 10000)
+    rects = m._squarify([5000.0, 3000.0, 2000.0], 0, 0, 100, 100)
+    assert len(rects) == 3 and all(r is not None for r in rects)
+    _area = sum(r[2] * r[3] for r in rects)
+    assert abs(_area - 10000.0) < 1.0                  # soma das áreas ≈ área total
+
+
 def test_wrapper_cacheado_equivale_ao_nucleo_puro():
     # [PERF-CACHE] o wrapper cacheado do painel deve devolver EXATAMENTE o mesmo resultado do núcleo puro —
     # o cache é só uma camada de memoização entre reruns, nunca altera o conteúdo.

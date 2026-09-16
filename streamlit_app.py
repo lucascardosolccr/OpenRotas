@@ -5529,7 +5529,26 @@ def _estudo_impacto_candidatos(df, limiar_longo_km=200.0):
             if _niveis and _linhas_ufr:
                 _uf_risco = {"niveis": _niveis, "linhas": _linhas_ufr}
 
+        # boxplot por UF (deslocamento PONDERADO por candidato) — dispersão/outliers por estado:
+        # min, Q1, mediana, Q3, max do deslocamento em cada UF (top 8 por candidato-km)
+        _boxplot_uf = []
+        if _col_uf is not None and _por_uf:
+            _ufcol2 = _d[_col_uf].astype(str).str.upper().str.strip()
+            for _u in [x["uf"] for x in _por_uf[:8]]:
+                _mub = _ufcol2 == _u
+                _ddb, _ccb = _d.loc[_mub, "_dist"], _d.loc[_mub, "_cand"]
+                if _ddb.empty:
+                    continue
+                _paresb = list(zip(_ddb.tolist(), _ccb.tolist()))
+                _boxplot_uf.append({
+                    "uf": _u, "min": round(float(_ddb.min()), 1),
+                    "q1": round(_quantil_ponderado(_paresb, 0.25) or float(_ddb.min()), 1),
+                    "mediana": round(_quantil_ponderado(_paresb, 0.5) or float(_ddb.median()), 1),
+                    "q3": round(_quantil_ponderado(_paresb, 0.75) or float(_ddb.max()), 1),
+                    "max": round(float(_ddb.max()), 1)})
+
         # top municípios por peso logístico (candidato-km)
+        _col_org = next((c for c in ("Origem", "Municipio Origem") if c in _d.columns), None)
         _col_org = next((c for c in ("Origem", "Municipio Origem") if c in _d.columns), None)
         _top_mun = []
         _acc_km = 0.0
@@ -5599,7 +5618,7 @@ def _estudo_impacto_candidatos(df, limiar_longo_km=200.0):
             "balsa_e_risco": _balsa_e_risco,
             "concentracao": {"gini_km_candidato": _gini_kmc, "share_top10pct_municipios": _share_top10},
             "pareto": _pareto, "lorenz_deciles": _lorenz,
-            "por_uf": _por_uf, "uf_risco": _uf_risco,
+            "por_uf": _por_uf, "uf_risco": _uf_risco, "boxplot_uf": _boxplot_uf,
             "top_municipios_peso": _top_mun, "resumo_frases": _fr,
         }
     except Exception:
@@ -5743,6 +5762,139 @@ def _svg_heatmap_uf_risco(uf_risco):
         return ""
 
 
+def _squarify(areas, x, y, w, h):
+    """[VISUAL] Layout de treemap SQUARIFICADO (Bruls/Huizing/van Wijk). Recebe áreas já normalizadas
+    para w*h e devolve [(x,y,w,h)] na MESMA ordem. PURO/defensivo."""
+    _res = [None] * len(areas)
+    _rem = list(range(len(areas)))
+    _rx, _ry, _rw, _rh = float(x), float(y), float(w), float(h)
+
+    def _worst(row, lado):
+        if not row or lado <= 0:
+            return float("inf")
+        _s = sum(areas[i] for i in row)
+        if _s <= 0:
+            return float("inf")
+        _mx, _mn = max(areas[i] for i in row), min(areas[i] for i in row)
+        _c2, _s2 = lado * lado, _s * _s
+        return max(_c2 * _mx / _s2, _s2 / (_c2 * _mn)) if _mn > 0 else float("inf")
+
+    while _rem:
+        _lado = min(_rw, _rh)
+        _row = []
+        while _rem:
+            _cand = _row + [_rem[0]]
+            if _row and _worst(_cand, _lado) > _worst(_row, _lado):
+                break
+            _row = _cand
+            _rem.pop(0)
+        _s = sum(areas[i] for i in _row)
+        if _rw >= _rh:
+            _colw = _s / _rh if _rh else 0.0
+            _cy = _ry
+            for i in _row:
+                _ch = areas[i] / _colw if _colw else 0.0
+                _res[i] = (_rx, _cy, _colw, _ch)
+                _cy += _ch
+            _rx += _colw
+            _rw -= _colw
+        else:
+            _rowh = _s / _rw if _rw else 0.0
+            _cx = _rx
+            for i in _row:
+                _cw = areas[i] / _rowh if _rowh else 0.0
+                _res[i] = (_cx, _ry, _cw, _rowh)
+                _cx += _cw
+            _ry += _rowh
+            _rh -= _rowh
+    return _res
+
+
+def _svg_treemap(itens, larg=480, alt=300):
+    """[VISUAL - 455ª geração] Treemap (SVG inline, offline, autocontido) dos municípios por peso
+    logístico: cada retângulo é um município, ÁREA ∝ candidato-km. Rotula os que couberem. Recebe a
+    lista top_municipios_peso. '' se vazio. PURO/defensivo."""
+    try:
+        import html as _h
+        _its = [it for it in (itens or []) if float(it.get("km_candidato", 0) or 0) > 0]
+        if not _its:
+            return ""
+        _its = sorted(_its, key=lambda it: -float(it.get("km_candidato", 0) or 0))[:15]
+        _tot = sum(float(it.get("km_candidato", 0) or 0) for it in _its) or 1.0
+        _areas = [float(it.get("km_candidato", 0) or 0) / _tot * (larg * alt) for it in _its]
+        _rects = _squarify(_areas, 0, 0, larg, alt)
+        _pal = ["#1e3a8a", "#1d4ed8", "#2563eb", "#3b82f6", "#0e7490", "#0891b2", "#0d9488", "#14b8a6"]
+        _out = [f"<svg viewBox='0 0 {larg} {alt}' width='100%' style='max-width:540px;height:auto' "
+                "role='img' aria-label='Treemap dos municípios por candidato-km'>"]
+        for _i, (_it, _r) in enumerate(zip(_its, _rects)):
+            if not _r:
+                continue
+            _x, _y, _w, _hh = _r
+            _cor = _pal[_i % len(_pal)]
+            _out.append(f"<rect x='{_x+1:.1f}' y='{_y+1:.1f}' width='{max(0,_w-2):.1f}' "
+                        f"height='{max(0,_hh-2):.1f}' rx='3' fill='{_cor}'/>")
+            if _w > 48 and _hh > 26:
+                _pct = float(_it.get("km_candidato", 0) or 0) / _tot * 100.0
+                _lab = _h.escape(str(_it.get("origem", ""))[:14])
+                _uf = _h.escape(str(_it.get("uf", "")))
+                _out.append(f"<text x='{_x+5:.1f}' y='{_y+15:.1f}' font-size='11' fill='#ffffff' "
+                            f"font-weight='600'>{_lab}</text>"
+                            f"<text x='{_x+5:.1f}' y='{_y+28:.1f}' font-size='10' fill='#dbeafe'>"
+                            f"{_uf} · {_pct:.0f}%</text>")
+        _out.append("</svg>")
+        return "".join(_out)
+    except Exception:
+        return ""
+
+
+def _svg_boxplot_uf(caixas, larg=490, alt=260):
+    """[VISUAL - 455ª geração] Boxplot (SVG inline, offline) do deslocamento por UF, ponderado por
+    candidato: min–Q1–mediana–Q3–max de cada estado. Revela dispersão e caudas por UF. Recebe a lista
+    boxplot_uf. '' se vazia. PURO/defensivo."""
+    try:
+        import html as _h
+        _cs = [c for c in (caixas or []) if c]
+        if not _cs:
+            return ""
+        _vmax = max((float(c.get("max", 0) or 0) for c in _cs), default=0) or 1.0
+        _ml, _mr, _mt, _mb = 42, 12, 16, 28
+        _pw, _ph = larg - _ml - _mr, alt - _mt - _mb
+        _n = max(1, len(_cs))
+        _slot = _pw / _n
+        _bw = _slot * 0.5
+        _y = lambda v: _mt + (1 - v / _vmax) * _ph
+        _out = [f"<svg viewBox='0 0 {larg} {alt}' width='100%' style='max-width:530px;height:auto' "
+                "role='img' aria-label='Boxplot do deslocamento por UF'>"]
+        for _t in (0.0, 0.5, 1.0):
+            _v = _vmax * _t
+            _out.append(f"<line x1='{_ml}' y1='{_y(_v):.1f}' x2='{_ml+_pw:.1f}' y2='{_y(_v):.1f}' "
+                        "stroke='#eef2f7'/>"
+                        f"<text x='{_ml-6:.1f}' y='{_y(_v)+3:.1f}' font-size='9' fill='#94a3b8' "
+                        f"text-anchor='end'>{_v:.0f}</text>")
+        for _i, _c in enumerate(_cs):
+            _cx = _ml + _i * _slot + _slot / 2
+            _x0 = _cx - _bw / 2
+            _yq1, _yq3, _ymed = _y(_c["q1"]), _y(_c["q3"]), _y(_c["mediana"])
+            _ymin, _ymax = _y(_c["min"]), _y(_c["max"])
+            _out.append(f"<line x1='{_cx:.1f}' y1='{_ymax:.1f}' x2='{_cx:.1f}' y2='{_ymin:.1f}' "
+                        "stroke='#64748b'/>"
+                        f"<line x1='{_cx-6:.1f}' y1='{_ymax:.1f}' x2='{_cx+6:.1f}' y2='{_ymax:.1f}' "
+                        "stroke='#64748b'/>"
+                        f"<line x1='{_cx-6:.1f}' y1='{_ymin:.1f}' x2='{_cx+6:.1f}' y2='{_ymin:.1f}' "
+                        "stroke='#64748b'/>"
+                        f"<rect x='{_x0:.1f}' y='{_yq3:.1f}' width='{_bw:.1f}' "
+                        f"height='{max(1.0,_yq1-_yq3):.1f}' rx='2' fill='#3b82f6' fill-opacity='0.35' "
+                        "stroke='#1e3a8a'/>"
+                        f"<line x1='{_x0:.1f}' y1='{_ymed:.1f}' x2='{_x0+_bw:.1f}' y2='{_ymed:.1f}' "
+                        "stroke='#1e3a8a' stroke-width='2'/>"
+                        f"<text x='{_cx:.1f}' y='{alt-_mb+16:.1f}' font-size='10' fill='#334155' "
+                        f"text-anchor='middle' font-weight='600'>{_h.escape(str(_c['uf']))}</text>")
+        _out.append("</svg>")
+        return "".join(_out)
+    except Exception:
+        return ""
+
+
 def _concentracao_divergencia_comparacao(linhas):
     """[VISUAL - 454ª geração] Concentração (Lorenz/Gini) da DIVERGÊNCIA candidato-ponderada entre o
     estudo da APLICAÇÃO e o de REFERÊNCIA: o peso de cada município é |Diferença (km)| × Inscritos —
@@ -5867,6 +6019,14 @@ def _secao_impacto_candidatos_html(estudo):
                         "<th class='r'>Candidato-km</th><th>Peso relativo</th>"
                         "<th class='r'>Deslocamento médio/candidato</th>"
                         f"</tr></thead><tbody>{_rows}</tbody></table>")
+        # boxplot do deslocamento por UF (ponderado por candidato) — dispersão e caudas por estado
+        _bx = _svg_boxplot_uf(estudo.get("boxplot_uf"))
+        if _bx:
+            _out.append("<h3 style='margin-top:14px'>Dispersão do deslocamento por estado (candidatos)</h3>"
+                        "<p style='color:#64748b;font-size:13px'>Cada caixa vai do 1º ao 3º quartil "
+                        "ponderado por candidato (traço = mediana); os fios alcançam mínimo e máximo. "
+                        "Caixas altas e caudas longas marcam estados com acesso desigual.</p>"
+                        f"<div style='margin:6px 0;overflow-x:auto'>{_bx}</div>")
         # heatmap UF × nível de risco (candidatos) — onde a exposição operacional se concentra no mapa
         _hm = _svg_heatmap_uf_risco(estudo.get("uf_risco"))
         if _hm:
@@ -5890,6 +6050,12 @@ def _secao_impacto_candidatos_html(estudo):
                         "<table><thead><tr><th>Origem</th><th>UF</th><th class='r'>Candidatos</th>"
                         "<th class='r'>Distância</th><th class='r'>Candidato-km</th>"
                         f"<th class='r'>% acumulado</th></tr></thead><tbody>{_rows}</tbody></table>")
+            _trm = _svg_treemap(_tm)
+            if _trm:
+                _out.append("<p style='color:#64748b;font-size:13px;margin-top:10px'>No treemap abaixo, "
+                            "a <b>área</b> de cada município é proporcional ao seu candidato-km: um olhar "
+                            "imediato de onde o esforço logístico realmente se acumula.</p>"
+                            f"<div style='margin:6px 0;overflow-x:auto'>{_trm}</div>")
         # curva de concentração (Lorenz por decil) — só quando há massa suficiente
         _lz = estudo.get("lorenz_deciles") or []
         if _lz:
@@ -16715,6 +16881,32 @@ def _montar_planilha_lote_xlsx(df_final):
                             "% acumulado": d["share_acumulado"]} for d in _est_x["lorenz_deciles"]])))
                     for _nm_imp, _df_imp in _abas_impacto:
                         _df_imp.to_excel(_w, index=False, sheet_name=_nm_imp)
+                    # [IMPACTO-XLSX-HEATMAP - 456ª geração] Formatação condicional (escala 3 cores) nas
+                    # colunas-chave das abas de impacto: leva o "heatmap" da tela para o Excel — a intensidade
+                    # da cor marca onde o candidato-km / a concentração pesa mais. Isolado/defensivo.
+                    try:
+                        _wb_cf = getattr(_w, "book", None)
+                        if _wb_cf is not None and hasattr(_wb_cf, "add_format"):
+                            # colunas onde a escala de calor faz sentido (maior = mais crítico)
+                            _cols_calor = {"Candidato-km", "% do candidato-km (decil)", "% acumulado",
+                                           "% acumulado do candidato-km", "Candidatos", "% dos candidatos"}
+                            for _nm_cf, _df_cf in _abas_impacto:
+                                _ws_cf = _w.sheets.get(_nm_cf)
+                                if _ws_cf is None or _df_cf is None or _df_cf.empty:
+                                    continue
+                                _nrow = len(_df_cf)
+                                for _ci, _cn in enumerate(_df_cf.columns):
+                                    if _cn not in _cols_calor:
+                                        continue
+                                    if not pd.api.types.is_numeric_dtype(_df_cf[_cn]):
+                                        continue
+                                    _ws_cf.conditional_format(1, _ci, _nrow, _ci, {
+                                        "type": "3_color_scale",
+                                        "min_color": "#E8F0E8", "mid_color": "#F6D98A",
+                                        "max_color": "#E06B5A"})
+                    except Exception:
+                        logger.error("[IMPACTO-XLSX-HEATMAP] Falha na formatação condicional das abas de impacto",
+                                     exc_info=True)
             except Exception:
                 logger.error("[IMPACTO-CANDIDATOS] Falha ao anexar abas de impacto ao Excel do Lote", exc_info=True)
             # [EXPORT-PADRAO - 272ª geração] CONSISTÊNCIA: aplica o MESMO padrão institucional (cabeçalho,
@@ -56787,6 +56979,13 @@ def _fragmento_analytics_dashboard():
                                 _nlin = len(_est_scr["uf_risco"]["linhas"])
                                 components.html(f"<div style='font-family:system-ui'>{_hm_scr}</div>",
                                                 height=42 + 27 * _nlin + 24, scrolling=False)
+                            # boxplot do deslocamento por UF (ponderado por candidato) — dispersão/caudas
+                            _bx_scr = _svg_boxplot_uf(_est_scr.get("boxplot_uf"))
+                            if _bx_scr:
+                                st.caption("Dispersão do deslocamento por estado — caixa = 1º ao 3º quartil "
+                                           "(traço = mediana), fios = mínimo e máximo, ponderado por candidato:")
+                                components.html(f"<div style='font-family:system-ui'>{_bx_scr}</div>",
+                                                height=280, scrolling=False)
                         else:
                             st.caption("Sem coluna de UF para detalhar por estado.")
                     with _timp3:
@@ -56796,6 +56995,13 @@ def _fragmento_analytics_dashboard():
                                 "distancia_km": "Distância (km)", "km_candidato": "Candidato-km",
                                 "share_acumulado": "% acumulado"}),
                                 use_container_width=True, hide_index=True)
+                            # treemap — área ∝ candidato-km: onde o esforço logístico se acumula
+                            _trm_scr = _svg_treemap(_est_scr["top_municipios_peso"])
+                            if _trm_scr:
+                                st.caption("Treemap: a área de cada município é proporcional ao seu "
+                                           "candidato-km — leitura imediata de peso relativo.")
+                                components.html(f"<div style='font-family:system-ui'>{_trm_scr}</div>",
+                                                height=320, scrolling=False)
                     with _timp4:
                         st.caption("Onde está concentrado o esforço logístico (candidato-km). Quanto mais os "
                                    "primeiros decis já somam, mais concentrado — e mais eficiente é priorizar "
