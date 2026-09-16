@@ -2002,6 +2002,36 @@ st.markdown("""
         content: ""; flex: 1; height: 1px;
         background: linear-gradient(90deg, var(--brd-soft), transparent);
     }
+
+    /* Cartão de identidade do perfil — sobe para a linguagem premium: superfície em gradiente,
+       acento de marca, bisel e avatar com brilho. */
+    .profile-card {
+        display: flex; align-items: center; gap: 16px;
+        background: var(--grad-surface); border: 1px solid var(--brd-soft);
+        border-left: 3px solid var(--brand); border-radius: 16px;
+        padding: 16px 18px; margin-bottom: 12px;
+        box-shadow: var(--sh-soft), var(--bevel);
+    }
+    .profile-card-nome { color: var(--tx-1); font-weight: 700; font-size: 1.08rem; }
+    .profile-card-email { color: var(--tx-3); font-size: .86rem; margin-top: 2px; }
+    .profile-card-meta { color: var(--tx-4); font-size: .78rem; margin-top: 4px; }
+    .profile-av {
+        flex: 0 0 auto; width: 56px; height: 56px; border-radius: 50%;
+        background: var(--grad-brand); color: #fff; display: flex; align-items: center;
+        justify-content: center; font-size: 1.25rem; font-weight: 700;
+        box-shadow: 0 6px 18px -6px rgba(59,130,246,.6);
+    }
+    .profile-av-img {
+        flex: 0 0 auto; width: 56px; height: 56px; border-radius: 50%; object-fit: cover;
+        border: 2px solid var(--brand); box-shadow: 0 6px 18px -6px rgba(59,130,246,.6);
+    }
+
+    /* Toast — cartão flutuante coeso com o tema (superfície elevada + bisel). */
+    [data-testid="stToast"] {
+        background: var(--grad-surface) !important;
+        border: 1px solid var(--brd-soft) !important;
+        box-shadow: var(--sh-lift), var(--bevel) !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 

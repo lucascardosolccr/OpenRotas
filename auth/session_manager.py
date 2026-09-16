@@ -417,21 +417,16 @@ def _tela_perfil():
         # [Perfil] Avatar: usa a FOTO enviada (avatar_url) quando existir; senão, as iniciais.
         _avatar_url = (_perfil.get("avatar_url") or "").strip()
         if _avatar_url:
-            _av_html = ("<img src='" + _html.escape(_avatar_url) + "' alt='avatar' "
-                        "style='flex:0 0 auto;width:56px;height:56px;border-radius:50%;object-fit:cover;"
-                        "border:2px solid var(--brand,#3B82F6)'/>")
+            _av_html = ("<img src='" + _html.escape(_avatar_url) + "' alt='avatar' class='profile-av-img'/>")
         else:
-            _av_html = ("<div style='flex:0 0 auto;width:56px;height:56px;border-radius:50%;background:var(--brand,#3B82F6);"
-                        "color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.25rem;font-weight:700'>"
-                        + _html.escape(_iniciais) + "</div>")
+            _av_html = ("<div class='profile-av'>" + _html.escape(_iniciais) + "</div>")
         st.markdown(
-            "<div style='display:flex;align-items:center;gap:16px;background:var(--sf-2,#1E232F);"
-            "border:1px solid var(--sf-3,#2D3342);border-radius:14px;padding:16px 18px;margin-bottom:10px'>"
+            "<div class='profile-card'>"
             + _av_html +
             "<div style='min-width:0'>"
-            "<div style='color:var(--tx-1,#F9FAFB);font-weight:700;font-size:1.05rem'>" + _html.escape(_nome_disp) + "</div>"
-            "<div style='color:var(--tx-3,#9CA3AF);font-size:.85rem'>✉️ " + _html.escape(_user['email'] or '—') + "</div>"
-            + ("<div style='color:var(--tx-4,#6B7280);font-size:.78rem;margin-top:2px'>" + _meta_html + "</div>" if _meta_html else "")
+            "<div class='profile-card-nome'>" + _html.escape(_nome_disp) + "</div>"
+            "<div class='profile-card-email'>✉️ " + _html.escape(_user['email'] or '—') + "</div>"
+            + ("<div class='profile-card-meta'>" + _meta_html + "</div>" if _meta_html else "")
             + "</div></div>", unsafe_allow_html=True)
 
         # [Perfil] Foto de perfil — enviar/atualizar/remover (Supabase Storage, bucket 'avatars').
