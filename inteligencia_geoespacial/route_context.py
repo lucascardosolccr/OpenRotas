@@ -690,6 +690,70 @@ def _rodovia_concedida(concessionaria):
     return c
 
 
+def _dedup(seq):
+    """Ordem preservada, sem repetição, sem vazios."""
+    return list(dict.fromkeys(x for x in seq if x))
+
+
+def resumo_confiabilidade(ctx):
+    """[CONFIABILIDADE] Consolida, num só lugar, os sinais de barreira/confiabilidade JÁ detectados pelo
+    contexto — todos vindos de dado oficial IBGE/ANA real, nunca inventados — numa lista de alertas
+    legíveis. Reutilizado na tela, na planilha e no HTML exportável (uma única verdade). Puro e
+    defensivo: qualquer falha devolve um resumo vazio. Devolve
+    {alertas: [str], n: int, texto: str, severidade: 'alta'|'media'|'nenhuma'}."""
+    alertas = []
+    try:
+        rios = list(getattr(ctx, "rios_detectados", None) or [])
+        corpos = list(getattr(ctx, "corpos_dagua", None) or [])
+        rodovias = list(getattr(ctx, "rodovias", None) or [])
+        pontes = list(getattr(ctx, "pontes", None) or [])
+        ferrovias = list(getattr(ctx, "ferrovias", None) or [])
+
+        _saz = _dedup(getattr(x, "nome", None) for x in (rios + corpos)
+                      if getattr(x, "sazonal", None) is True)
+        if _saz:
+            alertas.append("%d curso(s)/corpo(s) d'água sazonal(is) (pode secar em parte do ano): %s"
+                           % (len(_saz), ", ".join(_saz[:4])))
+
+        _art = _dedup(getattr(c, "nome", None) for c in corpos
+                      if (getattr(c, "artificial", "") or "").strip().lower() == "sim")
+        if _art:
+            alertas.append("%d reservatório(s) artificial(is) represado(s): %s"
+                           % (len(_art), ", ".join(_art[:4])))
+
+        _terra = _dedup(getattr(r, "sigla", None) for r in rodovias
+                        if _revestimento_precario(getattr(r, "revestimento", None)) is True)
+        if _terra:
+            alertas.append("%d rodovia(s) sem pavimentação (sensível à chuva): %s"
+                           % (len(_terra), ", ".join(_terra[:4])))
+
+        _per = _dedup(getattr(r, "sigla", None) for r in rodovias
+                      if _trafego_sazonal(getattr(r, "trafego", None)) is True)
+        if _per:
+            alertas.append("%d rodovia(s) de tráfego periódico (pode ficar intransitável): %s"
+                           % (len(_per), ", ".join(_per[:4])))
+
+        _movel = _dedup(getattr(p, "nome", None) for p in pontes
+                        if (getattr(p, "tipo_ponte", "") or "").strip().lower() in ("móvel", "movel"))
+        if _movel:
+            alertas.append("%d ponte(s) móvel(is) (pode abrir e interromper o tráfego): %s"
+                           % (len(_movel), ", ".join(_movel[:4])))
+
+        _ferr_no = _dedup(getattr(f, "nome", None) for f in ferrovias
+                          if (getattr(f, "situacao_fisica", "") or "").strip().lower()
+                          in ("abandonada", "destruída", "destruida", "em construção", "em construcao", "planejada"))
+        if _ferr_no:
+            alertas.append("%d ferrovia(s) não-operacional(is): %s"
+                           % (len(_ferr_no), ", ".join(_ferr_no[:4])))
+    except Exception:
+        pass
+    # severidade: água sazonal/sem pavimento em rota são os sinais mais fortes de risco operacional
+    _sev = "nenhuma"
+    if alertas:
+        _sev = "alta" if (len(alertas) >= 3) else "media"
+    return {"alertas": alertas, "n": len(alertas), "texto": " · ".join(alertas), "severidade": _sev}
+
+
 @dataclass
 class Feicao:
     """Ponte/travessia/hidrovia/porto próximo a um cruzamento."""

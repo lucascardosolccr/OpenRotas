@@ -1468,3 +1468,27 @@ def test_rodovia_concedida_distingue_nome_real_de_marcador_negativo():
     assert rc._rodovia_concedida("Desconhecida") is None
     assert rc._rodovia_concedida(None) is None
     assert rc._rodovia_concedida("") is None
+
+
+def test_resumo_confiabilidade_consolida_sinais_reais():
+    # [CONFIABILIDADE] Consolida os sinais de barreira já detectados; nada inventado; vazio => sem alerta.
+    import types
+    rio_saz = types.SimpleNamespace(nome="Rio Temporário", sazonal=True)
+    corpo_art = types.SimpleNamespace(nome="Represa X", sazonal=False, artificial="Sim")
+    rod_terra = types.SimpleNamespace(sigla="MT-100", revestimento="Sem revestimento (leito natural)", trafego="Permanente")
+    rod_per = types.SimpleNamespace(sigla="PA-200", revestimento="Pavimentado", trafego="Periódico")
+    ponte_movel = types.SimpleNamespace(nome="Ponte Móvel Y", tipo_ponte="Móvel")
+    ctx = types.SimpleNamespace(
+        rios_detectados=[rio_saz], corpos_dagua=[corpo_art],
+        rodovias=[rod_terra, rod_per], pontes=[ponte_movel], ferrovias=[])
+    res = rc.resumo_confiabilidade(ctx)
+    assert res["n"] == 5  # sazonal, reservatório, sem pavimento, tráfego periódico, ponte móvel
+    assert res["severidade"] == "alta"
+    _t = res["texto"].lower()
+    assert "sazona" in _t and "reservat" in _t and "paviment" in _t and "periódic" in _t and "móvel" in _t
+    # contexto limpo => sem alertas
+    ctx_ok = types.SimpleNamespace(rios_detectados=[], corpos_dagua=[], rodovias=[], pontes=[], ferrovias=[])
+    r0 = rc.resumo_confiabilidade(ctx_ok)
+    assert r0["n"] == 0 and r0["texto"] == "" and r0["severidade"] == "nenhuma"
+    # robustez: ctx None-ish nunca lança
+    assert rc.resumo_confiabilidade(types.SimpleNamespace())["n"] == 0

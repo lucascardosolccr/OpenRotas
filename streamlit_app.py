@@ -5363,6 +5363,7 @@ def _secao_inteligencia_geografica_html(df):
         _qt_rod = pd.to_numeric(df.get("QT_RODOVIAS"), errors="coerce").fillna(0)
         _qt_ferro = pd.to_numeric(df.get("QT_FERROVIAS"), errors="coerce").fillna(0)
         _qt_anom = pd.to_numeric(df.get("QT_ANOMALIAS"), errors="coerce").fillna(0)
+        _qt_alertas = pd.to_numeric(df.get("QT_ALERTAS_CONFIABILIDADE"), errors="coerce").fillna(0)
 
         _n_com_rio = int((_qt_rios > 0).sum())
         _n_com_ponte = int((_qt_pontes > 0).sum())
@@ -5381,6 +5382,10 @@ def _secao_inteligencia_geografica_html(df):
             ("Rotas com ferrovia próxima", f"{_n_com_ferro:,}"),
             ("Rotas com anomalia geográfica detectada", f"{_n_com_anom:,} de {_n:,} ({(_n_com_anom / _n * 100):.0f}%)"),
         ]
+        _n_com_alerta = int((_qt_alertas > 0).sum())
+        if _col_existente(df, "QT_ALERTAS_CONFIABILIDADE"):
+            _kpis.append(("Rotas com alerta de confiabilidade operacional",
+                          f"{_n_com_alerta:,} de {_n:,} ({(_n_com_alerta / _n * 100):.0f}%)"))
         if _dep is not None and _dep.notna().any():
             _kpis.append(("Dependência aquaviária média", f"{_dep.mean():.0f}/100"))
         if _conf is not None and _conf.notna().any():
@@ -5458,6 +5463,50 @@ def _secao_inteligencia_geografica_html(df):
         except Exception:
             pass
 
+        # [CONFIABILIDADE-HTML] Rotas com sinais de barreira/confiabilidade (água sazonal, reservatório,
+        # rodovia de terra/tráfego periódico, ponte móvel, ferrovia não-operacional) — analítico e
+        # acionável: mostra QUAIS rotas carregam risco operacional e POR QUÊ. Dado oficial, nunca inventado.
+        _confiab_html = ""
+        _alert_col = _col_existente(df, "Alertas de Confiabilidade")
+        try:
+            if _alert_col and _n_com_alerta:
+                _col_o2 = _col_existente(df, "Origem", "Municipio Origem")
+                _col_d2 = _col_existente(df, "Destino", "Municipio Destino")
+                if _col_o2 and _col_d2:
+                    _idx_al = _qt_alertas[_qt_alertas > 0].sort_values(ascending=False).head(15).index
+                    _linhas_al = []
+                    for _i in _idx_al:
+                        _r = df.loc[_i]
+                        _txt = str(_r.get(_alert_col, "") or "").strip()
+                        if not _txt or _txt.lower() in ("nan", "none"):
+                            continue
+                        _nal = int(pd.to_numeric(pd.Series([_r.get("QT_ALERTAS_CONFIABILIDADE")]), errors="coerce").fillna(0).iloc[0])
+                        _linhas_al.append(
+                            f"<tr><td>{_he2.escape(str(_r.get(_col_o2, '—')))}</td>"
+                            f"<td>{_he2.escape(str(_r.get(_col_d2, '—')))}</td>"
+                            f"<td class='r'>{_nal}</td>"
+                            f"<td>{_he2.escape(_txt)}</td></tr>")
+                    if _linhas_al:
+                        _confiab_html = (
+                            "<h4>Confiabilidade operacional — rotas com sinais de barreira</h4>"
+                            "<table><thead><tr><th>Origem</th><th>Destino</th>"
+                            "<th class='r'>Alertas</th><th>Sinais detectados (dado oficial)</th></tr></thead>"
+                            f"<tbody>{''.join(_linhas_al)}</tbody></table>")
+        except Exception:
+            _confiab_html = ""
+
+        _aviso_confiab_html = ""
+        if _n_com_alerta:
+            _aviso_confiab_html = _caixa_explicativa(
+                "Confiabilidade operacional",
+                f"{_n_com_alerta} rota(s) atravessam ao menos um elemento cuja confiabilidade varia com a "
+                "estação ou a operação — curso/corpo d'água sazonal (pode secar), rodovia sem pavimentação "
+                "(sensível à chuva) ou de tráfego periódico, ponte móvel (pode abrir) ou ferrovia "
+                "não-operacional. Cada sinal vem de um atributo oficial IBGE/ANA já cadastrado para aquela "
+                "feição (regime, revestimento, tráfego, tipo de ponte, situação física) — nunca é inferido "
+                "nem inventado. Use como alerta para planejar sazonalidade e contingência, não como "
+                "impedimento absoluto.", "info")
+
         _aviso_html = ""
         if _n_sem_confirmacao:
             _aviso_html = _caixa_explicativa(
@@ -5498,7 +5547,7 @@ def _secao_inteligencia_geografica_html(df):
                     "que ignora essa travessia — vale reexaminar caso a caso.", "warning")
 
         return (f'<div class="kpis">{_kh}</div>' + _bacias_html + _rodovias_html + _anomalias_html
-               + _tabela_html + _aviso_html + _aviso_anom_html + _aviso_balsa_html
+               + _tabela_html + _confiab_html + _aviso_confiab_html + _aviso_html + _aviso_anom_html + _aviso_balsa_html
                + _caixa_explicativa(
                    "Sobre esta seção",
                    "Cada rota do estudo passa automaticamente pelo motor de contexto geográfico "
@@ -18764,7 +18813,8 @@ _GEO_INTEL_COLUNAS = ("Rios Cruzados", "Bacia Hidrografica", "Pontes no Cruzamen
                       "Sub Bacia Codigo SNIRH", "Complexidade Geografica",
                       "QT_ANOMALIAS", "NM_ANOMALIAS", "Anomalia Mais Severa",
                       "Confianca Fundida", "Conflito de Confianca",
-                      "QT_CONFIRMADOS_MULTIFONTE", "NM_CONFIRMADOS_MULTIFONTE")
+                      "QT_CONFIRMADOS_MULTIFONTE", "NM_CONFIRMADOS_MULTIFONTE",
+                      "Alertas de Confiabilidade", "QT_ALERTAS_CONFIABILIDADE")
 _GEO_INTEL_LIMIAR_AUTOMATICO = 200  # nº de PARES origem/destino únicos; acima disso, sob demanda
 
 
@@ -18939,6 +18989,12 @@ def _enriquecer_geo_inteligencia_df(df, forcar=False, limiar_automatico=_GEO_INT
                             if getattr(r, "confirmado_por", None)]
             _cols["QT_CONFIRMADOS_MULTIFONTE"].append(len(_confirmados))
             _cols["NM_CONFIRMADOS_MULTIFONTE"].append(", ".join(_confirmados[:3]))
+            # [CONFIABILIDADE-LOTE] Consolida na planilha os sinais de barreira/confiabilidade já
+            # detectados (água sazonal, reservatório, rodovia de terra/tráfego periódico, ponte móvel,
+            # ferrovia não-operacional) — mesma verdade da tela, via route_context.resumo_confiabilidade.
+            _rc_conf = _geo_route_context.resumo_confiabilidade(_ctx)
+            _cols["Alertas de Confiabilidade"].append(_rc_conf["texto"])
+            _cols["QT_ALERTAS_CONFIABILIDADE"].append(_rc_conf["n"])
 
         df = df.copy()
         for _c in _GEO_INTEL_COLUNAS:
@@ -47671,6 +47727,16 @@ if _secao == _SECOES[0]:   # tab_individual
                             with st.expander("🧠 Contexto Geográfico da Rota (rios, bacia, pontes, travessias)",
                                              expanded=bool(_ctx_gi.rios_detectados or _ctx_gi.corpos_dagua)):
                                 st.markdown(f"**{_ctx_gi.motivo_decisao}**")
+                                # [CONFIABILIDADE-BANNER] Mesma verdade da planilha/HTML, no topo do cartão:
+                                # consolida os sinais de barreira sazonal/operacional já detectados.
+                                try:
+                                    _rc_banner = _geo_route_context.resumo_confiabilidade(_ctx_gi)
+                                    if _rc_banner["n"]:
+                                        _al_md = "\n".join(f"- {_a}" for _a in _rc_banner["alertas"])
+                                        (st.warning if _rc_banner["severidade"] == "alta" else st.info)(
+                                            f"**Confiabilidade operacional — {_rc_banner['n']} sinal(is) de barreira sazonal/operacional:**\n{_al_md}")
+                                except Exception:
+                                    pass
                                 if _ctx_gi.rodovias:
                                     st.caption("🛣️ Rodovias identificadas: " + ", ".join(
                                         r.sigla for r in _ctx_gi.rodovias))
