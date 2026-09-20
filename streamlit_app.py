@@ -47674,6 +47674,20 @@ if _secao == _SECOES[0]:   # tab_individual
                                 if _ctx_gi.rodovias:
                                     st.caption("🛣️ Rodovias identificadas: " + ", ".join(
                                         r.sigla for r in _ctx_gi.rodovias))
+                                    # [REVESTIMENTO/TRÁFEGO] Interpreta dois campos oficiais IBGE (revestimen,
+                                    # trafego) que já vinham na Rodovia mas nunca eram mostrados: via de terra
+                                    # (leito natural/solto) ou tráfego periódico é bem menos confiável na chuva.
+                                    # Caveat honesto para quem decide — nunca inventa (só quando o dado é claro).
+                                    _rod_terra = [r.sigla for r in _ctx_gi.rodovias
+                                                  if _geo_route_context._revestimento_precario(getattr(r, "revestimento", None)) is True]
+                                    _rod_saz = [r.sigla for r in _ctx_gi.rodovias
+                                                if _geo_route_context._trafego_sazonal(getattr(r, "trafego", None)) is True]
+                                    if _rod_terra:
+                                        st.caption("⚠️ Sem pavimentação (leito natural/solto — trafegabilidade "
+                                                   "sensível à chuva): " + ", ".join(dict.fromkeys(_rod_terra)))
+                                    if _rod_saz:
+                                        st.caption("⚠️ Tráfego periódico/temporário (via pode ficar intransitável "
+                                                   "em parte do ano): " + ", ".join(dict.fromkeys(_rod_saz)))
                                 if _ctx_gi.ferrovias:
                                     st.caption("🚆 Ferrovias próximas: " + ", ".join(
                                         f.nome for f in _ctx_gi.ferrovias))

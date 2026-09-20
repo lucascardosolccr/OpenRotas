@@ -1419,3 +1419,24 @@ def test_detectar_cruzamentos_hidro_marca_sazonal_do_regime():
     cruz = rc.CruzamentoHidrografico(**{k: v for k, v in por_nome["Rio Temporário"].items()
                                         if k != "_wkb"})
     assert cruz.sazonal is True
+
+
+def test_revestimento_precario_classifica_pavimento_real():
+    # [REVESTIMENTO] via de terra/solto = precária (True); pavimentada = False; desconhecida/outros = None.
+    assert rc._revestimento_precario("Pavimentado") is False
+    assert rc._revestimento_precario("Sem revestimento (leito natural)") is True
+    assert rc._revestimento_precario("Revestimento primário (solto)") is True
+    assert rc._revestimento_precario("Desconhecido") is None
+    assert rc._revestimento_precario("Outros") is None
+    assert rc._revestimento_precario(None) is None
+    assert rc._revestimento_precario("") is None
+
+
+def test_trafego_sazonal_classifica_periodico_vs_permanente():
+    # [TRÁFEGO] periódico/temporário = sazonal (True); permanente = False; desconhecido/ausente = None.
+    assert rc._trafego_sazonal("Permanente") is False
+    assert rc._trafego_sazonal("Periódico") is True
+    assert rc._trafego_sazonal("Temporário") is True
+    assert rc._trafego_sazonal("Desconhecido") is None
+    assert rc._trafego_sazonal(None) is None
+    assert rc._trafego_sazonal("") is None

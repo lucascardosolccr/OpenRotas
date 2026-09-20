@@ -653,6 +653,33 @@ def _regime_sazonal(regime):
     return None
 
 
+def _revestimento_precario(revestimento):
+    """[REVESTIMENTO] True se a via NÃO é pavimentada (leito natural / revestimento primário solto —
+    trafegabilidade precária, sensível à chuva); False se Pavimentada; None se desconhecido/outros.
+    Usa o `revestimen` oficial IBGE BC250/BC100 (dado já coletado). Conservador — nunca inventa."""
+    r = (revestimento or "").strip().lower()
+    if not r or r in ("desconhecido", "none", "null", "outros"):
+        return None
+    if "pavimentad" in r:
+        return False
+    if "leito natural" in r or "sem revestimento" in r or "primário" in r or "primario" in r or "solto" in r:
+        return True
+    return None
+
+
+def _trafego_sazonal(trafego):
+    """[TRÁFEGO] True se o tráfego é PERIÓDICO/TEMPORÁRIO (via trafegável só em parte do ano); False se
+    Permanente; None se desconhecido/ausente. Usa o `trafego` oficial IBGE (0% nulo). Conservador."""
+    t = (trafego or "").strip().lower()
+    if not t or t in ("desconhecido", "none", "null"):
+        return None
+    if t.startswith("period") or t.startswith("tempor") or "periódic" in t:
+        return True
+    if t.startswith("permanente"):
+        return False
+    return None
+
+
 @dataclass
 class Feicao:
     """Ponte/travessia/hidrovia/porto próximo a um cruzamento."""
