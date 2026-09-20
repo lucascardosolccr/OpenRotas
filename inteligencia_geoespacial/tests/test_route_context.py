@@ -1457,3 +1457,14 @@ def test_cruzamento_massas_dagua_ganha_sazonal_do_regime(monkeypatch):
     assert corpo["sazonal"] is True  # antes ficava None (derivação era só para drenagem)
     cruz = rc.CruzamentoHidrografico(**{k: v for k, v in corpo.items() if k != "_wkb"})
     assert cruz.sazonal is True
+
+
+def test_rodovia_concedida_distingue_nome_real_de_marcador_negativo():
+    # [CONCESSÃO] nome real de concessionária = via pedagiada; "Não"/vazio/desconhecido = sem concessão.
+    assert rc._rodovia_concedida("Sulvias") == "Sulvias"
+    assert rc._rodovia_concedida("Triângulo do Sol") == "Triângulo do Sol"
+    assert rc._rodovia_concedida("Não") is None
+    assert rc._rodovia_concedida("nao") is None
+    assert rc._rodovia_concedida("Desconhecida") is None
+    assert rc._rodovia_concedida(None) is None
+    assert rc._rodovia_concedida("") is None

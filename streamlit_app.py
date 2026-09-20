@@ -47688,9 +47688,84 @@ if _secao == _SECOES[0]:   # tab_individual
                                     if _rod_saz:
                                         st.caption("⚠️ Tráfego periódico/temporário (via pode ficar intransitável "
                                                    "em parte do ano): " + ", ".join(dict.fromkeys(_rod_saz)))
+                                    # [RODOVIA-CARD] Toda a ficha oficial IBGE já coletada (jurisdição, gestão,
+                                    # concessão/pedágio, pistas/faixas=capacidade, pavimento) era descartada na
+                                    # tela — só a sigla aparecia. Agora um cartão analítico por rodovia.
+                                    with st.expander(f"🛣️ {len(_ctx_gi.rodovias)} rodovia(s) — ficha detalhada",
+                                                     expanded=False):
+                                        for _ro in _ctx_gi.rodovias:
+                                            with st.expander(_ro.sigla, expanded=False):
+                                                _od = []
+                                                if _ro.distancia_eixo_km is not None:
+                                                    _od.append(f"**Distância do eixo da rota:** {_ro.distancia_eixo_km:.2f} km")
+                                                if _ro.km_desde_origem is not None:
+                                                    _od.append(f"**Posição na rota:** km {_ro.km_desde_origem:.1f} desde a origem")
+                                                if _ro.jurisdicao and _ro.jurisdicao.strip().lower() not in ("desconhecida", "desconhecido"):
+                                                    _od.append(f"**Jurisdição:** {_ro.jurisdicao}")
+                                                if _ro.administra and _ro.administra.strip().lower() not in ("desconhecida", "desconhecido"):
+                                                    _od.append(f"**Gestão:** {_ro.administra}")
+                                                _conc = _geo_route_context._rodovia_concedida(getattr(_ro, "concessionaria", None))
+                                                if _conc:
+                                                    _od.append(f"**Concessão:** 💳 {_conc} — via concedida (provável cobrança de pedágio).")
+                                                # capacidade: pista dupla e nº de faixas = melhor fluxo/segurança
+                                                _cap = []
+                                                if _ro.nr_pistas and _ro.nr_pistas >= 2:
+                                                    _cap.append(f"pista dupla ({int(_ro.nr_pistas)} pistas)")
+                                                elif _ro.nr_pistas:
+                                                    _cap.append("pista simples")
+                                                if _ro.nr_faixas:
+                                                    _cap.append(f"{int(_ro.nr_faixas)} faixa(s)")
+                                                if _cap:
+                                                    _od.append("**Capacidade:** " + ", ".join(_cap))
+                                                _rev = _geo_route_context._revestimento_precario(getattr(_ro, "revestimento", None))
+                                                if _rev is True:
+                                                    _od.append(f"**Revestimento:** {_ro.revestimento} — ⚠️ não pavimentada (sensível à chuva).")
+                                                elif _rev is False:
+                                                    _od.append(f"**Revestimento:** {_ro.revestimento} — ✅ pavimentada.")
+                                                elif _ro.revestimento and _ro.revestimento.strip().lower() not in ("desconhecido",):
+                                                    _od.append(f"**Revestimento:** {_ro.revestimento}")
+                                                if _ro.tipo_pavimento and _ro.tipo_pavimento.strip().lower() not in ("desconhecido", "não aplicável", "nao aplicavel"):
+                                                    _od.append(f"**Pavimento:** {_ro.tipo_pavimento}")
+                                                _tsz = _geo_route_context._trafego_sazonal(getattr(_ro, "trafego", None))
+                                                if _tsz is True:
+                                                    _od.append(f"**Tráfego:** {_ro.trafego} — ⚠️ periódico (pode ficar intransitável em parte do ano).")
+                                                elif _tsz is False:
+                                                    _od.append(f"**Tráfego:** {_ro.trafego} — ✅ permanente.")
+                                                if _ro.limite_velocidade_kmh:
+                                                    _od.append(f"**Velocidade máx.:** {_ro.limite_velocidade_kmh} km/h")
+                                                _od.append(f"**Fonte:** {_ro.fonte}")
+                                                st.markdown("  \n".join(_od))
                                 if _ctx_gi.ferrovias:
                                     st.caption("🚆 Ferrovias próximas: " + ", ".join(
                                         f.nome for f in _ctx_gi.ferrovias))
+                                    # [FERROVIA-CARD] Ficha ferroviária oficial (tipo, bitola, eletrificação,
+                                    # nº de linhas, jurisdição, situação física) era coletada e nunca mostrada.
+                                    with st.expander(f"🚆 {len(_ctx_gi.ferrovias)} ferrovia(s) — ficha detalhada",
+                                                     expanded=False):
+                                        for _fe in _ctx_gi.ferrovias:
+                                            with st.expander(_fe.nome, expanded=False):
+                                                _fd = []
+                                                if _fe.distancia_eixo_km is not None:
+                                                    _fd.append(f"**Distância do eixo da rota:** {_fe.distancia_eixo_km:.2f} km")
+                                                if _fe.km_desde_origem is not None:
+                                                    _fd.append(f"**Posição na rota:** km {_fe.km_desde_origem:.1f} desde a origem")
+                                                if _fe.tipo_trecho and _fe.tipo_trecho.strip().lower() not in ("desconhecido",):
+                                                    _fd.append(f"**Tipo:** {_fe.tipo_trecho}")
+                                                if _fe.bitola and _fe.bitola.strip().lower() not in ("desconhecida", "desconhecido"):
+                                                    _fd.append(f"**Bitola:** {_fe.bitola}")
+                                                if _fe.eletrificada and _fe.eletrificada.strip().lower() not in ("desconhecido", "desconhecida"):
+                                                    _fd.append(f"**Eletrificada:** {_fe.eletrificada}")
+                                                if _fe.nr_linhas and _fe.nr_linhas.strip().lower() not in ("desconhecido",):
+                                                    _fd.append(f"**Linhas:** {_fe.nr_linhas}")
+                                                if _fe.jurisdicao and _fe.jurisdicao.strip().lower() not in ("desconhecida", "desconhecido"):
+                                                    _fd.append(f"**Jurisdição:** {_fe.jurisdicao}")
+                                                _fconc = _geo_route_context._rodovia_concedida(getattr(_fe, "concessionaria", None))
+                                                if _fconc:
+                                                    _fd.append(f"**Concessão:** 💳 {_fconc}")
+                                                if _fe.situacao_fisica and _fe.situacao_fisica.strip().lower() not in ("desconhecida", "desconhecido", "construída", "construida"):
+                                                    _fd.append(f"**Situação física:** ⚠️ {_fe.situacao_fisica} (não operacional).")
+                                                _fd.append(f"**Fonte:** {_fe.fonte}")
+                                                st.markdown("  \n".join(_fd))
                                 if _ctx_gi.rios_detectados:
                                     # [UI-REENGENHARIA - Rodada 9] Progressive disclosure (mission UI/UX
                                     # §11 — exemplo literal da missão: "🌊 4 rios atravessados" → clique →
@@ -47795,6 +47870,33 @@ if _secao == _SECOES[0]:   # tab_individual
                                     st.caption(f"🔖 Sub-bacia (código oficial SNIRH, sem nome catalogado nesta base): {_ctx_gi.sub_bacia}")
                                 if _ctx_gi.pontes:
                                     st.caption("🌉 Pontes no cruzamento: " + ", ".join(p.nome for p in _ctx_gi.pontes))
+                                    # [PONTE-CARD] tipo_ponte/extensao_m/largura_m/tipo_pavimento eram coletados
+                                    # e nunca mostrados. A extensão é a largura real da barreira transposta; uma
+                                    # ponte móvel pode abrir (interrupção). Só mostra o que a base tem de verdade.
+                                    if any((getattr(p, "tipo_ponte", None) or getattr(p, "extensao_m", None)
+                                            or getattr(p, "largura_m", None) or getattr(p, "tipo_pavimento", None))
+                                           for p in _ctx_gi.pontes):
+                                        with st.expander(f"🌉 {len(_ctx_gi.pontes)} ponte(s) — ficha detalhada",
+                                                         expanded=False):
+                                            for _pt in _ctx_gi.pontes:
+                                                with st.expander(_pt.nome, expanded=False):
+                                                    _ptd = []
+                                                    _tp = (_pt.tipo_ponte or "").strip()
+                                                    if _tp and _tp.lower() not in ("desconhecido", "desconhecida"):
+                                                        if _tp.lower() == "móvel" or _tp.lower() == "movel":
+                                                            _ptd.append(f"**Tipo:** {_tp} — ⚠️ ponte móvel (pode abrir para navegação, com interrupção do tráfego).")
+                                                        else:
+                                                            _ptd.append(f"**Tipo:** {_tp}")
+                                                    if _pt.extensao_m:
+                                                        _ptd.append(f"**Extensão:** {_pt.extensao_m:.0f} m (largura da barreira transposta)")
+                                                    if _pt.largura_m:
+                                                        _ptd.append(f"**Largura do tabuleiro:** {_pt.largura_m:.1f} m")
+                                                    if _pt.tipo_pavimento and _pt.tipo_pavimento.strip().lower() not in ("desconhecido", "não aplicável", "nao aplicavel"):
+                                                        _ptd.append(f"**Pavimento:** {_pt.tipo_pavimento}")
+                                                    if _pt.distancia_eixo_km is not None:
+                                                        _ptd.append(f"**Distância do eixo da rota:** {_pt.distancia_eixo_km:.2f} km")
+                                                    _ptd.append(f"**Fonte:** {_pt.fonte}")
+                                                    st.markdown("  \n".join(_ptd))
                                 if _ctx_gi.travessias:
                                     st.caption("⛴️ Travessias aquaviárias próximas: " + ", ".join(t.nome for t in _ctx_gi.travessias))
                                 if _ctx_gi.hidrovias_proximas:

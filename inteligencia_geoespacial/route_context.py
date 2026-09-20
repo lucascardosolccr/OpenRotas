@@ -680,6 +680,16 @@ def _trafego_sazonal(trafego):
     return None
 
 
+def _rodovia_concedida(concessionaria):
+    """[CONCESSÃO] Devolve o NOME da concessionária quando a via é concedida (provável pedágio), ou None.
+    Distingue nome real de concessionária dos marcadores 'Não'/vazio (a base grava 'Não' quando NÃO há
+    concessão — nunca tratar isso como nome). Conservador: só afirma concessão com nome real."""
+    c = (concessionaria or "").strip()
+    if not c or c.lower() in ("não", "nao", "none", "null", "desconhecido", "desconhecida", "-"):
+        return None
+    return c
+
+
 @dataclass
 class Feicao:
     """Ponte/travessia/hidrovia/porto próximo a um cruzamento."""
