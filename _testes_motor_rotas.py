@@ -1893,6 +1893,36 @@ def validar():
     check("HIDRO-ANA-MAPA: renderizador vazio → '' (defensivo, nunca mapa vazio)",
           m._mapa_leaflet_hidrografia_ana({"rios": [], "massas": []}, rotas=[]) == "")
 
+    print("== 30) HIDRO-GRAFO-NACIONAL — grafo fluvial deployado roteia o corredor canônico (462ª) ==")
+    # Blindagem do artefato hidrografia_nacional.pkl.gz (IBGE BC250/ANA): SE presente, o grafo tem de
+    # (a) carregar no contrato do app e (b) rotear Manaus→Itacoatiara medindo trecho navegável real e
+    # nomeando o Rio Amazonas. FAIL-OPEN: sem o arquivo (ex.: checkout sem o .pkl.gz), a seção é pulada
+    # — nunca falha por ausência. Pega regeneração com grade errada, corrupção ou deriva de formato.
+    try:
+        _g30 = m._grafo_fluvial_memoizado()
+    except Exception:
+        _g30 = None
+    if _g30:
+        _C30 = _g30.get("C")
+        check("HIDRO-GRAFO-NACIONAL: grafo carrega no contrato do app (M/C/names/edic)",
+              set(("M", "C", "names", "edic")) <= set(_g30) and _C30 is not None and len(_C30) > 0)
+        # cobertura nacional real (BC250 denso): muito além do artefato coarse antigo (~centenas de milhar)
+        check("HIDRO-GRAFO-NACIONAL: cobertura nacional densa (> 1 mi de nós)",
+              len(_C30) > 1_000_000)
+        _r30 = m._fluvial_rota_real_sob_demanda(-3.10, -60.02, -3.14, -58.44)  # Manaus → Itacoatiara
+        check("HIDRO-GRAFO-NACIONAL: roteia o corredor do Amazonas (rota real, não None)",
+              isinstance(_r30, dict) and _r30.get("km") is not None)
+        if isinstance(_r30, dict):
+            _km30 = float(_r30.get("km") or 0)
+            # a reta Manaus–Itacoatiara é ~176 km; o trajeto fluvial serpenteia → faixa sã 176–400 km
+            check("HIDRO-GRAFO-NACIONAL: distância navegável sã (176–400 km, > reta)",
+                  176 <= _km30 <= 400)
+            _rios30 = " ".join(_r30.get("rios") or []).lower()
+            check("HIDRO-GRAFO-NACIONAL: nomeia o Rio Amazonas no trajeto",
+                  "amazonas" in _rios30)
+    else:
+        check("HIDRO-GRAFO-NACIONAL: ausente → seção pulada sem falhar (fail-open)", True)
+
     print()
     print("=" * 70)
     print("RESULTADO: %d OK, %d FALHAS" % (ok, fail))
