@@ -960,7 +960,9 @@ def _detectar_cruzamentos_hidro(pontos: list, repo: GeoIntelligenceRepository,
                                        if distancia_total_km else None),
                     "navegavel": _nome(it.get("navegavel")) or None,
                     "regime": _nome(it.get("regime")) or None,
-                    "sazonal": (_regime_sazonal(_nome(it.get("regime"))) if camada == "drenagem" else None),
+                    # [REGIME-SAZONAL] drenagem E massas d'água têm `regime` na base (lago/reservatório
+                    # temporário também seca) — deriva para as duas camadas, não só drenagem.
+                    "sazonal": _regime_sazonal(_nome(it.get("regime"))),
                     "bacia": bacia_do_rio(nome) if camada == "drenagem" else None,
                     # [FONTE-REAL - Missão 3, Rodada 17, §39] `mais_proximos`/`_busca_com_filtro` já
                     # selecionam fonte_base/fonte_uf do próprio parquet (bases_locais.py) — colunas

@@ -47749,6 +47749,48 @@ if _secao == _SECOES[0]:   # tab_individual
                                                     _fc += f" · confirmado por {_r.confirmado_por}"
                                                 _rd.append(_fc)
                                                 st.markdown("  \n".join(_rd))
+                                if _ctx_gi.corpos_dagua:
+                                    # [CORPOS-DAGUA-CARD] Corpos d'água (lagos/lagoas/reservatórios) traziam
+                                    # artificial/salgada/dominialidade/regime desde a Rodada 5, mas NUNCA tinham
+                                    # cartão próprio na tela (só rios). Um reservatório artificial ou um lago
+                                    # temporário é barreira relevante — agora com o mesmo detalhe dos rios.
+                                    with st.expander(
+                                            f"🏞️ {len(_ctx_gi.corpos_dagua)} corpo(s) d'água no trajeto",
+                                            expanded=False):
+                                        for _cp in _ctx_gi.corpos_dagua:
+                                            with st.expander(_cp.nome, expanded=False):
+                                                _cd = []
+                                                if getattr(_cp, "relacao", None) == "cruza":
+                                                    _cd.append("**Relação com a rota:** ✅ a rota **atravessa** este corpo d'água (confirmado pela geometria).")
+                                                elif getattr(_cp, "relacao", None) == "margeia":
+                                                    _cd.append("**Relação com a rota:** ↔️ **margeia** (a rota passa perto, mas **não o cruza**).")
+                                                if _cp.distancia_eixo_km is not None:
+                                                    _cd.append(f"**Distância do eixo da rota:** {_cp.distancia_eixo_km:.2f} km")
+                                                if _cp.km_desde_origem is not None:
+                                                    _pcp = f"**Posição na rota:** km {_cp.km_desde_origem:.1f} desde a origem"
+                                                    if _cp.km_ate_destino is not None:
+                                                        _pcp += f" (km {_cp.km_ate_destino:.1f} até o destino)"
+                                                    _cd.append(_pcp)
+                                                if _cp.artificial and _cp.artificial.strip().lower() == "sim":
+                                                    _cd.append("**Reservatório artificial:** Sim — 🏗️ corpo represado (barreira firme; muitas vezes há barragem com via no coroamento).")
+                                                elif _cp.artificial:
+                                                    _cd.append(f"**Reservatório artificial:** {_cp.artificial}")
+                                                if _cp.regime:
+                                                    if getattr(_cp, "sazonal", None) is True:
+                                                        _cd.append(f"**Regime:** {_cp.regime} — ⚠️ corpo **sazonal** (pode secar/reduzir em parte do ano)")
+                                                    elif getattr(_cp, "sazonal", None) is False:
+                                                        _cd.append(f"**Regime:** {_cp.regime} — 💧 corpo **permanente** (o ano todo)")
+                                                    else:
+                                                        _cd.append(f"**Regime:** {_cp.regime}")
+                                                if _cp.salgada and _cp.salgada.strip().lower() == "sim":
+                                                    _cd.append("**Água salgada:** Sim (corpo costeiro/estuarino).")
+                                                if _cp.dominialidade:
+                                                    _cd.append(f"**Dominialidade:** {_cp.dominialidade}")
+                                                _fcp = f"**Fonte:** {_cp.fonte} · **Confiança:** {_cp.confianca}"
+                                                if _cp.confirmado_por:
+                                                    _fcp += f" · confirmado por {_cp.confirmado_por}"
+                                                _cd.append(_fcp)
+                                                st.markdown("  \n".join(_cd))
                                 if _ctx_gi.sub_bacia:
                                     st.caption(f"🔖 Sub-bacia (código oficial SNIRH, sem nome catalogado nesta base): {_ctx_gi.sub_bacia}")
                                 if _ctx_gi.pontes:

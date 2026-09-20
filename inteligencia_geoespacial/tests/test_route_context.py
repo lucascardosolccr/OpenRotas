@@ -1440,3 +1440,20 @@ def test_trafego_sazonal_classifica_periodico_vs_permanente():
     assert rc._trafego_sazonal("Desconhecido") is None
     assert rc._trafego_sazonal(None) is None
     assert rc._trafego_sazonal("") is None
+
+
+def test_cruzamento_massas_dagua_ganha_sazonal_do_regime(monkeypatch):
+    # [REGIME-SAZONAL] massas d'água também têm `regime` — um lago/reservatório Temporário é sazonal.
+    def _fake(camada, lon, lat, raio_km=30.0, limite=5, filtros=None):
+        if camada == "massas_dagua":
+            return [{"nome": "Lago Temporário", "distancia_km": 0.4, "regime": "Temporário",
+                     "artificial": "Não"}]
+        return []
+    monkeypatch.setattr(rc, "_consultar_camada_pesada_cacheada", _fake)
+    repo = rc.GeoIntelligenceRepository()
+    achados = rc._detectar_cruzamentos_hidro([(0.0, 0.0, 0.0)], repo, 10.0, 10.0)
+    corpo = achados[0]
+    assert corpo["camada"] == "massas_dagua"
+    assert corpo["sazonal"] is True  # antes ficava None (derivação era só para drenagem)
+    cruz = rc.CruzamentoHidrografico(**{k: v for k, v in corpo.items() if k != "_wkb"})
+    assert cruz.sazonal is True
