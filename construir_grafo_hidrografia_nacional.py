@@ -29,13 +29,17 @@ contrário do artefato Natural Earth 10m anterior, que era denso no Sul/Sudeste 
 
 Uso (offline, na sua máquina, com o repositório já com os Parquets derivados):
     python3 construir_grafo_hidrografia_nacional.py
-    python3 construir_grafo_hidrografia_nacional.py --grid 0.003 --saida hidrografia_nacional.pkl.gz
-    # build regional (teste rápido / validação):
-    python3 construir_grafo_hidrografia_nacional.py --bbox -6,0.5,-64,-56 --saida amazonia_teste.pkl.gz
+    # ^ reproduz EXATAMENTE o hidrografia_nacional.pkl.gz versionado (grade 0.010, ~40 MB,
+    #   3,97 mi de nós, ~1,3 GB de RAM no runtime). O app o encontra e carrega sozinho.
+    python3 construir_grafo_hidrografia_nacional.py --grid 0.006   # mais fiel/pesado (~67 MB)
+    # build regional (teste rápido / validação — use = por causa do sinal negativo no bbox):
+    python3 construir_grafo_hidrografia_nacional.py --bbox=-6,0.5,-64,-56 --saida amazonia_teste.pkl.gz
 
 Parâmetros principais:
-    --grid   G   tamanho da célula de snap em GRAUS (padrão 0.004 ≈ 440 m). Menor = mais fiel e mais
-                 pesado; maior = mais leve e mais generalizado. 0.002–0.006 é a faixa recomendada.
+    --grid   G   tamanho da célula de snap em GRAUS (padrão 0.010 ≈ 1,1 km — o valor DEPLOYADO no
+                 repositório). Menor = mais fiel e mais pesado (0.004≈89 MB/2,8 GB RAM; 0.006≈67 MB;
+                 0.008≈50 MB); maior = mais leve e mais generalizado. 0.006–0.010 é a faixa
+                 recomendada para deploy (equilíbrio entre fidelidade, tamanho <50 MB e RAM).
     --bbox   lat_min,lat_max,lon_min,lon_max  recorta a construção a uma janela (opcional).
     --saida  arquivo .pkl.gz de saída (padrão hidrografia_nacional.pkl.gz — o app o encontra sozinho).
     --parquet  caminho do drenagem.parquet (padrão: data/brasil/ibge/derivadas/drenagem.parquet).
@@ -88,7 +92,7 @@ def _normalizar_nome(n):
     return s
 
 
-def construir_grafo(parquet, grid=0.004, bbox=None, min_comp=3):
+def construir_grafo(parquet, grid=0.010, bbox=None, min_comp=3):
     """Lê o Parquet de drenagem e devolve o dict do grafo no formato do app. PURO (sem I/O de saída)."""
     import pandas as pd
 
@@ -238,7 +242,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="Constrói o grafo fluvial nacional (IBGE BC250/ANA).")
     ap.add_argument("--parquet", default=None, help="caminho do drenagem.parquet")
     ap.add_argument("--saida", default="hidrografia_nacional.pkl.gz")
-    ap.add_argument("--grid", type=float, default=0.004, help="célula de snap em graus (padrão 0.004)")
+    ap.add_argument("--grid", type=float, default=0.010,
+                    help="célula de snap em graus (padrão 0.010 ≈ 1,1 km — o valor deployado no repo)")
     ap.add_argument("--bbox", default=None, help="lat_min,lat_max,lon_min,lon_max (opcional)")
     ap.add_argument("--min-comp", type=int, default=3, help="descarta componentes com < N nós")
     a = ap.parse_args(argv)
