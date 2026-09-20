@@ -47712,7 +47712,16 @@ if _secao == _SECOES[0]:   # tab_individual
                                                 if _r.navegavel:
                                                     _rd.append(f"**Navegável:** {_r.navegavel}")
                                                 if _r.regime:
-                                                    _rd.append(f"**Regime:** {_r.regime}")
+                                                    # [REGIME-SAZONAL] regime oficial IBGE/ANA já era mostrado cru; agora
+                                                    # interpreta a barreira: trecho temporário/seco pode secar em parte do
+                                                    # ano (obstáculo bem menor que um rio permanente) — informação real que
+                                                    # muda a leitura de quem decide. Permanente ganha o selo tranquilizador.
+                                                    if getattr(_r, "sazonal", None) is True:
+                                                        _rd.append(f"**Regime:** {_r.regime} — ⚠️ curso **sazonal** (pode secar em parte do ano; barreira intermitente, menor que um rio permanente)")
+                                                    elif getattr(_r, "sazonal", None) is False:
+                                                        _rd.append(f"**Regime:** {_r.regime} — 💧 curso **permanente** (barreira o ano todo)")
+                                                    else:
+                                                        _rd.append(f"**Regime:** {_r.regime}")
                                                 if _r.encoberto:
                                                     _rd.append(f"**Trecho encoberto/canalizado:** {_r.encoberto}")
                                                 if _r.artificial:

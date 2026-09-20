@@ -634,6 +634,23 @@ class CruzamentoHidrografico:
     # confirmado` é True só quando geometricamente comprovado — o sinal mais forte de que a rota atravessa.
     relacao: str | None = None
     cruzamento_confirmado: bool | None = None
+    # [REGIME-SAZONAL] Deriva do `regime` oficial IBGE/ANA (dado já coletado, antes sem uso): True quando
+    # o trecho é Temporário/Seco (barreira SAZONAL — pode secar em parte do ano, obstáculo bem menor que
+    # um rio permanente), False quando Permanente, None quando Desconhecido. Só faz sentido para drenagem.
+    sazonal: bool | None = None
+
+
+def _regime_sazonal(regime):
+    """True se o regime hídrico indica curso TEMPORÁRIO/SECO (sazonal); False se Permanente; None se
+    desconhecido/ausente. Conservador: só afirma quando o dado oficial é claro (nunca inventa)."""
+    r = (regime or "").strip().lower()
+    if not r or r in ("desconhecido", "none", "null"):
+        return None
+    if r.startswith("tempor") or r == "seco":
+        return True
+    if r.startswith("permanente"):
+        return False
+    return None
 
 
 @dataclass
@@ -916,6 +933,7 @@ def _detectar_cruzamentos_hidro(pontos: list, repo: GeoIntelligenceRepository,
                                        if distancia_total_km else None),
                     "navegavel": _nome(it.get("navegavel")) or None,
                     "regime": _nome(it.get("regime")) or None,
+                    "sazonal": (_regime_sazonal(_nome(it.get("regime"))) if camada == "drenagem" else None),
                     "bacia": bacia_do_rio(nome) if camada == "drenagem" else None,
                     # [FONTE-REAL - Missão 3, Rodada 17, §39] `mais_proximos`/`_busca_com_filtro` já
                     # selecionam fonte_base/fonte_uf do próprio parquet (bases_locais.py) — colunas

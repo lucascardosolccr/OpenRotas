@@ -1384,3 +1384,38 @@ def test_detectar_cruzamentos_hidro_rios_diferentes_nunca_marcados_como_confirma
     achados = rc._detectar_cruzamentos_hidro(pontos, repo, raio_km=5.0, distancia_total_km=20.0)
     assert len(achados) == 2
     assert all(a["confirmado_por"] is None for a in achados)
+
+
+def test_regime_sazonal_classifica_curso_intermitente_vs_permanente():
+    # [REGIME-SAZONAL] O regime oficial IBGE/ANA vira um sinal de barreira sazonal vs permanente.
+    assert rc._regime_sazonal("Permanente") is False
+    assert rc._regime_sazonal("Permanente com grande variação") is False
+    assert rc._regime_sazonal("Temporário") is True
+    assert rc._regime_sazonal("Temporario") is True
+    assert rc._regime_sazonal("Temporário com leito permanente") is True
+    assert rc._regime_sazonal("Seco") is True
+    # desconhecido/ausente NUNCA é afirmado (não inventa barreira nem a descarta)
+    assert rc._regime_sazonal("Desconhecido") is None
+    assert rc._regime_sazonal(None) is None
+    assert rc._regime_sazonal("") is None
+
+
+def test_detectar_cruzamentos_hidro_marca_sazonal_do_regime():
+    # Um cruzamento sobre trecho Temporário/Seco é marcado sazonal=True; Permanente=False; ausente=None.
+    repo = _RepoFake([
+        [{"nome": "Rio Temporário", "distancia_km": 0.3, "fonte_base": "BC250",
+          "fonte_uf": "BR", "regime": "Temporário"}],
+        [{"nome": "Rio Perene", "distancia_km": 0.3, "fonte_base": "BC250",
+          "fonte_uf": "BR", "regime": "Permanente"}],
+        [{"nome": "Rio Sem Regime", "distancia_km": 0.3, "fonte_base": "BC250", "fonte_uf": "BR"}],
+    ])
+    pontos = [(-10.0, -55.0, 0.0), (-10.1, -55.1, 10.0), (-10.2, -55.2, 20.0)]
+    achados = rc._detectar_cruzamentos_hidro(pontos, repo, raio_km=5.0, distancia_total_km=30.0)
+    por_nome = {a["nome"]: a for a in achados}
+    assert por_nome["Rio Temporário"]["sazonal"] is True
+    assert por_nome["Rio Perene"]["sazonal"] is False
+    assert por_nome["Rio Sem Regime"]["sazonal"] is None
+    # e o campo sobrevive à construção do dataclass (surfacing consome via atributo)
+    cruz = rc.CruzamentoHidrografico(**{k: v for k, v in por_nome["Rio Temporário"].items()
+                                        if k != "_wkb"})
+    assert cruz.sazonal is True
