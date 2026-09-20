@@ -47901,6 +47901,34 @@ if _secao == _SECOES[0]:   # tab_individual
                                     st.caption("⛴️ Travessias aquaviárias próximas: " + ", ".join(t.nome for t in _ctx_gi.travessias))
                                 if _ctx_gi.hidrovias_proximas:
                                     st.caption("🚢 Hidrovia próxima: " + _ctx_gi.hidrovias_proximas[0].nome)
+                                if getattr(_ctx_gi, "portos_terminais", None):
+                                    # [PORTO-CARD] Portos/terminais apareciam só no mapa e na contagem do lote —
+                                    # nunca no cartão de contexto, embora carreguem atributos reais (tipo de
+                                    # transporte, tipo de complexo, jurisdição). Um porto de carga perto da rota
+                                    # é opção logística concreta. Interpreta o tipo de transporte.
+                                    st.caption("⚓ Portos/terminais próximos: " + ", ".join(
+                                        _pt.nome for _pt in _ctx_gi.portos_terminais))
+                                    with st.expander(f"⚓ {len(_ctx_gi.portos_terminais)} porto(s)/terminal(is) — ficha",
+                                                     expanded=False):
+                                        for _po in _ctx_gi.portos_terminais:
+                                            _at = getattr(_po, "atributos", None) or {}
+                                            with st.expander(_po.nome, expanded=False):
+                                                _pod = []
+                                                _tt = str(_at.get("tipotransp") or "").strip()
+                                                if _tt and _tt.lower() not in ("desconhecido", "desconhecida", "none"):
+                                                    _emoji = "📦" if "carga" in _tt.lower() or "misto" in _tt.lower() else "🧍"
+                                                    _pod.append(f"**Transporte:** {_emoji} {_tt}"
+                                                                + (" — movimenta carga (opção logística)." if ("carga" in _tt.lower() or "misto" in _tt.lower()) else "."))
+                                                _tc = str(_at.get("tipocomple") or "").strip()
+                                                if _tc and _tc.lower() not in ("desconhecido", "desconhecida", "none"):
+                                                    _pod.append(f"**Tipo de complexo:** {_tc}")
+                                                _pj = str(_at.get("jurisdicao") or "").strip()
+                                                if _pj and _pj.lower() not in ("desconhecido", "desconhecida", "none"):
+                                                    _pod.append(f"**Jurisdição:** {_pj}")
+                                                if _po.distancia_eixo_km is not None:
+                                                    _pod.append(f"**Distância do eixo da rota:** {_po.distancia_eixo_km:.2f} km")
+                                                _pod.append(f"**Fonte:** {_po.fonte}")
+                                                st.markdown("  \n".join(_pod) if _pod else "_Sem atributos adicionais cadastrados na base._")
                                 if _ctx_gi.dependencia_aquaviaria is not None:
                                     st.caption(f"📊 Dependência aquaviária: {_ctx_gi.dependencia_aquaviaria}/100 · "
                                               f"Complexidade geográfica: {_ctx_gi.complexidade_geografica}/100 · "
