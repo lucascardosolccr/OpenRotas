@@ -989,14 +989,14 @@ def exigir_autenticacao():
     executa para quem não estiver autenticado."""
     if not esta_autenticado():
         # [PERSISTÊNCIA NO NAVEGADOR] antes de exigir novo login, tenta reidratar do navegador — assim
-        # um F5 / reconexão / reinício do servidor NÃO desloga. Fail-open e à prova de trava (tempo e
-        # ciclos limitados): "pendente" mostra "restaurando…" por um instante; "nada" cai no login.
-        _rid = _reidratar_status()
-        if _rid == "ok":
+        # um F5 / reconexão / reinício do servidor NÃO desloga. Se conseguiu ("ok"), rerun já autenticado.
+        # CASO CONTRÁRIO (nada guardado OU o componente de leitura ainda montando), mostramos SEMPRE a
+        # tela de LOGIN — a leitura do storage roda em paralelo (o componente já foi instanciado acima) e,
+        # quando devolver uma sessão válida, o próximo rerun reidrata e entra. NUNCA prendemos o usuário
+        # numa tela intermediária ("restaurando…"): se aquele componente demorasse/estivesse bloqueado no
+        # host, o login nunca aparecia. O custo é, no máximo, um piscar do login antes do auto-restore.
+        if _tentar_reidratar_sessao():
             st.rerun()
-        if _rid == "pendente":
-            _tela_restaurando()
-            st.stop()
         _renderizar_tela_autenticacao()
         return  # inalcançável (st.stop() acima), mantido por clareza de leitura
 
