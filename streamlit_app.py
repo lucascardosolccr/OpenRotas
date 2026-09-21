@@ -47939,6 +47939,18 @@ if _secao == _SECOES[0]:   # tab_individual
                                 # [PERFIL-GEO] Visualização espacial: onde (km) cada rio/corpo/ponte/travessia
                                 # aparece ao longo da rota — transforma as listas em um mapa legível.
                                 try:
+                                    # analisar_rota grava origem/destino só com lat/lon (sem nome); injeta os
+                                    # nomes reais das cidades (res_ind[10]/[16]) para o perfil rotular certo em
+                                    # vez do genérico "Origem/Destino".
+                                    try:
+                                        _nm_o_gi = res_ind[10] if len(res_ind) > 10 and res_ind[10] else orig_ind
+                                        _nm_d_gi = res_ind[16] if len(res_ind) > 16 and res_ind[16] else dest_ind
+                                        if isinstance(getattr(_ctx_gi, "origem", None), dict):
+                                            _ctx_gi.origem = {**_ctx_gi.origem, "nome": str(_nm_o_gi)}
+                                        if isinstance(getattr(_ctx_gi, "destino", None), dict):
+                                            _ctx_gi.destino = {**_ctx_gi.destino, "nome": str(_nm_d_gi)}
+                                    except Exception:
+                                        pass
                                     _svg_perfil = _perfil_geografico_svg(_ctx_gi)
                                     if _svg_perfil:
                                         components.html(
