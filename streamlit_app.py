@@ -45222,6 +45222,34 @@ def _read_excel_robusto(fonte):
         return pd.read_excel(fonte, engine='openpyxl')
 
 
+def _diagnosticar_colunas_lote(cols, obrigatorias=("Origem", "Destino")):
+    """[LOTE-COLUNAS] Diagnóstico ACIONÁVEL quando faltam colunas obrigatórias na planilha do Lote.
+    Retorna (ok: bool, mensagem: str). Antes, o erro era genérico ("deve possuir as colunas 'Origem' e
+    'Destino'") e não dizia o que a planilha TINHA — o usuário ficava adivinhando. Agora, quando falta
+    alguma, a mensagem lista as colunas ENCONTRADAS e, para cada obrigatória ausente, sugere a coluna
+    existente mais parecida (difflib) para renomear. PURA/defensiva (não levanta; casa com o gate de
+    igualdade exata usado a jusante, que espera os nomes já normalizados por .str.title())."""
+    import difflib as _dl
+    _cols = [str(c).strip() for c in (cols or [])]
+    _faltantes = [r for r in obrigatorias if r not in _cols]
+    if not _faltantes:
+        return True, ""
+    _partes = [f"A planilha precisa das colunas **{'** e **'.join(obrigatorias)}**."]
+    if _cols:
+        _partes.append("Colunas encontradas: " + ", ".join(f"“{c}”" for c in _cols) + ".")
+    else:
+        _partes.append("Nenhum cabeçalho de coluna foi lido — verifique se a primeira linha da planilha "
+                       "tem os nomes das colunas.")
+    for _req in _faltantes:
+        _match = _dl.get_close_matches(_req, _cols, n=1, cutoff=0.6)
+        if _match:
+            _partes.append(f"Faltou **{_req}**: a coluna “{_match[0]}” parece ser essa — renomeie o "
+                           f"cabeçalho para “{_req}”.")
+        else:
+            _partes.append(f"Faltou **{_req}**: adicione uma coluna com esse nome.")
+    return False, " ".join(_partes)
+
+
 def _liberar_memoria_geo():
     """[MEM] Libera os caches PESADOS de camadas geográficas (janelas do BC250 — drenagem, massas,
     rodovias, ferrovias — carregadas durante o 'Processar rotas divergentes') antes de montar
@@ -50025,8 +50053,12 @@ if _secao == _SECOES[1]:   # tab_processamento
         # (detecção IBGE + validação + raio-X) e na contagem de rotas únicas — antes, esses O(N) rodavam a cada rerun.
         _file_id_prevoo = f"{getattr(arquivo_carregado, 'name', 'file')}_{getattr(arquivo_carregado, 'size', 0)}"
         
-        if 'Origem' not in df.columns or 'Destino' not in df.columns:
-            st.error("Erro de Validação: A planilha deve possuir as colunas 'Origem' e 'Destino'.")
+        _ok_cols, _msg_cols = _diagnosticar_colunas_lote(df.columns)
+        if not _ok_cols:
+            st.error("⚠️ Validação da planilha — " + _msg_cols)
+        elif len(df) == 0:
+            st.warning("A planilha tem o cabeçalho correto (Origem/Destino), mas **nenhuma linha de "
+                       "dados**. Preencha ao menos uma linha de Origem → Destino e envie novamente.")
         else:
             # [IBGE-INPUT - 100ª/101ª geração] Detecção automática de coluna com Código IBGE + validação
             # de consistência (Código × Município × UF) quando essas colunas coexistem na planilha.
