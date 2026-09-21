@@ -22131,10 +22131,9 @@ def _conciliar_multiplos(df_app, estudos):
                     "estudo": _nome, "origem": _v(_r, "origem"), "uf": _v(_r, "uf_origem"),
                     "motivo": "Não casou com nenhum município do estudo da aplicação."})
                 continue
-            try:
-                _dist = float(_v(_r, "distancia"))
-            except (TypeError, ValueError):
-                _dist = None
+            # [NUM-BR] aceita vírgula decimal / ponto de milhar (planilhas BR) — antes o float() puro
+            # descartava '95,4' em silêncio, sumindo com a linha da comparação N-estudos.
+            _dist = _to_num_br(_v(_r, "distancia"))
             if _dist is None or _dist <= 0:
                 continue
             _a_e["conciliados"] += 1
@@ -22149,10 +22148,9 @@ def _conciliar_multiplos(df_app, estudos):
             }
             # os inscritos: se a referência trouxer e a app não tiver, aproveita
             if not _linhas[_i_app]["Inscritos"] and _mapa.get("inscritos"):
-                try:
-                    _linhas[_i_app]["Inscritos"] = float(_v(_r, "inscritos") or 0)
-                except (TypeError, ValueError):
-                    pass
+                _ins_br = _to_num_br(_v(_r, "inscritos"))  # [NUM-BR] tolera formato brasileiro
+                if _ins_br is not None:
+                    _linhas[_i_app]["Inscritos"] = _ins_br
         _aud[_nome] = _a_e
 
     # só as linhas com pelo menos 2 estudos são COMPARÁVEIS

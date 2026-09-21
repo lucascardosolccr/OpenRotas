@@ -49,6 +49,22 @@ def test_validacao_aceita_planilha_br_com_virgula():
     assert vp["pode_processar"] is True
 
 
+def test_n_estudos_parseia_distancia_br():
+    # o modo N-estudos tinha o MESMO float() puro: distância BR sumia (linha descartada em silêncio)
+    df_app = pd.DataFrame({"Municipio Origem": ["Belem"], "UF Origem": ["PA"],
+                           "Cod IBGE Origem": ["1501402"], "Municipio Destino": ["Belem"],
+                           "Distancia": [12.5], "Tempo": ["15 min"], "Balsas": ["Nao"], "Inscritos": [50]})
+    df_ref = pd.DataFrame({"NO_MUNICIPIO": ["Belem"], "UF": ["PA"], "CO_MUNICIPIO": ["1501402"],
+                           "NO_MUN_PROX": ["Ananindeua"], "DISTANCIA_KM": ["8,4"], "INSCRITOS": ["50"]})
+    mapa = {"origem": "NO_MUNICIPIO", "uf_origem": "UF", "ibge_origem": "CO_MUNICIPIO",
+            "destino": "NO_MUN_PROX", "inscritos": "INSCRITOS", "distancia": "DISTANCIA_KM", "tempo": None}
+    linhas, aud = m._conciliar_multiplos(df_app, [{"nome": "Estudo 2025", "df": df_ref, "mapa": mapa}])
+    assert len(linhas) == 1
+    _est = linhas[0]["estudos"].get("Estudo 2025")
+    assert _est is not None and abs(_est["distancia"] - 8.4) < 1e-6
+    assert aud["Estudo 2025"]["conciliados"] == 1
+
+
 def test_conciliacao_parseia_distancia_br():
     df_app = pd.DataFrame({"Municipio Origem": ["Belem"], "UF Origem": ["PA"],
                            "Cod IBGE Origem": ["1501402"], "Municipio Destino": ["Belem"],
