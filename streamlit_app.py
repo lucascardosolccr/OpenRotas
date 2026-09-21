@@ -5754,6 +5754,187 @@ def _secao_inteligencia_geografica_html(df):
         return ""
 
 
+def _analise_rotas_geo(df):
+    """[GEO-INTEL-ANALITICO] Transforma as colunas de inteligência geográfica das rotas
+    (_GEO_INTEL_COLUNAS, anexadas por _enriquecer_geo_inteligencia_df) numa análise AGREGADA e pronta
+    para decisão — a MESMA leitura da seção HTML, mas em forma tabular para levar ao Excel. PURA e
+    defensiva: só usa colunas presentes e devolve [] se o df não foi enriquecido (nunca levanta).
+
+    Retorna lista de dicts {"Seção", "Indicador", "Valor"} — cada bloco (Cobertura, Hidrografia,
+    Travessias & Balsas, Rodovias & Ferrovias, Confiabilidade Operacional, Anomalias) vira um grupo de
+    linhas, incluindo os TOP itens reais (bacias, rios, rodovias, ferrovias, hidrovias, anomalias)."""
+    try:
+        if df is None or len(df) == 0 or not _col_existente(df, "QT_RIOS"):
+            return []
+        _n = int(len(df))
+        if _n <= 0:
+            return []
+
+        def _num(col):
+            if col and col in df.columns:
+                return pd.to_numeric(df[col], errors="coerce")
+            return pd.Series([float("nan")] * _n, index=df.index)
+
+        def _pos(col):
+            return _num(col).fillna(0)
+
+        def _pct(k):
+            k = int(k)
+            return f"{k} de {_n} ({(k / _n * 100):.0f}%)"
+
+        def _top_texto(col, n=10, sep_regex=r",|;|\|"):
+            """Top-N de uma coluna que guarda LISTA em texto (ex.: 'BR-101, PR-151')."""
+            _c = _col_existente(df, col)
+            if not _c:
+                return []
+            _s = df[_c].dropna().astype(str).str.strip()
+            _s = _s[~_s.isin(["", "nan", "None", "—"])]
+            if _s.empty:
+                return []
+            _ex = _s.str.split(sep_regex, regex=True).explode().str.strip()
+            _ex = _ex[~_ex.isin(["", "nan", "None", "—"])]
+            if _ex.empty:
+                return []
+            return list(_ex.value_counts().head(n).items())
+
+        def _top_cat(col, n=10):
+            """Top-N de uma coluna CATEGÓRICA (um valor por linha)."""
+            _c = _col_existente(df, col)
+            if not _c:
+                return []
+            _s = df[_c].astype(str).str.strip()
+            _s = _s[~_s.isin(["", "nan", "None", "—"])]
+            if _s.empty:
+                return []
+            return list(_s.value_counts().head(n).items())
+
+        _qt_rios = _pos("QT_RIOS")
+        _qt_corpos = _pos("QT_CORPOS_DAGUA")
+        _qt_pontes = _pos("QT_PONTES")
+        _qt_trav = _pos("QT_TRAVESSIAS")
+        _qt_hidro = _pos("QT_HIDROVIAS")
+        _qt_rod = _pos("QT_RODOVIAS")
+        _qt_ferro = _pos("QT_FERROVIAS")
+        _qt_anom = _pos("QT_ANOMALIAS")
+        _qt_alertas = _pos("QT_ALERTAS_CONFIABILIDADE")
+        _dep = _num("Dependencia Aquaviaria")
+        _conf = _num("Confianca Geografica")
+        _conf_fund = _num("Confianca Fundida")
+
+        _n_rio = int((_qt_rios > 0).sum())
+        _n_corpo = int((_qt_corpos > 0).sum())
+        _n_ponte = int((_qt_pontes > 0).sum())
+        _n_trav = int((_qt_trav > 0).sum())
+        _n_hidro = int((_qt_hidro > 0).sum())
+        _n_rod = int((_qt_rod > 0).sum())
+        _n_ferro = int((_qt_ferro > 0).sum())
+        _n_anom = int((_qt_anom > 0).sum())
+        _n_alerta = int((_qt_alertas > 0).sum())
+        _n_sem_conf = int(((_qt_rios > 0) & (_qt_pontes == 0) & (_qt_trav == 0)).sum())
+
+        _linhas = []
+
+        def _add(sec, ind, val):
+            _linhas.append({"Seção": sec, "Indicador": str(ind), "Valor": str(val)})
+
+        # ── 1) Cobertura da análise geográfica ──
+        _S = "1. Cobertura da análise"
+        _add(_S, "Rotas no estudo", _n)
+        _add(_S, "Rotas que cruzam rio/córrego", _pct(_n_rio))
+        _add(_S, "Rotas com rodovia oficial identificada", _pct(_n_rod))
+        _add(_S, "Rotas com ferrovia próxima", _pct(_n_ferro))
+        _add(_S, "Rotas com anomalia geográfica", _pct(_n_anom))
+        if _col_existente(df, "QT_ALERTAS_CONFIABILIDADE"):
+            _add(_S, "Rotas com alerta de confiabilidade operacional", _pct(_n_alerta))
+        if _dep.notna().any():
+            _add(_S, "Dependência aquaviária média", f"{_dep.mean():.0f}/100")
+        if _conf.notna().any():
+            _add(_S, "Confiança geográfica média", f"{_conf.mean():.0f}/100")
+        if _conf_fund.notna().any():
+            _add(_S, "Confiança fundida média (motor + geografia)", f"{_conf_fund.mean():.0f}/100")
+
+        # ── 2) Hidrografia ──
+        _S = "2. Hidrografia"
+        _add(_S, "Rotas que cruzam rio/córrego", _pct(_n_rio))
+        _rios_pos = _qt_rios[_qt_rios > 0]
+        if not _rios_pos.empty:
+            _add(_S, "Nº médio de rios por rota (quando há)", f"{_rios_pos.mean():.1f}")
+            _add(_S, "Máximo de rios numa única rota", f"{int(_rios_pos.max())}")
+        _add(_S, "Total de cruzamentos de rio no estudo", f"{int(_qt_rios.sum())}")
+        _add(_S, "Rotas com corpo d'água (lago/represa)", _pct(_n_corpo))
+        for _k, _v in _top_cat("Bacia Hidrografica", 8):
+            _add("2a. Bacias mais frequentes", str(_k), f"{int(_v)} rota(s)")
+        for _k, _v in _top_texto("Rios Cruzados", 10):
+            _add("2b. Rios mais cruzados", str(_k), f"{int(_v)} rota(s)")
+
+        # ── 3) Travessias & balsas ──
+        _S = "3. Travessias & balsas"
+        _add(_S, "Rotas com travessia aquaviária real", _pct(_n_trav))
+        _add(_S, "Rotas com ponte confirmada no cruzamento", _pct(_n_ponte))
+        _add(_S, "Cruzamentos de rio SEM ponte NEM travessia", _pct(_n_sem_conf))
+        _add(_S, "Rotas com hidrovia oficial no trajeto", _pct(_n_hidro))
+        if _col_existente(df, "Conflito de Confianca"):
+            _cc = df[_col_existente(df, "Conflito de Confianca")].astype(str).str.strip()
+            _n_confl = int((~_cc.isin(["", "nan", "None", "—", "Não", "Nao"])).sum())
+            _add(_S, "Rotas com conflito de confiança (motor × geografia)", _pct(_n_confl))
+        for _k, _v in _top_texto("NM_HIDROVIAS", 8):
+            _add("3a. Hidrovias mais frequentes", str(_k), f"{int(_v)} rota(s)")
+
+        # ── 4) Rodovias & ferrovias ──
+        _S = "4. Rodovias & ferrovias"
+        _add(_S, "Rotas com rodovia oficial identificada", _pct(_n_rod))
+        _add(_S, "Rotas com ferrovia próxima", _pct(_n_ferro))
+        for _k, _v in _top_texto("NM_RODOVIAS", 12):
+            _add("4a. Rodovias mais frequentes", str(_k), f"{int(_v)} rota(s)")
+        for _k, _v in _top_texto("NM_FERROVIAS", 10):
+            _add("4b. Ferrovias mais frequentes", str(_k), f"{int(_v)} rota(s)")
+
+        # ── 5) Confiabilidade operacional ──
+        _S = "5. Confiabilidade operacional"
+        if _col_existente(df, "QT_ALERTAS_CONFIABILIDADE"):
+            _sem = int((_qt_alertas == 0).sum())
+            _um = int((_qt_alertas == 1).sum())
+            _doismais = int((_qt_alertas >= 2).sum())
+            _add(_S, "Rotas sem nenhum alerta", _pct(_sem))
+            _add(_S, "Rotas com 1 alerta", _pct(_um))
+            _add(_S, "Rotas com 2+ alertas (atenção redobrada)", _pct(_doismais))
+            _add(_S, "Total de alertas emitidos", f"{int(_qt_alertas.sum())}")
+        for _k, _v in _top_texto("Alertas de Confiabilidade", 12):
+            _add("5a. Alertas mais comuns", str(_k), f"{int(_v)} rota(s)")
+
+        # ── 6) Anomalias ──
+        _S = "6. Anomalias geográficas"
+        _add(_S, "Rotas com anomalia detectada", _pct(_n_anom))
+        _add(_S, "Total de anomalias no estudo", f"{int(_qt_anom.sum())}")
+        for _k, _v in _top_cat("Anomalia Mais Severa", 6):
+            _add("6a. Anomalias mais severas (por rota)", str(_k), f"{int(_v)} rota(s)")
+        for _k, _v in _top_texto("NM_ANOMALIAS", 10):
+            _add("6b. Tipos de anomalia mais frequentes", str(_k), f"{int(_v)} ocorrência(s)")
+
+        return _linhas
+    except Exception:
+        logger.debug("[GEO-INTEL-ANALITICO] _analise_rotas_geo falhou (aditivo, ignorado).", exc_info=True)
+        return []
+
+
+def _escrever_aba_inteligencia_rotas(writer, df, nome="Inteligencia das Rotas"):
+    """[GEO-INTEL-ANALITICO] Escreve a aba analítica de inteligência geográfica das rotas no workbook,
+    a partir de `_analise_rotas_geo`. No-op se não houver dados enriquecidos. Totalmente defensiva:
+    qualquer falha é engolida (a exportação nunca quebra por causa desta aba adicional). Devolve True
+    se escreveu a aba, False caso contrário."""
+    try:
+        _dados = _analise_rotas_geo(df)
+        if not _dados:
+            return False
+        _dfg = pd.DataFrame(_dados, columns=["Seção", "Indicador", "Valor"])
+        _escrever_aba_profissional(writer, _dfg, nome)
+        return True
+    except Exception:
+        logger.debug("[GEO-INTEL-ANALITICO] Falha ao escrever a aba de inteligência das rotas (ignorada).",
+                     exc_info=True)
+        return False
+
+
 def _secao_risco_margem_html(df, top=20):
     """[MARGEM-SAIDA - 447ª geração] Seção HTML AUTOCONTIDA do relatório: Antecedência de Saída & Risco
     Operacional por rota. Só aparece se as colunas existirem (defensivo). Resume a distribuição de risco e
@@ -17297,6 +17478,9 @@ def _montar_planilha_lote_xlsx(df_final):
                 _s.columns = ['Status', 'Rotas']
                 _s['% do total'] = (_s['Rotas'] / max(1, int(_s['Rotas'].sum())) * 100).round(1)
                 _s.to_excel(_w, index=False, sheet_name="Status das Rotas")
+            # [GEO-INTEL-ANALITICO] Aba analítica da inteligência geográfica das rotas (rios, pontes,
+            # travessias, rodovias, ferrovias, confiabilidade, anomalias). No-op se não enriquecido.
+            _escrever_aba_inteligencia_rotas(_w, df_final)
             # [IMPACTO-CANDIDATOS - 449ª] Aba(s) do Estudo de Impacto nos Candidatos (só se houver a coluna).
             _abas_impacto = []   # (nome, df) → recebem o MESMO estilo institucional das demais abas
             try:
@@ -53476,6 +53660,7 @@ if _secao == _SECOES[2]:   # tab_alocacao
                             ("Estatisticas Descritivas", "Resumo estatístico completo (média, percentis, dispersão)."),
                             ("Indices de Qualidade", "Índices sintéticos 0-100 da qualidade da alocação."),
                             ("Insights e Recomendacoes", "Achados automáticos e sugestões operacionais."),
+                            ("Inteligencia das Rotas", "Rios, pontes, travessias, rodovias, ferrovias, confiabilidade e anomalias — agregados."),
                             ("Qualidade dos Dados", "Cobertura e confiabilidade das rotas e coordenadas."),
                             ("Glossario", "Definições dos termos técnicos usados no estudo."),
                             ("Metodologia", "Como os dados foram processados e as rotas calculadas."),
@@ -53506,6 +53691,10 @@ if _secao == _SECOES[2]:   # tab_alocacao
                     _abas_ricas_alocacao(writer, df_final_alo)
                     _aba_mapa_calor_alocacao(writer, df_final_alo)  # [MAPA-CALOR - 184ª geração]
                     _montar_abas_analiticas_alocacao(writer, df_final_alo)
+                    # [GEO-INTEL-ANALITICO] Aba analítica da inteligência geográfica das rotas (rios,
+                    # pontes, travessias, rodovias, ferrovias, confiabilidade, anomalias) — agrega as
+                    # colunas que antes só existiam em bruto na aba principal. No-op se não enriquecido.
+                    _escrever_aba_inteligencia_rotas(writer, df_final_alo)
                     _abas_cientificas_alocacao(writer, df_final_alo)  # [EXPORT-CIENTIFICO - 215ª geração]
                     # [DUPLO-CENARIO - 217ª geração] Aba de comparação Oficial × Puramente Viário, derivada dos
                     # MESMOS dados já roteados (topk_map + resultados) — zero re-roteamento. Defensivo.
