@@ -29,17 +29,23 @@ contrário do artefato Natural Earth 10m anterior, que era denso no Sul/Sudeste 
 
 Uso (offline, na sua máquina, com o repositório já com os Parquets derivados):
     python3 construir_grafo_hidrografia_nacional.py
-    # ^ reproduz EXATAMENTE o hidrografia_nacional.pkl.gz versionado (grade 0.010, ~40 MB,
-    #   3,97 mi de nós, ~1,3 GB de RAM no runtime). O app o encontra e carrega sozinho.
-    python3 construir_grafo_hidrografia_nacional.py --grid 0.006   # mais fiel/pesado (~67 MB)
+    # ^ reproduz EXATAMENTE o hidrografia_nacional.pkl.gz versionado (grade 0.020, ~19 MB,
+    #   ~1,47 mi de nós, ~270 MB de RAM no runtime). O app o encontra e carrega sozinho.
+    python3 construir_grafo_hidrografia_nacional.py --grid 0.010   # mais fiel/pesado (~40 MB, ~1,3 GB RAM)
     # build regional (teste rápido / validação — use = por causa do sinal negativo no bbox):
     python3 construir_grafo_hidrografia_nacional.py --bbox=-6,0.5,-64,-56 --saida amazonia_teste.pkl.gz
 
+IMPORTANTE — ORÇAMENTO DE MEMÓRIA: o grafo é CARREGADO no runtime (cKDTree + matriz esparsa) durante o
+roteamento fluvial (inclusive na alocação/DECIDIR quando há município ribeirinho). Em hosts com pouca
+RAM (Streamlit Community Cloud), uma grade fina demais estoura a memória e derruba a app (OOM). A grade
+padrão 0.020 foi escolhida para manter ~1,47 mi de nós (≈ o grafo NE10m mundial que rodava antes) e
+~270 MB de RAM. NÃO subir para 0.010/0.004 no arquivo versionado sem confirmar o limite de RAM do host.
+
 Parâmetros principais:
-    --grid   G   tamanho da célula de snap em GRAUS (padrão 0.010 ≈ 1,1 km — o valor DEPLOYADO no
-                 repositório). Menor = mais fiel e mais pesado (0.004≈89 MB/2,8 GB RAM; 0.006≈67 MB;
-                 0.008≈50 MB); maior = mais leve e mais generalizado. 0.006–0.010 é a faixa
-                 recomendada para deploy (equilíbrio entre fidelidade, tamanho <50 MB e RAM).
+    --grid   G   tamanho da célula de snap em GRAUS (padrão 0.020 ≈ 2,2 km — o valor DEPLOYADO no
+                 repositório, ~1,47 mi de nós / ~19 MB / ~270 MB RAM). Menor = mais fiel e MUITO mais
+                 pesado (0.010≈40 MB/~1,3 GB RAM; 0.006≈67 MB; 0.004≈89 MB/2,8 GB RAM) — pode causar OOM
+                 no Streamlit Cloud. Só use grade menor com host de RAM alta e verificação.
     --bbox   lat_min,lat_max,lon_min,lon_max  recorta a construção a uma janela (opcional).
     --saida  arquivo .pkl.gz de saída (padrão hidrografia_nacional.pkl.gz — o app o encontra sozinho).
     --parquet  caminho do drenagem.parquet (padrão: data/brasil/ibge/derivadas/drenagem.parquet).
@@ -92,7 +98,7 @@ def _normalizar_nome(n):
     return s
 
 
-def construir_grafo(parquet, grid=0.010, bbox=None, min_comp=3):
+def construir_grafo(parquet, grid=0.020, bbox=None, min_comp=3):
     """Lê o Parquet de drenagem e devolve o dict do grafo no formato do app. PURO (sem I/O de saída)."""
     import pandas as pd
 
@@ -242,8 +248,9 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="Constrói o grafo fluvial nacional (IBGE BC250/ANA).")
     ap.add_argument("--parquet", default=None, help="caminho do drenagem.parquet")
     ap.add_argument("--saida", default="hidrografia_nacional.pkl.gz")
-    ap.add_argument("--grid", type=float, default=0.010,
-                    help="célula de snap em graus (padrão 0.010 ≈ 1,1 km — o valor deployado no repo)")
+    ap.add_argument("--grid", type=float, default=0.020,
+                    help="célula de snap em graus (padrão 0.020 ≈ 2,2 km — o valor deployado; ~1,47 mi de "
+                         "nós / ~19 MB / ~270 MB de RAM, dentro do orçamento do Streamlit Cloud)")
     ap.add_argument("--bbox", default=None, help="lat_min,lat_max,lon_min,lon_max (opcional)")
     ap.add_argument("--min-comp", type=int, default=3, help="descarta componentes com < N nós")
     a = ap.parse_args(argv)
