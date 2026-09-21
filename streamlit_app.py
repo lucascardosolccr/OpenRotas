@@ -25749,17 +25749,28 @@ def _painel_divergencias_ui(diag, st):
         # fabricado).
         _n_rec = int(_res.get("derrotas_recuperaveis", 0) or 0)
         _n_evit = int(_res.get("derrotas_evitaveis", 0) or 0)
-        if _n_rec or _n_evit:
-            _cr1, _cr2 = st.columns(2)
-            if _n_rec:
-                _cr1.metric("🔁 Derrotas recuperáveis", f"{_n_rec}",
-                            help="Entraram no shortlist, mas não obtiveram rota viária válida (falha/pendente) — "
-                                 "recuperáveis por retry ou motor secundário, não deveriam virar derrota definitiva.")
-            if _n_evit:
-                _cr2.metric("⚠️ Derrotas evitáveis", f"{_n_evit}",
-                            help="Referência rodoviária, sem balsa, com viária MENOR que a do vencedor da "
-                                 "aplicação, e mesmo assim não escolhida — derrota real, vale investigar a "
-                                 "seleção final.")
+        # [REF-IMPOSSIVEL-DERROTA] "Derrotas apenas nominais": a referência só "venceu" com distância
+        # fisicamente impossível/implausível — não são derrotas reais do algoritmo (erro de dado da
+        # referência). Surface como KPI, alinhado ao relatório HTML.
+        _n_nom = int(_res.get("derrotas_nominais_ref_invalida", 0) or 0)
+        _kpis_der = []
+        if _n_rec:
+            _kpis_der.append(("🔁 Derrotas recuperáveis", _n_rec,
+                              "Entraram no shortlist, mas não obtiveram rota viária válida (falha/pendente) — "
+                              "recuperáveis por retry ou motor secundário, não deveriam virar derrota definitiva."))
+        if _n_evit:
+            _kpis_der.append(("⚠️ Derrotas evitáveis", _n_evit,
+                              "Referência rodoviária, sem balsa, com viária MENOR que a do vencedor da aplicação, "
+                              "e mesmo assim não escolhida — derrota real, vale investigar a seleção final."))
+        if _n_nom:
+            _kpis_der.append(("🚫 Derrotas apenas nominais", _n_nom,
+                              "A referência só ficou 'mais perto' porque sua distância é fisicamente "
+                              "impossível/implausível (menor que a linha reta) — erro de dado da referência, "
+                              "não derrota real. Não devem ser adotadas."))
+        if _kpis_der:
+            _cols_der = st.columns(len(_kpis_der))
+            for _cc, (_lbl, _val, _hlp) in zip(_cols_der, _kpis_der):
+                _cc.metric(_lbl, f"{_val}", help=_hlp)
 
         # [CARTOES-DIVERGENCIA - 244ª] resumo visual escaneável no topo (antes do conteúdo denso)
         try:
