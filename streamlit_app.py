@@ -56587,9 +56587,22 @@ if _secao == _SECOES[3]:   # tab_comparador
                         # guardados. Na 138ª eu os recalculava a CADA RERUN — 1,2 s de CPU bloqueante por
                         # interação em escala nacional. É o mesmo bug que diagnostiquei na 137ª; reincidi.
                         _rel_pronto = _relatorio_executivo_comparacao(_st_c, _aud_c, top_municipios=_cmp)
+                        # [ROBUSTEZ+MEM] Guarda o RESULTADO primeiro (xlsx=None) e só então tenta montar a
+                        # planilha, em try próprio. Antes, o _montar_xlsx_comparacao inline: se falhasse (ou
+                        # estourasse memória), a atribuição inteira caía no except externo — a comparação era
+                        # PERDIDA e o usuário via a mensagem enganosa de "planilha de referência". Agora a
+                        # comparação sempre sobrevive; se o xlsx falhar, fica None e o botão de download o
+                        # (re)gera sob demanda.
                         st.session_state['cmp_resultado'] = {
-                            "linhas": _cmp, "aud": _aud_c, "stats": _st_c, "relatorio": _rel_pronto,
-                            "xlsx": _montar_xlsx_comparacao(_cmp, _st_c, _aud_c, _rel_pronto)}
+                            "linhas": _cmp, "aud": _aud_c, "stats": _st_c, "relatorio": _rel_pronto, "xlsx": None}
+                        try:
+                            _xb_cmp0 = _montar_xlsx_comparacao(_cmp, _st_c, _aud_c, _rel_pronto)
+                            if isinstance(_xb_cmp0, (bytes, bytearray)) and len(_xb_cmp0) > 0:
+                                st.session_state['cmp_resultado']["xlsx"] = bytes(_xb_cmp0)
+                            del _xb_cmp0
+                        except Exception:
+                            logger.error("[COMPARADOR] Falha ao pré-gerar a planilha (comparação preservada; "
+                                         "o download a regenera sob demanda).", exc_info=True)
                         # [DIVERGENCIA-XAI - 236ª] nova comparação → diagnóstico anterior fica obsoleto.
                         st.session_state.pop('cmp_diag_divergencias', None)
             except Exception as _e_cmp:
@@ -57747,8 +57760,7 @@ if _secao == _SECOES[3]:   # tab_comparador
                         with st.spinner("Preparando a planilha de comparação (24 abas)..."):
                             try:
                                 import gc as _gc_x
-                                st.session_state.pop('relatorio_html_cmp', None)  # libera memória do HTML antes
-                                _gc_x.collect()
+                                _gc_x.collect()  # recupera transientes antes de montar o workbook grande
                                 _xb_novo = _montar_xlsx_comparacao(
                                     _cmp, _res_c["stats"], _aud_c, _rel_c,
                                     diagnostico_div=st.session_state.get('cmp_diag_divergencias'))
