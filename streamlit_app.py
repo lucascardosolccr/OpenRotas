@@ -4697,8 +4697,47 @@ def _painel_interativo_bi_html(df):
         _col_modo = next((c for c in ["Modo/Acesso", "Modo", "Acesso"] if c in df.columns), None)
         _col_lat = next((c for c in ["Lat Origem", "Latitude Origem", "Lat", "Latitude"] if c in df.columns), None)
         _col_lon = next((c for c in ["Lon Origem", "Longitude Origem", "Lon", "Longitude", "Lng"] if c in df.columns), None)
+        _col_ibge = next((c for c in ["Cod IBGE Origem", "Codigo IBGE Origem", "Código IBGE Origem",
+                                      "CO_MUNICIPIO", "Cod IBGE", "Codigo IBGE", "IBGE", "Geocodigo"]
+                          if c in df.columns), None)
         if not _col_org or not _col_dist:
             return ""  # sem o mínimo (município + distância) não há painel
+
+        # [PAINEL-GEO-FIX] O mapa de concentração exigia colunas lat/lon explícitas na planilha —
+        # que a maioria dos estudos NÃO traz —, então caía sempre em "requer coordenadas". Agora,
+        # quando faltam essas colunas, resolvemos o CENTROIDE da origem OFFLINE (base IBGE embarcada,
+        # sem rede) pelo Código IBGE ou pelo nome+UF, e memoizamos por chave para não repetir trabalho.
+        _idx_cod = _idx_nome = None
+        _geo_memo = {}
+
+        def _coord_origem_offline(_nome, _uf, _cod):
+            _chave = (str(_cod or "").strip(), str(_nome or "").strip().upper(), str(_uf or "").strip().upper())
+            if _chave in _geo_memo:
+                return _geo_memo[_chave]
+            nonlocal _idx_cod, _idx_nome
+            _res = None
+            try:
+                if _idx_cod is None:
+                    _idx_cod = _indice_ibge_por_codigo() or {}
+                # 1) por Código IBGE (7 dígitos) — resolução O(1) e inequívoca
+                _c7 = "".join(ch for ch in str(_cod or "") if ch.isdigit())
+                if len(_c7) == 7:
+                    _info = _idx_cod.get(_c7) or {}
+                    _la = _num_seguro(_info.get("lat")); _lo = _num_seguro(_info.get("lon"))
+                    if _la and _lo:
+                        _res = (round(_la, 4), round(_lo, 4))
+                # 2) por nome + UF (desambigua homônimos pela UF da origem)
+                if _res is None and _nome:
+                    if _idx_nome is None:
+                        _idx_nome = _v309c_indice_nome_para_codigos() or {}
+                    _rc = _v316_resolver_coord_alt(_nome, _uf, _idx_nome, _idx_cod)
+                    _la = _num_seguro(_rc.get("lat")); _lo = _num_seguro(_rc.get("lon"))
+                    if _la and _lo:
+                        _res = (round(_la, 4), round(_lo, 4))
+            except Exception:
+                _res = None
+            _geo_memo[_chave] = _res
+            return _res
 
         # ---- monta linhas compactas (cap defensivo p/ não inflar o arquivo) ----
         _MAX = 6000
@@ -4741,6 +4780,14 @@ def _painel_interativo_bi_html(df):
                         _row["lo"] = round(_lo, 4)
                 except Exception:
                     pass
+            # [PAINEL-GEO-FIX] Sem coordenada explícita na linha → resolve o centroide da origem
+            # OFFLINE (base IBGE embarcada) pelo Código IBGE ou nome+UF, para o mapa deixar de exibir
+            # "requer coordenadas". Nunca inventa: só grava quando a base devolve um par válido.
+            if "la" not in _row:
+                _cod_ibge = (_r.get(_col_ibge) if _col_ibge else None)
+                _par = _coord_origem_offline(_row.get("o"), _row.get("u"), _cod_ibge)
+                if _par:
+                    _row["la"], _row["lo"] = _par[0], _par[1]
             _rows.append(_row)
 
         _tem_c = bool(_col_cand)
@@ -24387,6 +24434,38 @@ def _analisar_divergencia_par(linha, fatos_app, fatos_ref, limiar_empate_km=1.0,
         _venc_q = "Aplicação" if _cq_app > _cq_ref else "Referência"
         _venc_criterio = "índice de qualidade (viária equivalente)"
 
+    # [REF-IMPOSSIVEL-DERROTA] A distância da referência é FISICAMENTE IMPOSSÍVEL (menor que a geodésica
+    # origem→destino) ou IMPLAUSÍVEL (colada à linha reta)? Quando é ela quem "vence" no papel (número
+    # menor que o da aplicação), o triunfo se apoia num valor que nenhuma estrada real alcança. O usuário
+    # pediu que esses casos APAREÇAM COMO DERROTAS (a referência levou o candidato "mais perto", mas por um
+    # número inválido) e sejam EXPLICADOS no parecer. Additivo/defensivo: sem coordenadas → não avaliável →
+    # nada muda (mesma classificação de antes).
+    _audit_ref = {"veredito": "nao_avaliavel", "rotulo": "—", "explicacao": ""}
+    try:
+        _co_ref = fatos_ref.get("coord_origem") or fatos_app.get("coord_origem")
+        _cd_ref = fatos_ref.get("coord_destino")
+        _reta_ref = None
+        if _co_ref and _cd_ref:
+            _reta_ref, _ = calcular_distancia_linha_reta(_co_ref[0], _co_ref[1], _cd_ref[0], _cd_ref[1])
+        _audit_ref = _auditar_distancia_referencia(
+            _dr, _reta_ref, dist_app_viaria=_da,
+            origem=_mun, destino_ref=str(fatos_ref.get("destino") or "")) or _audit_ref
+    except Exception:
+        _audit_ref = {"veredito": "nao_avaliavel", "rotulo": "—", "explicacao": ""}
+    _ref_invalida = _audit_ref.get("veredito") in ("impossivel", "implausivel")
+    if _ref_invalida and _dr is not None and _da is not None and _dr <= _da:
+        # a referência "venceu" por distância, mas com número inválido → derrota apenas nominal, explicada
+        _venc_q = "Referência"
+        _impossivel = _audit_ref.get("veredito") == "impossivel"
+        _venc_criterio = ("distância da referência "
+                          + ("fisicamente impossível" if _impossivel else "implausível")
+                          + " — derrota apenas nominal")
+        _sel = ("🚫 **Derrota apenas nominal — distância da referência fisicamente impossível.** "
+                if _impossivel
+                else "⚠️ **Derrota apenas nominal — distância da referência implausível.** ")
+        _exp_ref = _audit_ref.get("explicacao") or ""
+        _parecer = ((_parecer or "").rstrip() + "\n\n" + _sel + _exp_ref).strip()
+
     # [QUALIDADE-DERROTAS - Missão 3, Rodada 16, §36] "Derrotas recuperáveis": a forense por trás do
     # texto livre do "Parecer Técnico" (_apr2_forense_derrota, via _parecer_divergencia acima) nunca
     # ficava disponível como campo ESTRUTURADO — só embutida na narrativa. Recalcula aqui (mesma
@@ -24436,9 +24515,14 @@ def _analisar_divergencia_par(linha, fatos_app, fatos_ref, limiar_empate_km=1.0,
         "Hipóteses": _hip,
         "Recomendação": _rec,
         "Impacto (km × inscritos)": round((_dif_km or 0.0) * _insc, 1),
-        "_cor": _classif["cor"],
+        # [REF-IMPOSSIVEL-DERROTA] veredito físico da distância da referência (exportável + surfacing)
+        "Auditoria Referência": _audit_ref.get("rotulo", "—"),
+        "Explicação Auditoria Referência": _audit_ref.get("explicacao", ""),
+        "Referência Inválida": "Sim" if _ref_invalida else "Não",
+        "_cor": ("#dc2626" if (_ref_invalida and _venc_q == "Referência") else _classif["cor"]),
         "_iq_app": _iq_app, "_iq_ref": _iq_ref, "_classif": _classif,
         "_forense_classe": _forense_classe,
+        "_ref_invalida": _ref_invalida,
     }
 
 
@@ -24764,9 +24848,20 @@ def _diagnostico_divergencias_html(diag):
             _lis = "".join(f"<li>{_he.escape(x)}</li>" for x in _recs)
             _rec_html = f'<h3>✅ Recomendações automáticas</h3><ul class="dv-rec">{_lis}</ul>'
 
-        # ---- pareceres técnicos (top casos por impacto) ----
+        # ---- pareceres técnicos (TODAS as divergências, por impacto decrescente) ----
+        # [HTML-EXPORT] Antes limitava a 20 casos; agora o relatório traz o parecer de TODAS as rotas
+        # divergentes (ordenadas por impacto), dentro de um bloco recolhível para não ocupar a tela.
         _ordenadas = sorted(_analises, key=lambda a: abs((a.get("Diferença (km)") or 0.0)
-                            * (int(a.get("Inscritos") or 0) or 1)), reverse=True)[:20]
+                            * (int(a.get("Inscritos") or 0) or 1)), reverse=True)
+        import re as _re_par
+
+        def _fmt_parecer(_txt):
+            # escapa e converte **negrito** → <b> e quebras de linha → <br>, para o parecer (que usa
+            # markdown na tela) ler bem também no HTML exportável — sem injeção (escape antes).
+            _e = _he.escape(str(_txt or ""))
+            _e = _re_par.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", _e)
+            return _e.replace("\n", "<br>")
+
         _pareceres = ""
         for a in _ordenadas:
             _cor = a.get("_cor", "#64748b")
@@ -24775,17 +24870,26 @@ def _diagnostico_divergencias_html(diag):
             _hip_html = "".join(f"<li>{_he.escape(h)}</li>" for h in _hip)
             _mg = a.get("Motivo Granular")
             _mg_html = f'<div class="dv-caso-mg">🔎 {_he.escape(_mg)}</div>' if _mg else ""
+            # [REF-IMPOSSIVEL-DERROTA] selo quando a "derrota" se apoia numa distância inválida da referência
+            _ri_html = ""
+            if a.get("_ref_invalida") and _venc == "Referência":
+                _ri_html = ('<div class="dv-caso-ri">🚫 Derrota apenas nominal — a distância da referência '
+                            'é fisicamente impossível/implausível (ver parecer).</div>')
             _pareceres += (
                 f'<div class="dv-caso" style="border-left:4px solid {_cor}">'
                 f'<div class="dv-caso-h"><b>{_he.escape(str(a.get("Município")))}/{_he.escape(str(a.get("UF")))}</b>'
                 f' · {_he.escape(str(a.get("Categoria")))} · <span class="dv-tag">Vantagem: {_he.escape(_venc)}</span></div>'
-                f'<div class="dv-caso-p">{_he.escape(a.get("Parecer Técnico", ""))}</div>'
+                f'{_ri_html}'
+                f'<div class="dv-caso-p">{_fmt_parecer(a.get("Parecer Técnico", ""))}</div>'
                 f'{_mg_html}'
                 f'<div class="dv-caso-hip"><b>Hipóteses técnicas:</b><ul>{_hip_html}</ul></div>'
                 f'<div class="dv-caso-rec">{_he.escape(a.get("Recomendação", ""))}</div>'
                 f'</div>')
-        _pareceres_html = (f'<h3>📝 Pareceres técnicos — os {len(_ordenadas)} casos de maior impacto</h3>'
-                           f'<div class="dv-casos">{_pareceres}</div>') if _pareceres else ""
+        _pareceres_html = (
+            f'<details class="dv-exp"><summary>📝 Pareceres técnicos — todas as '
+            f'{len(_ordenadas)} rota(s) de divergência <span class="dv-exp-hint">(clique para '
+            f'expandir/recolher)</span></summary><div class="dv-casos">{_pareceres}</div></details>'
+        ) if _pareceres else ""
 
         _css = (
             '<style>'
@@ -24815,6 +24919,17 @@ def _diagnostico_divergencias_html(diag):
             '.dv-caso-mg{font-size:12px;color:#475569;margin:2px 0 6px;font-style:italic}'
             '.dv-caso-hip{font-size:12px;color:#475569;margin:6px 0}.dv-caso-hip ul{margin:4px 0 0 18px}'
             '.dv-caso-rec{font-size:13px;font-weight:600;color:#0f172a;margin-top:6px}'
+            '.dv-caso-ri{font-size:12px;font-weight:700;color:#b91c1c;background:#fef2f2;'
+            'border:1px solid #fecaca;border-radius:8px;padding:6px 10px;margin:4px 0}'
+            '.dv-exp{margin:14px 0;border:1px solid #e2e8f0;border-radius:10px;background:#fff;overflow:hidden}'
+            '.dv-exp>summary{cursor:pointer;list-style:none;padding:12px 16px;font-size:16px;font-weight:700;'
+            'color:#1e3a8a;background:#f8fafc;border-bottom:1px solid #e2e8f0;user-select:none}'
+            '.dv-exp>summary::-webkit-details-marker{display:none}'
+            '.dv-exp>summary::before{content:"▸ ";color:#64748b}'
+            '.dv-exp[open]>summary::before{content:"▾ "}'
+            '.dv-exp-hint{font-size:11px;font-weight:400;color:#94a3b8}'
+            '.dv-exp>div,.dv-exp>*:not(summary){padding:14px 16px}'
+            '.dv-exp .dv-casos{padding:14px 16px}'
             '</style>')
 
         # [DIVERGENCIA-XAI-2 - 237ª] blocos do aprofundamento (KPIs, classificação de derrotas, aprendizado)
@@ -24858,11 +24973,13 @@ def _diagnostico_divergencias_html(diag):
                                f'<div class="dv-box-c">{_linhas_r}</div></div>')
         except Exception:
             _recon_html = ""
+        # [HTML-EXPORT] O "resumo visual em cartões" (_cartoes_html) foi REMOVIDO do exportável: era
+        # redundante com os Pareceres técnicos (que agora trazem TODAS as divergências). Mantido apenas
+        # na tela interativa. Fica de fora da montagem abaixo.
         return (f'<section id="diag-divergencias">{_css}'
                 f'<h2>🔬 Diagnóstico Inteligente das Divergências</h2>'
                 f'{_recon_html}'
                 f'{_kpis}{_box_resumo}'
-                f'{_cartoes_html}'
                 f'{_ins_html}'
                 f'{_bar_app}{_bar_ref}{_tab_rank}'
                 f'{_dist_html}'
@@ -25361,11 +25478,20 @@ def _reprocessar_rotas_divergentes(linhas, limiar_empate_km=1.0, cb_progresso=No
                 _falhas += 1
             else:
                 _sem_fresco += 1
+            # [REF-IMPOSSIVEL-DERROTA] Injeta as coordenadas oficiais (origem e destino da referência) que a
+            # conciliação já resolveu (_map_*), para que a auditoria de plausibilidade física da distância da
+            # referência funcione MESMO sem roteamento fresco (o caso impossível/implausível é exatamente um
+            # erro de dado que precisa ser flagrado sempre). Defensivo: coords ausentes → não avaliável.
+            _co_map = ((_l.get("_map_olat"), _l.get("_map_olon"))
+                       if (_l.get("_map_olat") is not None and _l.get("_map_olon") is not None) else None)
+            _cd_map = ((_l.get("_map_rlat"), _l.get("_map_rlon"))
+                       if (_l.get("_map_rlat") is not None and _l.get("_map_rlon") is not None) else None)
             _fatos_ref = _fatos_rota_divergencia({
                 "destino": _l.get("Destino Referencia"),
                 "distancia_km": _l.get("Distancia Referencia"),
                 "tempo": _l.get("Tempo Referencia"),
                 "fonte_rota": "", "balsa": "",
+                "coord_origem": _co_map, "coord_destino": _cd_map,
             })
         # ---- lado APP: valores já armazenados (decisão real) ----
         try:
@@ -30005,10 +30131,12 @@ def _html_stage_b(diag, _he):
                           ("por_faixa_vr", "Distribuição por faixa de sinuosidade (V/R)"),
                           ("por_faixa_inscritos", "Distribuição por faixa de candidatos")]:
             _out += _tabela_html_b("📊 " + _tit, ["Categoria", "Casos", "Inscritos"], _dav.get(_ch) or [], _he)
-        # árvores
+        # árvores — em bloco recolhível (não ocupa a tela por padrão; o usuário expande se quiser)
         if _arv:
-            _out += '<h3>🌳 Árvores de decisão das divergências (maior impacto)</h3>'
-            _out += "".join(_arvore_divergencia_html(a, _he) for a in _arv)
+            _out += ('<details class="dv-exp"><summary>🌳 Árvores de decisão das divergências '
+                     '(maior impacto) <span class="dv-exp-hint">(clique para expandir)</span></summary>'
+                     + "".join(_arvore_divergencia_html(a, _he) for a in _arv)
+                     + '</details>')
         return _out
     except Exception:
         return ""
