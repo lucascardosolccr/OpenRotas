@@ -22559,7 +22559,10 @@ def _conciliar_comparativo(df_app, df_ref, mapa, limiar_fuzzy=90, limiar_empate_
         _audit_ref = {"veredito": "nao_avaliavel", "rotulo": "—", "explicacao": "", "reta_ref_km": None}
         try:
             if (_olat is not None and _olon is not None and _rlat is not None and _rlon is not None):
-                _reta_ref_km = calcular_distancia_linha_reta(_olat, _olon, _rlat, _rlon)
+                # [FIX-TUPLA] calcular_distancia_linha_reta devolve (km, status) — como TODO o resto do
+                # arquivo, é preciso desempacotar o escalar. Antes pegava a TUPLA inteira, e o round(...)
+                # logo abaixo estourava "type tuple doesn't define __round__" ao anexar a referência.
+                _reta_ref_km, _ = calcular_distancia_linha_reta(_olat, _olon, _rlat, _rlon)
             _audit_ref = _auditar_distancia_referencia(
                 _dist_ref, _reta_ref_km, dist_app_viaria=a.get("Distancia"),
                 origem=str(a.get("Municipio Origem") or a.get("Origem") or ""),
