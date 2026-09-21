@@ -1909,6 +1909,47 @@ def validar():
         # cobertura nacional real (BC250 denso): muito além do artefato coarse antigo (~centenas de milhar)
         check("HIDRO-GRAFO-NACIONAL: cobertura nacional densa (> 1 mi de nós)",
               len(_C30) > 1_000_000)
+        # [MEM-GUARD] Trava a correção de OOM de produção: os nomes de aresta têm de estar na matriz
+        # esparsa _NomesAresta, NÃO num dict de ~9 mi de chaves (que somava ~1,5 GB de RAM e derrubava o
+        # host no DECIDIR). Se um refactor reintroduzir o dict, esta checagem cai antes de ir pra produção.
+        _edic30 = _g30.get("edic")
+        check("HIDRO-GRAFO-NACIONAL: nomes de aresta em matriz esparsa (_NomesAresta), não dict (anti-OOM)",
+              type(_edic30).__name__ == "_NomesAresta")
+        check("HIDRO-GRAFO-NACIONAL: teto anti-OOM de nós definido e são (_FLUVIAL_MAX_NOS >= 1 mi)",
+              getattr(m, "_FLUVIAL_MAX_NOS", 0) >= 1_000_000)
+        # A lookup por (a,b) tem de continuar correta com a matriz esparsa: aresta real → índice de nome
+        # válido; par sem aresta → default preservado (None), sem exceção. Valida a API que substituiu o dict.
+        _M30 = _g30.get("M")
+        _ok_edge30 = False
+        _ok_default30 = False
+        if _M30 is not None and type(_edic30).__name__ == "_NomesAresta":
+            try:
+                import numpy as _np30
+                _indptr30 = _M30.indptr
+                _indices30 = _M30.indices
+                _n_nomes30 = len(_g30.get("names") or [])
+                _srcs30 = _np30.nonzero(_np30.diff(_indptr30))[0][:5000]  # nós com pelo menos 1 aresta
+                _s30 = None
+                for _s in _srcs30:
+                    _s = int(_s)
+                    _s30 = _s
+                    for _k in range(int(_indptr30[_s]), int(_indptr30[_s + 1])):
+                        _d = int(_indices30[_k])
+                        _ni = _edic30.get((_s, _d))
+                        if _ni is not None:
+                            _ok_edge30 = (0 <= _ni < _n_nomes30)
+                            break
+                    if _ok_edge30:
+                        break
+                # par garantidamente sem aresta (laço _s,_s não existe na rede) → default preservado
+                if _s30 is not None:
+                    _ok_default30 = (_edic30.get((_s30, _s30), "SENTINELA") == "SENTINELA")
+            except Exception:
+                pass
+        check("HIDRO-GRAFO-NACIONAL: _NomesAresta.get resolve aresta real → índice de nome válido",
+              _ok_edge30)
+        check("HIDRO-GRAFO-NACIONAL: _NomesAresta.get em par sem aresta → default (None), sem exceção",
+              _ok_default30)
         _r30 = m._fluvial_rota_real_sob_demanda(-3.10, -60.02, -3.14, -58.44)  # Manaus → Itacoatiara
         check("HIDRO-GRAFO-NACIONAL: roteia o corredor do Amazonas (rota real, não None)",
               isinstance(_r30, dict) and _r30.get("km") is not None)

@@ -27169,6 +27169,11 @@ _ARQ_GRAFO_FLUVIAL = "amazonia_fluvial.pkl.gz"   # arquivo local (mesmo diretór
 # preferido automaticamente; caso contrário, mantém-se o grafo de Amazônia (comportamento inalterado).
 # O construtor (construir_grafo_hidrografia_nacional.py) gera este arquivo no formato exato a partir da release.
 _ARQ_GRAFO_FLUVIAL_NACIONAL = "hidrografia_nacional.pkl.gz"
+# [MEM-GUARD] Teto de nós do grafo fluvial: acima disso o loader degrada para SEM roteamento fluvial
+# (fail-open) em vez de arriscar OOM no host. Backstop para grafo pathológico (ex.: 21 mi de vértices
+# brutos sem snap em grade); todas as grades legítimas (até 0.004 ≈ 9,56 mi) passam. O nacional 0.010
+# em produção tem ~3,97 mi (~570 MB), bem abaixo.
+_FLUVIAL_MAX_NOS = 10_000_000
 
 
 def _arq_grafo_fluvial():
@@ -27262,6 +27267,18 @@ def _carregar_grafo_fluvial(url, arq):
         _G = _pk.load(_gz.GzipFile(fileobj=_io.BytesIO(_bytes)))
         _C = _G['coords']; _E = _G['e']; _W = _G['w']; _EN = _G['en']; _NMS = _G['names']
         _N = len(_C)
+        # [MEM-GUARD] Rede de segurança anti-OOM: o grafo é carregado inteiro (cKDTree + csr) na RAM do
+        # host. Um grafo grande demais (regeneração com grade fininha, ou bug que não fez o snap em grade)
+        # poderia estourar a memória e derrubar a app. Acima do teto, degrada para SEM roteamento fluvial
+        # (fail-open — a app segue de pé) em vez de arriscar OOM. O grafo nacional 0.010 tem ~3,97 mi de
+        # nós (~570 MB), bem abaixo do teto; grades legítimas (até 0.004 ≈ 9,56 mi) ainda passam.
+        _log_mem = "%.0f MB estimados" % ((_C.nbytes + _E.nbytes + _W.nbytes + _EN.nbytes) / 1e6 * 4.0)
+        if _N > _FLUVIAL_MAX_NOS:
+            logger.error("[MEM-GUARD] grafo fluvial com %d nós excede o teto de %d — roteamento fluvial "
+                         "DESATIVADO para proteger a memória do host (app segue normal). Regere o grafo "
+                         "com --grid maior (ver construir_grafo_hidrografia_nacional.py)." % (_N, _FLUVIAL_MAX_NOS))
+            return None
+        logger.info("[V368-FLUVIAL] grafo fluvial: %d nós, %d arestas (%s)" % (_N, len(_E), _log_mem))
         _row = _np.concatenate([_E[:, 0], _E[:, 1]]); _col = _np.concatenate([_E[:, 1], _E[:, 0]])
         _dat = _np.concatenate([_W, _W])
         _M = _csr((_dat, (_row, _col)), shape=(_N, _N))
