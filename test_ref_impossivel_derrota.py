@@ -87,3 +87,8 @@ def test_reprocesso_flagra_impossivel_sem_roteamento_fresco(monkeypatch):
     assert 'class="dv-sub"' in html
     assert "Derrotas — a referência" in html
     assert html.count('class="dv-caso"') == len(diag.get("analises", []))
+    # a reconciliação desconta as derrotas nominais (não recomenda adotar distância impossível)
+    _pos = m._resumo_pos_diagnostico_divergencias(diag)
+    _rotulos = [k[0] for k in _pos.get("kpis", [])]
+    assert any("nominais" in r for r in _rotulos), "reconciliação deve destacar as derrotas nominais"
+    assert any("não devem ser adotadas" in ln or "descartadas" in ln for ln in _pos.get("linhas", []))

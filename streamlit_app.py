@@ -25625,6 +25625,13 @@ def _resumo_pos_diagnostico_divergencias(diag):
         _emp = int(_res.get("empates", 0) or 0)
         _ins_perda = int(_res.get("inscritos_em_perda", 0) or 0)
         _ins_benef = int(_res.get("inscritos_beneficiados_app", 0) or 0)
+        # [REF-IMPOSSIVEL-DERROTA] parte das "vitórias da referência" é apenas nominal (distância
+        # fisicamente impossível/implausível): NÃO são candidatas a adotar. A reconciliação distingue as
+        # genuínas das nominais para não recomendar adotar um número que nenhuma estrada alcança.
+        _nom = int(_res.get("derrotas_nominais_ref_invalida", 0) or 0)
+        _ins_nom = int(_res.get("inscritos_derrotas_nominais", 0) or 0)
+        _ref_real = max(0, _ref - _nom)
+        _ins_perda_real = max(0, _ins_perda - _ins_nom)
 
         def _br(x, casas=0):
             try:
@@ -25660,7 +25667,8 @@ def _resumo_pos_diagnostico_divergencias(diag):
             except (TypeError, ValueError):
                 pass
 
-        houve_ajuste = _ref > 0 or _n_ref_vence_rota > 0
+        # ajuste real do placar só existe se houver vitória GENUÍNA da referência (nominais não contam).
+        houve_ajuste = _ref_real > 0 or max(0, _n_ref_vence_rota - _nom) > 0
 
         # ---- KPIs de reconciliação ----
         kpis = []
@@ -25669,25 +25677,43 @@ def _resumo_pos_diagnostico_divergencias(diag):
                      "Municípios divergentes cuja rota da referência foi recalculada agora, com os mesmos motores."))
         kpis.append(("Confirmadas a favor da aplicação", f"{_br(_app)}",
                      "Após rotear de novo, o Índice de Qualidade multicritério ainda favorece a aplicação."))
-        kpis.append(("Onde a referência é melhor", f"{_br(_ref)}",
-                     "Casos que o reprocessamento mostrou serem genuinamente melhores na referência — candidatos a adotar."))
-        if _ins_perda > 0:
-            kpis.append(("Candidatos em rota pior", f"{_br(_ins_perda)}",
-                         "Inscritos nos municípios onde a referência oferece deslocamento menor."))
+        kpis.append(("Onde a referência é melhor", f"{_br(_ref_real)}",
+                     "Casos que o reprocessamento mostrou serem GENUINAMENTE melhores na referência — "
+                     "candidatos a adotar (já descontadas as derrotas apenas nominais)."))
+        if _nom > 0:
+            kpis.append(("🚫 Derrotas apenas nominais", f"{_br(_nom)}",
+                         "Vitórias da referência com distância fisicamente impossível/implausível (menor que a "
+                         "linha reta) — erro de dado, NÃO adotar."))
+        if _ins_perda_real > 0:
+            kpis.append(("Candidatos em rota pior", f"{_br(_ins_perda_real)}",
+                         "Inscritos nos municípios onde a referência oferece deslocamento menor (excluídas as "
+                         "derrotas apenas nominais)."))
 
         # ---- narrativa curta ----
         linhas = []
         if _roteadas > 0:
             _txt = (f"Reroteei **{_br(_roteadas)}** das **{_br(_n_div)}** divergências com os mesmos motores. ")
-            if _ref == 0:
+            if _ref_real == 0:
                 _txt += ("Nenhuma se sustentou como vantagem real da referência — **o placar do topo se "
                          "confirma** e a aplicação segue melhor ou empatada em todos os casos divergentes.")
+                if _nom > 0:
+                    _txt += (f" (**{_br(_nom)}** 'vitória(s)' da referência eram apenas nominais — distância "
+                             f"fisicamente impossível/implausível — e foram descartadas.)")
             else:
-                _txt += (f"Destas, **{_br(_ref)}** se confirmaram como genuinamente melhores na referência "
-                         f"(afetando **{_br(_ins_perda)}** candidatos), **{_br(_app)}** seguem a favor da "
+                _txt += (f"Destas, **{_br(_ref_real)}** se confirmaram como genuinamente melhores na referência "
+                         f"(afetando **{_br(_ins_perda_real)}** candidatos), **{_br(_app)}** seguem a favor da "
                          f"aplicação e **{_br(_emp)}** empataram. **É aqui que o placar do topo merece um "
-                         f"ajuste fino**: adotar essas {_br(_ref)} escolhas encurta o deslocamento desses candidatos.")
+                         f"ajuste fino**: adotar essas {_br(_ref_real)} escolhas encurta o deslocamento desses candidatos.")
+                if _nom > 0:
+                    _txt += (f" Outras **{_br(_nom)}** 'vitória(s)' da referência eram apenas nominais "
+                             f"(distância impossível/implausível) e **não devem ser adotadas**.")
             linhas.append(_txt)
+        elif _nom > 0:
+            # roteamento fresco não rodou (falha/escala), mas as derrotas nominais já são conhecidas pela
+            # auditoria física — vale registrar que não devem ser adotadas mesmo sem reroteamento.
+            linhas.append(f"**{_br(_nom)}** 'vitória(s)' da referência são apenas nominais (distância "
+                          f"fisicamente impossível/implausível, menor que a linha reta) e **não devem ser "
+                          f"adotadas** — descarte-as ao ajustar o placar.")
 
         if _sum_impacto and abs(_sum_impacto) > 0:
             if _sum_dif > 0:
