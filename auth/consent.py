@@ -44,6 +44,21 @@ def disponivel() -> bool:
         return True
 
 
+def padrao_opt_out() -> bool:
+    """True quando a persistência da sessão é tratada como FUNCIONAL/ESSENCIAL (default): mantida a
+    menos que o usuário recuse (opt-OUT). É a postura que cumpre o requisito "não deslogar sozinho" —
+    manter o usuário conectado com a credencial que ELE mesmo criou ao logar é execução do serviço que
+    ele pediu (LGPD Art. 7). O dono pode voltar ao opt-IN (nada guardado até aceitar) com o secret
+    `PERSISTIR_SESSAO_PADRAO = "opt_in"`. Fail-open -> opt-out (mantém logado)."""
+    if not _OK:
+        return False
+    try:
+        _v = str(st.secrets.get("PERSISTIR_SESSAO_PADRAO", "opt_out")).strip().lower()
+        return _v not in ("opt_in", "opt-in", "optin", "in", "consentimento", "consent")
+    except Exception:
+        return True
+
+
 def _interpretar(valor) -> "bool | None":
     """'sim'->True, 'nao'->False, qualquer outra coisa (inclusive ausência) -> None. PURO."""
     _v = str(valor if valor is not None else "").strip().lower()
@@ -86,16 +101,19 @@ def registrar(aceito: bool) -> None:
 
 
 _TEXTO_DETALHE = (
-    "**O que guardamos e por quê.** Ao aceitar, guardamos no **seu próprio navegador** "
-    "(`sessionStorage`, que some ao fechar a aba) um identificador da sua sessão para **manter você "
-    "conectado ao recarregar a página** — assim um F5 ou uma reconexão não exigem novo login. Um "
-    "**cookie** guarda **apenas a sua escolha** aqui (sim/não), por 12 meses, para não perguntarmos "
-    "de novo.\n\n"
-    "**Base legal (LGPD).** Consentimento (Art. 7, I) para essa conveniência de manter a sessão. Os "
-    "cookies técnicos do Streamlit (sessão da aplicação) são estritamente necessários para o serviço "
-    "funcionar e não dependem desta escolha.\n\n"
+    "**O que guardamos e por quê.** Para **manter você conectado neste dispositivo** — sem deslogar "
+    "sozinho a cada recarregamento, reconexão ou reinício do servidor —, guardamos no **seu próprio "
+    "navegador** (armazenamento local, que fica só no seu aparelho) um identificador da sua sessão. "
+    "Ele **nunca é enviado automaticamente a nenhum servidor** (ao contrário de um cookie) e só vale "
+    "enquanto o servidor de login o aceitar. Um **cookie** guarda **apenas a sua escolha** aqui "
+    "(manter/não), por 12 meses, para não perguntarmos de novo.\n\n"
+    "**Base legal (LGPD).** Manter a sessão ativa é **necessário para executar o serviço que você "
+    "pediu ao fazer login** (Art. 7) — por isso vem ligado por padrão. Você pode **desligar quando "
+    "quiser**; nesse caso passará a fazer login a cada recarregamento. Os cookies técnicos do "
+    "Streamlit (sessão da aplicação) também são estritamente necessários e não dependem desta escolha.\n\n"
     "**Não fazemos rastreamento** nem publicidade, e **não compartilhamos** nada com terceiros. Você "
-    "pode **revogar quando quiser** no seu **Perfil → Privacidade**."
+    "pode **desligar/revogar quando quiser** no seu **Perfil → Privacidade** — o registro é apagado "
+    "na hora e o logout também o remove."
 )
 
 
@@ -107,17 +125,18 @@ def banner() -> bool:
         return False
     try:
         with st.container(border=True):
-            st.markdown("🍪 **Cookies e sua sessão** — Podemos **manter você conectado neste "
-                        "navegador** (some ao fechar a aba) para você não precisar relogar a cada "
-                        "recarregamento. É **opcional** e você decide agora:")
+            st.markdown("🔒 **Sua sessão neste dispositivo** — Para você **não ser deslogado sozinho**, "
+                        "mantemos você conectado **neste dispositivo** (guardado só no seu navegador, "
+                        "nunca compartilhado). Vem **ligado por padrão** por ser necessário ao login "
+                        "que você pediu; você pode desligar quando quiser:")
             with st.expander("Como usamos seus dados (LGPD)"):
                 st.markdown(_TEXTO_DETALHE)
             _c1, _c2, _sp = st.columns([1.2, 1.2, 2])
-            _sim = _c1.button("Aceitar e manter conectado", type="primary",
+            _sim = _c1.button("Entendi, manter conectado", type="primary",
                               key="or_consent_aceitar", use_container_width=True)
-            _nao = _c2.button("Somente o essencial", key="or_consent_recusar",
+            _nao = _c2.button("Não manter a sessão", key="or_consent_recusar",
                               use_container_width=True,
-                              help="Não guarda a sessão; você faz login a cada recarregamento.")
+                              help="Desliga a persistência; você fará login a cada recarregamento.")
         if _sim:
             registrar(True)
             return True
@@ -139,9 +158,11 @@ def controle_preferencias(ao_revogar=None) -> None:
     try:
         _atual = decisao()
         st.markdown("#### 🔒 Privacidade e cookies")
-        _rotulo = {True: "✅ Permitido — sua sessão é mantida neste navegador (some ao fechar a aba).",
-                   False: "🚫 Não permitido — você faz login a cada recarregamento.",
-                   None: "❔ Ainda não definido."}[_atual]
+        _rotulo_padrao = ("✅ Ligado (padrão) — sua sessão é mantida neste dispositivo."
+                          if padrao_opt_out() else "❔ Ainda não definido — você faz login a cada recarregamento.")
+        _rotulo = {True: "✅ Ligado — sua sessão é mantida neste dispositivo.",
+                   False: "🚫 Desligado — você faz login a cada recarregamento.",
+                   None: _rotulo_padrao}[_atual]
         st.caption(f"Manter a sessão no navegador: **{_rotulo}**")
         with st.expander("Como usamos seus dados (LGPD)"):
             st.markdown(_TEXTO_DETALHE)

@@ -81,6 +81,10 @@ def _iniciar_sessao(user_id: str, email: str, access_token: str, refresh_token: 
     st.session_state["auth_access_token"] = access_token
     st.session_state["auth_refresh_token"] = refresh_token
     st.session_state["auth_login_ts"] = time.time()
+    # [PERSISTÊNCIA NO NAVEGADOR] logou com sucesso -> reseta os guards de reidratação para que um
+    # reinício/reconexão futuro possa restaurar de novo (sem herdar um "desistiu" de antes do login).
+    for _k in ("_reidratacao_desistiu", "_reidratar_ini_ts", "_reidratar_ciclos"):
+        st.session_state.pop(_k, None)
     # [COMPARTILHAR - 448ª] invalida o cache do badge de recebidos: a contagem deve refletir a conta
     # que ACABOU de entrar (evita herdar a contagem/estado de uma sessão anterior neste navegador).
     st.session_state.pop("_badge_recebidos", None)
@@ -918,26 +922,65 @@ def abrir_perfil():
     st.session_state["_mostrar_perfil"] = True
 
 
-def _tentar_reidratar_sessao() -> bool:
-    """[PERSISTÊNCIA NO NAVEGADOR] Reidrata a sessão a partir da sessionStorage (F5/reconexão com a
-    aba aberta). Devolve True se conseguiu — o app deve rerodar já autenticado. Fail-open e À PROVA
-    DE LOOP: o componente de leitura devolve None na 1ª renderização (só monta e dispara um rerun) e
-    o valor na seguinte; se os tokens forem DEFINITIVAMENTE rejeitados, limpa o navegador e desiste
-    (mostra login) — nunca reidrata em círculos."""
+# Janela máxima que o portão espera o storage do navegador responder antes de cair na tela de login.
+# À PROVA DE TRAVA: se o componente JS nunca resolver (ausente/quebrado), após esta janela mostramos o
+# login normalmente — nunca prendemos o usuário num spinner. Cobre com folga o mount normal (~1 rerun).
+_REIDRATAR_ESPERA_MAX_S = 3.0
+_REIDRATAR_CICLOS_MAX = 5
+
+
+def _reidratar_status() -> str:
+    """[PERSISTÊNCIA NO NAVEGADOR] Tenta reidratar a sessão a partir do storage do navegador
+    (F5/reconexão/reinício do servidor). Devolve:
+      • "ok"       — reidratou e validou; o chamador deve `st.rerun()` já autenticado;
+      • "pendente" — o componente de leitura ainda está montando; mostre "restaurando…" e aguarde;
+      • "nada"     — não havia sessão guardada, foi rejeitada, ou o tempo/ciclos de espera esgotaram.
+    Fail-open e À PROVA DE LOOP/TRAVA: limita ciclos e tempo; se os tokens forem DEFINITIVAMENTE
+    rejeitados, limpa o navegador e desiste (mostra login) — nunca reidrata em círculos nem trava."""
     if esta_autenticado() or st.session_state.get("_reidratacao_desistiu"):
-        return False
-    _rest = browser_session.tentar_restaurar()
-    if not _rest:
-        return False
-    _iniciar_sessao(_rest["user_id"], _rest["email"], _rest["access_token"], _rest["refresh_token"])
+        return "nada"
+    _st = browser_session.restaurar_status()
+    if _st == "pendente":
+        # bounda a espera: conta ciclos e relógio; estourou qualquer um -> desiste e mostra login.
+        _ini = st.session_state.get("_reidratar_ini_ts")
+        if _ini is None:
+            st.session_state["_reidratar_ini_ts"] = time.time()
+            _ini = st.session_state["_reidratar_ini_ts"]
+        _ciclos = int(st.session_state.get("_reidratar_ciclos", 0)) + 1
+        st.session_state["_reidratar_ciclos"] = _ciclos
+        if (time.time() - _ini) > _REIDRATAR_ESPERA_MAX_S or _ciclos > _REIDRATAR_CICLOS_MAX:
+            st.session_state["_reidratacao_desistiu"] = True
+            return "nada"
+        return "pendente"
+    if not isinstance(_st, dict):
+        return "nada"
+    _iniciar_sessao(_st["user_id"], _st["email"], _st["access_token"], _st["refresh_token"])
     # valida/renova na hora: o access_token guardado pode já ter expirado (renova via refresh_token).
     st.session_state["auth_last_check_ts"] = 0.0
     if _sessao_expirada_no_servidor():
         encerrar_sessao()                                  # refresh definitivamente rejeitado -> lixo
         st.session_state["_reidratacao_desistiu"] = True   # não tenta de novo neste carregamento
-        return False
+        return "nada"
     st.session_state["auth_last_check_ts"] = time.time()
-    return True
+    return "ok"
+
+
+def _tentar_reidratar_sessao() -> bool:
+    """Compat: True somente quando reidratou-e-validou ("ok"); "pendente"/"nada" -> False. Mantido
+    para chamadores/telas que só querem saber "consegui logar agora?"."""
+    return _reidratar_status() == "ok"
+
+
+def _tela_restaurando():
+    """Tela leve exibida enquanto o storage do navegador é lido (evita piscar o login antes de
+    reidratar). Substitui o conteúdo e para a execução; o rerun do próprio componente JS reprocessa."""
+    _col_esq, _col_mid, _col_dir = st.columns([1, 2, 1])
+    with _col_mid:
+        st.markdown("<div style='height:14vh'></div>", unsafe_allow_html=True)
+        with st.spinner("Restaurando sua sessão…"):
+            # o spinner é só visual; a re-execução vem do componente JS quando o valor chega.
+            pass
+        st.caption("Mantendo você conectado — isto leva só um instante.")
 
 
 def exigir_autenticacao():
@@ -945,11 +988,15 @@ def exigir_autenticacao():
     Bloqueia (st.stop()) enquanto não houver sessão válida; nada abaixo desta chamada
     executa para quem não estiver autenticado."""
     if not esta_autenticado():
-        # [PERSISTÊNCIA NO NAVEGADOR] antes de exigir novo login, tenta reidratar do navegador —
-        # assim um F5 / reconexão com a aba aberta NÃO desloga. Fail-open: se não houver sessão
-        # guardada (ou o recurso estiver off), cai direto na tela de login como antes.
-        if _tentar_reidratar_sessao():
+        # [PERSISTÊNCIA NO NAVEGADOR] antes de exigir novo login, tenta reidratar do navegador — assim
+        # um F5 / reconexão / reinício do servidor NÃO desloga. Fail-open e à prova de trava (tempo e
+        # ciclos limitados): "pendente" mostra "restaurando…" por um instante; "nada" cai no login.
+        _rid = _reidratar_status()
+        if _rid == "ok":
             st.rerun()
+        if _rid == "pendente":
+            _tela_restaurando()
+            st.stop()
         _renderizar_tela_autenticacao()
         return  # inalcançável (st.stop() acima), mantido por clareza de leitura
 
@@ -971,23 +1018,29 @@ def exigir_autenticacao():
     # o usuário CONSENTIR (Art. 7, I). Enquanto não decidir, mostramos um banner e NÃO persistimos.
     _consent = consent.decisao()
     _at = st.session_state.get("auth_access_token")
-    if _consent is True:
-        # consentiu: mantém a sessionStorage em dia com o token ATUAL (login/renovação), só quando o
-        # access_token muda (sem churn a cada rerun) — assim um F5 reidrata o par mais recente.
-        if _at and st.session_state.get("_ultimo_token_persistido") != _at:
-            browser_session.salvar(st.session_state.get("auth_user_id", ""),
-                                   st.session_state.get("auth_email", ""),
-                                   _at, st.session_state.get("auth_refresh_token", ""))
-            st.session_state["_ultimo_token_persistido"] = _at
-    elif _consent is False:
+    # Persistência por PADRÃO (opt-out): manter o usuário conectado é necessário para executar o
+    # login que ele pediu — só NÃO persiste se ele recusou explicitamente (ou se o dono ligou o modo
+    # opt-in via secret). É isto que cumpre o requisito "não deslogar sozinho".
+    _persistir = (_consent is True) or (_consent is None and consent.padrao_opt_out())
+    if _consent is False:
         # recusou/revogou: garante que NADA fica guardado no navegador (uma vez só, sem churn).
         if not st.session_state.get("_consent_navegador_limpo"):
             browser_session.limpar()
             st.session_state["_consent_navegador_limpo"] = True
-    elif consent.disponivel():
-        # ainda não decidiu: banner de consentimento (não bloqueante). O clique grava a escolha e o
-        # rerun natural do Streamlit aplica na sequência. Nada é persistido até então.
-        consent.banner()
+    else:
+        # não está mais recusado -> permite limpar de novo se ele revogar no futuro (reseta o guard).
+        st.session_state.pop("_consent_navegador_limpo", None)
+        if _persistir and _at and st.session_state.get("_ultimo_token_persistido") != _at:
+            # mantém o storage do navegador em dia com o token ATUAL (login/renovação), só quando o
+            # access_token muda (sem churn a cada rerun) — assim um F5/reinício reidrata o par mais recente.
+            browser_session.salvar(st.session_state.get("auth_user_id", ""),
+                                   st.session_state.get("auth_email", ""),
+                                   _at, st.session_state.get("auth_refresh_token", ""))
+            st.session_state["_ultimo_token_persistido"] = _at
+        # ainda não decidiu: banner informativo (não bloqueante) para transparência LGPD e para
+        # permitir DESLIGAR. Com opt-out já estamos persistindo; com opt-in é o pedido de consentimento.
+        if _consent is None and consent.disponivel():
+            consent.banner()
 
     # [§9 da missão - PERFIL] mesma mecânica do portão: enquanto a flag estiver ligada, a
     # tela de perfil substitui o conteúdo normal (st.stop() ao final) — nunca é sobreposta

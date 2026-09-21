@@ -1894,6 +1894,18 @@ def validar():
           m._mapa_leaflet_hidrografia_ana({"rios": [], "massas": []}, rotas=[]) == "")
 
     print("== 30) HIDRO-GRAFO-NACIONAL — grafo fluvial deployado roteia o corredor canônico (462ª) ==")
+    # [REGRESSÃO NUMPY-TRUTHINESS] As varreduras fluviais faziam `_C = g.get("C") or []` — como C é um
+    # ndarray, `ndarray or []` força bool(ndarray) e levanta "The truth value of an array ... is
+    # ambiguous", que era engolido pelo except da própria função -> retornava {} -> feature MORTA em
+    # silêncio (6 ocorrências no log de produção). Guarda determinístico: o idiom não pode voltar.
+    import inspect as _insp30
+    try:
+        _src_sweep30 = (_insp30.getsource(m._fluvial_sweep_otimizado)
+                        + _insp30.getsource(m._fluvial_sweep_resgate))
+    except Exception:
+        _src_sweep30 = ""
+    check("FLUVIAL-SWEEP: sem idiom numpy-ambíguo `get(\"C\") or []` (regressão de truthiness que matava a varredura)",
+          bool(_src_sweep30) and 'get("C") or []' not in _src_sweep30 and "get('C') or []" not in _src_sweep30)
     # Blindagem do artefato hidrografia_nacional.pkl.gz (IBGE BC250/ANA): SE presente, o grafo tem de
     # (a) carregar no contrato do app e (b) rotear Manaus→Itacoatiara medindo trecho navegável real e
     # nomeando o Rio Amazonas. FAIL-OPEN: sem o arquivo (ex.: checkout sem o .pkl.gz), a seção é pulada

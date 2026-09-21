@@ -28048,7 +28048,11 @@ def _fluvial_sweep_otimizado(resultados, coords_f, g, topk_map=None, max_pares=3
         import math
         from scipy.sparse.csgraph import connected_components
         
-        _C = g.get("C") or []
+        # [FIX-NUMPY-TRUTHINESS] _C é um ndarray (N,2); `ndarray or []` força bool(ndarray) e levanta
+        # "The truth value of an array ... is ambiguous", derrubando TODA a varredura fluvial otimizada
+        # (caía no except -> retornava {}, feature morta silenciosamente). O guard acima já garante que
+        # C não é None e tem len>0, então basta pegá-lo direto.
+        _C = g.get("C")
         _M = g.get("M")
         _tree = g.get("tree")
         _edic = g.get("edic")
@@ -40374,7 +40378,9 @@ def _fluvial_sweep_resgate(resultados, coords_f, g, topk_map=None, max_pares=200
             if _lat and _lon and _lat != 0.0 and _lon != 0.0:
                 munic_map[(_nm, _uf)] = (_lat, _lon)
         # For each origin in topk_map (reatribuíveis), find ALL hubs within max_reta_km
-        _C = g.get("C") or []
+        # [FIX-NUMPY-TRUTHINESS] `ndarray or []` força bool(ndarray) -> exceção; o guard acima já
+        # garante C não-None e não-vazio, então pega direto (evita derrubar a varredura de resgate).
+        _C = g.get("C")
         _tree = g.get("tree")
         _out = {}
         _tested = 0
