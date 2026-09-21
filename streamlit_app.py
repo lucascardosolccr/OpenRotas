@@ -24785,6 +24785,16 @@ def _diagnostico_divergencias_html(diag):
         _recs = _ag.get("recomendacoes", [])
         _n = _ag.get("n_divergencias", len(_analises))
 
+        # [HTML-EXPORT] Conversor único: escapa e transforma **negrito** → <b> e quebras de linha → <br>.
+        # Insights, recomendações e pareceres usam markdown na tela; sem isso, o exportável mostrava os
+        # asteriscos literais. Escape ANTES do <b> (sem injeção).
+        import re as _re_md
+
+        def _fmt_md(_txt):
+            _e = _he.escape(str(_txt or ""))
+            _e = _re_md.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", _e)
+            return _e.replace("\n", "<br>")
+
         # ---- KPIs ----
         def _kpi(v, r):
             return (f'<div class="dv-kpi"><div class="dv-kpi-v">{v}</div>'
@@ -24853,7 +24863,7 @@ def _diagnostico_divergencias_html(diag):
         # ---- insights ----
         _ins_html = ""
         if _ins:
-            _lis = "".join(f"<li>{_he.escape(x)}</li>" for x in _ins)
+            _lis = "".join(f"<li>{_fmt_md(x)}</li>" for x in _ins)
             _ins_html = f'<h3>🔎 Insights automáticos</h3><ul class="dv-ins">{_lis}</ul>'
 
         # ---- oportunidades ----
@@ -24864,7 +24874,7 @@ def _diagnostico_divergencias_html(diag):
         # ---- recomendações ----
         _rec_html = ""
         if _recs:
-            _lis = "".join(f"<li>{_he.escape(x)}</li>" for x in _recs)
+            _lis = "".join(f"<li>{_fmt_md(x)}</li>" for x in _recs)
             _rec_html = f'<h3>✅ Recomendações automáticas</h3><ul class="dv-rec">{_lis}</ul>'
 
         # ---- pareceres técnicos (TODAS as divergências, por impacto decrescente) ----
@@ -24872,15 +24882,6 @@ def _diagnostico_divergencias_html(diag):
         # divergentes (ordenadas por impacto), dentro de um bloco recolhível para não ocupar a tela.
         _ordenadas = sorted(_analises, key=lambda a: abs((a.get("Diferença (km)") or 0.0)
                             * (int(a.get("Inscritos") or 0) or 1)), reverse=True)
-        import re as _re_par
-
-        def _fmt_parecer(_txt):
-            # escapa e converte **negrito** → <b> e quebras de linha → <br>, para o parecer (que usa
-            # markdown na tela) ler bem também no HTML exportável — sem injeção (escape antes).
-            _e = _he.escape(str(_txt or ""))
-            _e = _re_par.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", _e)
-            return _e.replace("\n", "<br>")
-
         _pareceres = ""
         for a in _ordenadas:
             _cor = a.get("_cor", "#64748b")
@@ -24899,7 +24900,7 @@ def _diagnostico_divergencias_html(diag):
                 f'<div class="dv-caso-h"><b>{_he.escape(str(a.get("Município")))}/{_he.escape(str(a.get("UF")))}</b>'
                 f' · {_he.escape(str(a.get("Categoria")))} · <span class="dv-tag">Vantagem: {_he.escape(_venc)}</span></div>'
                 f'{_ri_html}'
-                f'<div class="dv-caso-p">{_fmt_parecer(a.get("Parecer Técnico", ""))}</div>'
+                f'<div class="dv-caso-p">{_fmt_md(a.get("Parecer Técnico", ""))}</div>'
                 f'{_mg_html}'
                 f'<div class="dv-caso-hip"><b>Hipóteses técnicas:</b><ul>{_hip_html}</ul></div>'
                 f'<div class="dv-caso-rec">{_he.escape(a.get("Recomendação", ""))}</div>'
