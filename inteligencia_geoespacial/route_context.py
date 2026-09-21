@@ -739,9 +739,11 @@ def resumo_confiabilidade(ctx):
             alertas.append("%d ponte(s) móvel(is) (pode abrir e interromper o tráfego): %s"
                            % (len(_movel), ", ".join(_movel[:4])))
 
+        # reusa a constante canônica (mesma do motor de anomalias) — evita divergência entre a
+        # contagem de confiabilidade e as anomalias quando um novo valor de domínio IBGE surgir.
+        _nao_oper = {s.strip().lower() for s in _SITUACOES_FISICAS_NAO_OPERACIONAIS}
         _ferr_no = _dedup(getattr(f, "nome", None) for f in ferrovias
-                          if (getattr(f, "situacao_fisica", "") or "").strip().lower()
-                          in ("abandonada", "destruída", "destruida", "em construção", "em construcao", "planejada"))
+                          if (getattr(f, "situacao_fisica", "") or "").strip().lower() in _nao_oper)
         if _ferr_no:
             alertas.append("%d ferrovia(s) não-operacional(is): %s"
                            % (len(_ferr_no), ", ".join(_ferr_no[:4])))

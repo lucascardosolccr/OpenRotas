@@ -5494,7 +5494,10 @@ def _secao_inteligencia_geografica_html(df):
         _qt_rod = pd.to_numeric(df.get("QT_RODOVIAS"), errors="coerce").fillna(0)
         _qt_ferro = pd.to_numeric(df.get("QT_FERROVIAS"), errors="coerce").fillna(0)
         _qt_anom = pd.to_numeric(df.get("QT_ANOMALIAS"), errors="coerce").fillna(0)
-        _qt_alertas = pd.to_numeric(df.get("QT_ALERTAS_CONFIABILIDADE"), errors="coerce").fillna(0)
+        # defensivo: um df enriquecido por versão anterior tem QT_RIOS mas pode não ter esta coluna —
+        # df.get(ausente) devolve None e pd.to_numeric(None) vira escalar (sem .fillna). Série de zeros.
+        _qt_alertas = (pd.to_numeric(df["QT_ALERTAS_CONFIABILIDADE"], errors="coerce").fillna(0)
+                       if "QT_ALERTAS_CONFIABILIDADE" in df.columns else pd.Series(0, index=df.index))
 
         _n_com_rio = int((_qt_rios > 0).sum())
         _n_com_ponte = int((_qt_pontes > 0).sum())
@@ -5620,10 +5623,14 @@ def _secao_inteligencia_geografica_html(df):
                     # regerado em vários reruns; sem isso, recomputaria analisar_rota das top-6 toda vez.
                     _nmo = str(_r.get(_cno, "Origem")) if _cno else "Origem"
                     _nmd = str(_r.get(_cnd, "Destino")) if _cnd else "Destino"
-                    _kperf = (round(_lo, 5), round(_la, 5), round(_ld, 5), round(_lad, 5), _nmo, _nmd)
+                    # inclui distancia_km na chave: mesmas coords com distância diferente não podem
+                    # reusar um SVG cujas posições foram escaladas pela outra distância.
+                    _kperf = (round(_lo, 5), round(_la, 5), round(_ld, 5), round(_lad, 5),
+                              round(_di, 1) if _di is not None else None, _nmo, _nmd)
                     _svg_p = _PERFIL_HTML_MEMO.get(_kperf)
                     if _svg_p is None:
-                        _ctx_p = _geo_route_context.analisar_rota((_lo, _la), (_ld, _lad), distancia_km=_di)
+                        # analisar_rota espera (LAT, LON) — passar (_la, _lo), não (_lo, _la).
+                        _ctx_p = _geo_route_context.analisar_rota((_la, _lo), (_lad, _ld), distancia_km=_di)
                         if _ctx_p is None:
                             continue
                         try:
@@ -5663,7 +5670,10 @@ def _secao_inteligencia_geografica_html(df):
                         _txt = str(_r.get(_alert_col, "") or "").strip()
                         if not _txt or _txt.lower() in ("nan", "none"):
                             continue
-                        _nal = int(pd.to_numeric(pd.Series([_r.get("QT_ALERTAS_CONFIABILIDADE")]), errors="coerce").fillna(0).iloc[0])
+                        try:
+                            _nal = int(float(_r.get("QT_ALERTAS_CONFIABILIDADE") or 0))
+                        except (TypeError, ValueError):
+                            _nal = 0
                         _linhas_al.append(
                             f"<tr><td>{_he2.escape(str(_r.get(_col_o2, '—')))}</td>"
                             f"<td>{_he2.escape(str(_r.get(_col_d2, '—')))}</td>"
@@ -47913,6 +47923,7 @@ if _secao == _SECOES[0]:   # tab_individual
                             # quando a rota muda de fato. Elimina o gargalo sem alterar o resultado.
                             _chave_gi = (round(float(_lat_o_gi), 5), round(float(_lon_o_gi), 5),
                                          round(float(_lat_d_gi), 5), round(float(_lon_d_gi), 5),
+                                         round(float(_dist_gi), 1) if _dist_gi is not None else None,
                                          _geom_gi is not None)
                             if (st.session_state.get('_geo_ctx_chave') == _chave_gi
                                     and st.session_state.get('ultima_rota_individual_geo') is not None):
