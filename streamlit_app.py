@@ -44915,7 +44915,22 @@ def _ler_planilha_upload(conteudo_bytes):
     Endereçado por conteúdo (bytes) → trocar o arquivo INVALIDA corretamente o cache; o parse é o mesmo
     (mesmo engine calamine), então o DataFrame é idêntico. st.cache_data devolve uma cópia a cada
     chamada, então mutações a jusante continuam seguras."""
-    return pd.read_excel(io.BytesIO(conteudo_bytes), engine='calamine')
+    return _read_excel_robusto(io.BytesIO(conteudo_bytes))
+
+
+def _read_excel_robusto(fonte):
+    """[ROBUSTEZ-XLSX] Lê um .xlsx com o engine calamine (rápido, padrão da app) e, se ele tropeçar
+    (variações de gerador de planilha, .xlsm/.xls renomeado para .xlsx, estilos/shared-strings
+    atípicos), CAI no openpyxl antes de desistir — em vez de derrubar o fluxo principal com um
+    traceback. `fonte` é um caminho, BytesIO ou UploadedFile. Reposiciona o stream entre tentativas."""
+    try:
+        return pd.read_excel(fonte, engine='calamine')
+    except Exception:
+        try:
+            fonte.seek(0)
+        except Exception:
+            pass
+        return pd.read_excel(fonte, engine='openpyxl')
 
 
 def _rotulo_granularidade(dist_centroide_km, municipio, limiar_km=2.0):
@@ -51334,7 +51349,7 @@ if _secao == _SECOES[2]:   # tab_alocacao
         _plan_arq = st.file_uploader("Planilha (.xlsx)", type=["xlsx"], key="plan_upload")
         if _plan_arq is not None:
             try:
-                _plan_bruto = pd.read_excel(_plan_arq, engine='calamine')
+                _plan_bruto = _read_excel_robusto(_plan_arq)  # calamine + fallback openpyxl
             except Exception:
                 _plan_bruto = None
                 st.error("Não consegui ler a planilha. Use um arquivo .xlsx válido.")
