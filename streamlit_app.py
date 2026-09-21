@@ -5342,6 +5342,33 @@ def _col_existente(df, *candidatos):
     return None
 
 
+# [GEO-CORES] Paleta ÚNICA das feições geográficas — usada no perfil, nos chips dos cartões e na
+# legenda do HTML/mapas. Uma cor por conceito, para que a mesma feição tenha sempre a mesma cor em
+# toda a aplicação (perfil, cartão, relatório). Valores idênticos aos já usados no perfil da rota.
+_GEO_CORES = {
+    "rio": "#38bdf8", "corpo": "#2dd4bf", "reservatorio": "#8b5cf6", "sazonal": "#f59e0b",
+    "ponte": "#fbbf24", "travessia": "#a78bfa", "rodovia": "#34d399", "ferrovia": "#94a3b8",
+    "porto": "#c084fc", "origem": "#22c55e", "destino": "#ef4444", "neutro": "#64748b",
+    "ok": "#22c55e", "aviso": "#f59e0b",
+}
+
+
+def _chip(texto, cor=None):
+    """[CHIP] Selo/badge colorido (pílula) para um atributo — visual moderno em vez de bullet de texto.
+    Fundo e borda translúcidos na cor do conceito, texto na mesma cor (legível no tema escuro). PURA."""
+    import html as _h
+    _c = cor or _GEO_CORES["neutro"]
+    return (f'<span style="display:inline-block;padding:2px 10px;margin:2px 5px 2px 0;border-radius:999px;'
+            f'background:{_c}1f;color:{_c};border:1px solid {_c}55;font-size:12px;font-weight:600;'
+            f'white-space:nowrap;line-height:1.7">{_h.escape(str(texto))}</span>')
+
+
+def _chips_html(chips):
+    """Junta chips (strings de _chip) numa linha; '' se vazio."""
+    _cs = [c for c in chips if c]
+    return ('<div style="margin:2px 0 6px 0">' + "".join(_cs) + '</div>') if _cs else ""
+
+
 def _perfil_geografico_svg(ctx):
     """[PERFIL-GEO] Perfil visual da rota: uma faixa horizontal origem→destino com marcadores POSICIONADOS
     POR KM real (km_desde_origem) de cada rio, corpo d'água, ponte e travessia detectados. Transforma as
@@ -5564,6 +5591,47 @@ def _secao_inteligencia_geografica_html(df):
         except Exception:
             pass
 
+        # [PERFIL-HTML] Embute o "Perfil geográfico da rota" (mesmo SVG da tela) para as rotas mais
+        # complexas do estudo — recomputa o contexto dessas poucas rotas (barato, base local cacheada) e
+        # desenha a faixa origem→destino com as feições posicionadas por km. Leva a visualização espacial
+        # ao relatório exportável, não só à tela. Fail-open: qualquer falha simplesmente não desenha.
+        _perfis_html = ""
+        try:
+            _clo2 = _col_existente(df, "Lon Origem"); _cla2 = _col_existente(df, "Lat Origem")
+            _cld2 = _col_existente(df, "Lon Destino"); _cad2 = _col_existente(df, "Lat Destino")
+            _cno = _col_existente(df, "Origem", "Municipio Origem")
+            _cnd = _col_existente(df, "Destino", "Municipio Destino")
+            if _geo_route_context is not None and all([_clo2, _cla2, _cld2, _cad2]):
+                _score2 = _qt_rios + _qt_corpos + _qt_pontes * 2 + _qt_trav * 2
+                _idx_perf = _score2[_score2 > 0].sort_values(ascending=False).head(6).index
+                _cards = []
+                for _i in _idx_perf:
+                    _r = df.loc[_i]
+                    _lo, _la = _num(_r.get(_clo2)), _num(_r.get(_cla2))
+                    _ld, _lad = _num(_r.get(_cld2)), _num(_r.get(_cad2))
+                    _di = _num(_r.get(_col_existente(df, "Distancia", "Distância"))) if _col_existente(df, "Distancia", "Distância") else None
+                    if None in (_lo, _la, _ld, _lad):
+                        continue
+                    _ctx_p = _geo_route_context.analisar_rota((_lo, _la), (_ld, _lad), distancia_km=_di)
+                    if _ctx_p is None:
+                        continue
+                    try:
+                        _ctx_p.origem = {"nome": str(_r.get(_cno, "Origem")) if _cno else "Origem"}
+                        _ctx_p.destino = {"nome": str(_r.get(_cnd, "Destino")) if _cnd else "Destino"}
+                    except Exception:
+                        pass
+                    _svg_p = _perfil_geografico_svg(_ctx_p)
+                    if _svg_p:
+                        _cards.append(f'<div style="margin:10px 0;max-width:820px">{_svg_p}</div>')
+                if _cards:
+                    _perfis_html = ("<h4>Perfil geográfico das rotas mais complexas</h4>"
+                                    "<p class='lead' style='margin:4px 0 8px'>Cada faixa é uma rota origem→destino "
+                                    "com rios, corpos d'água, pontes e travessias posicionados pelo km real do "
+                                    "trajeto (água acima do eixo, transposição abaixo, curso sazonal tracejado).</p>"
+                                    + "".join(_cards))
+        except Exception:
+            _perfis_html = ""
+
         # [CONFIABILIDADE-HTML] Rotas com sinais de barreira/confiabilidade (água sazonal, reservatório,
         # rodovia de terra/tráfego periódico, ponte móvel, ferrovia não-operacional) — analítico e
         # acionável: mostra QUAIS rotas carregam risco operacional e POR QUÊ. Dado oficial, nunca inventado.
@@ -5648,7 +5716,7 @@ def _secao_inteligencia_geografica_html(df):
                     "que ignora essa travessia — vale reexaminar caso a caso.", "warning")
 
         return (f'<div class="kpis">{_kh}</div>' + _bacias_html + _rodovias_html + _anomalias_html
-               + _tabela_html + _confiab_html + _aviso_confiab_html + _aviso_html + _aviso_anom_html + _aviso_balsa_html
+               + _tabela_html + _perfis_html + _confiab_html + _aviso_confiab_html + _aviso_html + _aviso_anom_html + _aviso_balsa_html
                + _caixa_explicativa(
                    "Sobre esta seção",
                    "Cada rota do estudo passa automaticamente pelo motor de contexto geográfico "
@@ -47960,47 +48028,43 @@ if _secao == _SECOES[0]:   # tab_individual
                                             with st.expander(
                                                     _r.nome + (f" — bacia {_r.bacia}" if _r.bacia else ""),
                                                     expanded=False):
-                                                _rd = []
-                                                # [CRUZAMENTO-REAL - 459ª] relação geométrica real da rota
-                                                if getattr(_r, "relacao", None) == "cruza":
-                                                    _rd.append("**Relação com a rota:** ✅ a rota **atravessa** este curso d'água (confirmado pela geometria).")
-                                                elif getattr(_r, "relacao", None) == "margeia":
-                                                    _rd.append("**Relação com a rota:** ↔️ **margeia** (corre perto do eixo, mas a rota **não o cruza**).")
-                                                if _r.bacia:
-                                                    _rd.append(f"**Bacia:** {_r.bacia}")
-                                                if _r.distancia_eixo_km is not None:
-                                                    _rd.append(f"**Distância do eixo da rota:** {_r.distancia_eixo_km:.2f} km")
-                                                if _r.km_desde_origem is not None:
-                                                    _pos = f"**Posição na rota:** km {_r.km_desde_origem:.1f} desde a origem"
-                                                    if _r.km_ate_destino is not None:
-                                                        _pos += f" (km {_r.km_ate_destino:.1f} até o destino)"
-                                                    _rd.append(_pos)
+                                                # [CHIPS] sinais categóricos como pílulas coloridas (paleta única _GEO_CORES)
+                                                _chips = []
+                                                _rel = getattr(_r, "relacao", None)
+                                                if _rel == "cruza":
+                                                    _chips.append(_chip("✅ atravessa", _GEO_CORES["ok"]))
+                                                elif _rel == "margeia":
+                                                    _chips.append(_chip("↔️ margeia (não cruza)", _GEO_CORES["neutro"]))
+                                                if getattr(_r, "sazonal", None) is True:
+                                                    _chips.append(_chip(f"⚠️ sazonal · {_r.regime}", _GEO_CORES["sazonal"]))
+                                                elif getattr(_r, "sazonal", None) is False:
+                                                    _chips.append(_chip("💧 permanente", _GEO_CORES["rio"]))
+                                                elif _r.regime:
+                                                    _chips.append(_chip(f"regime: {_r.regime}", _GEO_CORES["neutro"]))
                                                 if _r.navegavel:
-                                                    _rd.append(f"**Navegável:** {_r.navegavel}")
-                                                if _r.regime:
-                                                    # [REGIME-SAZONAL] regime oficial IBGE/ANA já era mostrado cru; agora
-                                                    # interpreta a barreira: trecho temporário/seco pode secar em parte do
-                                                    # ano (obstáculo bem menor que um rio permanente) — informação real que
-                                                    # muda a leitura de quem decide. Permanente ganha o selo tranquilizador.
-                                                    if getattr(_r, "sazonal", None) is True:
-                                                        _rd.append(f"**Regime:** {_r.regime} — ⚠️ curso **sazonal** (pode secar em parte do ano; barreira intermitente, menor que um rio permanente)")
-                                                    elif getattr(_r, "sazonal", None) is False:
-                                                        _rd.append(f"**Regime:** {_r.regime} — 💧 curso **permanente** (barreira o ano todo)")
-                                                    else:
-                                                        _rd.append(f"**Regime:** {_r.regime}")
-                                                if _r.encoberto:
-                                                    _rd.append(f"**Trecho encoberto/canalizado:** {_r.encoberto}")
-                                                if _r.artificial:
-                                                    _rd.append(f"**Reservatório artificial:** {_r.artificial}")
-                                                if _r.salgada:
-                                                    _rd.append(f"**Água salgada:** {_r.salgada}")
+                                                    _chips.append(_chip(f"🛶 navegável: {_r.navegavel}", _GEO_CORES["corpo"]))
+                                                if _r.salgada and str(_r.salgada).strip().lower() == "sim":
+                                                    _chips.append(_chip("🧂 água salgada", _GEO_CORES["reservatorio"]))
+                                                if _r.encoberto and str(_r.encoberto).strip().lower() == "sim":
+                                                    _chips.append(_chip("encoberto/canalizado", _GEO_CORES["neutro"]))
+                                                if getattr(_r, "confirmado_por", None):
+                                                    _chips.append(_chip(f"✔ corroborado: {_r.confirmado_por}", _GEO_CORES["ok"]))
+                                                st.markdown(_chips_html(_chips), unsafe_allow_html=True)
+                                                # detalhes numéricos + fonte (compacto)
+                                                _det = []
+                                                if _r.bacia:
+                                                    _det.append(f"Bacia {_r.bacia}")
+                                                if _r.distancia_eixo_km is not None:
+                                                    _det.append(f"{_r.distancia_eixo_km:.2f} km do eixo")
+                                                if _r.km_desde_origem is not None:
+                                                    _p = f"km {_r.km_desde_origem:.1f} da origem"
+                                                    if _r.km_ate_destino is not None:
+                                                        _p += f" · km {_r.km_ate_destino:.1f} até o destino"
+                                                    _det.append(_p)
                                                 if _r.dominialidade:
-                                                    _rd.append(f"**Dominialidade:** {_r.dominialidade}")
-                                                _fc = f"**Fonte:** {_r.fonte} · **Confiança:** {_r.confianca}"
-                                                if _r.confirmado_por:
-                                                    _fc += f" · confirmado por {_r.confirmado_por}"
-                                                _rd.append(_fc)
-                                                st.markdown("  \n".join(_rd))
+                                                    _det.append(f"Dominialidade: {_r.dominialidade}")
+                                                _det.append(f"Fonte: {_r.fonte} · Confiança: {_r.confianca}")
+                                                st.caption(" · ".join(_det))
                                 if _ctx_gi.corpos_dagua:
                                     # [CORPOS-DAGUA-CARD] Corpos d'água (lagos/lagoas/reservatórios) traziam
                                     # artificial/salgada/dominialidade/regime desde a Rodada 5, mas NUNCA tinham
@@ -48011,38 +48075,40 @@ if _secao == _SECOES[0]:   # tab_individual
                                             expanded=False):
                                         for _cp in _ctx_gi.corpos_dagua:
                                             with st.expander(_cp.nome, expanded=False):
-                                                _cd = []
-                                                if getattr(_cp, "relacao", None) == "cruza":
-                                                    _cd.append("**Relação com a rota:** ✅ a rota **atravessa** este corpo d'água (confirmado pela geometria).")
-                                                elif getattr(_cp, "relacao", None) == "margeia":
-                                                    _cd.append("**Relação com a rota:** ↔️ **margeia** (a rota passa perto, mas **não o cruza**).")
-                                                if _cp.distancia_eixo_km is not None:
-                                                    _cd.append(f"**Distância do eixo da rota:** {_cp.distancia_eixo_km:.2f} km")
-                                                if _cp.km_desde_origem is not None:
-                                                    _pcp = f"**Posição na rota:** km {_cp.km_desde_origem:.1f} desde a origem"
-                                                    if _cp.km_ate_destino is not None:
-                                                        _pcp += f" (km {_cp.km_ate_destino:.1f} até o destino)"
-                                                    _cd.append(_pcp)
-                                                if _cp.artificial and _cp.artificial.strip().lower() == "sim":
-                                                    _cd.append("**Reservatório artificial:** Sim — 🏗️ corpo represado (barreira firme; muitas vezes há barragem com via no coroamento).")
-                                                elif _cp.artificial:
-                                                    _cd.append(f"**Reservatório artificial:** {_cp.artificial}")
+                                                _cchips = []
+                                                _crel = getattr(_cp, "relacao", None)
+                                                if _crel == "cruza":
+                                                    _cchips.append(_chip("✅ atravessa", _GEO_CORES["ok"]))
+                                                elif _crel == "margeia":
+                                                    _cchips.append(_chip("↔️ margeia (não cruza)", _GEO_CORES["neutro"]))
+                                                if _cp.artificial and str(_cp.artificial).strip().lower() == "sim":
+                                                    _cchips.append(_chip("🏗️ reservatório represado", _GEO_CORES["reservatorio"]))
                                                 if _cp.regime:
                                                     if getattr(_cp, "sazonal", None) is True:
-                                                        _cd.append(f"**Regime:** {_cp.regime} — ⚠️ corpo **sazonal** (pode secar/reduzir em parte do ano)")
+                                                        _cchips.append(_chip(f"⚠️ sazonal · {_cp.regime}", _GEO_CORES["sazonal"]))
                                                     elif getattr(_cp, "sazonal", None) is False:
-                                                        _cd.append(f"**Regime:** {_cp.regime} — 💧 corpo **permanente** (o ano todo)")
+                                                        _cchips.append(_chip("💧 permanente", _GEO_CORES["corpo"]))
                                                     else:
-                                                        _cd.append(f"**Regime:** {_cp.regime}")
-                                                if _cp.salgada and _cp.salgada.strip().lower() == "sim":
-                                                    _cd.append("**Água salgada:** Sim (corpo costeiro/estuarino).")
+                                                        _cchips.append(_chip(f"regime: {_cp.regime}", _GEO_CORES["neutro"]))
+                                                if _cp.salgada and str(_cp.salgada).strip().lower() == "sim":
+                                                    _cchips.append(_chip("🧂 água salgada (costeiro/estuarino)", _GEO_CORES["reservatorio"]))
+                                                if getattr(_cp, "confirmado_por", None):
+                                                    _cchips.append(_chip(f"✔ corroborado: {_cp.confirmado_por}", _GEO_CORES["ok"]))
+                                                st.markdown(_chips_html(_cchips), unsafe_allow_html=True)
+                                                if _cp.artificial and str(_cp.artificial).strip().lower() == "sim":
+                                                    st.caption("🏗️ Corpo represado: barreira firme; muitas vezes há barragem com via no coroamento.")
+                                                _cdet = []
+                                                if _cp.distancia_eixo_km is not None:
+                                                    _cdet.append(f"{_cp.distancia_eixo_km:.2f} km do eixo")
+                                                if _cp.km_desde_origem is not None:
+                                                    _pc = f"km {_cp.km_desde_origem:.1f} da origem"
+                                                    if _cp.km_ate_destino is not None:
+                                                        _pc += f" · km {_cp.km_ate_destino:.1f} até o destino"
+                                                    _cdet.append(_pc)
                                                 if _cp.dominialidade:
-                                                    _cd.append(f"**Dominialidade:** {_cp.dominialidade}")
-                                                _fcp = f"**Fonte:** {_cp.fonte} · **Confiança:** {_cp.confianca}"
-                                                if _cp.confirmado_por:
-                                                    _fcp += f" · confirmado por {_cp.confirmado_por}"
-                                                _cd.append(_fcp)
-                                                st.markdown("  \n".join(_cd))
+                                                    _cdet.append(f"Dominialidade: {_cp.dominialidade}")
+                                                _cdet.append(f"Fonte: {_cp.fonte} · Confiança: {_cp.confianca}")
+                                                st.caption(" · ".join(_cdet))
                                 if _ctx_gi.sub_bacia:
                                     st.caption(f"🔖 Sub-bacia (código oficial SNIRH, sem nome catalogado nesta base): {_ctx_gi.sub_bacia}")
                                 if _ctx_gi.pontes:
