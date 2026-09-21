@@ -7,21 +7,41 @@ melhoram DUAS coisas para endereços de casas e locais:
      "Av. Mal. Deodoro" casam melhor nos geocoders quando escritas por extenso.
 CONTRATO DE SEGURANÇA: nenhuma nova abreviação pode colidir com um TOKEN de nome de município oficial
 (a classe de bug 'VER→VEREADOR' em 'Venha-Ver/RN'). Este teste trava isso contra a base real embarcada."""
+import re
+
+from unidecode import unidecode
+
 import streamlit_app as m
 
 # tokens que passamos a expandir (devem casar com o que foi adicionado em streamlit_app.py)
 NOVAS = {"STO", "STA", "MAL", "BRIG", "ALM", "IRM", "PTE"}
 
 
+def _tokens(s):
+    # tokenização IGUAL à do pipeline (unidecode + upper + troca não-alfanumérico por espaço).
+    # CRÍTICO: um `.split()` ingênuo NÃO separa "VENHA-VER" (fica 1 token) e daria falso-negativo —
+    # exatamente a classe de bug VER→VEREADOR. Precisa quebrar no hífen como o normalizador quebra.
+    return set(t for t in re.sub(r"[^A-Z0-9]", " ", unidecode(str(s)).upper()).split() if t)
+
+
 def test_nenhuma_nova_abreviacao_colide_com_token_de_municipio():
-    # nenhum nome oficial de município pode conter um desses tokens isolado — senão a expansão o corromperia
+    # nenhum nome oficial de município (chave OU nome do item) pode conter um desses tokens isolado —
+    # senão a expansão o corromperia. Tokenização completa (pega hifenizados como "Venha-Ver").
     colisoes = {}
-    for _nome in m.IBGE_MUNICIPIOS.keys():
-        _toks = set(str(_nome).upper().split())
-        _c = _toks & NOVAS
-        if _c:
-            colisoes.setdefault(frozenset(_c), []).append(_nome)
+    for _nome, _itens in m.IBGE_MUNICIPIOS.items():
+        _candidatos = [_nome] + [str(i.get("municipio", "")) for i in _itens]
+        for _nm in _candidatos:
+            _c = _tokens(_nm) & NOVAS
+            if _c:
+                colisoes.setdefault(frozenset(_c), set()).add(_nm)
     assert not colisoes, f"abreviação colide com nome de município: {colisoes}"
+
+
+def test_guarda_pegaria_o_caso_ver_veredor():
+    # meta-teste: a tokenização usada AQUI tem de pegar "VENHA-VER" (token VER) — se não pegar, a
+    # guarda acima é falsa. Trava a robustez da própria guarda contra futuras adições.
+    achou = [n for n in m.IBGE_MUNICIPIOS if "VER" in _tokens(n)]
+    assert achou, "a guarda de colisão não separa hifenizados — estaria dando falso-negativo"
 
 
 def test_expande_santo_santa_e_honorificos():
