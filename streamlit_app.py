@@ -45275,7 +45275,9 @@ def _diagnosticar_colunas_lote(cols, obrigatorias=("Origem", "Destino")):
     existente mais parecida (difflib) para renomear. PURA/defensiva (não levanta; casa com o gate de
     igualdade exata usado a jusante, que espera os nomes já normalizados por .str.title())."""
     import difflib as _dl
-    _cols = [str(c).strip() for c in (cols or [])]
+    # cuidado: `cols or []` avalia bool(cols) e um pandas Index levanta "truth value ambiguous" — e é
+    # exatamente assim que a produção chama (df.columns). Iterar o Index é seguro; só o `or` não era.
+    _cols = [str(c).strip() for c in (cols if cols is not None else [])]
     _faltantes = [r for r in obrigatorias if r not in _cols]
     if not _faltantes:
         return True, ""
@@ -49997,6 +49999,23 @@ def _gerar_planilha_modelo_lote():
         return None
 
 
+@st.cache_data(show_spinner=False)
+def _gerar_modelo_lote_csv():
+    """[CSV-EM-TODA-APP] Mesma planilha-modelo do Lote, agora em CSV — para quem prefere enviar CSV (já
+    aceito em toda a app). Separador ';' (padrão brasileiro, o mesmo que o leitor detecta) e UTF-8 com
+    BOM, para o Excel abrir com acentos e colunas corretos ao dar duplo-clique. Cacheado; nunca levanta
+    (usado num botão de download, sem tela de erro própria)."""
+    try:
+        _df_modelo = pd.DataFrame({
+            "Origem": ["Ribeirão Cascalheira, MT", "3550308", "Av. Paulista, 1000, São Paulo, SP"],
+            "Destino": ["Cuiabá, MT", "3106200", "Belo Horizonte, MG"],
+        })
+        return _df_modelo.to_csv(index=False, sep=";").encode("utf-8-sig")
+    except Exception:
+        logger.error("[MODELO-LOTE-CSV] Falha ao montar o modelo CSV (isolada).", exc_info=True)
+        return None
+
+
 if _secao == _SECOES[1]:   # tab_processamento
     renderizar_guia_aba("processamento")
     # [CHECKPOINT-DISCO - 269ª geração] Cartão de RETOMADA. Se houver um estudo interrompido compatível (e não
@@ -50064,14 +50083,23 @@ if _secao == _SECOES[1]:   # tab_processamento
     # nunca usou a app não precisa mais adivinhar o layout a partir só do texto de ajuda.
     try:
         _modelo_lote_bytes = _gerar_planilha_modelo_lote()
-        if _modelo_lote_bytes:
-            st.download_button("📥 Baixar modelo de planilha (.xlsx)", data=_modelo_lote_bytes,
-                               file_name="modelo_estudo_em_lote.xlsx",
-                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                               key="dl_modelo_lote",
-                               help="Planilha de exemplo com as colunas Origem/Destino já nomeadas "
-                                    "corretamente e uma linha de cada formato aceito (endereço, "
-                                    "Município/UF, Código IBGE) — só apagar os exemplos e preencher.")
+        _modelo_lote_csv = _gerar_modelo_lote_csv()
+        _ajuda_modelo = ("Exemplo com as colunas Origem/Destino já nomeadas corretamente e uma linha de "
+                         "cada formato aceito (endereço, Município/UF, Código IBGE) — só apagar os exemplos "
+                         "e preencher.")
+        if _modelo_lote_bytes or _modelo_lote_csv:
+            _cm1, _cm2 = st.columns(2)
+            if _modelo_lote_bytes:
+                _cm1.download_button("📥 Modelo (.xlsx)", data=_modelo_lote_bytes,
+                                     file_name="modelo_estudo_em_lote.xlsx",
+                                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                     key="dl_modelo_lote", use_container_width=True, help=_ajuda_modelo)
+            if _modelo_lote_csv:
+                _cm2.download_button("📥 Modelo (.csv)", data=_modelo_lote_csv,
+                                     file_name="modelo_estudo_em_lote.csv", mime="text/csv",
+                                     key="dl_modelo_lote_csv", use_container_width=True,
+                                     help=_ajuda_modelo + " Versão CSV (separador ';', UTF-8) — edite em "
+                                          "qualquer aplicativo de planilha.")
     except Exception:
         logger.error("[MODELO-LOTE-UI] Falha ao exibir o botão de modelo (aditiva, não bloqueia o upload).",
                      exc_info=True)

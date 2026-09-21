@@ -3,7 +3,17 @@
 não tem as colunas obrigatórias. Antes o erro era genérico e não dizia o que a planilha tinha — o
 usuário ficava adivinhando o cabeçalho certo. Estes testes travam o diagnóstico: OK quando presentes,
 lista as colunas encontradas e sugere a mais parecida (difflib) para renomear quando faltam."""
+import pandas as pd
+
 import streamlit_app as m
+
+
+def test_aceita_pandas_index_sem_quebrar():
+    # produção chama com df.columns (pandas Index) — `cols or []` levantaria "truth value ambiguous"
+    ok, msg = m._diagnosticar_colunas_lote(pd.Index(["Origem", "Destino"]))
+    assert ok is True and msg == ""
+    ok2, msg2 = m._diagnosticar_colunas_lote(pd.Index(["Cidade", "Polo"]))
+    assert ok2 is False and "Origem" in msg2
 
 
 def test_colunas_presentes_ok():
