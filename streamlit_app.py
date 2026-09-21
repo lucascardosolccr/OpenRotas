@@ -24916,6 +24916,10 @@ def _diagnostico_divergencias_html(diag):
             ("Aplicação", "🟢", "Vitórias — a aplicação levou o candidato mais perto"),
             ("Empate", "⚖️", "Empates técnicos"),
         ]
+        # rede de segurança: qualquer desfecho fora dos três esperados entra num grupo "Outros",
+        # para nunca perder uma rota (contrato "nenhuma rota omitida"), mesmo com rótulo inesperado.
+        _restantes = [a for a in _ordenadas
+                      if a.get("Vencedor (Qualidade)") not in ("Referência", "Aplicação", "Empate")]
         _blocos = ""
         for _gv, _gi, _gt in _grupos:
             _casos_g = [a for a in _ordenadas if a.get("Vencedor (Qualidade)") == _gv]
@@ -24924,6 +24928,11 @@ def _diagnostico_divergencias_html(diag):
             _corpo = "".join(_caso_html(a) for a in _casos_g)
             _blocos += (f'<details class="dv-sub"><summary>{_gi} {_he.escape(_gt)} '
                         f'<span class="dv-exp-hint">({len(_casos_g)})</span></summary>'
+                        f'<div class="dv-casos">{_corpo}</div></details>')
+        if _restantes:
+            _corpo = "".join(_caso_html(a) for a in _restantes)
+            _blocos += (f'<details class="dv-sub"><summary>▫️ Outros casos '
+                        f'<span class="dv-exp-hint">({len(_restantes)})</span></summary>'
                         f'<div class="dv-casos">{_corpo}</div></details>')
         _pareceres_html = (
             f'<details class="dv-exp"><summary>📝 Pareceres técnicos — todas as '
