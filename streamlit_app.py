@@ -5353,6 +5353,9 @@ _GEO_CORES = {
 }
 
 
+_PERFIL_HTML_MEMO = {}  # cache de módulo: SVG do perfil por (coords, nomes) — evita recomputar no HTML
+
+
 def _chip(texto, cor=None):
     """[CHIP] Selo/badge colorido (pílula) para um atributo — visual moderno em vez de bullet de texto.
     Fundo e borda translúcidos na cor do conceito, texto na mesma cor (legível no tema escuro). PURA."""
@@ -5612,15 +5615,25 @@ def _secao_inteligencia_geografica_html(df):
                     _di = _num(_r.get(_col_existente(df, "Distancia", "Distância"))) if _col_existente(df, "Distancia", "Distância") else None
                     if None in (_lo, _la, _ld, _lad):
                         continue
-                    _ctx_p = _geo_route_context.analisar_rota((_lo, _la), (_ld, _lad), distancia_km=_di)
-                    if _ctx_p is None:
-                        continue
-                    try:
-                        _ctx_p.origem = {"nome": str(_r.get(_cno, "Origem")) if _cno else "Origem"}
-                        _ctx_p.destino = {"nome": str(_r.get(_cnd, "Destino")) if _cnd else "Destino"}
-                    except Exception:
-                        pass
-                    _svg_p = _perfil_geografico_svg(_ctx_p)
+                    # [PERF-PERFIL-HTML] memoiza o SVG por coordenadas+nomes — o relatório pode ser
+                    # regerado em vários reruns; sem isso, recomputaria analisar_rota das top-6 toda vez.
+                    _nmo = str(_r.get(_cno, "Origem")) if _cno else "Origem"
+                    _nmd = str(_r.get(_cnd, "Destino")) if _cnd else "Destino"
+                    _kperf = (round(_lo, 5), round(_la, 5), round(_ld, 5), round(_lad, 5), _nmo, _nmd)
+                    _svg_p = _PERFIL_HTML_MEMO.get(_kperf)
+                    if _svg_p is None:
+                        _ctx_p = _geo_route_context.analisar_rota((_lo, _la), (_ld, _lad), distancia_km=_di)
+                        if _ctx_p is None:
+                            continue
+                        try:
+                            _ctx_p.origem = {"nome": _nmo}
+                            _ctx_p.destino = {"nome": _nmd}
+                        except Exception:
+                            pass
+                        _svg_p = _perfil_geografico_svg(_ctx_p) or ""
+                        if len(_PERFIL_HTML_MEMO) > 256:
+                            _PERFIL_HTML_MEMO.clear()
+                        _PERFIL_HTML_MEMO[_kperf] = _svg_p
                     if _svg_p:
                         _cards.append(f'<div style="margin:10px 0;max-width:820px">{_svg_p}</div>')
                 if _cards:
@@ -17595,6 +17608,9 @@ _MAPA_COLUNAS_EXAME = {
     # (BC250 × BC100) — ver route_context.CruzamentoHidrografico.confirmado_por.
     'QT_CONFIRMADOS_MULTIFONTE': 'Nº de Feições Confirmadas por Múltiplas Fontes',
     'NM_CONFIRMADOS_MULTIFONTE': 'Feição(ões) Confirmada(s) por Múltiplas Fontes',
+    # [CONFIABILIDADE] Sinais de barreira sazonal/operacional consolidados (ver resumo_confiabilidade).
+    'Alertas de Confiabilidade': 'Alertas de Confiabilidade Operacional',
+    'QT_ALERTAS_CONFIABILIDADE': 'Nº de Alertas de Confiabilidade',
 }
 
 
@@ -47889,9 +47905,22 @@ if _secao == _SECOES[0]:   # tab_individual
                             # quando disponível, para o contexto seguir a ESTRADA e não a corda reta — corrige
                             # cruzamentos "estranhos" (rios/pontes na diagonal reta, ausentes do trajeto real).
                             _geom_gi = _geometria_real_da_rota(res_ind)
-                            _ctx_gi = _geo_route_context.analisar_rota(
-                                (float(_lat_o_gi), float(_lon_o_gi)), (float(_lat_d_gi), float(_lon_d_gi)),
-                                distancia_km=_dist_gi, geometria=_geom_gi)
+                            # [PERF-GEO-CTX] analisar_rota re-amostra a rota e refaz os testes geométricos de
+                            # cruzamento a cada chamada; as consultas às camadas são cacheadas, mas esse trabalho
+                            # por-chamada não. Como o cartão roda em TODO rerun do Streamlit (qualquer clique na
+                            # página de resultado), memoiza o contexto por coordenadas na sessão — recomputa só
+                            # quando a rota muda de fato. Elimina o gargalo sem alterar o resultado.
+                            _chave_gi = (round(float(_lat_o_gi), 5), round(float(_lon_o_gi), 5),
+                                         round(float(_lat_d_gi), 5), round(float(_lon_d_gi), 5),
+                                         _geom_gi is not None)
+                            if (st.session_state.get('_geo_ctx_chave') == _chave_gi
+                                    and st.session_state.get('ultima_rota_individual_geo') is not None):
+                                _ctx_gi = st.session_state['ultima_rota_individual_geo']
+                            else:
+                                _ctx_gi = _geo_route_context.analisar_rota(
+                                    (float(_lat_o_gi), float(_lon_o_gi)), (float(_lat_d_gi), float(_lon_d_gi)),
+                                    distancia_km=_dist_gi, geometria=_geom_gi)
+                                st.session_state['_geo_ctx_chave'] = _chave_gi
                             st.session_state['ultima_rota_individual_geo'] = _ctx_gi
                             with st.expander("🧠 Contexto Geográfico da Rota (rios, bacia, pontes, travessias)",
                                              expanded=bool(_ctx_gi.rios_detectados or _ctx_gi.corpos_dagua)):
