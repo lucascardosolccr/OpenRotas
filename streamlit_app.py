@@ -5604,6 +5604,7 @@ def _secao_inteligencia_geografica_html(df):
             _cld2 = _col_existente(df, "Lon Destino"); _cad2 = _col_existente(df, "Lat Destino")
             _cno = _col_existente(df, "Origem", "Municipio Origem")
             _cnd = _col_existente(df, "Destino", "Municipio Destino")
+            _cdist2 = _col_existente(df, "Distancia", "Distância")  # hoisted: fora do loop
             if _geo_route_context is not None and all([_clo2, _cla2, _cld2, _cad2]):
                 _score2 = _qt_rios + _qt_corpos + _qt_pontes * 2 + _qt_trav * 2
                 _idx_perf = _score2[_score2 > 0].sort_values(ascending=False).head(6).index
@@ -5612,7 +5613,7 @@ def _secao_inteligencia_geografica_html(df):
                     _r = df.loc[_i]
                     _lo, _la = _num(_r.get(_clo2)), _num(_r.get(_cla2))
                     _ld, _lad = _num(_r.get(_cld2)), _num(_r.get(_cad2))
-                    _di = _num(_r.get(_col_existente(df, "Distancia", "Distância"))) if _col_existente(df, "Distancia", "Distância") else None
+                    _di = _num(_r.get(_cdist2)) if _cdist2 else None
                     if None in (_lo, _la, _ld, _lad):
                         continue
                     # [PERF-PERFIL-HTML] memoiza o SVG por coordenadas+nomes — o relatório pode ser
