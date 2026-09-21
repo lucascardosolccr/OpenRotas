@@ -45203,8 +45203,11 @@ def _ler_planilha_upload(conteudo_bytes):
 
     Endereçado por conteúdo (bytes) → trocar o arquivo INVALIDA corretamente o cache; o parse é o mesmo
     (mesmo engine calamine), então o DataFrame é idêntico. st.cache_data devolve uma cópia a cada
-    chamada, então mutações a jusante continuam seguras."""
-    return _read_excel_robusto(io.BytesIO(conteudo_bytes))
+    chamada, então mutações a jusante continuam seguras.
+
+    [CSV-EM-TODA-APP] Passa a aceitar também CSV/TXT/TSV além de Excel: o formato é detectado pela
+    ASSINATURA do conteúdo (não pela extensão), então Lote e Alocação leem CSV como o Comparador já fazia."""
+    return _parse_planilha_bytes(conteudo_bytes)[0]
 
 
 def _read_excel_robusto(fonte):
@@ -45220,6 +45223,48 @@ def _read_excel_robusto(fonte):
         except Exception:
             pass
         return pd.read_excel(fonte, engine='openpyxl')
+
+
+def _parse_csv_bytes(conteudo_bytes):
+    """[LEITURA-CSV] Converte BYTES de um CSV/TXT/TSV em DataFrame, tolerando o CSV brasileiro real:
+    detecta a CODIFICAÇÃO (utf-8-sig → utf-8 → latin-1 → cp1252) e o SEPARADOR (',' ';' tab '|') via
+    csv.Sniffer, com fallback pela contagem no cabeçalho. Retorna (df, aviso|None). PURA/testável."""
+    import io as _io2
+    import csv as _csv2
+    _bruto = conteudo_bytes if isinstance(conteudo_bytes, (bytes, bytearray)) else \
+        str(conteudo_bytes or "").encode("utf-8", "replace")
+    _texto = None
+    for _enc in ("utf-8-sig", "utf-8", "latin-1", "cp1252"):
+        try:
+            _texto = _bruto.decode(_enc)
+            break
+        except Exception:
+            continue
+    if _texto is None:  # último recurso: nunca falhar por acento — troca o byte inválido
+        _texto = _bruto.decode("latin-1", "replace")
+    _sep = None
+    try:
+        _amostra = "\n".join(_texto.splitlines()[:25])
+        _sep = _csv2.Sniffer().sniff(_amostra, delimiters=",;\t|").delimiter
+    except Exception:
+        _linha0 = next((l for l in _texto.splitlines() if l.strip()), "")
+        _sep = max([",", ";", "\t", "|"], key=lambda _d: _linha0.count(_d)) if _linha0 else ","
+    _df = pd.read_csv(_io2.StringIO(_texto), sep=_sep)
+    _aviso = ("O CSV foi lido como **1 coluna só** — provável separador inesperado. Confira o arquivo."
+              if len(_df.columns) <= 1 else None)
+    return _df, _aviso
+
+
+def _parse_planilha_bytes(conteudo_bytes):
+    """[LEITURA-UNIFICADA] Lê uma planilha a partir de BYTES aceitando Excel (.xlsx/.xls) OU CSV/TXT/TSV,
+    detectando o formato pela ASSINATURA do conteúdo (não depende da extensão do nome — um .csv renomeado
+    para .xlsx, ou vice-versa, ainda é lido certo). Retorna (df, aviso|None). Assinaturas: 'PK\\x03\\x04'
+    = zip (.xlsx moderno); '\\xD0\\xCF\\x11\\xE0' = OLE2 (.xls antigo)."""
+    _b = conteudo_bytes if isinstance(conteudo_bytes, (bytes, bytearray)) else b""
+    _eh_excel = _b[:4] == b"PK\x03\x04" or _b[:4] == b"\xd0\xcf\x11\xe0"
+    if _eh_excel:
+        return _read_excel_robusto(io.BytesIO(_b)), None
+    return _parse_csv_bytes(_b)
 
 
 def _diagnosticar_colunas_lote(cols, obrigatorias=("Origem", "Destino")):
@@ -50063,7 +50108,7 @@ if _secao == _SECOES[1]:   # tab_processamento
     except Exception:
         logger.error("[MODELO-LOTE-UI] Falha ao exibir o botão de modelo (aditiva, não bloqueia o upload).",
                      exc_info=True)
-    arquivo_carregado = st.file_uploader("Selecionar Arquivo Excel", type=["xlsx"], key="lote_std", help="A planilha deve conter as colunas 'Origem' e 'Destino'. Cada célula pode ser um endereço, uma localidade, coordenadas OU o Código IBGE do município (7 dígitos) — o tipo é detectado automaticamente. O resultado traz as colunas Cód IBGE Origem e Cód IBGE Destino.")
+    arquivo_carregado = st.file_uploader("Selecionar Arquivo (Excel ou CSV)", type=["xlsx", "xls", "csv", "txt", "tsv"], key="lote_std", help="Excel (.xlsx/.xls) ou CSV/TXT/TSV. A planilha deve conter as colunas 'Origem' e 'Destino'. Cada célula pode ser um endereço, uma localidade, coordenadas OU o Código IBGE do município (7 dígitos) — o tipo é detectado automaticamente. O resultado traz as colunas Cód IBGE Origem e Cód IBGE Destino.")
     if arquivo_carregado is not None:
         # [PERF-LOTE - 185ª geração] Parse CACHEADO por conteúdo, reaproveitando o helper _ler_planilha_upload
         # que a aba de Alocação já usa desde a 184ª. O motor de lote também é time-boxed e se auto-continua via
@@ -51710,13 +51755,13 @@ if _secao == _SECOES[2]:   # tab_alocacao
         st.caption("Descubra quais municípios têm **maior potencial para sediar provas**, a partir da "
                    "distribuição de candidatos — sem rodar a alocação. Envie uma planilha com **município "
                    "(ou Código IBGE)** e **quantidade de candidatos**.")
-        _plan_arq = st.file_uploader("Planilha (.xlsx)", type=["xlsx"], key="plan_upload")
+        _plan_arq = st.file_uploader("Planilha (Excel ou CSV)", type=["xlsx", "xls", "csv", "txt", "tsv"], key="plan_upload")
         if _plan_arq is not None:
             try:
-                _plan_bruto = _read_excel_robusto(_plan_arq)  # calamine + fallback openpyxl
+                _plan_bruto = _parse_planilha_bytes(_plan_arq.getvalue())[0]  # Excel ou CSV (por assinatura)
             except Exception:
                 _plan_bruto = None
-                st.error("Não consegui ler a planilha. Use um arquivo .xlsx válido.")
+                st.error("Não consegui ler a planilha. Use um arquivo .xlsx, .xls ou .csv válido.")
             if _plan_bruto is not None and len(_plan_bruto) > 0:
                 _pcols = list(_plan_bruto.columns)
                 _dm = _detectar_coluna(_pcols, ['municipio', 'município', 'cidade', 'origem', 'local'])
@@ -51915,9 +51960,9 @@ if _secao == _SECOES[2]:   # tab_alocacao
         """)
     col_a1, col_a2 = st.columns(2)
     with col_a1: 
-        file_dest = st.file_uploader("1. Planilha de Municípios de Origem dos Candidatos", type=["xlsx"], key="up_dests_v19", help="Cada origem pode ser endereço, localidade, coordenadas ou o Código IBGE do município (7 dígitos). O resultado traz Cód IBGE Cliente/Origem.")
+        file_dest = st.file_uploader("1. Planilha de Municípios de Origem dos Candidatos", type=["xlsx", "xls", "csv", "txt", "tsv"], key="up_dests_v19", help="Excel (.xlsx/.xls) ou CSV/TXT/TSV. Cada origem pode ser endereço, localidade, coordenadas ou o Código IBGE do município (7 dígitos). O resultado traz Cód IBGE Cliente/Origem.")
     with col_a2: 
-        file_hubs = st.file_uploader("2. Planilha de Polos de Aplicação (locais de prova candidatos)", type=["xlsx"], key="up_hubs_v19", help="Cada base/hub pode ser identificado por nome, coordenadas ou Código IBGE do município (7 dígitos). O resultado traz Cód IBGE Hub.")
+        file_hubs = st.file_uploader("2. Planilha de Polos de Aplicação (locais de prova candidatos)", type=["xlsx", "xls", "csv", "txt", "tsv"], key="up_hubs_v19", help="Excel (.xlsx/.xls) ou CSV/TXT/TSV. Cada base/hub pode ser identificado por nome, coordenadas ou Código IBGE do município (7 dígitos). O resultado traz Cód IBGE Hub.")
         
     if file_hubs and file_dest:
         # [PERF-ALOC - 184ª geração] Parse CACHEADO por conteúdo: o bloco roda em TODO rerun e o motor
