@@ -14,7 +14,8 @@ from unidecode import unidecode
 import streamlit_app as m
 
 # tokens que passamos a expandir (devem casar com o que foi adicionado em streamlit_app.py)
-NOVAS = {"STO", "STA", "MAL", "BRIG", "ALM", "IRM", "PTE"}
+NOVAS = {"STO", "STA", "MAL", "BRIG", "ALM", "IRM", "PTE",
+         "MARQ", "TEN", "CMTE", "CONS", "LGO"}
 
 
 def _tokens(s):

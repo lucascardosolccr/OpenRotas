@@ -15929,6 +15929,9 @@ class MotorEnderecoCanônico:
             r'\bSTO\b': 'SANTO', r'\bSTA\b': 'SANTA', r'\bMAL\b': 'MARECHAL',
             r'\bBRIG\b': 'BRIGADEIRO', r'\bALM\b': 'ALMIRANTE', r'\bIRM\b': 'IRMAO',
             r'\bPTE\b': 'PONTE',
+            # honoríficos de via padrão no Brasil (standalone; verificados sem colisão de município/UF)
+            r'\bMARQ\b': 'MARQUES', r'\bTEN\b': 'TENENTE', r'\bCMTE\b': 'COMANDANTE',
+            r'\bCONS\b': 'CONSELHEIRO', r'\bLGO\b': 'LARGO',
         }
         self.abreviacoes = {re.compile(k): v for k, v in abreviacoes_raw.items()}
         # [FIX-UF-NORMALIZA - 46ª geração] Conjunto das 27 UFs para BLINDAGEM: um token que é sigla
