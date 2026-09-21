@@ -52347,6 +52347,13 @@ if _secao == _SECOES[2]:   # tab_alocacao
                                "empurrar candidatos para polos mais distantes) — verifique o identificador na "
                                "planilha: %s" % (len(_hubs_irrecup),
                                ", ".join(_hubs_irrecup[:30]) + (" …" if len(_hubs_irrecup) > 30 else "")))
+                    # registra no trilho de auditoria (persistente/exportável) para o descarte não sumir
+                    for _hk in _hubs_irrecup:
+                        st.session_state['logs_auditoria_alocacao'].append({
+                            "Categoria": "Polo EXCLUÍDO (sem geocodificação)", "Nome Original": _hk,
+                            "Coordenada": "—", "Endereço Oficializado": "não resolvido (nem rede, nem base IBGE)",
+                            "Município": "—", "UF": "—", "Cód IBGE": "—",
+                            "Fonte Geocodificação": "—", "Score": 0.0, "Validação XAI": "excluído do estudo"})
 
                 if not hubs_validos:
                     st.error("CRÍTICO: Nenhuma Base/Hub pôde ser geocodificada no mapa.")
@@ -52454,6 +52461,15 @@ if _secao == _SECOES[2]:   # tab_alocacao
                                  ", ".join(_origens_falha[:30]) + (" …" if len(_origens_falha) > 30 else "")))
                         logger.error("[BLINDAGEM-ORIGEM] %d origem(ns) irresolúvel(is): %s",
                                      len(_origens_falha), _origens_falha[:50])
+                        # registra no trilho de auditoria (persistente/exportável) para o descarte não sumir
+                        _logs_of = st.session_state.get('logs_auditoria_alocacao', [])
+                        for _of in _origens_falha:
+                            _logs_of.append({
+                                "Categoria": "Origem EXCLUÍDA (sem geocodificação)", "Nome Original": _of,
+                                "Coordenada": "—", "Endereço Oficializado": "não resolvida (identificador inválido)",
+                                "Município": "—", "UF": "—", "Cód IBGE": "—",
+                                "Fonte Geocodificação": "—", "Score": 0.0, "Validação XAI": "excluída do roteamento"})
+                        st.session_state['logs_auditoria_alocacao'] = _logs_of
                 except Exception:
                     logger.error("[BLINDAGEM-ORIGEM] Falha no pós-check (isolada).", exc_info=True)
                 st.session_state['alo_topk_completo'] = topk_map_completo  # [GARANTIA-OTIMA - 184ª geração]
