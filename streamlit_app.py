@@ -52337,7 +52337,17 @@ if _secao == _SECOES[2]:   # tab_alocacao
                                    "%d recuperado(s) pela base oficial do IBGE (offline), %d irrecuperável(is). "
                                    "Antes TODOS eram descartados em silêncio — perdendo cobertura de polos.",
                                    len(_hubs_falhos), _n_resg_hub, len(_hubs_falhos) - _n_resg_hub)
-                
+                # [POLO-IRRECUP-VISIVEL] Falha PARCIAL de polo era só log — invisível ao usuário, embora um
+                # polo ausente empurre candidatos para polos distantes. Espelha o aviso já dado às origens:
+                # lista os polos que ficam FORA do estudo, para o usuário corrigir o cadastro.
+                _hubs_irrecup = [str(_hk) for _hk in _hubs_falhos if _hk not in hubs_validos]
+                if _hubs_irrecup:
+                    st.warning("⚠️ **%d polo(s) não puderam ser geocodificados** nem pela base oficial do "
+                               "IBGE e ficam FORA do estudo (nenhum candidato será alocado a eles; isso pode "
+                               "empurrar candidatos para polos mais distantes) — verifique o identificador na "
+                               "planilha: %s" % (len(_hubs_irrecup),
+                               ", ".join(_hubs_irrecup[:30]) + (" …" if len(_hubs_irrecup) > 30 else "")))
+
                 if not hubs_validos:
                     st.error("CRÍTICO: Nenhuma Base/Hub pôde ser geocodificada no mapa.")
                     _prep_status.empty(); _prep_bar.empty()
