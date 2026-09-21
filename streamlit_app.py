@@ -5342,6 +5342,107 @@ def _col_existente(df, *candidatos):
     return None
 
 
+def _perfil_geografico_svg(ctx):
+    """[PERFIL-GEO] Perfil visual da rota: uma faixa horizontal origem→destino com marcadores POSICIONADOS
+    POR KM real (km_desde_origem) de cada rio, corpo d'água, ponte e travessia detectados. Transforma as
+    listas de texto do contexto num mapa espacial legível — água acima do eixo, infraestrutura de
+    transposição abaixo, curso sazonal em laranja tracejado. SVG autossuficiente (sem CDN, tema escuro).
+    Retorna '' quando não há distância nem feição posicionável (nunca desenha uma faixa vazia). PURA."""
+    import html as _he
+    try:
+        _tot = None
+        try:
+            _tot = float(ctx.distancia_km) if getattr(ctx, "distancia_km", None) else None
+        except Exception:
+            _tot = None
+        # coleta feições com km posicionável
+        _itens = []  # (km, lado, cor, glifo, nome, sazonal)
+        for _r in (getattr(ctx, "rios_detectados", None) or []):
+            _km = getattr(_r, "km_desde_origem", None)
+            if _km is None:
+                continue
+            _sz = getattr(_r, "sazonal", None) is True
+            _itens.append((float(_km), "cima", "#f59e0b" if _sz else "#38bdf8", "🌊",
+                           getattr(_r, "nome", "rio"), _sz))
+        for _c in (getattr(ctx, "corpos_dagua", None) or []):
+            _km = getattr(_c, "km_desde_origem", None)
+            if _km is None:
+                continue
+            _sz = getattr(_c, "sazonal", None) is True
+            _art = (getattr(_c, "artificial", "") or "").strip().lower() == "sim"
+            _itens.append((float(_km), "cima", "#f59e0b" if _sz else ("#8b5cf6" if _art else "#2dd4bf"),
+                           "🏗️" if _art else "🏞️", getattr(_c, "nome", "corpo"), _sz))
+        for _p in (getattr(ctx, "pontes", None) or []):
+            _km = getattr(_p, "km_desde_origem", None)
+            if _km is None:
+                continue
+            _itens.append((float(_km), "baixo", "#fbbf24", "🌉", getattr(_p, "nome", "ponte"), False))
+        for _t in (getattr(ctx, "travessias", None) or []):
+            _km = getattr(_t, "km_desde_origem", None)
+            if _km is None:
+                continue
+            _itens.append((float(_km), "baixo", "#a78bfa", "⛴️", getattr(_t, "nome", "travessia"), False))
+        if not _itens and not _tot:
+            return ""
+        if _tot is None or _tot <= 0:
+            _tot = max((k for k, *_ in _itens), default=0.0) or 1.0
+        _itens.sort(key=lambda x: x[0])
+
+        _W, _H = 1000.0, 240.0
+        _x0, _x1 = 70.0, 930.0
+        _yl = 122.0
+        def _px(km):
+            return _x0 + max(0.0, min(1.0, (km / _tot) if _tot else 0.0)) * (_x1 - _x0)
+
+        _org = _he.escape(str((getattr(ctx, "origem", None) or {}).get("nome", "Origem"))[:22])
+        _dst = _he.escape(str((getattr(ctx, "destino", None) or {}).get("nome", "Destino"))[:22])
+
+        _parts = [
+            f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {_W:.0f} {_H:.0f}" width="100%" '
+            f'font-family="Inter, Segoe UI, sans-serif" role="img" aria-label="Perfil geográfico da rota">',
+            f'<rect x="0" y="0" width="{_W:.0f}" height="{_H:.0f}" rx="14" fill="#161b26"/>',
+            f'<text x="24" y="26" fill="#e5e7eb" font-size="15" font-weight="700">Perfil geográfico da rota</text>',
+            f'<text x="24" y="44" fill="#9aa4b2" font-size="12">{("%.0f km · " % _tot) if _tot else ""}posição real por km</text>',
+            f'<line x1="24" y1="56" x2="{_W-24:.0f}" y2="56" stroke="#232a38" stroke-width="1"/>',
+            # trilho da rota
+            f'<line x1="{_x0}" y1="{_yl}" x2="{_x1}" y2="{_yl}" stroke="#334155" stroke-width="6" stroke-linecap="round"/>',
+            # origem/destino
+            f'<circle cx="{_x0}" cy="{_yl}" r="8" fill="#22c55e" stroke="#0e1117" stroke-width="2"/>',
+            f'<circle cx="{_x1}" cy="{_yl}" r="8" fill="#ef4444" stroke="#0e1117" stroke-width="2"/>',
+            f'<text x="{_x0}" y="{_yl+34:.0f}" fill="#cbd5e1" font-size="12" font-weight="600" text-anchor="middle">{_org}</text>',
+            f'<text x="{_x1}" y="{_yl-22:.0f}" fill="#cbd5e1" font-size="12" font-weight="600" text-anchor="middle">{_dst}</text>',
+        ]
+        # marcadores escalonados p/ reduzir sobreposição
+        _niv_cima = [-40.0, -62.0, -84.0]
+        _niv_baixo = [40.0, 62.0, 84.0]
+        _ic = _ib = 0
+        for _km, _lado, _cor, _gl, _nome, _sz in _itens:
+            _x = _px(_km)
+            if _lado == "cima":
+                _dy = _niv_cima[_ic % len(_niv_cima)]; _ic += 1
+            else:
+                _dy = _niv_baixo[_ib % len(_niv_baixo)]; _ib += 1
+            _y = _yl + _dy
+            _dash = ' stroke-dasharray="3 3"' if _sz else ''
+            _nm = _he.escape(str(_nome)[:16])
+            _ty = _y - 9 if _lado == "cima" else _y + 16
+            _parts.append(f'<line x1="{_x:.1f}" y1="{_yl:.1f}" x2="{_x:.1f}" y2="{_y:.1f}" stroke="{_cor}" stroke-width="1.5"{_dash} opacity="0.8"/>')
+            _parts.append(f'<circle cx="{_x:.1f}" cy="{_y:.1f}" r="6" fill="{_cor}" stroke="#0e1117" stroke-width="1.5"><title>{_he.escape(str(_nome))} · km {_km:.1f}{" · sazonal" if _sz else ""}</title></circle>')
+            _parts.append(f'<text x="{_x:.1f}" y="{_ty:.1f}" fill="#cbd5e1" font-size="10.5" text-anchor="middle">{_nm}</text>')
+        # legenda
+        _leg = [("#38bdf8", "rio"), ("#2dd4bf", "corpo d'água"), ("#8b5cf6", "reservatório"),
+                ("#f59e0b", "sazonal"), ("#fbbf24", "ponte"), ("#a78bfa", "travessia")]
+        _lx = 24.0
+        for _cor, _lab in _leg:
+            _parts.append(f'<circle cx="{_lx+4:.0f}" cy="{_H-14:.0f}" r="5" fill="{_cor}"/>')
+            _parts.append(f'<text x="{_lx+14:.0f}" y="{_H-10:.0f}" fill="#9aa4b2" font-size="11">{_lab}</text>')
+            _lx += 22 + len(_lab) * 6.4
+        _parts.append("</svg>")
+        return "".join(_parts)
+    except Exception:
+        return ""
+
+
 def _secao_inteligencia_geografica_html(df):
     """[GEO-INTEL-HTML] Seção "Inteligência Geográfica" do relatório (§28 da missão de
     reengenharia da aba de Inteligência): visão geral (rotas com rio/ponte/travessia
@@ -47735,6 +47836,16 @@ if _secao == _SECOES[0]:   # tab_individual
                                         _al_md = "\n".join(f"- {_a}" for _a in _rc_banner["alertas"])
                                         (st.warning if _rc_banner["severidade"] == "alta" else st.info)(
                                             f"**Confiabilidade operacional — {_rc_banner['n']} sinal(is) de barreira sazonal/operacional:**\n{_al_md}")
+                                except Exception:
+                                    pass
+                                # [PERFIL-GEO] Visualização espacial: onde (km) cada rio/corpo/ponte/travessia
+                                # aparece ao longo da rota — transforma as listas em um mapa legível.
+                                try:
+                                    _svg_perfil = _perfil_geografico_svg(_ctx_gi)
+                                    if _svg_perfil:
+                                        components.html(
+                                            f'<div style="background:#0e1117;padding:2px 0">{_svg_perfil}</div>',
+                                            height=252, scrolling=False)
                                 except Exception:
                                     pass
                                 if _ctx_gi.rodovias:
