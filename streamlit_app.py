@@ -51901,7 +51901,23 @@ if _secao == _SECOES[2]:   # tab_alocacao
         # rerun (~2,2 s desperdiçados/estudo, medido). Resultado idêntico — só deixa de repetir o parse.
         df_hubs = _ler_planilha_upload(file_hubs.getvalue())
         df_dest = _ler_planilha_upload(file_dest.getvalue())
-        
+
+        # [ALOC-VAZIA] Guarda amigável: uma planilha sem colunas legíveis (cabeçalho ausente) ou sem
+        # linhas de dados quebraria os selectboxes/o pipeline com um traceback. Orienta em vez de crashar.
+        _probs = []
+        if df_dest is None or df_dest.shape[1] == 0:
+            _probs.append("a planilha de **origens** não tem colunas legíveis (cabeçalho ausente?)")
+        elif len(df_dest) == 0:
+            _probs.append("a planilha de **origens** está sem linhas de dados")
+        if df_hubs is None or df_hubs.shape[1] == 0:
+            _probs.append("a planilha de **polos** não tem colunas legíveis (cabeçalho ausente?)")
+        elif len(df_hubs) == 0:
+            _probs.append("a planilha de **polos** está sem linhas de dados")
+        if _probs:
+            st.error("⚠️ Não dá para processar: " + "; ".join(_probs) + ". Verifique se a primeira linha "
+                     "tem os nomes das colunas e se há ao menos uma linha de dados, e reenvie.")
+            st.stop()
+
         col_s1, col_s2 = st.columns(2)
         with col_s1:
             # [AUTO-COL] Pré-seleciona a coluna provável (acento/caixa-insensível). `index` só define o
