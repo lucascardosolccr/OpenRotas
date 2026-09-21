@@ -62,3 +62,24 @@ def test_cadeia_completa_ate_xlsx():
     rel = m._relatorio_executivo_comparacao(stc, aud, top_municipios=cmp)
     xb = m._montar_xlsx_comparacao(cmp, stc, aud, rel)
     assert isinstance(xb, (bytes, bytearray)) and len(xb) > 2000
+
+
+def test_xlsx_comparacao_sem_referencia_de_planilha_quebrada():
+    """[FIX-SHEETNAME] Os gráficos Pareto e pizza do Comparador referenciavam 'Graficos_dados', mas a
+    worksheet de dados chama-se '_dados_graficos' — o Excel abria pedindo para reparar e os dois
+    gráficos saíam vazios. Trava: montar o .xlsx NÃO pode emitir 'Unknown worksheet reference'."""
+    import warnings
+    df_app, df_ref, mapa = _inputs()
+    # inclui uma linha em que a referência leva MAIS perto (gera dado para o Pareto de vantagem dela)
+    df_app.loc[len(df_app)] = ["Coari", "AM", "1301209", "Coari", 80.0, 90.0, "Sim", 60.0, 40]
+    df_ref.loc[len(df_ref)] = ["Coari", "AM", "1301209", "Tefe", 30.0, 40]
+    linhas, aud = m._conciliar_comparativo(df_app, df_ref, mapa, limiar_empate_km=1.0)
+    cmp = m._comparar_alocacoes(linhas, limiar_empate_km=1.0)
+    stc = m._estatisticas_comparacao(cmp, limiar_empate_km=1.0)
+    rel = m._relatorio_executivo_comparacao(stc, aud, top_municipios=cmp)
+    with warnings.catch_warnings(record=True) as _w:
+        warnings.simplefilter("always")
+        xb = m._montar_xlsx_comparacao(cmp, stc, aud, rel)
+    _sheet_warns = [str(x.message) for x in _w if "worksheet reference" in str(x.message).lower()]
+    assert not _sheet_warns, f"referência de worksheet quebrada nos gráficos: {_sheet_warns}"
+    assert isinstance(xb, (bytes, bytearray)) and len(xb) > 2000

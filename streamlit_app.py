@@ -20752,14 +20752,17 @@ def _aba_graficos(writer, stats, linhas):
                 _dados.write_column("K1", [round(p[1], 1) for p in _perdas])
                 _dados.write_column("M1", _acc)
                 _gp = _wb.add_chart({"type": "column"})
+                # [FIX-SHEETNAME] a worksheet de dados chama-se "_dados_graficos" (add_worksheet acima);
+                # estes gráficos referenciavam "Graficos_dados" (inexistente) -> Pareto e pizza saíam
+                # QUEBRADOS/vazios e o Excel avisava "conteúdo com problema". Nome corrigido.
                 _gp.add_series({"name": "Vantagem da referência (km)",
-                                "categories": ["Graficos_dados", 0, 9, len(_perdas) - 1, 9],
-                                "values": ["Graficos_dados", 0, 10, len(_perdas) - 1, 10],
+                                "categories": ["_dados_graficos", 0, 9, len(_perdas) - 1, 9],
+                                "values": ["_dados_graficos", 0, 10, len(_perdas) - 1, 10],
                                 "fill": {"color": "#dc2626"}})
                 _gl = _wb.add_chart({"type": "line"})
                 _gl.add_series({"name": "% acumulado",
-                                "categories": ["Graficos_dados", 0, 9, len(_perdas) - 1, 9],
-                                "values": ["Graficos_dados", 0, 12, len(_perdas) - 1, 12],
+                                "categories": ["_dados_graficos", 0, 9, len(_perdas) - 1, 9],
+                                "values": ["_dados_graficos", 0, 12, len(_perdas) - 1, 12],
                                 "line": {"color": "#1e3a8a", "width": 2.25}, "y2_axis": True,
                                 "marker": {"type": "circle", "size": 5}})
                 _gp.combine(_gl)
@@ -20779,8 +20782,8 @@ def _aba_graficos(writer, stats, linhas):
                 _dados.write_column("P1", list(_vd.values()))
                 _gpie = _wb.add_chart({"type": "pie"})
                 _gpie.add_series({"name": "Distribuição de vitórias (distância)",
-                                  "categories": ["Graficos_dados", 0, 14, 2, 14],
-                                  "values": ["Graficos_dados", 0, 15, 2, 15],
+                                  "categories": ["_dados_graficos", 0, 14, 2, 14],
+                                  "values": ["_dados_graficos", 0, 15, 2, 15],
                                   "points": [{"fill": {"color": "#16a34a"}}, {"fill": {"color": "#dc2626"}},
                                              {"fill": {"color": "#94a3b8"}}]})
                 _gpie.set_title({"name": "Distribuição de vitórias por distância"})
