@@ -19859,7 +19859,9 @@ def _validar_planilha_comparativa(df_ref, mapa, base_ibge=None, idx_ibge=None):
              "Preencha ou remova essas linhas antes de subir.")
 
     # ---------- 3. DISTÂNCIA: tipo e sanidade ----------
-    _d = pd.to_numeric(df_ref[_c_dist], errors="coerce")
+    # [NUM-BR] parser tolerante ao formato brasileiro (vírgula decimal / ponto de milhar) — senão uma
+    # planilha BR legítima ('95,4') reprovaria com TODAS as distâncias "não numéricas" (bloqueante).
+    _d = pd.to_numeric(df_ref[_c_dist].map(_to_num_br), errors="coerce")
     _nan = int(_d.isna().sum())
     if _nan:
         _ex = df_ref.loc[_d.isna(), _c_dist].astype(str).iloc[0] if _nan else ""
@@ -22488,14 +22490,10 @@ def _conciliar_comparativo(df_app, df_ref, mapa, limiar_fuzzy=90, limiar_empate_
                 "uf": a.get("UF Origem", ""), "cod_ibge": a.get("Cod IBGE Origem", ""),
                 "metodo_conciliacao": metodo, "motivo": _mot_app})
             continue
-        try:
-            _dist_ref = float(_v(r, _mdist)) if _v(r, _mdist) is not None else None
-        except (TypeError, ValueError):
-            _dist_ref = None
-        try:
-            _insc = float(_v(r, _mn, 0) or 0)
-        except (TypeError, ValueError):
-            _insc = 0.0
+        # [NUM-BR] aceita vírgula decimal ('95,4') e separador de milhar ('1.234,56') — planilhas
+        # brasileiras usam esse formato, e o float() puro os descartava (linha virava "não comparável").
+        _dist_ref = _to_num_br(_v(r, _mdist))
+        _insc = _to_num_br(_v(r, _mn), 0.0) or 0.0
         _t_ref = _v(r, _mtempo)
         # [V432 · MAPA DE ROTAS] Resolve as 3 coordenadas do mapa comparativo pela base oficial IBGE (offline):
         # origem, destino da APLICAÇÃO e destino da REFERÊNCIA. Assim o mapa desenha as duas rotas por município
@@ -23201,6 +23199,39 @@ def _num_seguro(v, padrao=None):
         if v is None:
             return padrao
         f = float(v)
+        return f if f == f else padrao
+    except Exception:
+        return padrao
+
+
+def _to_num_br(v, padrao=None):
+    """[NUM-BR] Converte para float aceitando os formatos BRASILEIRO e americano — porque as planilhas
+    de referência que os usuários sobem quase sempre usam VÍRGULA decimal ('95,4', '1.234,56'), que o
+    float() puro rejeita (viravam None e a linha era descartada da comparação em silêncio).
+
+    Regra de desambiguação: o ÚLTIMO separador ('.' ou ',') é o decimal; o outro é milhar e é removido
+    ('1.234,56'→1234.56 BR; '1,234.56'→1234.56 US). Só vírgula → decimal ('95,4'→95.4, convenção pt-BR).
+    Só ponto ou já numérico → inalterado. Remove sufixos como ' km'. Fail-open → `padrao`. PURO."""
+    if v is None:
+        return padrao
+    if isinstance(v, bool):
+        return padrao
+    if isinstance(v, (int, float)):
+        return float(v) if v == v else padrao  # já numérico (NaN → padrao)
+    _s = str(v).strip()
+    if not _s:
+        return padrao
+    _s = re.sub(r"[^0-9,.\-]", "", _s)  # tira 'km', espaços, R$ etc. (mantém dígitos, . , sinal)
+    if not _s or _s in ("-", ".", ",", "-.", "-,"):
+        return padrao
+    _tem_v, _tem_p = ("," in _s), ("." in _s)
+    if _tem_v and _tem_p:
+        _s = (_s.replace(".", "").replace(",", ".") if _s.rfind(",") > _s.rfind(".")
+              else _s.replace(",", ""))
+    elif _tem_v:
+        _s = _s.replace(",", ".")
+    try:
+        f = float(_s)
         return f if f == f else padrao
     except Exception:
         return padrao
