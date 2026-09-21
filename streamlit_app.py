@@ -45250,6 +45250,30 @@ def _diagnosticar_colunas_lote(cols, obrigatorias=("Origem", "Destino")):
     return False, " ".join(_partes)
 
 
+def _valores_unicos_limpos(serie):
+    """[ALOC-LIMPEZA] De uma coluna de planilha, devolve (valores_únicos_não_vazios, n_linhas_descartadas).
+    Descarta NaN E células em branco/só-espaços — que `.str.strip()` transforma em '' e ESCAPAVAM do
+    dropna, entrando no universo como uma origem/polo FANTASMA '' (geocodificada à toa, resolvendo para
+    lixo ou (0,0)). `n_linhas_descartadas` conta as linhas ignoradas (NaN + em branco) para dar
+    transparência ao usuário. PURA/testável; nunca levanta."""
+    try:
+        _n_total = len(serie)
+        _s = serie.dropna().astype(str).str.strip()
+        _n_na = _n_total - len(_s)
+        # normaliza float inteiro ('1501402.0' → '1501402'): uma coluna numérica (ex.: Código IBGE) com
+        # QUALQUER célula em branco é lida como float64 e ganha '.0', o que quebra a resolução por código
+        # a jusante. Só afeta valores puramente inteiros com '.0'; nomes e coordenadas ficam intactos.
+        _s = _s.str.replace(r'^(-?\d+)\.0+$', r'\1', regex=True)
+        _n_branco = int((_s == "").sum())
+        _limpos = [v for v in _s.unique().tolist() if v != ""]
+        return _limpos, int(_n_na + _n_branco)
+    except Exception:
+        try:
+            return [str(x).strip() for x in list(serie) if str(x).strip()], 0
+        except Exception:
+            return [], 0
+
+
 def _liberar_memoria_geo():
     """[MEM] Libera os caches PESADOS de camadas geográficas (janelas do BC250 — drenagem, massas,
     rodovias, ferrovias — carregadas durante o 'Processar rotas divergentes') antes de montar
@@ -52219,12 +52243,21 @@ if _secao == _SECOES[2]:   # tab_alocacao
         
         # ---- FASE 1: INICIALIZAÇÃO + GEOCODIFICAÇÃO PARALELA + MATRIZ VETORIZADA ----
         if _clicou_alo and not _alo_ativo:
-            hubs_unicos = df_hubs[hub_col_name].dropna().astype(str).str.strip().unique().tolist()
-            dests_unicos = df_dest[dest_col_name].dropna().astype(str).str.strip().unique().tolist()
-            
+            # [ALOC-LIMPEZA] descarta NaN e células em branco (que viravam uma origem/polo fantasma '')
+            hubs_unicos, _n_hub_vazio = _valores_unicos_limpos(df_hubs[hub_col_name])
+            dests_unicos, _n_dest_vazio = _valores_unicos_limpos(df_dest[dest_col_name])
+
             if not hubs_unicos or not dests_unicos:
                 st.error("Uma das colunas selecionadas está vazia ou é inválida.")
             else:
+                if _n_dest_vazio or _n_hub_vazio:
+                    _avz = []
+                    if _n_dest_vazio:
+                        _avz.append(f"**{_n_dest_vazio}** linha(s) de origem")
+                    if _n_hub_vazio:
+                        _avz.append(f"**{_n_hub_vazio}** polo(s)")
+                    st.caption("ℹ️ " + " e ".join(_avz) + " com a coluna selecionada em branco foram "
+                               "ignorados (não entram no cálculo).")
                 _prep_bar = st.progress(0)
                 _prep_status = st.empty()
                 st.session_state['logs_auditoria_alocacao'] = []
