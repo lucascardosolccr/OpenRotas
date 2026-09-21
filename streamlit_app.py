@@ -25295,8 +25295,25 @@ def _reprocessar_rotas_divergentes(linhas, limiar_empate_km=1.0, cb_progresso=No
     _divergentes = [l for l in (linhas or []) if l.get("Mesmo Destino") == "Não"
                     and str(l.get("Destino Referencia") or "").strip()
                     and str(l.get("Destino Aplicacao") or "").strip()]
+    # [DIVERGENCIA-ESCALA] Ordena por IMPACTO decrescente (inscritos × |Δkm|) e concentra o roteamento
+    # FRESCO (rede — sinais ricos: balsa, sinuosidade, divergência de motor) nos casos que mais pesam.
+    # Em estudos nacionais (milhares de divergências), rotear TODAS fresco é lento e pressiona a memória;
+    # acima do teto, os casos de MENOR impacto entram COMPLETOS no agregado usando a distância já
+    # informada (sem sinais ricos) — nenhuma divergência é descartada; só os sinais ricos ficam onde
+    # importam. Teto alto: estudos normais (< teto) seguem 100% roteados fresco, exatamente como antes.
+    _MAX_ROTEAMENTO_FRESCO = 1200
+    def _impacto_div(_ln):
+        _ins = _num_seguro(_ln.get("Inscritos"), 0.0) or 0.0
+        _da = _num_seguro(_ln.get("Distancia Aplicacao"))
+        _dr = _num_seguro(_ln.get("Distancia Referencia"))
+        _dk = abs((_da or 0.0) - (_dr or 0.0)) if (_da is not None and _dr is not None) else 0.0
+        return _dk * max(_ins, 1.0)
+    try:
+        _divergentes.sort(key=_impacto_div, reverse=True)
+    except Exception:
+        pass
     _total = len(_divergentes)
-    _analises, _uf_assumida, _falhas = [], 0, 0
+    _analises, _uf_assumida, _falhas, _sem_fresco = [], 0, 0, 0
     # [MELHORIA4-451 · M3/M4] Universo real por origem (forense) e reset do orçamento da 2ª opinião por run.
     _uni_map = _universo_divergencias_por_origem()
     _reset_segunda_opiniao()
@@ -25315,10 +25332,11 @@ def _reprocessar_rotas_divergentes(linhas, limiar_empate_km=1.0, cb_progresso=No
                 cb_progresso(_i + 1, _total, f"{_origem} → {_l.get('Destino Referencia')}")
             except Exception:
                 pass
-        # ---- lado REF: roteia fresco (a única operação de rede) ----
+        # ---- lado REF: roteia fresco (a única operação de rede) — só até o teto, por ordem de IMPACTO ----
         _fatos_ref = None
+        _rotear_fresco = (_i < _MAX_ROTEAMENTO_FRESCO)
         try:
-            if _router and _origem_q and _destino_ref:
+            if _rotear_fresco and _router and _origem_q and _destino_ref:
                 # [TELEMETRIA-API - 240ª] mede a latência do roteamento da referência (núcleo de rota intacto).
                 _t0_rt = time.perf_counter()
                 _rp = _router(_origem_q, _destino_ref)
@@ -25335,8 +25353,14 @@ def _reprocessar_rotas_divergentes(linhas, limiar_empate_km=1.0, cb_progresso=No
         except Exception:
             _fatos_ref = None
         if _fatos_ref is None:
-            # fallback honesto: usa a distância da referência já presente na linha (sem sinais ricos)
-            _falhas += 1
+            # fallback honesto: usa a distância da referência já presente na linha (sem sinais ricos).
+            # Distingue FALHA real de roteamento (tentou e não veio) de CAPADO por escala (nem tentou,
+            # por estar abaixo do corte de impacto num estudo nacional) — métricas separadas, sem inflar
+            # as "falhas de roteamento" com casos que deliberadamente não roteamos.
+            if _rotear_fresco:
+                _falhas += 1
+            else:
+                _sem_fresco += 1
             _fatos_ref = _fatos_rota_divergencia({
                 "destino": _l.get("Destino Referencia"),
                 "distancia_km": _l.get("Distancia Referencia"),
@@ -25361,6 +25385,7 @@ def _reprocessar_rotas_divergentes(linhas, limiar_empate_km=1.0, cb_progresso=No
     _diag["analises"] = _analises
     _diag["uf_ref_assumida"] = _uf_assumida
     _diag["falhas_roteamento"] = _falhas
+    _diag["sem_roteamento_fresco"] = _sem_fresco  # capados por escala (menor impacto); contam no agregado
     _diag["total_divergentes"] = _total
     # [DIVERGENCIA-XAI-2 - 237ª] enriquece com confiança, classificação de derrotas, aprendizado e KPIs.
     try:
@@ -57489,11 +57514,17 @@ if _secao == _SECOES[3]:   # tab_comparador
                             except Exception:
                                 pass
                             _falhas_d = int(_diag_div.get("falhas_roteamento", 0) or 0)
+                            _capados_d = int(_diag_div.get("sem_roteamento_fresco", 0) or 0)
                             if _falhas_d:
                                 st.warning(f"Diagnóstico concluído com {_falhas_d} rota(s) sem roteamento fresco "
                                            f"(usei a distância que já constava do estudo nesses casos).")
                             else:
                                 st.success("✅ Diagnóstico das divergências concluído.")
+                            if _capados_d:
+                                st.info(f"⚡ Estudo grande: as **{_capados_d:,}** divergências de MENOR impacto "
+                                        "entraram nos agregados com a distância já informada (sem roteamento "
+                                        "fresco), enquanto as de maior impacto — que guiam os pareceres — foram "
+                                        "roteadas com todos os sinais. Nenhuma divergência ficou de fora.".replace(",", "."))
                         except Exception as _e_div:
                             logger.error(f"[DIVERGENCIA-XAI] Falha ao processar divergências: {_e_div}", exc_info=True)
                             st.error(f"Não foi possível processar as rotas divergentes: {_e_div}")
