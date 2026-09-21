@@ -57711,12 +57711,17 @@ if _secao == _SECOES[3]:   # tab_comparador
                              help="Parecer da comparação (conciliação, vitórias, economia) num arquivo HTML "
                                   "único que abre offline em qualquer navegador."):
                     with st.spinner("Gerando relatório..."):
+                        import gc as _gc_h
+                        st.session_state.pop('relatorio_html_cmp', None)  # não segura a cópia antiga junto
+                        _gc_h.collect()                                    # recupera transientes do diagnóstico
                         _rel_html_cmp = _gerar_relatorio_comparacao_html(
                             _res_c["stats"], _aud_c, titulo="Relatório da Comparação de Estudos",
                             data_str=pd.Timestamp.now().strftime("%d/%m/%Y %H:%M"), linhas=_cmp,
                             diagnostico_div=st.session_state.get('cmp_diag_divergencias'))
                         if _rel_html_cmp:
                             st.session_state['relatorio_html_cmp'] = _rel_html_cmp.encode("utf-8")
+                            del _rel_html_cmp                              # solta a str; guardamos só os bytes
+                            _gc_h.collect()
                         else:
                             st.session_state.pop('relatorio_html_cmp', None)
                             st.warning("Não foi possível gerar o relatório.")
@@ -57725,31 +57730,45 @@ if _secao == _SECOES[3]:   # tab_comparador
                                        data=st.session_state['relatorio_html_cmp'],
                                        file_name="relatorio_comparacao.html", mime="text/html",
                                        use_container_width=True, key="dl_relatorio_html_cmp")
-                # [FIX-EXPORT-CMP - 184ª geração] Download ROBUSTO: valida que o xlsx em sessão é BYTES não-vazio (um
-                # BytesIO ou None de uma geração antiga faz o st.download_button "não baixar nada"). Se inválido,
-                # RE-GERA automaticamente (sem botão extra → download em 1 clique) e passa bytes() explícito.
+                # [MEM-EXPORT-CMP] Download ROBUSTO + geração SOB DEMANDA. A planilha de 24 abas é pesada;
+                # processar as divergências INVALIDA o xlsx em cache (para ele sair com as abas de
+                # diagnóstico). Antes, a reconstrução era AUTOMÁTICA a cada rerun — inclusive no MESMO rerun
+                # em que o usuário gerava o relatório HTML: dois artefatos grandes construídos de uma vez
+                # estouravam a memória do host (OOM no Streamlit Cloud). Agora, quando o xlsx precisa ser
+                # (re)gerado, fica atrás de um botão — nunca colide com a geração do HTML no mesmo run.
                 _xb = _res_c.get("xlsx")
-                if not (isinstance(_xb, (bytes, bytearray)) and len(_xb) > 0):
-                    with st.spinner("Preparando a planilha de comparação (24 abas)..."):
-                        try:
-                            _xb_novo = _montar_xlsx_comparacao(
-                                _cmp, _res_c["stats"], _aud_c, _rel_c,
-                                diagnostico_div=st.session_state.get('cmp_diag_divergencias'))
-                            if isinstance(_xb_novo, (bytes, bytearray)) and len(_xb_novo) > 0:
-                                _xb = bytes(_xb_novo)
-                                _res_c["xlsx"] = _xb
-                                st.session_state['cmp_resultado'] = _res_c
-                            else:
+                _xb_ok = isinstance(_xb, (bytes, bytearray)) and len(_xb) > 0
+                _xb_falhou = False
+                if not _xb_ok:
+                    if st.button("📊 Gerar planilha completa (.xlsx — 24 abas + diagnóstico)",
+                                 key="btn_xlsx_cmp", use_container_width=True,
+                                 help="A planilha inclui as abas de diagnóstico das divergências. É gerada só "
+                                      "quando você pede — assim não concorre em memória com o relatório HTML."):
+                        with st.spinner("Preparando a planilha de comparação (24 abas)..."):
+                            try:
+                                import gc as _gc_x
+                                st.session_state.pop('relatorio_html_cmp', None)  # libera memória do HTML antes
+                                _gc_x.collect()
+                                _xb_novo = _montar_xlsx_comparacao(
+                                    _cmp, _res_c["stats"], _aud_c, _rel_c,
+                                    diagnostico_div=st.session_state.get('cmp_diag_divergencias'))
+                                if isinstance(_xb_novo, (bytes, bytearray)) and len(_xb_novo) > 0:
+                                    _xb = bytes(_xb_novo)
+                                    _res_c["xlsx"] = _xb
+                                    st.session_state['cmp_resultado'] = _res_c
+                                    _xb_ok = True
+                                del _xb_novo
+                                _gc_x.collect()
+                            except Exception as _e_xbr:
                                 _xb = None
-                        except Exception as _e_xbr:
-                            _xb = None
-                            logger.error(f"[FIX-EXPORT-CMP] Falha ao gerar planilha de comparação: {_e_xbr}", exc_info=True)
-                if _xb:
+                                _xb_falhou = True
+                                logger.error(f"[MEM-EXPORT-CMP] Falha ao gerar planilha de comparação: {_e_xbr}", exc_info=True)
+                if _xb_ok and _xb:
                     st.download_button("📥 Baixar comparação completa (.xlsx — 24 abas + 2 de documentação)",
                                        data=bytes(_xb), file_name="comparacao_estudos.xlsx",
                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                        use_container_width=True, key="cmp_export")
-                else:
+                elif _xb_falhou:
                     st.warning("⚠️ Não foi possível gerar a planilha de comparação (veja os logs). O **relatório HTML** "
                                "acima está disponível como alternativa completa.")
 
