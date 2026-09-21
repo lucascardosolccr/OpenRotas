@@ -83,3 +83,7 @@ def test_reprocesso_flagra_impossivel_sem_roteamento_fresco(monkeypatch):
     assert _res.get("inscritos_derrotas_nominais") == 100
     assert any("apenas nominais" in i for i in diag.get("insights", []))
     assert "apenas nominais" in html
+    # pareceres agrupados por desfecho (derrotas em bloco próprio), sem perder nenhuma rota
+    assert 'class="dv-sub"' in html
+    assert "Derrotas — a referência" in html
+    assert html.count('class="dv-caso"') == len(diag.get("analises", []))

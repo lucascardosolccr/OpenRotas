@@ -24882,8 +24882,7 @@ def _diagnostico_divergencias_html(diag):
         # divergentes (ordenadas por impacto), dentro de um bloco recolhível para não ocupar a tela.
         _ordenadas = sorted(_analises, key=lambda a: abs((a.get("Diferença (km)") or 0.0)
                             * (int(a.get("Inscritos") or 0) or 1)), reverse=True)
-        _pareceres = ""
-        for a in _ordenadas:
+        def _caso_html(a):
             _cor = a.get("_cor", "#64748b")
             _venc = a.get("Vencedor (Qualidade)", "—")
             _hip = a.get("Hipóteses") or []
@@ -24895,7 +24894,7 @@ def _diagnostico_divergencias_html(diag):
             if a.get("_ref_invalida") and _venc == "Referência":
                 _ri_html = ('<div class="dv-caso-ri">🚫 Derrota apenas nominal — a distância da referência '
                             'é fisicamente impossível/implausível (ver parecer).</div>')
-            _pareceres += (
+            return (
                 f'<div class="dv-caso" style="border-left:4px solid {_cor}">'
                 f'<div class="dv-caso-h"><b>{_he.escape(str(a.get("Município")))}/{_he.escape(str(a.get("UF")))}</b>'
                 f' · {_he.escape(str(a.get("Categoria")))} · <span class="dv-tag">Vantagem: {_he.escape(_venc)}</span></div>'
@@ -24905,11 +24904,30 @@ def _diagnostico_divergencias_html(diag):
                 f'<div class="dv-caso-hip"><b>Hipóteses técnicas:</b><ul>{_hip_html}</ul></div>'
                 f'<div class="dv-caso-rec">{_he.escape(a.get("Recomendação", ""))}</div>'
                 f'</div>')
+
+        # [HTML-EXPORT-ESCALA] Em estudos nacionais são milhares de pareceres. Uma lista única e plana é
+        # impossível de navegar e pesa no DOM. Agrupamos por DESFECHO (derrotas primeiro — o que o analista
+        # precisa revisar —, depois vitórias e empates), cada grupo num <details> aninhado que o navegador só
+        # renderiza quando aberto. Dentro de cada grupo, ordenado por impacto. Nenhuma rota é omitida.
+        _grupos = [
+            ("Referência", "🔴", "Derrotas — a referência levou o candidato mais perto"),
+            ("Aplicação", "🟢", "Vitórias — a aplicação levou o candidato mais perto"),
+            ("Empate", "⚖️", "Empates técnicos"),
+        ]
+        _blocos = ""
+        for _gv, _gi, _gt in _grupos:
+            _casos_g = [a for a in _ordenadas if a.get("Vencedor (Qualidade)") == _gv]
+            if not _casos_g:
+                continue
+            _corpo = "".join(_caso_html(a) for a in _casos_g)
+            _blocos += (f'<details class="dv-sub"><summary>{_gi} {_he.escape(_gt)} '
+                        f'<span class="dv-exp-hint">({len(_casos_g)})</span></summary>'
+                        f'<div class="dv-casos">{_corpo}</div></details>')
         _pareceres_html = (
             f'<details class="dv-exp"><summary>📝 Pareceres técnicos — todas as '
             f'{len(_ordenadas)} rota(s) de divergência <span class="dv-exp-hint">(clique para '
-            f'expandir/recolher)</span></summary><div class="dv-casos">{_pareceres}</div></details>'
-        ) if _pareceres else ""
+            f'expandir/recolher)</span></summary><div class="dv-sub-wrap">{_blocos}</div></details>'
+        ) if _blocos else ""
 
         _css = (
             '<style>'
@@ -24950,6 +24968,13 @@ def _diagnostico_divergencias_html(diag):
             '.dv-exp-hint{font-size:11px;font-weight:400;color:#94a3b8}'
             '.dv-exp>div,.dv-exp>*:not(summary){padding:14px 16px}'
             '.dv-exp .dv-casos{padding:14px 16px}'
+            '.dv-sub-wrap{padding:8px 12px;display:flex;flex-direction:column;gap:8px}'
+            '.dv-sub{border:1px solid #e2e8f0;border-radius:8px;background:#fff;overflow:hidden}'
+            '.dv-sub>summary{cursor:pointer;list-style:none;padding:10px 14px;font-size:14px;font-weight:700;'
+            'color:#334155;background:#f1f5f9;user-select:none}'
+            '.dv-sub>summary::-webkit-details-marker{display:none}'
+            '.dv-sub>summary::before{content:"▸ ";color:#94a3b8}'
+            '.dv-sub[open]>summary::before{content:"▾ "}'
             '</style>')
 
         # [DIVERGENCIA-XAI-2 - 237ª] blocos do aprofundamento (KPIs, classificação de derrotas, aprendizado)
