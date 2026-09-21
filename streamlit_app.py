@@ -27211,6 +27211,27 @@ def _haversine_fluv(a, b):  # km entre (lon,lat)
     d = sin((la2-la1)/2)**2 + cos(la1)*cos(la2)*sin((lo2-lo1)/2)**2
     return 2*6371.0088*asin(sqrt(d))
 
+class _NomesAresta:
+    """[MEM-OOM] Substitui o dict Python (nó_a,nó_b)->índice_do_nome do grafo fluvial por uma matriz
+    esparsa int32. O dict, para o grafo nacional denso (3,97 mi de nós, 20 mi de arestas dirigidas),
+    consumia ~1,5 GB só em chaves-tupla Python e estourava a RAM do host (OOM). A mesma informação numa
+    csr int32 ocupa ~80 MB e tem o MESMO .get((a,b), default) — os call-sites não mudam. Guarda
+    índice_do_nome+1 (0 = aresta ausente) para distinguir 'sem aresta' de 'nome vazio no índice 0'."""
+    __slots__ = ("_m",)
+
+    def __init__(self, n, row, col, en_bidir):
+        import numpy as _np
+        from scipy.sparse import csr_matrix as _csr
+        self._m = _csr((en_bidir.astype(_np.int32) + 1, (row, col)), shape=(n, n))
+
+    def get(self, chave, default=None):
+        try:
+            _v = int(self._m[chave[0], chave[1]])
+        except Exception:
+            return default
+        return (_v - 1) if _v else default
+
+
 @st.cache_resource(show_spinner=False)
 def _carregar_grafo_fluvial(url, arq):
     """Monta o grafo fluvial da Amazônia para roteamento sob demanda. Procura, nesta ordem: (1) arquivo local
@@ -27244,9 +27265,9 @@ def _carregar_grafo_fluvial(url, arq):
         _row = _np.concatenate([_E[:, 0], _E[:, 1]]); _col = _np.concatenate([_E[:, 1], _E[:, 0]])
         _dat = _np.concatenate([_W, _W])
         _M = _csr((_dat, (_row, _col)), shape=(_N, _N))
-        _edic = {}
-        for (_a, _b), _n in zip(_E, _EN):
-            _edic[(int(_a), int(_b))] = int(_n); _edic[(int(_b), int(_a))] = int(_n)
+        # [MEM-OOM] índice de nome por aresta numa matriz esparsa (não num dict Python gigante — ver
+        # _NomesAresta): mesmo .get((a,b)), ~80 MB em vez de ~1,5 GB para o grafo nacional denso.
+        _edic = _NomesAresta(_N, _row, _col, _np.concatenate([_EN, _EN]))
         # [V373 · M2] índice espacial (cKDTree) para o snap em O(log n) em vez de varrer 226k nós.
         # scipy vem via scikit-learn; se falhar, o snap recai na força bruta (mesmo resultado).
         _tree = None

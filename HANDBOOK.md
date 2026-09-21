@@ -308,7 +308,7 @@ new_rotas-main/
 ├── snirh_subbacias.csv           # 84 sub-bacias
 ├── snirh_municipios_all.csv      # 5.714 municípios
 ├── snirh_estados.csv             # 39 estados
-├── hidrografia_nacional.pkl.gz   # Grafo fluvial nacional (IBGE BC250/ANA, ~19MB)
+├── hidrografia_nacional.pkl.gz   # Grafo fluvial nacional (IBGE BC250/ANA, ~40MB)
 ├── data/
 │   ├── brasil/
 │   │   ├── ibge/ (malhas, BC250, BC100)
