@@ -77,3 +77,9 @@ def test_reprocesso_flagra_impossivel_sem_roteamento_fresco(monkeypatch):
     # e o exportável NÃO traz mais os "cartões (resumo visual)"; pareceres e árvores são recolhíveis
     assert "resumo visual" not in html.lower()
     assert 'details class="dv-exp"' in html
+    # o agregado conta as derrotas nominais e gera insight + KPI
+    _res = diag.get("resumo", {})
+    assert _res.get("derrotas_nominais_ref_invalida") == 1
+    assert _res.get("inscritos_derrotas_nominais") == 100
+    assert any("apenas nominais" in i for i in diag.get("insights", []))
+    assert "apenas nominais" in html

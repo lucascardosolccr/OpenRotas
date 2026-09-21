@@ -24549,6 +24549,13 @@ def _agregar_diagnostico_divergencias(analises, uf_para_regiao=None):
     _perdas = [a for a in analises if a.get("Vencedor (Qualidade)") == "Referência"]
     _ganhos = [a for a in analises if a.get("Vencedor (Qualidade)") == "Aplicação"]
 
+    # [REF-IMPOSSIVEL-DERROTA] "Derrotas nominais": perdas em que a referência só "venceu" porque sua
+    # distância é fisicamente impossível/implausível (menor que a linha reta). NÃO são derrotas reais do
+    # algoritmo — são erro de dado da referência. Contar à parte permite ao analista descontá-las do placar
+    # e priorizar as perdas genuínas. PURO; subconjunto de _perdas.
+    _nominais = [a for a in _perdas if a.get("_ref_invalida")]
+    _insc_nominais = sum(int(a.get("Inscritos") or 0) for a in _nominais)
+
     # [QUALIDADE-DERROTAS - Missão 3, Rodada 16, §36] Tally das classes forenses (_apr2_forense_derrota)
     # entre as perdas reais — "Derrotas recuperáveis" é uma métrica de qualidade nomeada explicitamente
     # na missão e, até aqui, só existia como texto livre dentro do parecer de CADA derrota individual,
@@ -24572,6 +24579,9 @@ def _agregar_diagnostico_divergencias(analises, uf_para_regiao=None):
         "derrotas_regra_correta": _forense_cnt.get("regra_balsa", 0),
         "derrotas_sem_derrota_real": _forense_cnt.get("ref_mais_longa", 0),
         "derrotas_por_classe_forense": _forense_cnt,
+        # [REF-IMPOSSIVEL-DERROTA] derrotas apenas nominais (distância da referência inválida)
+        "derrotas_nominais_ref_invalida": len(_nominais),
+        "inscritos_derrotas_nominais": _insc_nominais,
     }
 
     # ------- INSIGHTS AUTOMÁTICOS (fundamentados nos dados) -------
@@ -24588,6 +24598,12 @@ def _agregar_diagnostico_divergencias(analises, uf_para_regiao=None):
             _ins.append(f"{round(100.0 * _flu_perdas / len(_perdas))}% das perdas envolvem balsa ou acesso "
                         f"fluvial/isolado no lado da aplicação — a menor distância da referência frequentemente "
                         f"vem de assumir uma travessia que a aplicação evitou.")
+        # [REF-IMPOSSIVEL-DERROTA] destaca as derrotas apenas nominais (distância da referência inválida)
+        if _nominais:
+            _ins.append(f"⚠️ **{len(_nominais)} das {len(_perdas)} 'derrotas' são apenas nominais**: a referência "
+                        f"só ficou 'mais perto' porque sua distância é fisicamente impossível/implausível (menor "
+                        f"que a linha reta) — afetam {_insc_nominais} candidato(s) e **não devem ser adotadas**; "
+                        f"descontando-as, o placar real da aplicação melhora.")
     if _ganhos:
         _g_evita = sum(1 for a in _ganhos if a.get("Balsa Referência") == "Sim"
                        or "fluvial" in str(a.get("Acesso Referência", "")).lower())
@@ -24783,6 +24799,9 @@ def _diagnostico_divergencias_html(diag):
                     if _res.get("derrotas_recuperaveis") else '')
                  + (_kpi(f'{_res.get("derrotas_evitaveis", 0)}', "derrotas evitáveis (investigar seleção)")
                     if _res.get("derrotas_evitaveis") else '')
+                 + (_kpi(f'{_res.get("derrotas_nominais_ref_invalida", 0)}',
+                         "derrotas apenas nominais (distância da referência impossível/implausível)")
+                    if _res.get("derrotas_nominais_ref_invalida") else '')
                  + '</div>')
 
         # ---- resumo executivo ----
@@ -25132,9 +25151,12 @@ def _abas_diagnostico_divergencias(writer, diag):
             if _analises:
                 _ws = _wb.add_worksheet("Diag - Pareceres")
                 _ws.set_column("A:A", 22); _ws.set_column("B:B", 6); _ws.set_column("C:C", 26)
-                _ws.set_column("D:D", 16); _ws.set_column("E:E", 70); _ws.set_column("F:F", 60); _ws.set_column("G:G", 55)
-                _cols = ["Município", "UF", "Categoria", "Vencedor (Qualidade)", "Parecer Técnico",
-                         "Hipóteses", "Recomendação"]
+                _ws.set_column("D:D", 16); _ws.set_column("E:E", 30); _ws.set_column("F:F", 70)
+                _ws.set_column("G:G", 60); _ws.set_column("H:H", 55)
+                # [REF-IMPOSSIVEL-DERROTA] coluna "Auditoria Referência" torna o veredito físico da distância
+                # da referência (impossível/implausível) exportável na planilha, ao lado do vencedor.
+                _cols = ["Município", "UF", "Categoria", "Vencedor (Qualidade)", "Auditoria Referência",
+                         "Parecer Técnico", "Hipóteses", "Recomendação"]
                 for _c, _nome in enumerate(_cols):
                     _ws.write(0, _c, _nome, _f_hdr)
                 _ordi = sorted(_analises, key=lambda a: abs((a.get("Diferença (km)") or 0.0)
@@ -25146,10 +25168,11 @@ def _abas_diagnostico_divergencias(writer, diag):
                     _ws.write(_rr, 1, str(a.get("UF", "—")), _f_lbl)
                     _ws.write(_rr, 2, str(a.get("Categoria", "—")), _f_lbl)
                     _ws.write(_rr, 3, str(a.get("Vencedor (Qualidade)", "—")), _f_lbl)
-                    _ws.write(_rr, 4, str(a.get("Parecer Técnico", "—")).replace("**", ""), _f_txt)
+                    _ws.write(_rr, 4, str(a.get("Auditoria Referência", "—")), _f_lbl)
+                    _ws.write(_rr, 5, str(a.get("Parecer Técnico", "—")).replace("**", ""), _f_txt)
                     _hip = a.get("Hipóteses") or []
-                    _ws.write(_rr, 5, ("• " + "\n• ".join(_hip)) if _hip else "—", _f_txt)
-                    _ws.write(_rr, 6, str(a.get("Recomendação", "—")).replace("**", ""), _f_txt)
+                    _ws.write(_rr, 6, ("• " + "\n• ".join(_hip)) if _hip else "—", _f_txt)
+                    _ws.write(_rr, 7, str(a.get("Recomendação", "—")).replace("**", ""), _f_txt)
                     _ws.set_row(_rr, 90)
                 _ws.freeze_panes(1, 1)
                 _explicacao(_ws, _rr + 2, len(_cols),
