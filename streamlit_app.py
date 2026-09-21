@@ -44962,6 +44962,25 @@ def _read_excel_robusto(fonte):
         return pd.read_excel(fonte, engine='openpyxl')
 
 
+def _liberar_memoria_geo():
+    """[MEM] Libera os caches PESADOS de camadas geográficas (janelas do BC250 — drenagem, massas,
+    rodovias, ferrovias — carregadas durante o 'Processar rotas divergentes') antes de montar
+    artefatos grandes (planilha .xlsx / relatório HTML) no Comparador. Esses artefatos usam o
+    diagnóstico JÁ COMPUTADO (cmp_diag_divergencias), não as camadas cruas — então liberá-las dá folga
+    de RAM sem perder nada; se algo precisar delas de novo, o cache se repovoa sob demanda. Fail-open:
+    qualquer ausência/erro é ignorado (nunca derruba a geração)."""
+    try:
+        if _geo_route_context is not None and hasattr(_geo_route_context, "_limpar_cache_camadas_pesadas"):
+            _geo_route_context._limpar_cache_camadas_pesadas()
+    except Exception:
+        pass
+    try:
+        import gc as _gc_geo
+        _gc_geo.collect()
+    except Exception:
+        pass
+
+
 def _rotulo_granularidade(dist_centroide_km, municipio, limiar_km=2.0):
     """[GRANULARIDADE - 85ª geração] Classifica se o ponto ROTEADO preservou a granularidade, pela
     distância ao centróide do município: ≤ limiar → o ponto ≈ centróide (foi MUNICIPALIZADO); acima →
@@ -57726,6 +57745,7 @@ if _secao == _SECOES[3]:   # tab_comparador
                     with st.spinner("Gerando relatório..."):
                         import gc as _gc_h
                         st.session_state.pop('relatorio_html_cmp', None)  # não segura a cópia antiga junto
+                        _liberar_memoria_geo()                             # libera camadas BC250 do diagnóstico
                         _gc_h.collect()                                    # recupera transientes do diagnóstico
                         _rel_html_cmp = _gerar_relatorio_comparacao_html(
                             _res_c["stats"], _aud_c, titulo="Relatório da Comparação de Estudos",
@@ -57760,7 +57780,8 @@ if _secao == _SECOES[3]:   # tab_comparador
                         with st.spinner("Preparando a planilha de comparação (24 abas)..."):
                             try:
                                 import gc as _gc_x
-                                _gc_x.collect()  # recupera transientes antes de montar o workbook grande
+                                _liberar_memoria_geo()  # libera camadas BC250 do diagnóstico → folga p/ o xlsx
+                                _gc_x.collect()         # recupera transientes antes de montar o workbook grande
                                 _xb_novo = _montar_xlsx_comparacao(
                                     _cmp, _res_c["stats"], _aud_c, _rel_c,
                                     diagnostico_div=st.session_state.get('cmp_diag_divergencias'))
