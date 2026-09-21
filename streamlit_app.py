@@ -49337,6 +49337,60 @@ if _secao == _SECOES[0]:   # tab_individual
         else:
             st.warning("Preencha origem e destino para inicializar o cálculo.")
 
+def _ler_planilha_referencia(_arquivo):
+    """[COMPARADOR - leitura robusta] Lê uma planilha de referência (xlsx/xls/csv/txt) tolerando os
+    formatos reais que os usuários enviam — em especial o CSV brasileiro (separador ';' e acentos em
+    latin-1/cp1252), que quebrava a leitura padrão do pandas (UnicodeDecodeError ou tudo numa coluna só).
+
+    Devolve (DataFrame, aviso|None). Levanta apenas se o arquivo for genuinamente ilegível — o chamador
+    trata a exceção e mostra mensagem clara. Estratégia:
+      • Excel: engine 'calamine' (rápido, usado no resto da app), com fallback para 'openpyxl'.
+      • CSV/TXT: detecta a CODIFICAÇÃO (utf-8-sig → utf-8 → latin-1 → cp1252) e o SEPARADOR
+        (',' ';' '\\t' '|') via csv.Sniffer, com fallback pela contagem no cabeçalho."""
+    import io as _io2
+    _nome = (getattr(_arquivo, "name", "") or "").lower()
+    _eh_csv = _nome.endswith(".csv") or _nome.endswith(".txt") or _nome.endswith(".tsv")
+    if _eh_csv:
+        try:
+            _bruto = _arquivo.getvalue() if hasattr(_arquivo, "getvalue") else _arquivo.read()
+        except Exception:
+            _bruto = _arquivo.read()
+        if isinstance(_bruto, str):
+            _bruto = _bruto.encode("utf-8", "replace")
+        _texto = None
+        for _enc in ("utf-8-sig", "utf-8", "latin-1", "cp1252"):
+            try:
+                _texto = _bruto.decode(_enc)
+                break
+            except Exception:
+                continue
+        if _texto is None:  # último recurso: nunca falhar por acento — decodifica trocando o inválido
+            _texto = _bruto.decode("latin-1", "replace")
+        # separador: Sniffer sobre as primeiras linhas; fallback = o delimitador mais frequente no cabeçalho
+        _sep = None
+        try:
+            import csv as _csv2
+            _amostra = "\n".join(_texto.splitlines()[:25])
+            _sep = _csv2.Sniffer().sniff(_amostra, delimiters=",;\t|").delimiter
+        except Exception:
+            _linha0 = next((l for l in _texto.splitlines() if l.strip()), "")
+            _sep = max([",", ";", "\t", "|"], key=lambda _d: _linha0.count(_d)) if _linha0 else ","
+        # dtype inferido (como no Excel/leitura padrão) para não alterar a semântica numérica a jusante.
+        _df = pd.read_csv(_io2.StringIO(_texto), sep=_sep)
+        _aviso = ("A planilha CSV foi lida como **1 coluna só** — provável separador inesperado. "
+                  "Confira o arquivo." if len(_df.columns) <= 1 else None)
+        return _df, _aviso
+    # Excel: calamine (rápido) com fallback openpyxl (reposiciona o stream entre tentativas).
+    try:
+        return pd.read_excel(_arquivo, engine="calamine"), None
+    except Exception:
+        try:
+            _arquivo.seek(0)
+        except Exception:
+            pass
+        return pd.read_excel(_arquivo, engine="openpyxl"), None
+
+
 @st.cache_data(show_spinner=False)
 def _gerar_planilha_modelo_lote():
     """[REDESIGN TOTAL - Rodada 7] Modelo de planilha para o Estudo em Lote (mission redesign §7/§57
@@ -55984,8 +56038,11 @@ if _secao == _SECOES[3]:   # tab_comparador
                     continue
                 _nomes_usados.add(_nm.strip())
                 try:
-                    _df_nw = (pd.read_csv(_fl) if _fl.name.lower().endswith(".csv")
-                              else pd.read_excel(_fl))
+                    # [COMPARADOR - leitura robusta] mesmo leitor tolerante do modo de 2 estudos:
+                    # aguenta CSV brasileiro (';' + latin-1) e cai no openpyxl se o calamine falhar.
+                    _df_nw, _av_nw = _ler_planilha_referencia(_fl)
+                    if _av_nw:
+                        _erros_nw.append(f"⚠️ **'{_nm}':** {_av_nw}")
                 except Exception as _e_nw:
                     _erros_nw.append(f"⛔ **'{_nm}' não pôde ser lido:** {type(_e_nw).__name__}. "
                                      "O arquivo pode estar corrompido ou num formato inesperado.")
@@ -56150,12 +56207,21 @@ if _secao == _SECOES[3]:   # tab_comparador
     with st.container():
         if _file_ref is None:
             st.caption("Envie a planilha de referência para mapear as colunas e comparar.")
+        # [COMPARADOR-UX] Anexou a referência mas ainda não há estudo base: antes disso, o app não
+        # renderizava NADA (nem mensagem) — parecia que "anexar dava problema". Agora explica o passo.
+        if _file_ref is not None and not _tem_alo:
+            st.warning("📎 Planilha de referência anexada, mas ainda **não há um estudo base** para comparar. "
+                       "Rode primeiro a aba **🎯 Locais de Aplicação** (ou recarregue um estudo salvo). Assim que "
+                       "houver um resultado, o mapeamento das colunas e a comparação aparecem aqui automaticamente "
+                       "— o arquivo anexado continua no lugar.")
         if _file_ref is not None and _tem_alo:
             try:
-                # [PERF - 142ª geração] engine='calamine' (Rust) como no resto da app — era a única
-                # leitura de Excel sem engine explícita, caindo no openpyxl (bem mais lento).
-                _df_ref = (pd.read_csv(_file_ref) if _file_ref.name.lower().endswith(".csv")
-                           else pd.read_excel(_file_ref, engine='calamine'))
+                # [COMPARADOR - leitura robusta] Lê xlsx/xls/csv tolerando o CSV brasileiro (';' + latin-1),
+                # que quebrava a leitura padrão (UnicodeDecodeError / tudo numa coluna). Excel: calamine
+                # (rápido) com fallback openpyxl. Ver _ler_planilha_referencia.
+                _df_ref, _aviso_leitura = _ler_planilha_referencia(_file_ref)
+                if _aviso_leitura:
+                    st.warning("⚠️ " + _aviso_leitura)
                 st.caption(f"Base de referência: **{len(_df_ref)} linhas**, {len(_df_ref.columns)} colunas.")
                 _cols = ["—"] + list(_df_ref.columns)
 
