@@ -49953,52 +49953,19 @@ def _ler_planilha_referencia(_arquivo):
     latin-1/cp1252), que quebrava a leitura padrão do pandas (UnicodeDecodeError ou tudo numa coluna só).
 
     Devolve (DataFrame, aviso|None). Levanta apenas se o arquivo for genuinamente ilegível — o chamador
-    trata a exceção e mostra mensagem clara. Estratégia:
-      • Excel: engine 'calamine' (rápido, usado no resto da app), com fallback para 'openpyxl'.
-      • CSV/TXT: detecta a CODIFICAÇÃO (utf-8-sig → utf-8 → latin-1 → cp1252) e o SEPARADOR
-        (',' ';' '\\t' '|') via csv.Sniffer, com fallback pela contagem no cabeçalho."""
-    import io as _io2
-    _nome = (getattr(_arquivo, "name", "") or "").lower()
-    _eh_csv = _nome.endswith(".csv") or _nome.endswith(".txt") or _nome.endswith(".tsv")
-    if _eh_csv:
-        try:
-            _bruto = _arquivo.getvalue() if hasattr(_arquivo, "getvalue") else _arquivo.read()
-        except Exception:
-            _bruto = _arquivo.read()
-        if isinstance(_bruto, str):
-            _bruto = _bruto.encode("utf-8", "replace")
-        _texto = None
-        for _enc in ("utf-8-sig", "utf-8", "latin-1", "cp1252"):
-            try:
-                _texto = _bruto.decode(_enc)
-                break
-            except Exception:
-                continue
-        if _texto is None:  # último recurso: nunca falhar por acento — decodifica trocando o inválido
-            _texto = _bruto.decode("latin-1", "replace")
-        # separador: Sniffer sobre as primeiras linhas; fallback = o delimitador mais frequente no cabeçalho
-        _sep = None
-        try:
-            import csv as _csv2
-            _amostra = "\n".join(_texto.splitlines()[:25])
-            _sep = _csv2.Sniffer().sniff(_amostra, delimiters=",;\t|").delimiter
-        except Exception:
-            _linha0 = next((l for l in _texto.splitlines() if l.strip()), "")
-            _sep = max([",", ";", "\t", "|"], key=lambda _d: _linha0.count(_d)) if _linha0 else ","
-        # dtype inferido (como no Excel/leitura padrão) para não alterar a semântica numérica a jusante.
-        _df = pd.read_csv(_io2.StringIO(_texto), sep=_sep)
-        _aviso = ("A planilha CSV foi lida como **1 coluna só** — provável separador inesperado. "
-                  "Confira o arquivo." if len(_df.columns) <= 1 else None)
-        return _df, _aviso
-    # Excel: calamine (rápido) com fallback openpyxl (reposiciona o stream entre tentativas).
+    trata a exceção e mostra mensagem clara.
+
+    [CSV-EM-TODA-APP] Passou a DELEGAR para `_parse_planilha_bytes`, unificando a leitura com Lote e
+    Alocação: o formato (Excel × CSV) é detectado pela ASSINATURA do conteúdo, não pela extensão — então
+    um .csv que na verdade é xlsx (ou o contrário) ainda é lido certo. A lógica de CSV brasileiro
+    (encoding + separador) e o aviso de '1 coluna só' vivem agora em `_parse_csv_bytes`."""
     try:
-        return pd.read_excel(_arquivo, engine="calamine"), None
+        _bytes = _arquivo.getvalue() if hasattr(_arquivo, "getvalue") else _arquivo.read()
     except Exception:
-        try:
-            _arquivo.seek(0)
-        except Exception:
-            pass
-        return pd.read_excel(_arquivo, engine="openpyxl"), None
+        _bytes = _arquivo.read()
+    if isinstance(_bytes, str):
+        _bytes = _bytes.encode("utf-8", "replace")
+    return _parse_planilha_bytes(_bytes)
 
 
 @st.cache_data(show_spinner=False)

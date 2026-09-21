@@ -10,22 +10,16 @@ Estes testes NÃO sobem o Streamlit: extraem apenas a função `_ler_planilha_re
 streamlit_app.py (por regex) e a exercitam com os formatos reais que os usuários enviam. Assim travam a
 correção sem depender do runtime de UI."""
 import io
-import re
 
 import pandas as pd
 
+import streamlit_app as m
 
-def _carregar_leitor():
-    _src = open("streamlit_app.py", encoding="utf-8").read()
-    _m = re.search(r"\ndef _ler_planilha_referencia\(_arquivo\):.*?\n\n\n@st\.cache_data", _src, re.S)
-    assert _m, "função _ler_planilha_referencia não encontrada em streamlit_app.py"
-    _code = _m.group(0).replace("\n\n\n@st.cache_data", "")
-    _ns = {"pd": pd}
-    exec(_code, _ns)
-    return _ns["_ler_planilha_referencia"]
-
-
-_LER = _carregar_leitor()
+# [CSV-EM-TODA-APP] Antes esta função era extraída por regex+exec (isolada). Ela passou a DELEGAR para
+# _parse_planilha_bytes/_parse_csv_bytes (leitura unificada por assinatura de conteúdo), então a
+# extração isolada quebrava por dependências ausentes. Exercitamos a função REAL do módulo — como os
+# demais testes de leitura — o que é mais robusto e cobre a delegação de fato.
+_LER = m._ler_planilha_referencia
 
 
 def _arq(raw, name):
