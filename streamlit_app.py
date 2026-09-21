@@ -7828,18 +7828,28 @@ def _secao_ref_impossivel_html(linhas, top=40):
                if _cand_imp > 0 else "")
             + "</div>",
         ]
+        def _nota_truncada(_total):
+            # honestidade: a tabela mostra só as `top` de maior déficit; sem esta nota, o KPI (que conta
+            # TODAS) e a tabela (truncada) se contradiziam em silêncio num estudo nacional.
+            if _total > top:
+                return (f"<p class='muted' style='font-size:12px;color:#64748b;margin:4px 0 0'>Mostrando as "
+                        f"<b>{top}</b> de maior déficit, de <b>{_total}</b> no total — a lista completa está na "
+                        f"planilha exportável (coluna “Auditoria Distancia Referencia”).</p>")
+            return ""
         if _imp:
             _rows = "".join(_linha_html(_l) for _l in _imp[:top])
             _out.append("<h3 style='margin-top:14px'>🔴 Fisicamente impossíveis</h3>"
                         "<table><thead><tr><th>Origem → Destino (referência)</th>"
                         "<th class='r'>Distância da referência</th><th class='r'>Linha reta (piso físico)</th>"
-                        f"<th>Por que é impossível</th></tr></thead><tbody>{_rows}</tbody></table>")
+                        f"<th>Por que é impossível</th></tr></thead><tbody>{_rows}</tbody></table>"
+                        + _nota_truncada(len(_imp)))
         if _impl:
             _rows2 = "".join(_linha_html(_l) for _l in _impl[:top])
             _out.append("<h3 style='margin-top:14px'>🟠 Implausíveis (reta demais para ser estrada)</h3>"
                         "<table><thead><tr><th>Origem → Destino (referência)</th>"
                         "<th class='r'>Distância da referência</th><th class='r'>Linha reta</th>"
-                        f"<th>Por que é improvável</th></tr></thead><tbody>{_rows2}</tbody></table>")
+                        f"<th>Por que é improvável</th></tr></thead><tbody>{_rows2}</tbody></table>"
+                        + _nota_truncada(len(_impl)))
         return "".join(_out)
     except Exception:
         return ""
