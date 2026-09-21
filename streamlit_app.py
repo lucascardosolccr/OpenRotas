@@ -4719,8 +4719,10 @@ def _painel_interativo_bi_html(df):
             try:
                 if _idx_cod is None:
                     _idx_cod = _indice_ibge_por_codigo() or {}
-                # 1) por Código IBGE (7 dígitos) — resolução O(1) e inequívoca
-                _c7 = "".join(ch for ch in str(_cod or "") if ch.isdigit())
+                # 1) por Código IBGE (7 dígitos) — resolução O(1) e inequívoca. Descarta a parte decimal
+                # primeiro: planilhas lidas pelo pandas trazem o código como float (1501402.0), e extrair
+                # dígitos direto daria "15014020" (8) — o path de código nunca casaria.
+                _c7 = "".join(ch for ch in str(_cod or "").strip().split(".")[0] if ch.isdigit())
                 if len(_c7) == 7:
                     _info = _idx_cod.get(_c7) or {}
                     _la = _num_seguro(_info.get("lat")); _lo = _num_seguro(_info.get("lon"))

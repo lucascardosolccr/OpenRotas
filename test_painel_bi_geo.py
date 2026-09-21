@@ -26,6 +26,20 @@ def test_enriquece_coordenada_por_codigo_ibge():
     assert '"la":' in html and '"lo":' in html
 
 
+def test_codigo_ibge_float_resolve():
+    # pandas costuma ler o Código IBGE como float (1501402.0) — o path de código deve casar mesmo assim
+    df = pd.DataFrame({
+        "Municipio Origem": ["Belem"],
+        "UF Origem": ["PA"],
+        "Cod IBGE Origem": [1501402.0],
+        "Municipio Destino": ["Ananindeua"],
+        "Distancia": [8.4],
+        "Inscritos": [50],
+    })
+    html = m._painel_interativo_bi_html(df)
+    assert html and "TEM_GEO=true" in html
+
+
 def test_enriquece_coordenada_por_nome_uf():
     # sem lat/lon e sem código, mas nome+UF resolvem o centroide na base embarcada
     df = pd.DataFrame({
