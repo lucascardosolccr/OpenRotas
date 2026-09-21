@@ -5392,7 +5392,7 @@ def _perfil_geografico_svg(ctx):
             if _km is None:
                 continue
             _sz = getattr(_r, "sazonal", None) is True
-            _itens.append((float(_km), "cima", "#f59e0b" if _sz else "#38bdf8", "🌊",
+            _itens.append((float(_km), "cima", _GEO_CORES["sazonal"] if _sz else _GEO_CORES["rio"],
                            getattr(_r, "nome", "rio"), _sz))
         for _c in (getattr(ctx, "corpos_dagua", None) or []):
             _km = getattr(_c, "km_desde_origem", None)
@@ -5400,18 +5400,18 @@ def _perfil_geografico_svg(ctx):
                 continue
             _sz = getattr(_c, "sazonal", None) is True
             _art = (getattr(_c, "artificial", "") or "").strip().lower() == "sim"
-            _itens.append((float(_km), "cima", "#f59e0b" if _sz else ("#8b5cf6" if _art else "#2dd4bf"),
-                           "🏗️" if _art else "🏞️", getattr(_c, "nome", "corpo"), _sz))
+            _cor_c = _GEO_CORES["sazonal"] if _sz else (_GEO_CORES["reservatorio"] if _art else _GEO_CORES["corpo"])
+            _itens.append((float(_km), "cima", _cor_c, getattr(_c, "nome", "corpo"), _sz))
         for _p in (getattr(ctx, "pontes", None) or []):
             _km = getattr(_p, "km_desde_origem", None)
             if _km is None:
                 continue
-            _itens.append((float(_km), "baixo", "#fbbf24", "🌉", getattr(_p, "nome", "ponte"), False))
+            _itens.append((float(_km), "baixo", _GEO_CORES["ponte"], getattr(_p, "nome", "ponte"), False))
         for _t in (getattr(ctx, "travessias", None) or []):
             _km = getattr(_t, "km_desde_origem", None)
             if _km is None:
                 continue
-            _itens.append((float(_km), "baixo", "#a78bfa", "⛴️", getattr(_t, "nome", "travessia"), False))
+            _itens.append((float(_km), "baixo", _GEO_CORES["travessia"], getattr(_t, "nome", "travessia"), False))
         if not _itens and not _tot:
             return ""
         if _tot is None or _tot <= 0:
@@ -5437,8 +5437,8 @@ def _perfil_geografico_svg(ctx):
             # trilho da rota
             f'<line x1="{_x0}" y1="{_yl}" x2="{_x1}" y2="{_yl}" stroke="#334155" stroke-width="6" stroke-linecap="round"/>',
             # origem/destino
-            f'<circle cx="{_x0}" cy="{_yl}" r="8" fill="#22c55e" stroke="#0e1117" stroke-width="2"/>',
-            f'<circle cx="{_x1}" cy="{_yl}" r="8" fill="#ef4444" stroke="#0e1117" stroke-width="2"/>',
+            f'<circle cx="{_x0}" cy="{_yl}" r="8" fill="{_GEO_CORES["origem"]}" stroke="#0e1117" stroke-width="2"/>',
+            f'<circle cx="{_x1}" cy="{_yl}" r="8" fill="{_GEO_CORES["destino"]}" stroke="#0e1117" stroke-width="2"/>',
             f'<text x="{_x0}" y="{_yl+34:.0f}" fill="#cbd5e1" font-size="12" font-weight="600" text-anchor="middle">{_org}</text>',
             f'<text x="{_x1}" y="{_yl-22:.0f}" fill="#cbd5e1" font-size="12" font-weight="600" text-anchor="middle">{_dst}</text>',
         ]
@@ -5446,7 +5446,7 @@ def _perfil_geografico_svg(ctx):
         _niv_cima = [-40.0, -62.0, -84.0]
         _niv_baixo = [40.0, 62.0, 84.0]
         _ic = _ib = 0
-        for _km, _lado, _cor, _gl, _nome, _sz in _itens:
+        for _km, _lado, _cor, _nome, _sz in _itens:
             _x = _px(_km)
             if _lado == "cima":
                 _dy = _niv_cima[_ic % len(_niv_cima)]; _ic += 1
@@ -5459,9 +5459,10 @@ def _perfil_geografico_svg(ctx):
             _parts.append(f'<line x1="{_x:.1f}" y1="{_yl:.1f}" x2="{_x:.1f}" y2="{_y:.1f}" stroke="{_cor}" stroke-width="1.5"{_dash} opacity="0.8"/>')
             _parts.append(f'<circle cx="{_x:.1f}" cy="{_y:.1f}" r="6" fill="{_cor}" stroke="#0e1117" stroke-width="1.5"><title>{_he.escape(str(_nome))} · km {_km:.1f}{" · sazonal" if _sz else ""}</title></circle>')
             _parts.append(f'<text x="{_x:.1f}" y="{_ty:.1f}" fill="#cbd5e1" font-size="10.5" text-anchor="middle">{_nm}</text>')
-        # legenda
-        _leg = [("#38bdf8", "rio"), ("#2dd4bf", "corpo d'água"), ("#8b5cf6", "reservatório"),
-                ("#f59e0b", "sazonal"), ("#fbbf24", "ponte"), ("#a78bfa", "travessia")]
+        # legenda (mesma paleta única _GEO_CORES do resto da aplicação)
+        _leg = [(_GEO_CORES["rio"], "rio"), (_GEO_CORES["corpo"], "corpo d'água"),
+                (_GEO_CORES["reservatorio"], "reservatório"), (_GEO_CORES["sazonal"], "sazonal"),
+                (_GEO_CORES["ponte"], "ponte"), (_GEO_CORES["travessia"], "travessia")]
         _lx = 24.0
         for _cor, _lab in _leg:
             _parts.append(f'<circle cx="{_lx+4:.0f}" cy="{_H-14:.0f}" r="5" fill="{_cor}"/>')
@@ -47921,10 +47922,16 @@ if _secao == _SECOES[0]:   # tab_individual
                             # por-chamada não. Como o cartão roda em TODO rerun do Streamlit (qualquer clique na
                             # página de resultado), memoiza o contexto por coordenadas na sessão — recomputa só
                             # quando a rota muda de fato. Elimina o gargalo sem alterar o resultado.
+                            # impressão digital barata da geometria (nº de pontos + extremos): distingue
+                            # traçados diferentes com as mesmas pontas/distância, sem hashear a lista toda.
+                            try:
+                                _geom_fp = (len(_geom_gi), _geom_gi[0], _geom_gi[-1]) if _geom_gi else None
+                            except Exception:
+                                _geom_fp = None
                             _chave_gi = (round(float(_lat_o_gi), 5), round(float(_lon_o_gi), 5),
                                          round(float(_lat_d_gi), 5), round(float(_lon_d_gi), 5),
                                          round(float(_dist_gi), 1) if _dist_gi is not None else None,
-                                         _geom_gi is not None)
+                                         _geom_fp)
                             if (st.session_state.get('_geo_ctx_chave') == _chave_gi
                                     and st.session_state.get('ultima_rota_individual_geo') is not None):
                                 _ctx_gi = st.session_state['ultima_rota_individual_geo']
@@ -48039,8 +48046,13 @@ if _secao == _SECOES[0]:   # tab_individual
                                         for _fe in _ctx_gi.ferrovias:
                                             with st.expander(_fe.nome, expanded=False):
                                                 _fchips = []
-                                                if _fe.situacao_fisica and _fe.situacao_fisica.strip().lower() not in ("desconhecida", "desconhecido", "construída", "construida"):
-                                                    _fchips.append(_chip(f"⚠️ {_fe.situacao_fisica} (não operacional)", _GEO_CORES["sazonal"]))
+                                                # usa a MESMA constante canônica do resumo_confiabilidade/motor de
+                                                # anomalias — o chip "não operacional" não pode divergir do banner.
+                                                _sf = (_fe.situacao_fisica or "").strip()
+                                                if _sf in _geo_route_context._SITUACOES_FISICAS_NAO_OPERACIONAIS:
+                                                    _fchips.append(_chip(f"⚠️ {_sf} (não operacional)", _GEO_CORES["sazonal"]))
+                                                elif _sf and _sf.lower() not in ("desconhecida", "desconhecido", "construída", "construida"):
+                                                    _fchips.append(_chip(_sf, _GEO_CORES["neutro"]))
                                                 if _fe.tipo_trecho and _fe.tipo_trecho.strip().lower() not in ("desconhecido",):
                                                     _fchips.append(_chip(f"{_fe.tipo_trecho}", _GEO_CORES["ferrovia"]))
                                                 if _fe.bitola and _fe.bitola.strip().lower() not in ("desconhecida", "desconhecido"):

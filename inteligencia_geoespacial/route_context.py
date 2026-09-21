@@ -709,9 +709,11 @@ def resumo_confiabilidade(ctx):
         pontes = list(getattr(ctx, "pontes", None) or [])
         ferrovias = list(getattr(ctx, "ferrovias", None) or [])
 
+        _forte = False  # presença de sinal de risco FORTE (água sazonal / rodovia sem pavimento)
         _saz = _dedup(getattr(x, "nome", None) for x in (rios + corpos)
                       if getattr(x, "sazonal", None) is True)
         if _saz:
+            _forte = True
             alertas.append("%d curso(s)/corpo(s) d'água sazonal(is) (pode secar em parte do ano): %s"
                            % (len(_saz), ", ".join(_saz[:4])))
 
@@ -724,6 +726,7 @@ def resumo_confiabilidade(ctx):
         _terra = _dedup(getattr(r, "sigla", None) for r in rodovias
                         if _revestimento_precario(getattr(r, "revestimento", None)) is True)
         if _terra:
+            _forte = True
             alertas.append("%d rodovia(s) sem pavimentação (sensível à chuva): %s"
                            % (len(_terra), ", ".join(_terra[:4])))
 
@@ -748,11 +751,12 @@ def resumo_confiabilidade(ctx):
             alertas.append("%d ferrovia(s) não-operacional(is): %s"
                            % (len(_ferr_no), ", ".join(_ferr_no[:4])))
     except Exception:
-        pass
-    # severidade: água sazonal/sem pavimento em rota são os sinais mais fortes de risco operacional
+        _forte = False
+    # severidade: 'alta' quando há um sinal FORTE (água sazonal ou rodovia sem pavimento — os que mais
+    # comprometem a rota) OU acúmulo de 3+ sinais; 'media' com sinais mais leves; 'nenhuma' sem sinal.
     _sev = "nenhuma"
     if alertas:
-        _sev = "alta" if (len(alertas) >= 3) else "media"
+        _sev = "alta" if (_forte or len(alertas) >= 3) else "media"
     return {"alertas": alertas, "n": len(alertas), "texto": " · ".join(alertas), "severidade": _sev}
 
 
