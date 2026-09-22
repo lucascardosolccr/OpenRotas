@@ -6808,7 +6808,49 @@ def _secao_impacto_candidatos_html(estudo):
         return ""
 
 
-def _gerar_relatorio_html(df, titulo="Relatório do Estudo", data_str=""):
+def _html_resumo_otimalidade(resgate=None, fechamento=None):
+    """[OTIM-HTML] Bloco HTML autocontido com o GANHO dos passes de otimalidade de rota (resgate por
+    circuidade + fechamento de otimalidade): quantas escolhas foram fechadas para a MENOR distância real e
+    quantos km isso economizou. Existia só na tela; agora pode viajar junto com o relatório exportável. PURO
+    e defensivo: sem ganho (0 trocas e 0 km) → '' (nenhuma seção é adicionada). Retorna string HTML."""
+    import html as _he  # noqa: F401 (paridade com o resto do módulo; sem entrada externa a escapar aqui)
+    _r = resgate or {}
+    _f = fechamento or {}
+    _r_trocas = int(_r.get('n_trocas', 0) or 0)
+    _r_km = float(_r.get('km_economizados', 0) or 0.0)
+    _f_trocas = int(_f.get('trocas', 0) or 0)
+    _f_km = float(_f.get('km_salvo_total', 0) or 0.0)
+    _tot_trocas = _r_trocas + _f_trocas
+    _tot_km = _r_km + _f_km
+    if _tot_trocas <= 0 and _tot_km <= 0:
+        return ""
+
+    def _fmt_int(v):
+        return f"{int(round(v)):,}".replace(",", ".")
+
+    def _card(valor, rotulo):
+        return (
+            '<div style="flex:1 1 160px;min-width:150px;background:#f8fafc;border:1px solid #e2e8f0;'
+            'border-radius:12px;padding:16px 18px;">'
+            f'<div style="font-size:1.9rem;font-weight:700;color:#1e3a8a;line-height:1.1;">{valor}</div>'
+            f'<div style="font-size:.8rem;color:#475569;margin-top:4px;">{rotulo}</div></div>')
+    _cards = [
+        _card(_fmt_int(_tot_trocas), "Rotas melhoradas para a menor distância"),
+        _card(_fmt_int(_tot_km) + " km", "Quilometragem economizada"),
+    ]
+    if _r_trocas:
+        _cards.append(_card(_fmt_int(_r_trocas), "pelo resgate por circuidade"))
+    if _f_trocas:
+        _cards.append(_card(_fmt_int(_f_trocas), "pelo fechamento de otimalidade"))
+    return (
+        '<div style="display:flex;flex-wrap:wrap;gap:12px;margin:8px 0 12px;">' + "".join(_cards) + "</div>"
+        '<p style="color:#475569;font-size:.9rem;margin:6px 0 0;">Ambos os passes são '
+        '<strong>monotônicos</strong>: só substituem a escolha quando existe um polo comprovadamente mais '
+        'curto por estrada (a rota nunca piora). O fechamento varre toda a fronteira geometricamente '
+        'admissível — polos cuja linha reta é menor que a viária atual, os únicos que podem vencer.</p>')
+
+
+def _gerar_relatorio_html(df, titulo="Relatório do Estudo", data_str="", secoes_extra=None):
     """[RELATORIO-HTML-PRO - 184ª geração] Relatório HTML AUTOCONTIDO (offline) de nível profissional/BI:
     capa, NAVEGAÇÃO LATERAL (sumário), cartões executivos e seções analíticas ricas — Resumo, Distribuição de
     Distâncias, Síntese por UF, Competitividade dos Polos, Concorrentes, Balsas, Linha Reta × Rota, Mapa e
@@ -6840,6 +6882,14 @@ def _gerar_relatorio_html(df, titulo="Relatório do Estudo", data_str=""):
             _painel_bi = _painel_interativo_bi_html(df)
             if _painel_bi:
                 _sec.append(("painel", "Painel Executivo Interativo", _painel_bi))
+        except Exception:
+            pass
+        # [OTIM-HTML] Seções extra injetadas pelo chamador (ex.: ganho dos passes de otimalidade de rota da
+        # Alocação). Ficam logo após o painel, no topo do relatório. Defensivo: itens malformados são pulados.
+        try:
+            for _se in (secoes_extra or []):
+                if isinstance(_se, (list, tuple)) and len(_se) == 3 and _se[2]:
+                    _sec.append((str(_se[0]), str(_se[1]), _se[2]))
         except Exception:
             pass
 
@@ -56629,9 +56679,21 @@ if _secao == _SECOES[2]:   # tab_alocacao
                              help="Um arquivo HTML único (KPIs, distribuição, mapa e maiores deslocamentos) que abre "
                                   "offline em qualquer navegador — para enviar a quem decide e não usa a aplicação."):
                     with st.spinner("Gerando relatório..."):
+                        # [OTIM-HTML] Leva o ganho dos passes de otimalidade de rota (resgate + fechamento)
+                        # para dentro do relatório exportável — antes ele só aparecia na tela.
+                        _sec_otim = []
+                        try:
+                            _otim_html = _html_resumo_otimalidade(
+                                resgate=st.session_state.get('alo_resgate'),
+                                fechamento=st.session_state.get('alo_fechamento_otimalidade'))
+                            if _otim_html:
+                                _sec_otim = [("otimizacao", "Otimização de Rotas (menor distância)", _otim_html)]
+                        except Exception:
+                            _sec_otim = []
                         _rel_html_loc = _gerar_relatorio_html(st.session_state['df_processado'],
                                                               titulo="Relatório de Locais de Aplicação",
-                                                              data_str=pd.Timestamp.now().strftime("%d/%m/%Y %H:%M"))
+                                                              data_str=pd.Timestamp.now().strftime("%d/%m/%Y %H:%M"),
+                                                              secoes_extra=_sec_otim)
                         if _rel_html_loc:
                             st.session_state['relatorio_html_loc'] = _rel_html_loc.encode("utf-8")
                         else:
