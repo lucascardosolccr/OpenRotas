@@ -34297,19 +34297,28 @@ def _gerar_dados_bacias_fallback():
     return pd.DataFrame(_bacias)
 
 
+_FONTE_ESTACOES_AMOSTRA = "Amostra ilustrativa (catálogo ANA/SNIRH não carregado)"
+
+
 def _gerar_dados_estacoes_fallback():
-    """Gera dados de estações de fallback (amostra representativa)."""
+    """[HONESTIDADE-DADOS] Amostra ILUSTRATIVA de estações — usada só quando o catálogo real da ANA/SNIRH
+    (snirh_estacaos.csv, ~91 MB, sob demanda) não está carregado. São locais REAIS (Óbidos, Pirapora…), mas
+    o CÓDIGO é um placeholder ('—'): a app NÃO tem os códigos ANA reais destas estações e não deve fingir que
+    tem — códigos inventados quebravam a consulta à API e induziam ao erro. A coluna `fonte` marca a amostra
+    para a UI avisar e desabilitar a consulta ao vivo, oferecendo o download do catálogo real."""
     _estacoes = [
-        {"codigo": "12345000", "nome": "Rio Amazonas - Óbidos", "rio": "Amazonas", "bacia": "Amazônica", "uf": "PA", "lat": -1.92, "lon": -55.52, "tipo": "Telemétrica"},
-        {"codigo": "13456000", "nome": "Rio Tocantins - Itupiranga", "rio": "Tocantins", "bacia": "Tocantins-Araguaia", "uf": "PA", "lat": -5.12, "lon": -49.35, "tipo": "Telemétrica"},
-        {"codigo": "14567000", "nome": "Rio São Francisco - Pirapora", "rio": "São Francisco", "bacia": "São Francisco", "uf": "MG", "lat": -17.34, "lon": -44.94, "tipo": "Convencional"},
-        {"codigo": "15678000", "nome": "Rio Paraná - Porto Primavera", "rio": "Paraná", "bacia": "Paraná", "uf": "MS", "lat": -22.55, "lon": -53.15, "tipo": "Telemétrica"},
-        {"codigo": "16789000", "nome": "Rio Paraguai - Caceres", "rio": "Paraguai", "bacia": "Paraguai", "uf": "MT", "lat": -16.07, "lon": -57.68, "tipo": "Convencional"},
-        {"codigo": "17890000", "nome": "Rio Uruguai - Itaqui", "rio": "Uruguai", "bacia": "Uruguai", "uf": "RS", "lat": -29.12, "lon": -56.55, "tipo": "Telemétrica"},
-        {"codigo": "18901000", "nome": "Rio Paraíba do Sul - Campos", "rio": "Paraíba do Sul", "bacia": "Sudeste", "uf": "RJ", "lat": -21.75, "lon": -41.32, "tipo": "Convencional"},
-        {"codigo": "19012000", "nome": "Rio Parnaíba - Teresina", "rio": "Parnaíba", "bacia": "Parnaíba", "uf": "PI", "lat": -5.09, "lon": -42.80, "tipo": "Telemétrica"},
+        {"codigo": "—", "nome": "Rio Amazonas - Óbidos", "rio": "Amazonas", "bacia": "Amazônica", "uf": "PA", "lat": -1.92, "lon": -55.52, "tipo": "Telemétrica"},
+        {"codigo": "—", "nome": "Rio Tocantins - Itupiranga", "rio": "Tocantins", "bacia": "Tocantins-Araguaia", "uf": "PA", "lat": -5.12, "lon": -49.35, "tipo": "Telemétrica"},
+        {"codigo": "—", "nome": "Rio São Francisco - Pirapora", "rio": "São Francisco", "bacia": "São Francisco", "uf": "MG", "lat": -17.34, "lon": -44.94, "tipo": "Convencional"},
+        {"codigo": "—", "nome": "Rio Paraná - Porto Primavera", "rio": "Paraná", "bacia": "Paraná", "uf": "MS", "lat": -22.55, "lon": -53.15, "tipo": "Telemétrica"},
+        {"codigo": "—", "nome": "Rio Paraguai - Cáceres", "rio": "Paraguai", "bacia": "Paraguai", "uf": "MT", "lat": -16.07, "lon": -57.68, "tipo": "Convencional"},
+        {"codigo": "—", "nome": "Rio Uruguai - Itaqui", "rio": "Uruguai", "bacia": "Uruguai", "uf": "RS", "lat": -29.12, "lon": -56.55, "tipo": "Telemétrica"},
+        {"codigo": "—", "nome": "Rio Paraíba do Sul - Campos", "rio": "Paraíba do Sul", "bacia": "Sudeste", "uf": "RJ", "lat": -21.75, "lon": -41.32, "tipo": "Convencional"},
+        {"codigo": "—", "nome": "Rio Parnaíba - Teresina", "rio": "Parnaíba", "bacia": "Parnaíba", "uf": "PI", "lat": -5.09, "lon": -42.80, "tipo": "Telemétrica"},
     ]
-    return pd.DataFrame(_estacoes)
+    _dfe = pd.DataFrame(_estacoes)
+    _dfe["fonte"] = _FONTE_ESTACOES_AMOSTRA
+    return _dfe
 
 
 def _cruza_agua_entre_pontos(lat_o, lon_o, lat_d, lon_d, g=None):
@@ -63786,6 +63795,22 @@ if _secao == _SECOES[17]:   # tab_hidrografia
     _rios_df = _carregar_rios_com_fallback()
     _bacias_df = _carregar_bacias_com_fallback()
     _est_df = _carregar_estacoes_com_fallback()
+    # [HONESTIDADE-DADOS] O catálogo de estações (snirh_estacaos.csv, ~91 MB) é baixado sob demanda; até lá
+    # a app usa uma AMOSTRA ILUSTRATIVA (locais reais, mas sem os códigos ANA). Detecta isso UMA vez para as
+    # sub-abas avisarem com clareza e não oferecerem a consulta ao vivo com códigos que não existem.
+    _est_e_amostra = True
+    try:
+        _fnt0 = str(_est_df["fonte"].iloc[0]) if (not _est_df.empty and "fonte" in _est_df.columns) else ""
+        _est_e_amostra = _est_df.empty or ("SNIRH (CSV local)" not in _fnt0)
+    except Exception:
+        _est_e_amostra = True
+
+    def _aviso_amostra_estacoes():
+        """Banner honesto quando as estações são a amostra ilustrativa (catálogo real ausente)."""
+        st.warning("ℹ️ **Estações em modo amostra.** O catálogo oficial da ANA/SNIRH (~91 MB) ainda não foi "
+                   "baixado neste ambiente, então esta é uma **amostra ilustrativa** — os locais são reais, mas "
+                   "**sem os códigos ANA**, então a consulta ao vivo de cotas/vazões fica indisponível. Baixe o "
+                   "catálogo completo (botão na sub-aba **📍 Estações**) para dados e consultas reais.")
     
     with _aba_hidro[0]:
         st.subheader("🌊 Rios Brasileiros")
@@ -63908,6 +63933,8 @@ if _secao == _SECOES[17]:   # tab_hidrografia
     
     with _aba_hidro[2]:
         st.subheader("📍 Estações Hidrológicas")
+        if _est_e_amostra:
+            _aviso_amostra_estacoes()
         if not _est_df.empty:
             st.caption(f"Fonte: {_est_df['fonte'].iloc[0] if 'fonte' in _est_df.columns else 'Desconhecida'} | Total: {len(_est_df)} estações")
             _cols_show = [c for c in ["codigo", "nome", "rio", "bacia", "uf", "lat", "latitude", "lon", "longitude", "tipo", "fonte"] if c in _est_df.columns]
@@ -63943,17 +63970,20 @@ if _secao == _SECOES[17]:   # tab_hidrografia
     with _aba_hidro[3]:
         st.subheader("📊 Séries Hidrológicas Disponíveis")
         st.info("""
-        **Tipos de séries disponíveis via API SNIRH REST (HidroWeb):**
-        - **Cotas** (`/cotases`): Nível d'água em metros
-        - **Vazões** (`/vazoeses`): Vazão em m³/s
-        - **Sedimentos** (`/sedimentoses`): Carga de sedimentos
-        - **Qualidade da água** (`/qualidadeaguaes`): Parâmetros físico-químicos
-        - **Curvas de descarga** (`/curvasdescargaes`): Relação cota-vazão
-        - **Chuvas** (`/chuvases`): Precipitação pluviométrica
-        
-        **Como consultar:** Use o código da estação (ex: 12345000) nos endpoints acima.
+        **Tipos de séries consultáveis via API ANA/HidroWeb** (endpoint `…/api/v1/<série>/estacao/<código>`):
+        - **Cotas** (`cotas`): Nível d'água em metros
+        - **Vazões** (`vazoes`): Vazão em m³/s
+        - **Sedimentos** (`sedimentos`): Carga de sedimentos
+        - **Qualidade da água** (`qualidadeagua`): Parâmetros físico-químicos
+        - **Curvas de descarga** (`curvasdescarga`): Relação cota-vazão
+        - **Chuvas** (`chuvas`): Precipitação pluviométrica
+
+        **Como consultar:** selecione a estação na sub-aba **📈 Cotas & Vazões** — a app monta o endpoint com o
+        código real da estação. (A API pública da ANA pode exigir cadastro/token.)
         """)
-        
+        if _est_e_amostra:
+            _aviso_amostra_estacoes()
+
         if not _est_df.empty:
             # [Expansão de conteúdo - Séries] Analítica real da REDE de monitoramento (antes só
             # texto estático + amostra de 20 linhas). Usa colunas já presentes no catálogo de
@@ -63997,8 +64027,10 @@ if _secao == _SECOES[17]:   # tab_hidrografia
 
     with _aba_hidro[4]:
         st.subheader("📈 Cotas & Vazões — Consulta Rápida")
-        st.caption("Consulta direta via API SNIRH REST. Requer conexão com internet.")
-        
+        st.caption("Consulta direta via API ANA/HidroWeb. Requer conexão com internet e o catálogo real de estações.")
+        if _est_e_amostra:
+            _aviso_amostra_estacoes()
+
         if not _est_df.empty:
             _est_codigos = _est_df["codigo"].astype(str).tolist() if "codigo" in _est_df.columns else []
             _est_nomes = _est_df["nome"].tolist() if "nome" in _est_df.columns else []
@@ -64042,8 +64074,14 @@ if _secao == _SECOES[17]:   # tab_hidrografia
             _tipo_slug_map = {"Cotas": "cotas", "Vazões": "vazoes", "Sedimentos": "sedimentos",
                               "Qualidade": "qualidadeagua", "Curvas descarga": "curvasdescarga",
                               "Chuvas": "chuvas"}
-            if st.button("🔍 Consultar API SNIRH (ao vivo)", key="hidro_consultar_api"):
-                if _est_sel != "(nenhuma)":
+            if st.button("🔍 Consultar API SNIRH (ao vivo)", key="hidro_consultar_api",
+                         disabled=_est_e_amostra,
+                         help=("Baixe o catálogo real de estações (sub-aba 📍 Estações) para habilitar — a amostra "
+                               "ilustrativa não tem os códigos ANA." if _est_e_amostra else None)):
+                if _est_e_amostra:
+                    st.info("Consulta ao vivo indisponível em modo amostra — baixe o catálogo real de estações "
+                            "para consultar cotas/vazões.")
+                elif _est_sel != "(nenhuma)":
                     _cod = _est_sel.split(" - ")[0]
                     _slug = _tipo_slug_map.get(_tipo_serie, str(_tipo_serie).lower())
                     _url_ana = f"https://hidroweb.ana.gov.br/api/v1/{_slug}/estacao/{_cod}"
