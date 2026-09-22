@@ -65143,3 +65143,5 @@ if _secao == _SECOES[21]:   # tab_auditoria_completa
         except Exception:
             logger.debug("[AUDIT-VIS] Decisões isoladas falharam (aditivo).", exc_info=True)
             st.info("Log de decisões do motor: rode um estudo para popular.")
+
+# [DEPLOY-MARKER] Rebuild forçado — código verificado limpo sob Python 3.13 (tokenize/getsource OK).
