@@ -29398,7 +29398,7 @@ def _resgate_por_candidatos(origem, uf, escolhido, cand_names, fn_rota, inscrito
 
 
 def _refinar_por_resgate_circuidade(df, topk_map, router=None, ativo=True, params=None, topk_completo=None,
-                                    viaria_estrita=False):
+                                    viaria_estrita=False, topk_ibge=None):
     """[RESGATE-CIRCUIDADE - 238ª/241ª] PASSE PÓS-ALOCAÇÃO. Percorre o df_final_alo; para cada origem cujo
     destino escolhido exibe a assinatura de risco (V/R alta, balsa ou fluvial), roteia os candidatos mais
     diretos do topk_map pelo motor autoritativo e, se houver alternativa melhor PARA O CANDIDATO, atualiza a
@@ -29442,6 +29442,32 @@ def _refinar_por_resgate_circuidade(df, topk_map, router=None, ativo=True, param
                 _topkc_norm[str(_k).strip().lower()] = _v
         except Exception:
             _topkc_norm = {}
+        # [MATCH-IBGE-PASSES] Índice por Código IBGE da origem (casamento AUTORITATIVO, imune a deriva de nome).
+        _topkc_ibge = {}
+        try:
+            for _k, _v in (topk_ibge or {}).items():
+                _ck = str(_k).strip()
+                if _ck and _v:
+                    _topkc_ibge[_ck] = _v
+        except Exception:
+            _topkc_ibge = {}
+        _c_ibge = next((_col[k] for k in ("cod ibge origem", "codigo ibge origem", "cód ibge origem",
+                                          "ibge origem", "cod ibge", "codigo ibge") if k in _col), None)
+
+        def _cands_por_origem(_orig_nome, _idx_linha):
+            # Casa a origem com o universo de polos: 1º pelo Código IBGE (autoritativo), depois pelo nome.
+            if _c_ibge is not None and _topkc_ibge:
+                try:
+                    _cod = str(df.at[_idx_linha, _c_ibge] or "").strip()
+                    # normaliza IBGE vindo como float ("1100205.0") → "1100205"
+                    if _cod.endswith(".0"):
+                        _cod = _cod[:-2]
+                    if _cod and _cod in _topkc_ibge:
+                        return _topkc_ibge[_cod]
+                except Exception:
+                    pass
+            _kn = str(_orig_nome).strip().lower()
+            return _topkc_norm.get(_kn) or _topk_norm.get(_kn) or []
         # mapa coluna(df) -> atributo(RotaPipeline) para atualização COMPLETA e coerente
         _MAP_RP = {
             "distancia": "distancia", "tempo": "tempo", "link da rota": "link_rota", "balsas": "balsas",
@@ -29477,7 +29503,7 @@ def _refinar_por_resgate_circuidade(df, topk_map, router=None, ativo=True, param
                 # NÃO roteado cuja LINHA RETA < viária atual, ele PODE ter rota viária menor (viária >= reta)
                 # e DEVE ser avaliado. Foi o que faltou em Guajará-Mirim/Nova Mamoré.
                 _admissivel = False
-                _cands_c = (_topkc_norm.get(_origem.strip().lower()) or _topk_norm.get(_origem.strip().lower()) or [])
+                _cands_c = _cands_por_origem(_origem, _idx)
                 if not _precisa and _RESGATE_ADMISSIVEL_ATIVO:
                     try:
                         for (_dd, _h) in _cands_c:
@@ -29521,9 +29547,7 @@ def _refinar_por_resgate_circuidade(df, topk_map, router=None, ativo=True, param
                 # derrotas evitáveis com V/R≥1,4× persistiam. Agora, TODA origem processada (precisa OU
                 # admissível) roteia a fronteira admissível COMPLETA (todos os polos cuja reta < viária atual —
                 # os únicos que podem vencer). Garante que o polo rodoviário direto seja avaliado e vença.
-                _cands = (_topkc_norm.get(_origem.strip().lower())
-                          or _topk_norm.get(_origem.strip().lower())
-                          or topk_map.get(_origem) or [])
+                _cands = _cands_por_origem(_origem, _idx) or topk_map.get(_origem) or []
                 _frente = [h for (_dd, h) in _cands
                            if str(h).strip().lower() != _destino.lower()
                            and _num(_dd) is not None and _num(_dd) < _dist]
@@ -29737,7 +29761,8 @@ def _fechamento_medicao_min(osrm_out, dist_pipe, reta_pipe, reta_coord, tem_bals
         return osrm_out
 
 
-def _fechar_otimalidade_final(df, topk_completo, router=None, ativo=True, params=None, hubs_validos=None):
+def _fechar_otimalidade_final(df, topk_completo, router=None, ativo=True, params=None, hubs_validos=None,
+                              topk_ibge=None):
     """[FECHAMENTO-OTIMALIDADE] Passe FINAL, sobre o df já montado (viárias reais). Para cada origem cujo
     destino escolhido ainda tem FRONTEIRA ABERTA (existe polo com reta < viária atual), roteia a fronteira
     pelo motor autoritativo e adota o melhor PARA O CANDIDATO (via _avaliar_troca — monotônico). Casamento de
@@ -29794,6 +29819,16 @@ def _fechar_otimalidade_final(df, topk_completo, router=None, ativo=True, params
                 _idx[str(_k).strip().lower()] = _v
         except Exception:
             _idx = {}
+        # [MATCH-IBGE-PASSES] Chaves "ibge:<cod>" — o casamento AUTORITATIVO. Antes o fechamento MONTAVA a
+        # chave "ibge:" em _fecho_norm_chave_origem, mas _idx nunca a continha (topk só por nome) → caminho
+        # morto. Agora a origem casa pelo Código IBGE, imune a deriva de nome (sufixo de UF, acento, caixa).
+        try:
+            for _codk, _vv in (topk_ibge or {}).items():
+                _ck = str(_codk).strip()
+                if _ck and _vv:
+                    _idx["ibge:" + _ck] = _vv
+        except Exception:
+            pass
         if not _idx:
             logger.warning("[FECHAMENTO-OTIMALIDADE] universo de polos vazio — passe inativo (nenhuma troca).")
             return df, _resumo
@@ -52702,6 +52737,22 @@ if _secao == _SECOES[2]:   # tab_alocacao
                 except Exception:
                     logger.error("[BLINDAGEM-ORIGEM] Falha no pós-check (isolada).", exc_info=True)
                 st.session_state['alo_topk_completo'] = topk_map_completo  # [GARANTIA-OTIMA - 184ª geração]
+                # [MATCH-IBGE-PASSES] Índice do universo COMPLETO de polos por CÓDIGO IBGE da origem (o
+                # identificador AUTORITATIVO — a própria Comparação concilia 100% por IBGE). Sem ele, os passes
+                # de otimalidade (resgate/fechamento) só casavam a origem por NOME; o caminho "ibge:<cod>" que o
+                # fechamento já montava ficava MORTO (topk não tinha chave por IBGE), e qualquer deriva de
+                # formatação de nome (sufixo de UF, acento) fazia a origem ser SILENCIOSAMENTE pulada — a rota
+                # indireta persistia sem chance de troca. Este índice paralelo (não polui o dict por nome, que é
+                # iterado em outros pontos) dá casamento à prova de nome. Custo: um dict pequeno.
+                try:
+                    _topkc_ibge = {}
+                    for _onome, _lst in (topk_map_completo or {}).items():
+                        _cod = str((_dest_cod or {}).get(_onome, "") or "").strip()
+                        if _cod and _lst:
+                            _topkc_ibge[_cod] = _lst
+                    st.session_state['alo_topk_completo_ibge'] = _topkc_ibge
+                except Exception:
+                    st.session_state['alo_topk_completo_ibge'] = {}
                 # [MATRIZ-VIARIA - 184ª geração] FASE 1 (descoberta): quando a metodologia é a menor rota
                 # viária, usa a matriz /table/v1 para medir, em UMA chamada por origem, a distância viária a
                 # um amplo conjunto de hubs (até 60 por origem, muito além do top-K=10) e eleger o vencedor
@@ -53833,6 +53884,7 @@ if _secao == _SECOES[2]:   # tab_alocacao
                             df_final_alo, _regs_resgate = _refinar_por_resgate_circuidade(
                                 df_final_alo, st.session_state.get('alo_topk_map') or {},
                                 topk_completo=st.session_state.get('alo_topk_completo') or {},
+                                topk_ibge=st.session_state.get('alo_topk_completo_ibge') or {},
                                 viaria_estrita=bool(st.session_state.get('alo_multicriterio')))
                             st.session_state['alo_resgate'] = _agregar_resgates(_regs_resgate)
                     except Exception as _e_resg:
@@ -53852,7 +53904,8 @@ if _secao == _SECOES[2]:   # tab_alocacao
                         with _perfil_fase("Fechamento de otimalidade (final)"):
                             df_final_alo, _resumo_fecho = _fechar_otimalidade_final(
                                 df_final_alo, st.session_state.get('alo_topk_completo') or {},
-                                hubs_validos=st.session_state.get('alo_hubs_validos'))
+                                hubs_validos=st.session_state.get('alo_hubs_validos'),
+                                topk_ibge=st.session_state.get('alo_topk_completo_ibge') or {})
                             st.session_state['alo_fechamento_otimalidade'] = _resumo_fecho
                     except Exception as _e_fecho:
                         logger.error(f"[FECHAMENTO-OTIMALIDADE] passe abortado (df preservado): {_e_fecho}")
