@@ -60,3 +60,20 @@ def test_rotulo_bc100_fonte_desconhecida_nao_e_fabricada():
     rot, n = m._rotulo_bc100_ufs({"fontes": {"bc100": {"ufs": {"acre": {}, "parana": {}}}}})
     assert n == 2
     assert "AC" in rot and "PARANA" in rot
+
+
+# ---- (3) Cotas & Vazões: seleção de estação por POSIÇÃO (não por código placeholder) --------
+def test_cotas_selecao_posicional_com_codigos_placeholder():
+    """Na amostra os códigos são todos '—'; casar por código traria sempre a 1ª estação. A UI casa pela
+    POSIÇÃO do rótulo escolhido — este teste trava esse contrato (réplica pura da lógica da aba Cotas)."""
+    df = m._gerar_dados_estacoes_fallback()
+    codigos = df["codigo"].astype(str).tolist()
+    nomes = df["nome"].tolist()
+    labels = [f"{c} - {n}" for c, n in zip(codigos, nomes)]
+    # todos os códigos são o placeholder — casar por código é ambíguo
+    assert set(codigos) == {"—"}
+    # escolher a 4ª e a 6ª estações deve trazer exatamente elas
+    for i in (3, 5):
+        idx = labels.index(labels[i])
+        assert idx == i
+        assert df.iloc[[idx]].iloc[0]["nome"] == nomes[i]

@@ -64074,12 +64074,14 @@ if _secao == _SECOES[17]:   # tab_hidrografia
         if not _est_df.empty:
             _est_codigos = _est_df["codigo"].astype(str).tolist() if "codigo" in _est_df.columns else []
             _est_nomes = _est_df["nome"].tolist() if "nome" in _est_df.columns else []
-            
+            # [ROBUSTEZ · Cotas] Rótulos alinhados POSICIONALMENTE às linhas de _est_df. Na amostra os códigos
+            # são todos "—", então casar por código traria sempre a 1ª estação — a seleção tem de casar pela
+            # POSIÇÃO do rótulo escolhido, não pelo código.
+            _est_labels = [f"{c} - {n}" for c, n in zip(_est_codigos, _est_nomes)] if _est_codigos else ["(nenhuma)"]
+
             _col_s1, _col_s2 = st.columns(2)
             with _col_s1:
-                _est_sel = st.selectbox("📍 Selecionar estação", 
-                    options=[f"{c} - {n}" for c, n in zip(_est_codigos, _est_nomes)] if _est_codigos else ["(nenhuma)"],
-                    key="hidro_est_sel")
+                _est_sel = st.selectbox("📍 Selecionar estação", options=_est_labels, key="hidro_est_sel")
             with _col_s2:
                 _tipo_serie = st.selectbox("📊 Tipo de série", ["Cotas", "Vazões", "Sedimentos", "Qualidade", "Curvas descarga", "Chuvas"], key="hidro_tipo_sel")
 
@@ -64089,7 +64091,16 @@ if _secao == _SECOES[17]:   # tab_hidrografia
             if _est_sel and _est_sel != "(nenhuma)":
                 try:
                     _cod_sel = _est_sel.split(" - ")[0]
-                    _row_est = _est_df[_est_df["codigo"].astype(str) == _cod_sel] if "codigo" in _est_df.columns else _est_df.iloc[0:0]
+                    try:
+                        _idx_sel = _est_labels.index(_est_sel)
+                    except ValueError:
+                        _idx_sel = -1
+                    if 0 <= _idx_sel < len(_est_df):
+                        _row_est = _est_df.iloc[[_idx_sel]]
+                    elif "codigo" in _est_df.columns:
+                        _row_est = _est_df[_est_df["codigo"].astype(str) == _cod_sel]
+                    else:
+                        _row_est = _est_df.iloc[0:0]
                     if not _row_est.empty:
                         _re = _row_est.iloc[0]
                         _m1, _m2, _m3, _m4 = st.columns(4)
