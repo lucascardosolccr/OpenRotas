@@ -29701,6 +29701,42 @@ def _fecho_fronteira_admissivel(viaria_incumbente, destino_escolhido, candidatos
     return _out
 
 
+_MEDICAO_JUSTA_FECHAMENTO = True   # 2ª opinião multi-motor p/ candidato na ZONA DE VIRADA (remove viés de medição)
+
+
+def _fechamento_medicao_min(osrm_out, dist_pipe, reta_pipe, reta_coord, tem_balsa_pipe=None,
+                            fluvial_pipe=None, tempo_pipe=None, fonte_pipe="", reta_tol_km=8.0):
+    """[MEDIÇÃO-JUSTA] Remove o VIÉS de medição do fechamento: o INCUMBENTE foi medido pelo MELHOR de todos os
+    motores (min do pipeline: Google/OSRM/Valhalla-shortest…), mas o CANDIDATO só pela rota do OSRM por
+    coordenada — o que perdia trocas ganháveis (a referência vence exatamente por achar a malha mais curta).
+    Aqui o candidato ganha a MESMA chance: escolhe a MENOR medição válida entre a do OSRM (`osrm_out`) e a do
+    PIPELINE COMPLETO. Só adota a do pipeline quando ela (a) está na MESMA localização — |reta_pipe -
+    reta_coord| <= reta_tol_km, blindagem ANTI-HOMÔNIMO porque o pipeline roteia por NOME e poderia cair num
+    homônimo distante; (b) é FISICAMENTE possível (viária >= linha reta); e (c) é ESTRITAMENTE menor. PURA e
+    defensiva: qualquer dúvida preserva `osrm_out`. Retorna o dict de medição vencedor."""
+    try:
+        _dk = _num((osrm_out or {}).get("dist_km"))
+        _dp = _num(dist_pipe); _rp = _num(reta_pipe); _rc = _num(reta_coord)
+        if _dk is None or _dp is None or _dp <= 0:
+            return osrm_out
+        if _rp is not None and _rc is not None and abs(_rp - _rc) > float(reta_tol_km):
+            return osrm_out                       # (a) localização diferente → provável homônimo → rejeita
+        _piso = _rp if _rp is not None else _rc
+        if _piso is not None and _dp < _piso - 0.5:
+            return osrm_out                       # (b) viária impossível (< reta) → rejeita
+        if _dp >= _dk:
+            return osrm_out                       # (c) não é menor → mantém OSRM
+        _reta_final = _rp if _rp is not None else _rc
+        return {"dist_km": _dp, "reta_km": _reta_final,
+                "vr": (_dp / _reta_final if (_dp and _reta_final and _reta_final > 0) else (osrm_out or {}).get("vr")),
+                "tem_balsa": bool(tem_balsa_pipe) if tem_balsa_pipe is not None else (osrm_out or {}).get("tem_balsa"),
+                "fluvial": bool(fluvial_pipe) if fluvial_pipe is not None else (osrm_out or {}).get("fluvial", False),
+                "tempo_min": _num(tempo_pipe) if tempo_pipe is not None else (osrm_out or {}).get("tempo_min"),
+                "fonte": (str(fonte_pipe) or "pipeline (2ª opinião)"), "status": ""}
+    except Exception:
+        return osrm_out
+
+
 def _fechar_otimalidade_final(df, topk_completo, router=None, ativo=True, params=None, hubs_validos=None):
     """[FECHAMENTO-OTIMALIDADE] Passe FINAL, sobre o df já montado (viárias reais). Para cada origem cujo
     destino escolhido ainda tem FRONTEIRA ABERTA (existe polo com reta < viária atual), roteia a fronteira
@@ -29819,7 +29855,7 @@ def _fechar_otimalidade_final(df, topk_completo, router=None, ativo=True, params
                 _olat = _num(df.at[_idx_row, _c_lat]) if _c_lat else None
                 _olon = _num(df.at[_idx_row, _c_lon]) if _c_lon else None
 
-                def _fn_rota(_hub, _oq=_origem_q, _crp=_cache_rp, _ola=_olat, _olo=_olon):
+                def _fn_rota(_hub, _oq=_origem_q, _crp=_cache_rp, _ola=_olat, _olo=_olon, _dinc=_dist):
                     # [V446 · ROTA-ISONÔMICA] 1º tenta rotear pelas COORDENADAS do polo (mesmo motor por
                     # coordenadas do pipeline principal) — imune a geocodificação divergente do nome; com
                     # GUARDA FÍSICA (viária >= linha reta). Se faltar coordenada, cai no roteamento por nome.
@@ -29840,12 +29876,41 @@ def _fechar_otimalidade_final(df, topk_completo, router=None, ativo=True, params
                                     # guarda física: descarta viária impossível (< linha reta) — cai p/ nome
                                     if not (_rr is not None and _rr > 0 and _dk < _rr - 0.5):
                                         _resumo["roteados_por_coord"] += 1
-                                        return {"dist_km": _dk, "reta_km": _rr,
+                                        _osrm_out = {"dist_km": _dk, "reta_km": _rr,
                                                 "vr": (_dk / _rr if (_dk and _rr and _rr > 0) else None),
                                                 "tem_balsa": (str(_res[2]).strip().lower() in ("sim", "true", "1", "s")) if len(_res) > 2 else False,
                                                 "fluvial": False,
                                                 "tempo_min": _num(_res[1]) if len(_res) > 1 else None,
                                                 "fonte": "OSRM (coord)", "status": ""}
+                                        # [MEDIÇÃO-JUSTA] O incumbente foi medido pelo MELHOR de todos os motores;
+                                        # o candidato, só pelo OSRM. Na ZONA DE VIRADA (o candidato NÃO vence no
+                                        # OSRM mas chega perto), dá a mesma chance: mede pelo PIPELINE COMPLETO
+                                        # (multi-motor, inclui Valhalla-shortest) e adota a menor — com blindagem
+                                        # anti-homônimo (reta compatível) no helper. Só 1 chamada extra, e só nos
+                                        # candidatos que podem VIRAR — o resto retorna a medição do OSRM na hora.
+                                        if (_MEDICAO_JUSTA_FECHAMENTO and _dinc is not None
+                                                and _dk >= _dinc * (1.0 - _MARGEM_TROCA) and _dk <= _dinc * 1.30):
+                                            try:
+                                                _rp2 = _router(_oq, _hub)
+                                                _dp2 = _num(getattr(_rp2, "distancia", None))
+                                                if _dp2 is not None and _dp2 < _dk:
+                                                    _rrp2 = _num(getattr(_rp2, "dist_linha_reta", None))
+                                                    _fonte2 = str(getattr(_rp2, "fonte_rota", "") or "")
+                                                    _status2 = str(getattr(_rp2, "status_linha_reta", "") or getattr(_rp2, "motivo_roteamento", "") or "")
+                                                    _fluv2 = any(_m in (_fonte2 + " " + _status2).lower()
+                                                                 for _m in ("fluvial", "isolado", "sem rota", "sem malha"))
+                                                    _melhor2 = _fechamento_medicao_min(
+                                                        _osrm_out, _dp2, _rrp2, _rr,
+                                                        tem_balsa_pipe=(str(getattr(_rp2, "balsas", "")).strip().lower() == "sim"),
+                                                        fluvial_pipe=_fluv2,
+                                                        tempo_pipe=_tempo_min(getattr(_rp2, "tempo", "")),
+                                                        fonte_pipe=(_fonte2 + " (2ª opinião multi-motor)"))
+                                                    if _melhor2 is not _osrm_out:
+                                                        _crp[_hub] = _rp2   # linha atualizada pelos dados do pipeline
+                                                        return _melhor2
+                                            except Exception:
+                                                pass
+                                        return _osrm_out
                             except Exception:
                                 pass
                     try:
