@@ -52212,10 +52212,12 @@ if _secao == _SECOES[2]:   # tab_alocacao
                      "bloqueado) e tem um teto para não deixar o estudo lento. Só melhora: nunca piora uma "
                      "rota existente.")
         
-        # [V437 · PRIORIDADE MENOR VIÁRIA] Toggle (OFF por padrão). Objetivo: menor distância possível ao
-        # candidato. Ligado, entre polos de MESMA modalidade a decisão passa a ser a MENOR VIÁRIA real (sem
-        # a penalidade de circuidade); a preferência rodoviária × balsa/fluvial é preservada. Monotônico p/
-        # o objetivo de distância; valide no Comparador de Estudos antes de promover.
+        # [V437 · PRIORIDADE MENOR VIÁRIA] Toggle — PADRÃO ON desde a V444 (era opt-in na V437). Objetivo:
+        # menor distância possível ao candidato. Entre polos de MESMA modalidade a decisão é a MENOR VIÁRIA
+        # real (sem a penalidade de circuidade), pois dentro da mesma modalidade não há troca de risco de
+        # travessia — a rota mais curta é estritamente melhor; a preferência rodoviária × balsa/fluvial
+        # (cross-modal) é preservada integralmente. Monotônico p/ o objetivo de distância. Desmarcar restaura
+        # a penalidade leve de circuidade (preferir o polo um pouco mais distante porém mais direto).
         st.session_state['alo_prioridade_menor_viaria'] = st.checkbox(
             "📏 Priorizar a menor distância viária (experimental) — entre polos do mesmo tipo (ambos rodoviários), escolhe sempre o de MENOR quilometragem real, mesmo que a rota seja um pouco mais sinuosa",
             value=st.session_state.get('alo_prioridade_menor_viaria', True), disabled=_alo_ativo,
