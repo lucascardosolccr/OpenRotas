@@ -26713,10 +26713,14 @@ _PRIORIDADE_MENOR_VIARIA = True    # [V444] PADRÃO ON (era opt-in na V437): ent
                                    # decisão é a VIÁRIA PURA (menor distância vence) — atende "menor rota
                                    # SEMPRE" sem depender de interruptor (§11). Balsa/fluvial (cross-modal) e
                                    # guardas de anomalia intactos. Toggle segue como OVERRIDE (restaura V/R).
-_ROTA_MENOR_DISTANCIA = False       # [V438] opt-in: pede aos motores compatíveis (ORS; GraphHopper próprio)
-                                    # a rota de MENOR DISTÂNCIA (em vez da mais rápida). Injeta candidatos
-                                    # mais curtos; a seleção por mínimo garante monotonicidade rumo à menor km.
-                                   # (menor distância vence) — serve ao objetivo "menor distância possível".
+_ROTA_MENOR_DISTANCIA = True        # [MENOR-ROTA] PADRÃO ON: pede aos motores compatíveis a rota de MENOR
+                                    # DISTÂNCIA (em vez da mais rápida) — Valhalla (KEYLESS, via shortest=true),
+                                    # ORS e GraphHopper próprio. Injeta candidatos mais curtos; como o vencedor
+                                    # é o MÍNIMO entre motores e o OSRM/rápido sempre concorre, a rota shortest
+                                    # (que nunca é mais longa) só pode REDUZIR a km vencedora — MONOTÔNICO, zero
+                                    # risco de aumentar distância. Trade-off assumido: a rota mais curta pode
+                                    # usar vias secundárias (mais lenta) — é o objetivo declarado "menor rota".
+                                    # Toggle na Alocação restaura a rota mais rápida por estudo, se desejado.
 # [V421 · PRIORIDADE DE UF] Preferência FORTE mas NÃO absoluta pelo polo da MESMA UF do candidato (requisito
 # §1/§8/§18): entre os candidatos cujo custo efetivo (km-equivalentes) está dentro de uma TOLERÂNCIA do melhor
 # global, o da mesma UF é promovido a vencedor. Assim a app usa o polo do próprio estado quando é COMPETITIVO,
@@ -34658,6 +34662,20 @@ def _valhalla_maneuver_balsa(_mnv):
         return False
 
 
+def _valhalla_costing_options(menor_distancia):
+    """[MENOR-ROTA-VALHALLA] Monta o bloco `costing_options.auto` do Valhalla. Quando a preferência de MENOR
+    DISTÂNCIA está ativa, liga `shortest: true` — a opção KEYLESS do Valhalla 3.x que usa a DISTÂNCIA como
+    único custo (ignora a ponderação de tempo), devolvendo a rota mais CURTA. Isto fechava um vão real: ORS e
+    GraphHopper já honravam `_ROTA_MENOR_DISTANCIA`, mas o Valhalla — o único motor de menor-distância que NÃO
+    exige chave — o ignorava e sempre devolvia a rota mais RÁPIDA. Como o vencedor é o MÍNIMO entre todos os
+    motores (e o OSRM/rápido sempre concorre), trocar a rota do Valhalla pela versão `shortest` (que nunca é
+    mais longa) só pode REDUZIR a km vencedora — monotônico. PURA: sem `menor_distancia`, devolve {} (payload
+    idêntico ao histórico → zero regressão). Retorna o dict pronto p/ `costing_options` (vazio quando inativo)."""
+    if not menor_distancia:
+        return {}
+    return {"auto": {"shortest": True}}
+
+
 def API_Valhalla_Routing(lat_o, lon_o, lat_d, lon_d):
     """[VALHALLA - 262ª geração] Motor viário KEYLESS de consenso via Valhalla (open-source, dados OSM). Dá
     uma estimativa viária REAL e independente do OSRM/Google — reforça o consenso "menor viária vence". Retorna
@@ -34683,6 +34701,11 @@ def API_Valhalla_Routing(lat_o, lon_o, lat_d, lon_d):
                 "costing": "auto",
                 "directions_options": {"units": "kilometers"},
             }
+            # [MENOR-ROTA-VALHALLA] Honra a preferência de menor distância (KEYLESS): liga `shortest` no
+            # costing quando ativo. Aditivo — sem a preferência o payload é byte-a-byte o histórico.
+            _co = _valhalla_costing_options(_ROTA_MENOR_DISTANCIA)
+            if _co:
+                _payload["costing_options"] = _co
             _hdrs = {"Content-Type": "application/json",
                      "User-Agent": "MotorLogisticoExames/1.0 (roteamento institucional; contato via app)",
                      "X-Client-Id": "motor-logistico-exames"}
@@ -52224,10 +52247,10 @@ if _secao == _SECOES[2]:   # tab_alocacao
             key="alo_prioridade_menor_viaria_chk",
             help="Por padrão, entre dois polos rodoviários a aplicação aplica uma leve penalidade a rotas indiretas (circuidade), o que pode preferir um polo um pouco mais distante porém mais direto. Ligando esta opção, a decisão entre polos do MESMO tipo passa a ser puramente a MENOR distância viária — o candidato percorre a menor quilometragem possível. A preferência por rota rodoviária (evitando balsa/isolamento) é mantida. OFF por padrão; valide no Comparador antes de adotar.")
         st.session_state['alo_motores_menor_distancia'] = st.checkbox(
-            "🛣️ Pedir aos motores a rota de MENOR DISTÂNCIA (experimental) — em vez da mais rápida, quando o motor suportar (ORS; GraphHopper próprio)",
-            value=st.session_state.get('alo_motores_menor_distancia', False), disabled=_alo_ativo,
+            "🛣️ Pedir aos motores a rota de MENOR DISTÂNCIA — em vez da mais rápida, quando o motor suportar (Valhalla, sem chave; ORS; GraphHopper próprio)",
+            value=st.session_state.get('alo_motores_menor_distancia', True), disabled=_alo_ativo,
             key="alo_motores_menor_distancia_chk",
-            help="Os motores de rota otimizam, por padrão, a rota mais RÁPIDA (vias principais). Ligando isto, os motores compatíveis (OpenRouteService e uma instância PRÓPRIA de GraphHopper) passam a devolver a rota de MENOR QUILOMETRAGEM. Como a aplicação sempre escolhe o menor valor entre os motores, isto só pode reduzir a distância — nunca aumentá-la. ATENÇÃO: a rota de menor distância pode usar vias secundárias (mais lenta); valide no Comparador se o ganho de km compensa para a sua logística. Motores que não suportam seguem no modo rápido, sem falhar. OFF por padrão.")
+            help="Os motores de rota otimizam, por padrão, a rota mais RÁPIDA (vias principais). Ligado (PADRÃO ON), os motores compatíveis passam a devolver a rota de MENOR QUILOMETRAGEM: o Valhalla (que NÃO exige chave, via `shortest`), o OpenRouteService e uma instância PRÓPRIA de GraphHopper. Como a aplicação sempre escolhe o MENOR valor entre os motores (e o OSRM/rápido sempre concorre), isto só pode reduzir a distância — nunca aumentá-la (monotônico). ATENÇÃO: a rota de menor distância pode usar vias secundárias (mais lenta); desmarque se preferir priorizar a rota mais rápida neste estudo. Motores que não suportam seguem no modo rápido, sem falhar.")
         
         # [HUB-PARAMS - 131ª geração] Parâmetros do custo expostos: a calibração é OPERACIONAL (o preço de
         # uma balsa depende da sua operação), então quem decide é o usuário — não uma constante do código.
@@ -52791,8 +52814,11 @@ if _secao == _SECOES[2]:   # tab_alocacao
         # ---- FASE 2: ROTEAMENTO EM CHUNKS (auto-continuação) ----
         if st.session_state.get('alo_em_andamento', False) and st.session_state.get('alo_fase') == 'processar':
             # [V438] aplica a preferência de MENOR DISTÂNCIA aos motores compatíveis, para este estudo.
+            # [MENOR-ROTA] Fallback = default do módulo (ON): se a chave de sessão não foi definida (chunk de
+            # processamento sem re-render do checkbox), preserva o PADRÃO ON em vez de cair em False.
             try:
-                globals()['_ROTA_MENOR_DISTANCIA'] = bool(st.session_state.get('alo_motores_menor_distancia'))
+                globals()['_ROTA_MENOR_DISTANCIA'] = bool(
+                    st.session_state.get('alo_motores_menor_distancia', _ROTA_MENOR_DISTANCIA))
             except Exception:
                 pass
             # [JOB-RUNNER LIGAÇÃO - 406a geração] Caminho de BACKGROUND (opt-in via 'alo_modo_background',
