@@ -23058,6 +23058,38 @@ def _comparar_alocacoes(linhas, parse_tempo=None, limiar_empate_km=1.0, limiar_r
             d["Quase-Vitoria App"] = "Sim" if _trace_d.get("quase_vitoria_app") else "Não"
             d["Tolerancia Empate (km)"] = _trace_d.get("tol")
             d["Trace Decisao Distancia"] = _trace_d.get("motivo")
+            # [REF-INVÁLIDA → VITÓRIA DA APP] Regra física: nenhuma estrada é mais curta que a linha reta.
+            # Quando a distância da referência é FISICAMENTE IMPOSSÍVEL (< geodésica) ou IMPLAUSÍVEL, o número
+            # dela é inválido e NÃO pode "vencer" — a vitória vai para a APLICAÇÃO (que mediu uma rota viária
+            # real e coerente). A "economia" contra um número bogus é NEUTRALIZADA (não conta como ganho nem
+            # perda), o que também limpa a poluição das estatísticas de km (ex.: ilhas fluviais amazônicas
+            # onde a referência reporta 45 km numa travessia que a rota real faz em ~990 km). Usa a linha reta
+            # origem→destino-da-referência (coluna pré-computada ou as coords _map_* da conciliação).
+            try:
+                _reta_ref_cmp = _num_seguro(d.get("Linha Reta Referencia (km)"))
+                if not (_reta_ref_cmp and _reta_ref_cmp > 0):
+                    _olat_c, _olon_c = _num_seguro(d.get("_map_olat")), _num_seguro(d.get("_map_olon"))
+                    _rlat_c, _rlon_c = _num_seguro(d.get("_map_rlat")), _num_seguro(d.get("_map_rlon"))
+                    if None not in (_olat_c, _olon_c, _rlat_c, _rlon_c):
+                        _rr_calc, _ = calcular_distancia_linha_reta(_olat_c, _olon_c, _rlat_c, _rlon_c)
+                        _reta_ref_cmp = _num_seguro(_rr_calc)
+                _aud_ref_cmp = _auditar_distancia_referencia(
+                    _dr, _reta_ref_cmp, dist_app_viaria=_da,
+                    origem=str(d.get("Origem") or d.get("Municipio Origem") or ""),
+                    destino_ref=str(d.get("Destino Referencia") or ""))
+                if _aud_ref_cmp.get("veredito") in ("impossivel", "implausivel"):
+                    d["Ref Distancia Invalida"] = _aud_ref_cmp.get("rotulo", "")
+                    d["Explicacao Ref Invalida"] = _aud_ref_cmp.get("explicacao", "")
+                    if _venc_d == "Referência":
+                        _venc_d = "Aplicação"
+                        d["Vencedor Distancia"] = "Aplicação"
+                        d["Vitoria por Ref Invalida"] = "Sim"
+                        d["Diferenca Abs (km)"] = 0.0
+                        d["Diferenca Pct (%)"] = 0.0
+                        d["Economia km"] = 0.0
+                        d["Economia km x Inscritos"] = 0.0
+            except Exception:
+                pass
         else:
             d["Diferenca Abs (km)"] = None
             d["Diferenca Pct (%)"] = None
@@ -24554,15 +24586,22 @@ def _analisar_divergencia_par(linha, fatos_app, fatos_ref, limiar_empate_km=1.0,
         _audit_ref = {"veredito": "nao_avaliavel", "rotulo": "—", "explicacao": ""}
     _ref_invalida = _audit_ref.get("veredito") in ("impossivel", "implausivel")
     if _ref_invalida and _dr is not None and _da is not None and _dr <= _da:
-        # a referência "venceu" por distância, mas com número inválido → derrota apenas nominal, explicada
-        _venc_q = "Referência"
+        # [REF-INVÁLIDA → VITÓRIA DA APP] A referência "venceu" por distância, mas com um número que nenhuma
+        # estrada real alcança (menor que a linha reta geodésica, ou colado nela). Regra do usuário + física:
+        # a VITÓRIA é da APLICAÇÃO, que mediu a rota viária real e coerente. Reclassifica o vencedor (e a
+        # vantagem, para a forense de derrota não disparar) e EXPLICA no parecer.
+        _venc_q = "Aplicação"
+        try:
+            _classif["vantagem_de"] = "Aplicação"
+        except Exception:
+            pass
         _impossivel = _audit_ref.get("veredito") == "impossivel"
-        _venc_criterio = ("distância da referência "
+        _venc_criterio = ("vitória da aplicação — distância da referência "
                           + ("fisicamente impossível" if _impossivel else "implausível")
-                          + " — derrota apenas nominal")
-        _sel = ("🚫 **Derrota apenas nominal — distância da referência fisicamente impossível.** "
+                          + " (número inválido não pode vencer)")
+        _sel = ("🏆 **Vitória da aplicação — a distância da referência é fisicamente impossível.** "
                 if _impossivel
-                else "⚠️ **Derrota apenas nominal — distância da referência implausível.** ")
+                else "🏆 **Vitória da aplicação — a distância da referência é implausível.** ")
         _exp_ref = _audit_ref.get("explicacao") or ""
         _parecer = ((_parecer or "").rstrip() + "\n\n" + _sel + _exp_ref).strip()
 
@@ -24649,12 +24688,12 @@ def _agregar_diagnostico_divergencias(analises, uf_para_regiao=None):
     _perdas = [a for a in analises if a.get("Vencedor (Qualidade)") == "Referência"]
     _ganhos = [a for a in analises if a.get("Vencedor (Qualidade)") == "Aplicação"]
 
-    # [REF-IMPOSSIVEL-DERROTA] "Derrotas nominais": perdas em que a referência só "venceu" porque sua
-    # distância é fisicamente impossível/implausível (menor que a linha reta). NÃO são derrotas reais do
-    # algoritmo — são erro de dado da referência. Contar à parte permite ao analista descontá-las do placar
-    # e priorizar as perdas genuínas. PURO; subconjunto de _perdas.
-    _nominais = [a for a in _perdas if a.get("_ref_invalida")]
-    _insc_nominais = sum(int(a.get("Inscritos") or 0) for a in _nominais)
+    # [REF-INVÁLIDA → VITÓRIA DA APP] Vitórias que a aplicação leva porque a distância da referência é
+    # fisicamente impossível/implausível (menor que a linha reta): a referência "chegava mais perto" só por
+    # um número que nenhuma estrada real alcança, então a vitória é da aplicação (regra física + do usuário).
+    # Contadas à parte para o analista ver quantas vitórias vêm de referência inválida. PURO; ⊂ _ganhos.
+    _vit_ref_inv = [a for a in _ganhos if a.get("_ref_invalida")]
+    _insc_vit_ref_inv = sum(int(a.get("Inscritos") or 0) for a in _vit_ref_inv)
 
     # [QUALIDADE-DERROTAS - Missão 3, Rodada 16, §36] Tally das classes forenses (_apr2_forense_derrota)
     # entre as perdas reais — "Derrotas recuperáveis" é uma métrica de qualidade nomeada explicitamente
@@ -24679,9 +24718,9 @@ def _agregar_diagnostico_divergencias(analises, uf_para_regiao=None):
         "derrotas_regra_correta": _forense_cnt.get("regra_balsa", 0),
         "derrotas_sem_derrota_real": _forense_cnt.get("ref_mais_longa", 0),
         "derrotas_por_classe_forense": _forense_cnt,
-        # [REF-IMPOSSIVEL-DERROTA] derrotas apenas nominais (distância da referência inválida)
-        "derrotas_nominais_ref_invalida": len(_nominais),
-        "inscritos_derrotas_nominais": _insc_nominais,
+        # [REF-INVÁLIDA → VITÓRIA DA APP] vitórias da aplicação por distância da referência inválida
+        "vitorias_ref_invalida": len(_vit_ref_inv),
+        "inscritos_vitorias_ref_invalida": _insc_vit_ref_inv,
     }
 
     # ------- INSIGHTS AUTOMÁTICOS (fundamentados nos dados) -------
@@ -24698,12 +24737,12 @@ def _agregar_diagnostico_divergencias(analises, uf_para_regiao=None):
             _ins.append(f"{round(100.0 * _flu_perdas / len(_perdas))}% das perdas envolvem balsa ou acesso "
                         f"fluvial/isolado no lado da aplicação — a menor distância da referência frequentemente "
                         f"vem de assumir uma travessia que a aplicação evitou.")
-        # [REF-IMPOSSIVEL-DERROTA] destaca as derrotas apenas nominais (distância da referência inválida)
-        if _nominais:
-            _ins.append(f"⚠️ **{len(_nominais)} das {len(_perdas)} 'derrotas' são apenas nominais**: a referência "
-                        f"só ficou 'mais perto' porque sua distância é fisicamente impossível/implausível (menor "
-                        f"que a linha reta) — afetam {_insc_nominais} candidato(s) e **não devem ser adotadas**; "
-                        f"descontando-as, o placar real da aplicação melhora.")
+    # [REF-INVÁLIDA → VITÓRIA DA APP] destaca as vitórias que vêm de referência fisicamente inválida
+    if _vit_ref_inv:
+        _ins.append(f"🏆 **{len(_vit_ref_inv)} vitória(s) da aplicação vêm de referência inválida**: a "
+                    f"referência só ficava 'mais perto' com uma distância fisicamente impossível/implausível "
+                    f"(menor que a linha reta geodésica) — nenhuma estrada real a alcança. A rota da aplicação "
+                    f"é a válida; beneficiam {_insc_vit_ref_inv} candidato(s).")
     if _ganhos:
         _g_evita = sum(1 for a in _ganhos if a.get("Balsa Referência") == "Sim"
                        or "fluvial" in str(a.get("Acesso Referência", "")).lower())
@@ -24909,9 +24948,9 @@ def _diagnostico_divergencias_html(diag):
                     if _res.get("derrotas_recuperaveis") else '')
                  + (_kpi(f'{_res.get("derrotas_evitaveis", 0)}', "derrotas evitáveis (investigar seleção)")
                     if _res.get("derrotas_evitaveis") else '')
-                 + (_kpi(f'{_res.get("derrotas_nominais_ref_invalida", 0)}',
-                         "derrotas apenas nominais (distância da referência impossível/implausível)")
-                    if _res.get("derrotas_nominais_ref_invalida") else '')
+                 + (_kpi(f'{_res.get("vitorias_ref_invalida", 0)}',
+                         "vitórias por referência inválida (distância impossível/implausível)")
+                    if _res.get("vitorias_ref_invalida") else '')
                  + '</div>')
 
         # ---- resumo executivo ----
@@ -24989,11 +25028,12 @@ def _diagnostico_divergencias_html(diag):
             _hip_html = "".join(f"<li>{_he.escape(h)}</li>" for h in _hip)
             _mg = a.get("Motivo Granular")
             _mg_html = f'<div class="dv-caso-mg">🔎 {_he.escape(_mg)}</div>' if _mg else ""
-            # [REF-IMPOSSIVEL-DERROTA] selo quando a "derrota" se apoia numa distância inválida da referência
+            # [REF-INVÁLIDA → VITÓRIA DA APP] selo quando a vitória da aplicação se dá porque a distância da
+            # referência é inválida (fisicamente impossível/implausível). Antes marcava "derrota nominal".
             _ri_html = ""
-            if a.get("_ref_invalida") and _venc == "Referência":
-                _ri_html = ('<div class="dv-caso-ri">🚫 Derrota apenas nominal — a distância da referência '
-                            'é fisicamente impossível/implausível (ver parecer).</div>')
+            if a.get("_ref_invalida"):
+                _ri_html = ('<div class="dv-caso-ri">🏆 Vitória por referência inválida — a distância da '
+                            'referência é fisicamente impossível/implausível (ver parecer).</div>')
             return (
                 f'<div class="dv-caso" style="border-left:4px solid {_cor}">'
                 f'<div class="dv-caso-h"><b>{_he.escape(str(a.get("Município")))}/{_he.escape(str(a.get("UF")))}</b>'
@@ -25723,13 +25763,14 @@ def _resumo_pos_diagnostico_divergencias(diag):
         _emp = int(_res.get("empates", 0) or 0)
         _ins_perda = int(_res.get("inscritos_em_perda", 0) or 0)
         _ins_benef = int(_res.get("inscritos_beneficiados_app", 0) or 0)
-        # [REF-IMPOSSIVEL-DERROTA] parte das "vitórias da referência" é apenas nominal (distância
-        # fisicamente impossível/implausível): NÃO são candidatas a adotar. A reconciliação distingue as
-        # genuínas das nominais para não recomendar adotar um número que nenhuma estrada alcança.
-        _nom = int(_res.get("derrotas_nominais_ref_invalida", 0) or 0)
-        _ins_nom = int(_res.get("inscritos_derrotas_nominais", 0) or 0)
-        _ref_real = max(0, _ref - _nom)
-        _ins_perda_real = max(0, _ins_perda - _ins_nom)
+        # [REF-INVÁLIDA → VITÓRIA DA APP] As vitórias por referência inválida (distância fisicamente
+        # impossível/implausível) JÁ ENTRAM como vitória da aplicação (app_superior) — a regra física atribui
+        # a vitória a quem mediu a rota real. Então ref_superior já é GENUÍNO (não há o que descontar); só
+        # registramos, à parte, quantas dessas vitórias vieram de referência inválida.
+        _nom = int(_res.get("vitorias_ref_invalida", 0) or 0)
+        _ins_nom = int(_res.get("inscritos_vitorias_ref_invalida", 0) or 0)
+        _ref_real = _ref
+        _ins_perda_real = _ins_perda
 
         def _br(x, casas=0):
             try:
@@ -25779,13 +25820,14 @@ def _resumo_pos_diagnostico_divergencias(diag):
                      "Casos que o reprocessamento mostrou serem GENUINAMENTE melhores na referência — "
                      "candidatos a adotar (já descontadas as derrotas apenas nominais)."))
         if _nom > 0:
-            kpis.append(("🚫 Derrotas apenas nominais", f"{_br(_nom)}",
-                         "Vitórias da referência com distância fisicamente impossível/implausível (menor que a "
-                         "linha reta) — erro de dado, NÃO adotar."))
+            kpis.append(("🏆 Vitórias por referência inválida", f"{_br(_nom)}",
+                         "Vitórias da aplicação onde a referência só 'ficava mais perto' com distância "
+                         "fisicamente impossível/implausível (menor que a linha reta) — número que nenhuma "
+                         "estrada alcança; a rota da aplicação é a válida."))
         if _ins_perda_real > 0:
             kpis.append(("Candidatos em rota pior", f"{_br(_ins_perda_real)}",
-                         "Inscritos nos municípios onde a referência oferece deslocamento menor (excluídas as "
-                         "derrotas apenas nominais)."))
+                         "Inscritos nos municípios onde a referência oferece deslocamento menor por uma rota "
+                         "válida (genuína)."))
 
         # ---- narrativa curta ----
         linhas = []
@@ -25795,23 +25837,23 @@ def _resumo_pos_diagnostico_divergencias(diag):
                 _txt += ("Nenhuma se sustentou como vantagem real da referência — **o placar do topo se "
                          "confirma** e a aplicação segue melhor ou empatada em todos os casos divergentes.")
                 if _nom > 0:
-                    _txt += (f" (**{_br(_nom)}** 'vitória(s)' da referência eram apenas nominais — distância "
-                             f"fisicamente impossível/implausível — e foram descartadas.)")
+                    _txt += (f" (Dessas vitórias, **{_br(_nom)}** vieram de referência inválida — distância "
+                             f"fisicamente impossível/implausível — e a aplicação levou por medir a rota real.)")
             else:
                 _txt += (f"Destas, **{_br(_ref_real)}** se confirmaram como genuinamente melhores na referência "
                          f"(afetando **{_br(_ins_perda_real)}** candidatos), **{_br(_app)}** seguem a favor da "
                          f"aplicação e **{_br(_emp)}** empataram. **É aqui que o placar do topo merece um "
                          f"ajuste fino**: adotar essas {_br(_ref_real)} escolhas encurta o deslocamento desses candidatos.")
                 if _nom > 0:
-                    _txt += (f" Outras **{_br(_nom)}** 'vitória(s)' da referência eram apenas nominais "
-                             f"(distância impossível/implausível) e **não devem ser adotadas**.")
+                    _txt += (f" Além disso, **{_br(_nom)}** vitória(s) da aplicação vieram de referência inválida "
+                             f"(distância impossível/implausível) — a rota da aplicação é a válida.")
             linhas.append(_txt)
         elif _nom > 0:
-            # roteamento fresco não rodou (falha/escala), mas as derrotas nominais já são conhecidas pela
-            # auditoria física — vale registrar que não devem ser adotadas mesmo sem reroteamento.
-            linhas.append(f"**{_br(_nom)}** 'vitória(s)' da referência são apenas nominais (distância "
-                          f"fisicamente impossível/implausível, menor que a linha reta) e **não devem ser "
-                          f"adotadas** — descarte-as ao ajustar o placar.")
+            # roteamento fresco não rodou (falha/escala), mas as vitórias por referência inválida já são
+            # conhecidas pela auditoria física — vale registrar que a aplicação vence esses casos.
+            linhas.append(f"**{_br(_nom)}** vitória(s) da aplicação vêm de referência inválida (distância "
+                          f"fisicamente impossível/implausível, menor que a linha reta) — a rota da aplicação "
+                          f"é a válida.")
 
         if _sum_impacto and abs(_sum_impacto) > 0:
             if _sum_dif > 0:
@@ -25882,10 +25924,10 @@ def _painel_divergencias_ui(diag, st):
         # fabricado).
         _n_rec = int(_res.get("derrotas_recuperaveis", 0) or 0)
         _n_evit = int(_res.get("derrotas_evitaveis", 0) or 0)
-        # [REF-IMPOSSIVEL-DERROTA] "Derrotas apenas nominais": a referência só "venceu" com distância
-        # fisicamente impossível/implausível — não são derrotas reais do algoritmo (erro de dado da
-        # referência). Surface como KPI, alinhado ao relatório HTML.
-        _n_nom = int(_res.get("derrotas_nominais_ref_invalida", 0) or 0)
+        # [REF-INVÁLIDA → VITÓRIA DA APP] "Vitórias por referência inválida": a aplicação vence porque a
+        # distância da referência é fisicamente impossível/implausível (menor que a linha reta). Surface como
+        # KPI positivo, alinhado ao relatório HTML.
+        _n_nom = int(_res.get("vitorias_ref_invalida", 0) or 0)
         _kpis_der = []
         if _n_rec:
             _kpis_der.append(("🔁 Derrotas recuperáveis", _n_rec,
@@ -25896,10 +25938,10 @@ def _painel_divergencias_ui(diag, st):
                               "Referência rodoviária, sem balsa, com viária MENOR que a do vencedor da aplicação, "
                               "e mesmo assim não escolhida — derrota real, vale investigar a seleção final."))
         if _n_nom:
-            _kpis_der.append(("🚫 Derrotas apenas nominais", _n_nom,
-                              "A referência só ficou 'mais perto' porque sua distância é fisicamente "
-                              "impossível/implausível (menor que a linha reta) — erro de dado da referência, "
-                              "não derrota real. Não devem ser adotadas."))
+            _kpis_der.append(("🏆 Vitórias por referência inválida", _n_nom,
+                              "A aplicação vence porque a referência só ficava 'mais perto' com distância "
+                              "fisicamente impossível/implausível (menor que a linha reta) — número que nenhuma "
+                              "estrada alcança; a rota da aplicação é a válida."))
         if _kpis_der:
             _cols_der = st.columns(len(_kpis_der))
             for _cc, (_lbl, _val, _hlp) in zip(_cols_der, _kpis_der):

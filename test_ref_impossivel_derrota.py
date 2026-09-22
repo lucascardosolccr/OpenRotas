@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
-"""[REF-IMPOSSIVEL-DERROTA] Rotas da referência com distância FISICAMENTE IMPOSSÍVEL (menor que a
-geodésica) ou IMPLAUSÍVEL (colada à linha reta) devem APARECER COMO DERROTAS no diagnóstico de
-divergências (a referência "levou o candidato mais perto", mas por um número inválido) e ser
-EXPLICADAS no parecer. Antes, uma "vitória" da referência com distância impossível podia passar sem
-o alerta de que o triunfo era apenas nominal. Estes testes travam esse contrato — additivo e defensivo
-(sem coordenadas → não avaliável → classificação inalterada)."""
+"""[REF-INVÁLIDA → VITÓRIA DA APP] Rotas da referência com distância FISICAMENTE IMPOSSÍVEL (menor que a
+geodésica) ou IMPLAUSÍVEL (colada à linha reta) NÃO podem vencer: nenhuma estrada é mais curta que a linha
+reta. Por regra física (e por pedido do usuário), a VITÓRIA é atribuída à APLICAÇÃO, que mediu a rota viária
+real, e o caso é EXPLICADO no parecer. (Antes, esses casos apareciam como 'derrota apenas nominal'; agora são
+vitórias da aplicação.) Additivo e defensivo (sem coordenadas → não avaliável → classificação inalterada)."""
 import streamlit_app as m
 
 # São Paulo → Rio de Janeiro: ~360 km em linha reta geodésica.
@@ -19,16 +18,16 @@ def _fatos(dist, coord_o, coord_d, destino="Rio de Janeiro", fonte="OSRM"):
     })
 
 
-def test_referencia_impossivel_vira_derrota_explicada():
+def test_referencia_impossivel_vira_vitoria_da_app():
     # referência afirma 50 km (< ~360 km de reta = fisicamente impossível); app mede 430 km (real)
     linha = {"Origem": "Sao Paulo", "UF": "SP", "Inscritos": 100}
     fa = _fatos(430.0, _O, _D)
     fr = _fatos(50.0, _O, _D)
     a = m._analisar_divergencia_par(linha, fa, fr, limiar_empate_km=1.0)
-    assert a.get("Vencedor (Qualidade)") == "Referência", "distância menor (ainda que impossível) => derrota nominal"
+    assert a.get("Vencedor (Qualidade)") == "Aplicação", "distância impossível não pode vencer => app vence"
     assert a.get("_ref_invalida") is True
     assert "impossí" in (a.get("Auditoria Referência", "") + a.get("Explicação Auditoria Referência", "")).lower()
-    assert "nominal" in a.get("Parecer Técnico", "").lower()
+    assert "vitória da aplicação" in a.get("Parecer Técnico", "").lower()
 
 
 def test_referencia_plausivel_nao_e_marcada():
@@ -38,7 +37,7 @@ def test_referencia_plausivel_nao_e_marcada():
     fr = _fatos(400.0, _O, _D)
     a = m._analisar_divergencia_par(linha, fa, fr, limiar_empate_km=1.0)
     assert a.get("_ref_invalida") is False
-    assert "nominal" not in a.get("Parecer Técnico", "").lower()
+    assert "vitória da aplicação" not in a.get("Parecer Técnico", "").lower()
 
 
 def test_sem_coordenadas_nao_avalia_e_nao_regride():
@@ -54,7 +53,7 @@ def test_sem_coordenadas_nao_avalia_e_nao_regride():
 def test_reprocesso_flagra_impossivel_sem_roteamento_fresco(monkeypatch):
     # sem 2ª opinião de rede; roteamento fresco FALHA → cai no fallback honesto, que ainda assim usa as
     # coordenadas oficiais (_map_*) da conciliação para auditar a distância da referência. A rota impossível
-    # deve virar derrota (Referência) explicada; o exportável HTML deve trazer o selo "Derrota apenas nominal".
+    # deve virar VITÓRIA DA APLICAÇÃO (Aplicação) explicada; o HTML traz o selo "Vitória por referência inválida".
     monkeypatch.setattr(m, "_segunda_opiniao_derrota", lambda *a, **k: None)
 
     def _router_falha(o, d):
@@ -71,24 +70,22 @@ def test_reprocesso_flagra_impossivel_sem_roteamento_fresco(monkeypatch):
     imp = [a for a in diag.get("analises", []) if a.get("Município") == "Mun0"]
     assert imp, "a divergência impossível deve ser analisada"
     assert imp[0].get("_ref_invalida") is True
-    assert imp[0].get("Vencedor (Qualidade)") == "Referência"
+    assert imp[0].get("Vencedor (Qualidade)") == "Aplicação"
     html = m._diagnostico_divergencias_html(diag)
-    assert "Derrota apenas nominal" in html
+    assert "Vitória por referência inválida" in html
     # e o exportável NÃO traz mais os "cartões (resumo visual)"; pareceres e árvores são recolhíveis
     assert "resumo visual" not in html.lower()
     assert 'details class="dv-exp"' in html
-    # o agregado conta as derrotas nominais e gera insight + KPI
+    # o agregado conta as vitórias por referência inválida e gera insight + KPI
     _res = diag.get("resumo", {})
-    assert _res.get("derrotas_nominais_ref_invalida") == 1
-    assert _res.get("inscritos_derrotas_nominais") == 100
-    assert any("apenas nominais" in i for i in diag.get("insights", []))
-    assert "apenas nominais" in html
-    # pareceres agrupados por desfecho (derrotas em bloco próprio), sem perder nenhuma rota
+    assert _res.get("vitorias_ref_invalida") == 1
+    assert _res.get("inscritos_vitorias_ref_invalida") == 100
+    assert any("referência inválida" in i for i in diag.get("insights", []))
+    assert "referência inválida" in html
+    # pareceres agrupados por desfecho, sem perder nenhuma rota
     assert 'class="dv-sub"' in html
-    assert "Derrotas — a referência" in html
     assert html.count('class="dv-caso"') == len(diag.get("analises", []))
-    # a reconciliação desconta as derrotas nominais (não recomenda adotar distância impossível)
+    # a reconciliação registra as vitórias por referência inválida
     _pos = m._resumo_pos_diagnostico_divergencias(diag)
     _rotulos = [k[0] for k in _pos.get("kpis", [])]
-    assert any("nominais" in r for r in _rotulos), "reconciliação deve destacar as derrotas nominais"
-    assert any("não devem ser adotadas" in ln or "descartadas" in ln for ln in _pos.get("linhas", []))
+    assert any("referência inválida" in r.lower() for r in _rotulos), "reconciliação deve destacar as vitórias por ref inválida"
