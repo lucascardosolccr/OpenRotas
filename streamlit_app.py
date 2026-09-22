@@ -64017,9 +64017,31 @@ if _secao == _SECOES[17]:   # tab_hidrografia
             _aviso_amostra_estacoes()
         if not _est_df.empty:
             st.caption(f"Fonte: {_est_df['fonte'].iloc[0] if 'fonte' in _est_df.columns else 'Desconhecida'} | Total: {len(_est_df)} estações")
+
+            # [VISUAL · Estações] Painel de destaque do catálogo (antes a aba abria direto na tabela).
+            _fmt_mil_e = lambda _n: f"{int(_n):,}".replace(",", ".")
+            try:
+                _uf_col0 = next((c for c in ["uf", "UF", "estado"] if c in _est_df.columns), None)
+                _rio_col0 = next((c for c in ["rio", "nome_rio"] if c in _est_df.columns), None)
+                _tipo_col0 = next((c for c in ["tipo", "Tipo"] if c in _est_df.columns), None)
+                _ek = st.columns(4)
+                _ek[0].metric("Estações", _fmt_mil_e(len(_est_df)))
+                if _uf_col0:
+                    _ek[1].metric("UFs cobertas", _fmt_mil_e(_est_df[_uf_col0].astype(str).str.strip()
+                                  .replace(["", "nan", "—"], pd.NA).dropna().nunique()))
+                if _rio_col0:
+                    _ek[2].metric("Rios monitorados", _fmt_mil_e(_est_df[_rio_col0].astype(str).str.strip()
+                                  .replace(["", "nan", "—"], pd.NA).dropna().nunique()))
+                if _tipo_col0:
+                    _n_tele0 = int(_est_df[_tipo_col0].astype(str).str.contains("telem", case=False, na=False).sum())
+                    _ek[3].metric("Telemétricas", _fmt_mil_e(_n_tele0),
+                                  help="Transmissão automática — cotas/vazões quase em tempo real.")
+            except Exception:
+                logger.debug("[HYDRO-EST] KPIs de estações isolados falharam (aditivo).", exc_info=True)
+
             _cols_show = [c for c in ["codigo", "nome", "rio", "bacia", "uf", "lat", "latitude", "lon", "longitude", "tipo", "fonte"] if c in _est_df.columns]
             st.dataframe(_est_df[_cols_show].head(100), use_container_width=True, hide_index=True)
-            
+
             # [HYDRO-VIS - 452ª] Estações por UF (aditivo): leitura analítica ao lado da tabela.
             try:
                 _uf_col = next((c for c in ["uf", "estado"] if c in _est_df.columns), None)
@@ -64027,7 +64049,7 @@ if _secao == _SECOES[17]:   # tab_hidrografia
                     _est_uf = _est_df[_uf_col].astype(str).str.strip().replace(["", "—"], pd.NA).dropna()
                     if _est_uf.nunique():
                         st.caption("Estações por UF (top 12)")
-                        st.bar_chart(_est_uf.value_counts().head(12))
+                        st.bar_chart(_est_uf.value_counts().head(12), color="#e74c3c", horizontal=True)
             except Exception:
                 logger.debug("[HYDRO-VIS] Gráfico de estações/UF isolado falhou (aditivo).", exc_info=True)
             
@@ -64090,14 +64112,14 @@ if _secao == _SECOES[17]:   # tab_hidrografia
                         _tipos = _est_df[_tipo_col].astype(str).str.strip().replace(["", "nan", "—"], pd.NA).dropna()
                         if _tipos.nunique():
                             st.caption("Estações por tipo de monitoramento")
-                            st.bar_chart(_tipos.value_counts())
+                            st.bar_chart(_tipos.value_counts(), color="#e74c3c", horizontal=True)
                 with _sc2:
                     _bac_col_e = next((c for c in ["bacia", "nome_bacia"] if c in _est_df.columns), None)
                     if _bac_col_e:
                         _bacs = _est_df[_bac_col_e].astype(str).str.strip().replace(["", "nan", "—"], pd.NA).dropna()
                         if _bacs.nunique():
                             st.caption("Estações por bacia (top 12)")
-                            st.bar_chart(_bacs.value_counts().head(12))
+                            st.bar_chart(_bacs.value_counts().head(12), color="#2563eb", horizontal=True)
             except Exception:
                 logger.debug("[HYDRO-SERIES] Analítica da rede isolada falhou (aditivo).", exc_info=True)
 
@@ -64607,10 +64629,42 @@ if _secao == _SECOES[22]:   # tab_geo_ibge
                                 _it["geometry_wkb"] = "linha (%d pontos)" % len(_geo_pontos)
                             else:
                                 _it["geometry_wkb"] = "—"
-                        _mm1, _mm2 = st.columns(2)
+                        _dists = [_it["distancia_km"] for _it in _rr]
+                        _mm1, _mm2, _mm3 = st.columns(3)
                         _mm1.metric("Feições encontradas", len(_rr))
-                        _mm2.metric("Mais próxima (km)", min(_it["distancia_km"] for _it in _rr))
-                        st.dataframe(_rr, use_container_width=True, hide_index=True)
+                        _mm2.metric("Mais próxima", "%.2f km" % min(_dists))
+                        _mm3.metric("Distância média", "%.2f km" % (sum(_dists) / len(_dists)))
+
+                        _df_rr = pd.DataFrame(_rr)
+                        # [VISUAL · Feições] Gráfico das mais próximas (magnitude: menor = mais perto), rótulos
+                        # únicos para não colapsar homônimos; e tabela reordenada/renomeada (antes: dict cru).
+                        try:
+                            if "nome" in _df_rr.columns and "distancia_km" in _df_rr.columns:
+                                _near = _df_rr[["nome", "distancia_km"]].copy()
+                                _near["nome"] = (_near["nome"].astype(str)
+                                                 .replace(["None", "nan", ""], "(sem nome)"))
+                                _near = _near.sort_values("distancia_km").head(12)
+                                _seen = {}
+                                def _uniq_lbl(_l):
+                                    _seen[_l] = _seen.get(_l, 0) + 1
+                                    return _l if _seen[_l] == 1 else "%s (%d)" % (_l, _seen[_l])
+                                _near["_lbl"] = [_uniq_lbl(_x) for _x in _near["nome"]]
+                                _ser_near = pd.Series(_near["distancia_km"].values, index=_near["_lbl"])
+                                if not _ser_near.empty:
+                                    st.caption("Feições mais próximas do ponto (km) — menor é mais perto")
+                                    st.bar_chart(_ser_near, color="#3B82F6", horizontal=True)
+                        except Exception:
+                            logger.debug("[IBGE-GEO] Gráfico de proximidade isolado falhou (aditivo).", exc_info=True)
+
+                        # Tabela: colunas essenciais primeiro, com o filtro ativo em destaque, e nomes amigáveis
+                        _pref_rr = [c for c in ["nome", "distancia_km", "geometry_wkb"] if c in _df_rr.columns]
+                        if _geo_col_filtro and _geo_col_filtro[0] in _df_rr.columns and _geo_col_filtro[0] not in _pref_rr:
+                            _pref_rr.append(_geo_col_filtro[0])
+                        _tail_rr = [c for c in ["lat", "lon"] if c in _df_rr.columns]
+                        _mid_rr = [c for c in _df_rr.columns if c not in _pref_rr and c not in _tail_rr]
+                        _df_rr = _df_rr[_pref_rr + _mid_rr + _tail_rr].rename(columns={
+                            "nome": "Nome", "distancia_km": "Distância (km)", "geometry_wkb": "Geometria"})
+                        st.dataframe(_df_rr, use_container_width=True, hide_index=True)
                         st.map(pd.DataFrame([{"lat": _it["lat"], "lon": _it["lon"]} for _it in _rr]))
                         try:
                             _bc100_rot2, _ = _rotulo_bc100_ufs(_bases_locais_ibge.manifest())
