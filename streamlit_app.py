@@ -26639,6 +26639,10 @@ _VR_GATILHO = 1.36        # [V436] 1.45→1.36 (análise de derrotas): a faixa 1
 _VR_SEVERO = 2.00         # descasamento grave geometria×estrada
 _K_EXTRA_BASE = 6         # candidatos diretos extras a rotear no resgate (limitado!)
 _K_EXTRA_AMAZONIA = 10    # amplia onde a malha é esparsa
+# [RESGATE-GEOMETRICO] Teto de polos que o resgate roteia quando amplia o conjunto pela garantia
+# geométrica (reta < viária do líder). Bounded para conter custo/latência mesmo em UF densa; cobre com
+# folga o caso das derrotas (o polo vencedor da referência raramente está além dos ~20 mais próximos).
+_TETO_RESGATE_TOTAL = 24
 _MARGEM_TROCA = 0.005     # só troca se a alternativa for ao menos 0,5% menor (evita ruído)
 # [V308 · FATIA 2a] GATILHO ADMISSÍVEL (branch-and-bound) — reforço do resgate por circuidade.
 # Fundamento (teorema, não heurística): viária >= linha reta SEMPRE. Logo, se um polo NÃO roteado tem
@@ -29201,6 +29205,22 @@ def _resgate_circuidade(origem, uf, coord_origem, candidatos, escolhido, fn_rota
         _por_reta.sort(key=lambda x: x[0])
         _k = _kama if str(uf or "").upper()[:2] in _UF_AMAZONIA_RESC else _kbase
         _cands = _por_reta[:_k]
+        # [RESGATE-GEOMETRICO - análise de derrotas] Quando o líder é INDIRETO (V/R alto), o polo
+        # genuinamente mais curto por ESTRADA costuma estar mais LONGE por reta — e a pré-seleção (por
+        # reta) o descartou. Garantia geométrica: como reta ≤ viária SEMPRE, qualquer polo cuja reta seja
+        # menor que a distância VIÁRIA já medida do líder PODE ter rota mais curta; os demais não podem.
+        # Então ampliamos o conjunto avaliado para TODOS os polos dentro desse raio (reta < viária do
+        # líder), além dos K mais diretos — limitado por um teto para conter custo/latência. É exatamente
+        # o "ampliar o shortlist quando o líder é indireto" que o diagnóstico de derrotas prescreve.
+        try:
+            _dist_lider = _num(escolhido.get("dist_km"))
+            if _dist_lider and _dist_lider > 0 and len(_por_reta) > _k:
+                _ja = {n for (_r, n) in _cands}
+                _extra_geo = [(r, n) for (r, n) in _por_reta[_k:] if r < _dist_lider and n not in _ja]
+                if _extra_geo:
+                    _cands = (_cands + _extra_geo)[:_TETO_RESGATE_TOTAL]
+        except Exception:
+            pass
 
         _atual = {"nome": _nome_esc, "dist_km": _num(escolhido.get("dist_km")), "vr": _vr,
                   "tem_balsa": _balsa, "fluvial": _fluv, "tempo_min": _num(escolhido.get("tempo_min"))}
