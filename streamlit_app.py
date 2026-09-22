@@ -64275,6 +64275,9 @@ if _secao == _SECOES[17]:   # tab_hidrografia
 
         st.markdown("---")
         st.markdown("##### 📍 Rios e estações catalogados (pontos)")
+        if _est_e_amostra:
+            st.caption("ℹ️ As **estações** deste mapa são a *amostra ilustrativa* (locais reais, sem os "
+                       "códigos ANA) — baixe o catálogo completo na sub-aba **📍 Estações** para a rede real.")
         try:
             # Preparar dados para o mapa (combinar rios + estações)
             _map_dfs = []
@@ -64537,13 +64540,21 @@ if _secao == _SECOES[22]:   # tab_geo_ibge
                         _rr = [dict(x) for x in _geo_res]
                         for _it in _rr:
                             _it["distancia_km"] = round(float(_it["distancia_km"]), 2)
-                            _geo_pontos = _bases_locais_ibge._deco_wkb(_it["geometry_wkb"])
+                            # [ROBUSTEZ · Geoespacial IBGE] _deco_wkb devolve None para WKB nula e ERRA em
+                            # tipo não suportado; o `else` fazia len(None) → TypeError que derrubava TODO o
+                            # painel (via o try externo). Blindado: geometria ausente/inválida vira "—".
+                            try:
+                                _geo_pontos = _bases_locais_ibge._deco_wkb(_it.get("geometry_wkb"))
+                            except Exception:
+                                _geo_pontos = None
                             if isinstance(_geo_pontos, tuple):
                                 _it["geometry_wkb"] = "ponto"
                             elif _geo_pontos and isinstance(_geo_pontos[0], list):
                                 _it["geometry_wkb"] = "polígono (%d anéis)" % len(_geo_pontos)
-                            else:
+                            elif _geo_pontos:
                                 _it["geometry_wkb"] = "linha (%d pontos)" % len(_geo_pontos)
+                            else:
+                                _it["geometry_wkb"] = "—"
                         _mm1, _mm2 = st.columns(2)
                         _mm1.metric("Feições encontradas", len(_rr))
                         _mm2.metric("Mais próxima (km)", min(_it["distancia_km"] for _it in _rr))
