@@ -63949,7 +63949,46 @@ if _secao == _SECOES[17]:   # tab_hidrografia
                            "temporario", "dataAlt", "dataIns"}
             _cols_keep = [c for c in _bac_view.columns if c not in _noise_cols]
             _bac_view = _bac_view[_cols_keep]
-            st.dataframe(_bac_view, use_container_width=True, hide_index=True)
+
+            # [VISUAL · Bacias] Painel de topo (headline) + tabela legível + gráfico de magnitude.
+            # Antes a aba (na amostra) era só uma tabela com áreas cruas (ex.: 3869953) e nenhum gráfico.
+            _fmt_mil = lambda _n: f"{int(_n):,}".replace(",", ".")
+            _area_col = next((c for c in ["area_km2", "area", "areakm2", "area_km"] if c in _bac_view.columns), None)
+            _nome_col_b = next((c for c in ["nome", "codigoNome"] if c in _bac_view.columns), None)
+            _area_num = pd.to_numeric(_bac_view[_area_col], errors="coerce") if _area_col else None
+            try:
+                if _area_num is not None and _nome_col_b and _area_num.notna().any():
+                    _k1, _k2, _k3 = st.columns(3)
+                    _k1.metric("Regiões hidrográficas", _fmt_mil(len(_bac_view)),
+                               help="Divisão Hidrográfica Nacional da ANA (CNRH nº 32/2003).")
+                    _k2.metric("Área total", "%s km²" % _fmt_mil(_area_num.sum()),
+                               help="Soma das áreas das regiões — cobre o território nacional (~8,5 milhões km²).")
+                    _imax = _area_num.idxmax()
+                    _k3.metric("Maior região", str(_bac_view.loc[_imax, _nome_col_b]),
+                               "%s km²" % _fmt_mil(_area_num.max()))
+            except Exception:
+                logger.debug("[HYDRO-BACIAS] KPIs de área isolados falharam (aditivo).", exc_info=True)
+
+            # Tabela: área formatada e legível (mantém _bac_view cru para exportação)
+            _bac_show = _bac_view.copy()
+            if _area_col:
+                _bac_show["Área (km²)"] = _area_num.map(lambda _v: _fmt_mil(_v) if pd.notna(_v) else "—")
+                _bac_show = _bac_show.drop(columns=[_area_col])
+            _pref = [c for c in ["codigo", "nome", "Área (km²)", "estados", "Rios catalogados", "fonte"]
+                     if c in _bac_show.columns]
+            _bac_show = _bac_show[_pref + [c for c in _bac_show.columns if c not in _pref]]
+            st.dataframe(_bac_show, use_container_width=True, hide_index=True)
+
+            # Gráfico de magnitude: área por região (série única — sem legenda; ordenado desc)
+            try:
+                if _area_num is not None and _nome_col_b and _area_num.notna().any():
+                    _area_ser = (pd.Series(_area_num.values, index=_bac_view[_nome_col_b].astype(str))
+                                 .dropna().sort_values(ascending=False))
+                    if not _area_ser.empty:
+                        st.caption("Área por região hidrográfica (km²)")
+                        st.bar_chart(_area_ser, color="#2563eb", horizontal=True)
+            except Exception:
+                logger.debug("[HYDRO-BACIAS] Gráfico de área isolado falhou (aditivo).", exc_info=True)
 
             try:
                 if "Rios catalogados" in _bac_view.columns and _bac_view["Rios catalogados"].sum() > 0:
@@ -63962,7 +64001,8 @@ if _secao == _SECOES[17]:   # tab_hidrografia
                                       f"{int(_topr['Rios catalogados']):,}".replace(",", ".")))
                     st.caption("Rios catalogados por região")
                     _idx_col = _nome_col or "registroID"
-                    st.bar_chart(_bac_ord.set_index(_idx_col)["Rios catalogados"])
+                    st.bar_chart(_bac_ord.set_index(_idx_col)["Rios catalogados"],
+                                 color="#0891b2", horizontal=True)
             except Exception:
                 logger.debug("[HYDRO-BACIAS] Resumo/gráfico isolado falhou (aditivo).", exc_info=True)
 
@@ -64414,7 +64454,8 @@ if _secao == _SECOES[22]:   # tab_geo_ibge
                                 _df_bar_pan = _df_pan[_df_pan["Camada"] != _rot_cam["drenagem"]].set_index("Camada")["Registros"]
                                 if not _df_bar_pan.empty:
                                     st.caption("Registros por camada (a **Drenagem** — malha completa de rios — é omitida do gráfico por dominar a escala; veja o valor exato na tabela acima).")
-                                    st.bar_chart(_df_bar_pan)
+                                    # barras horizontais: os rótulos de camada são longos (emoji + nome) e leem melhor deitados
+                                    st.bar_chart(_df_bar_pan.sort_values(), color="#3B82F6", horizontal=True)
                             except Exception:
                                 logger.debug("[IBGE-PANORAMA] Gráfico isolado falhou (aditivo).", exc_info=True)
                             if _mani_ibge.get("extraido_em_utc"):
