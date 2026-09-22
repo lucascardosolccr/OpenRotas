@@ -2,7 +2,7 @@
 construir_bases_locais_ibge.py
 ==============================
 Constrói as CAMADAS DERIVADAS LOCAIS de inteligência geoespacial a partir das bases oficiais
-IBGE BC250 v2025 (nacional) + BC100 (UFs: AC, AL, ES, GO/DF, RS, SE) baixadas em
+IBGE BC250 v2025 (nacional) + BC100 (UFs: AC, AL, BA, ES, GO/DF, RS, RR, SE — ver UF_MAP) baixadas em
 `data/brasil/ibge/`.
 
 Saída (write-once, versionada por manifesto):

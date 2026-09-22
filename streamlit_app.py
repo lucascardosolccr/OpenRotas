@@ -34280,21 +34280,61 @@ def _gerar_dados_rios_fallback():
         return None
 
 
+_FONTE_BACIAS_AMOSTRA = "ANA — Divisão Hidrográfica Nacional (12 regiões, CNRH nº 32/2003)"
+
+
 def _gerar_dados_bacias_fallback():
-    """Gera dados de bacias de fallback (principais bacias brasileiras)."""
+    """[HONESTIDADE-DADOS] As 12 REGIÕES HIDROGRÁFICAS oficiais do Brasil (ANA/CNRH nº 32/2003) — usadas quando
+    o CSV de bacias do SNIRH não está carregado. Antes esta amostra listava só 10 regiões e MISTURAVA nomes
+    oficiais com rótulos inexistentes ('Sudeste', 'Nordeste Oriental', 'Nordeste Setentrional'): incongruência
+    corrigida. Áreas conforme a Conjuntura dos Recursos Hídricos (ANA). A coluna `fonte` marca a origem."""
     _bacias = [
-        {"codigo": "1", "nome": "Amazônica", "area_km2": 3930000, "estados": "AM, PA, MT, RO, AC, RR, AP"},
-        {"codigo": "2", "nome": "Tocantins-Araguaia", "area_km2": 757000, "estados": "TO, PA, MA, GO, MT"},
-        {"codigo": "3", "nome": "São Francisco", "area_km2": 634000, "estados": "MG, BA, PE, AL, SE, DF"},
-        {"codigo": "4", "nome": "Paraná", "area_km2": 1080000, "estados": "PR, SC, RS, MS, SP, MG, GO, DF"},
-        {"codigo": "5", "nome": "Paraguai", "area_km2": 362000, "estados": "MT, MS"},
-        {"codigo": "6", "nome": "Uruguai", "area_km2": 176000, "estados": "RS, SC"},
-        {"codigo": "7", "nome": "Sudeste", "area_km2": 586000, "estados": "SP, RJ, MG, ES"},
-        {"codigo": "8", "nome": "Nordeste Oriental", "area_km2": 275000, "estados": "BA, SE, AL, PE, PB, RN"},
-        {"codigo": "9", "nome": "Parnaíba", "area_km2": 344000, "estados": "PI, MA, CE, TO"},
-        {"codigo": "10", "nome": "Nordeste Setentrional", "area_km2": 356000, "estados": "MA, PI, CE, RN, PB"},
+        {"codigo": "1",  "nome": "Amazônica",                    "area_km2": 3869953, "estados": "AM, PA, MT, RO, AC, RR, AP"},
+        {"codigo": "2",  "nome": "Tocantins-Araguaia",           "area_km2": 921921,  "estados": "TO, PA, MA, GO, MT, DF"},
+        {"codigo": "3",  "nome": "Atlântico Nordeste Ocidental", "area_km2": 274301,  "estados": "MA, PA"},
+        {"codigo": "4",  "nome": "Parnaíba",                     "area_km2": 333056,  "estados": "PI, MA, CE"},
+        {"codigo": "5",  "nome": "Atlântico Nordeste Oriental",  "area_km2": 286802,  "estados": "CE, RN, PB, PE, AL, BA"},
+        {"codigo": "6",  "nome": "São Francisco",                "area_km2": 638576,  "estados": "MG, BA, PE, AL, SE, GO, DF"},
+        {"codigo": "7",  "nome": "Atlântico Leste",              "area_km2": 388160,  "estados": "BA, MG, SE, ES"},
+        {"codigo": "8",  "nome": "Atlântico Sudeste",            "area_km2": 214629,  "estados": "RJ, SP, MG, ES, PR"},
+        {"codigo": "9",  "nome": "Atlântico Sul",                "area_km2": 187522,  "estados": "SC, RS, PR"},
+        {"codigo": "10", "nome": "Uruguai",                      "area_km2": 174533,  "estados": "RS, SC"},
+        {"codigo": "11", "nome": "Paraná",                       "area_km2": 879873,  "estados": "PR, SP, MS, MG, GO, SC, DF"},
+        {"codigo": "12", "nome": "Paraguai",                     "area_km2": 363446,  "estados": "MT, MS"},
     ]
-    return pd.DataFrame(_bacias)
+    _dfb = pd.DataFrame(_bacias)
+    _dfb["fonte"] = _FONTE_BACIAS_AMOSTRA
+    return _dfb
+
+
+# [HONESTIDADE-DADOS · Geoespacial IBGE] A cobertura BC100 estava hard-coded em duas legendas, e elas
+# DIVERGIAM entre si e da base real: a lista "AC/AL/ES/GO-DF/RS/RR/SE" OMITIA a Bahia (a fonte `bcal` do
+# BC100 mapeia para BA — ver UF_MAP em construir_bases_locais_ibge.py). Derivar do manifest garante que a
+# legenda nunca minta sobre o que há em disco. Mapa fonte→UF idêntico ao do builder.
+_BC100_FONTE_UF = {
+    "acre": "AC", "alagoas": "AL", "bcal": "BA", "espirito_santo": "ES",
+    "go_df": "GO/DF", "rio_grande_do_sul": "RS", "roraima": "RR", "sergipe": "SE",
+}
+
+
+def _rotulo_bc100_ufs(mani):
+    """PURA: a partir do manifest das derivadas IBGE, devolve (rótulo, n_ufs) das UFs cobertas pelo BC100,
+    ex.: ("AC, AL, BA, ES, GO/DF, RS, RR, SE", 8). Fail-open: manifest ausente/estranho → ("", 0), e a UI
+    então omite a lista em vez de inventar uma. Nunca fabrica UF: fontes desconhecidas viram o próprio nome."""
+    try:
+        _ufs = ((mani or {}).get("fontes", {}) or {}).get("bc100", {}).get("ufs", {}) or {}
+        if not isinstance(_ufs, dict) or not _ufs:
+            return "", 0
+        _rot = []
+        for _k in _ufs.keys():
+            _sig = _BC100_FONTE_UF.get(str(_k).strip().lower())
+            if _sig is None:
+                _sig = str(_k).strip().upper()  # honesto: fonte nova sem mapa → mostra o nome cru
+            if _sig and _sig not in _rot:
+                _rot.append(_sig)
+        return ", ".join(_rot), len(_rot)
+    except Exception:
+        return "", 0
 
 
 _FONTE_ESTACOES_AMOSTRA = "Amostra ilustrativa (catálogo ANA/SNIRH não carregado)"
@@ -64364,7 +64404,9 @@ if _secao == _SECOES[22]:   # tab_geo_ibge
                             except Exception:
                                 logger.debug("[IBGE-PANORAMA] Gráfico isolado falhou (aditivo).", exc_info=True)
                             if _mani_ibge.get("extraido_em_utc"):
-                                st.caption("📅 Bases derivadas do IBGE geradas em: %s · Origem: BC250 v2025 (todo o Brasil) + BC100 (AC/AL/ES/GO-DF/RS/RR/SE)." % _mani_ibge["extraido_em_utc"])
+                                _bc100_rot, _bc100_n = _rotulo_bc100_ufs(_mani_ibge)
+                                _bc100_txt = (" + BC100 (%d UFs: %s)" % (_bc100_n, _bc100_rot)) if _bc100_rot else ""
+                                st.caption("📅 Bases derivadas do IBGE geradas em: %s · Origem: BC250 v2025 (todo o Brasil)%s." % (_mani_ibge["extraido_em_utc"], _bc100_txt))
                 except Exception:
                     logger.debug("[IBGE-PANORAMA] Painel nacional isolado falhou (aditivo).", exc_info=True)
                 # ---- camadas pesadas (Release de dados) -------------------------------
@@ -64507,7 +64549,12 @@ if _secao == _SECOES[22]:   # tab_geo_ibge
                         _mm2.metric("Mais próxima (km)", min(_it["distancia_km"] for _it in _rr))
                         st.dataframe(_rr, use_container_width=True, hide_index=True)
                         st.map(pd.DataFrame([{"lat": _it["lat"], "lon": _it["lon"]} for _it in _rr]))
-                        st.caption("Origem: IBGE BC250 v2025 e BC100 (AC/AL/ES/GO/RS/SE/RR). Marcador ≈ ponto representativo da feição.")
+                        try:
+                            _bc100_rot2, _ = _rotulo_bc100_ufs(_bases_locais_ibge.manifest())
+                        except Exception:
+                            _bc100_rot2 = ""
+                        _bc100_sfx = (" e BC100 (%s)" % _bc100_rot2) if _bc100_rot2 else ""
+                        st.caption("Origem: IBGE BC250 v2025%s. Marcador ≈ ponto representativo da feição." % _bc100_sfx)
                     else:
                         st.info("Nenhuma feição dentro do raio. Aumente o raio, troque a camada ou o filtro.")
 
