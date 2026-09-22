@@ -2759,8 +2759,15 @@ def _secao_abstract_comparacao_html(stats, aud, titulo=""):
         _p_ref = float(br.get("pct_venceu_ref", 0) or 0)
         _p_emp = float(br.get("pct_empate", 0) or 0)
         _econ = float(br.get("economia_ponderada_km", 0) or 0)
+        _vri = int(br.get("vitorias_ref_invalida", 0) or 0)
         if _tot == 0:
             return ""
+        # [REF-INVÁLIDA → VITÓRIA DA APP] nota que explica parte das vitórias da aplicação: a referência
+        # "chegava mais perto" com uma distância fisicamente impossível/implausível (menor que a linha reta).
+        _nota_vri = (
+            (f' Destas vitórias da aplicação, <b>{_vri:,}</b> ocorreram porque a distância da referência era '
+             f'fisicamente impossível ou implausível (menor que a linha reta geodésica — nenhuma estrada real '
+             f'a alcança): a rota válida é a da aplicação.') if _vri > 0 else '')
         _veredito = ("a aplicação encontrou rotas menores na maioria dos municípios" if _p_app > _p_ref + 5
                      else "o estudo de referência prevaleceu na maioria dos municípios" if _p_ref > _p_app + 5
                      else "os dois estudos empataram tecnicamente na maioria dos municípios")
@@ -2780,7 +2787,7 @@ def _secao_abstract_comparacao_html(stats, aud, titulo=""):
             f'({_pct_conc:.1f}%) foram conciliados e efetivamente comparados.</p>'
             f'<p><b>Principais resultados.</b> No confronto, {_veredito}: a aplicação venceu em {_p_app:.1f}% '
             f'dos municípios, a referência em {_p_ref:.1f}% e houve empate técnico em {_p_emp:.1f}%. O balanço '
-            f'ponderado por candidatos representa {_sinal_econ} de {abs(_econ):,.0f} km.</p>'
+            f'ponderado por candidatos representa {_sinal_econ} de {abs(_econ):,.0f} km.{_nota_vri}</p>'
             '</div></section>')
     except Exception:
         logger.error("[RELATORIO-CIENTIFICO] Falha ao gerar abstract de comparação", exc_info=True)
@@ -23240,6 +23247,12 @@ def _estatisticas_comparacao(linhas, uf_para_regiao=None, limiar_empate_km=1.0):
         _venc_ref = _vd.count("Referência")
         _emp = _vd.count("Empate")
         _comp = _venc_app + _venc_ref + _emp
+        # [REF-INVÁLIDA → VITÓRIA DA APP] quantas vitórias da aplicação vêm de referência fisicamente
+        # inválida (distância < linha reta / colada nela). Já entram em _venc_app (o placar acima); contadas
+        # à parte para o placar explicar por que a aplicação venceu esses casos.
+        _vit_ref_inv = sum(1 for l in ls if str(l.get("Vitoria por Ref Invalida", "")) == "Sim")
+        _insc_vit_ref_inv = sum(float(l.get("Inscritos") or 0) for l in ls
+                                if str(l.get("Vitoria por Ref Invalida", "")) == "Sim")
         _mesmo = sum(1 for l in ls if l.get("Mesmo Destino") == "Sim")
         _difdest = sum(1 for l in ls if l.get("Mesmo Destino") == "Não")
         _insc_mesmo = sum(float(l.get("Inscritos") or 0) for l in ls if l.get("Mesmo Destino") == "Sim")
@@ -23258,6 +23271,7 @@ def _estatisticas_comparacao(linhas, uf_para_regiao=None, limiar_empate_km=1.0):
         return {
             "municipios": n, "inscritos": int(insc), "comparaveis": _comp,
             "venceu_app": _venc_app, "venceu_ref": _venc_ref, "empates": _emp,
+            "vitorias_ref_invalida": _vit_ref_inv, "inscritos_vitorias_ref_invalida": int(_insc_vit_ref_inv),
             "pct_venceu_app": round(100.0 * _venc_app / _comp, 1) if _comp else 0.0,
             "pct_venceu_ref": round(100.0 * _venc_ref / _comp, 1) if _comp else 0.0,
             "pct_empate": round(100.0 * _emp / _comp, 1) if _comp else 0.0,

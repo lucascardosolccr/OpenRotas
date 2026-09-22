@@ -48,3 +48,16 @@ def test_ref_implausivel_colada_na_reta_vira_vitoria_da_app():
     r = out[0]
     assert r["Vencedor Distancia"] == "Aplicação"
     assert r.get("Vitoria por Ref Invalida") == "Sim"
+
+
+def test_estatisticas_contam_vitorias_por_ref_invalida():
+    # uma vitória por ref inválida + uma vitória genuína da app → placar conta 2 vitórias, 1 por ref inválida
+    linhas = [_linha("Abaetetuba", 1.83, "Abaetetuba", 53.0, 42.40, insc=100),   # ref impossível → app vence
+              _linha("Y", 120.0, "X", 90.0, 80.0, insc=50)]                       # app já menor (genuína)
+    cmp = m._comparar_alocacoes(linhas)
+    st = m._estatisticas_comparacao(cmp)
+    br = st["brasil"]
+    assert br["venceu_app"] == 2
+    assert br["venceu_ref"] == 0
+    assert br["vitorias_ref_invalida"] == 1
+    assert br["inscritos_vitorias_ref_invalida"] == 100
