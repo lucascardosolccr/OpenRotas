@@ -42820,6 +42820,16 @@ def _montar_dataframe_final(df, resultados_unicos, runner_up_map=None, hub_qual_
                     # = MAIOR valor, sempre 0-100%). Servem Lote E Alocação (mesmo _montar_dataframe_final).
                     linha_dict['Razão (V/R)'] = _razao_vr
                     linha_dict['Classificação Razão (V/R)'] = _classificar_razao_vr(_razao_vr)
+                    # [ENDERECO-PRECISAO] Sinaliza quando a ENTRADA era um endereço (rua/nº) mas o ponto
+                    # obtido é só MUNICIPAL (centro da cidade) — a rota partiu do centro, não do endereço.
+                    # Custo ZERO (usa a entrada original + a confiança já calculada); coluna aditiva.
+                    try:
+                        linha_dict['Precisão do Ponto (Origem)'] = _precisao_ponto_endereco(
+                            origem, linha_dict.get('Confianca Origem'), linha_dict.get('Fonte Geocoding Origem'))
+                        linha_dict['Precisão do Ponto (Destino)'] = _precisao_ponto_endereco(
+                            destino, linha_dict.get('Confianca Destino'), linha_dict.get('Fonte Geocoding Destino'))
+                    except Exception:
+                        pass
                     # [MARGEM-SAIDA - 447ª] Risco operacional + margem de saída recomendada por rota, na
                     # planilha (Lote e Alocação). Custo ZERO — usa o risco já calculado na rota (res.risco_
                     # operacional) ou o recalcula dos fatos; nunca faz rede. Colunas aditivas.
@@ -45306,6 +45316,46 @@ def _diagnosticar_colunas_lote(cols, obrigatorias=("Origem", "Destino")):
         else:
             _partes.append(f"Faltou **{_req}**: adicione uma coluna com esse nome.")
     return False, " ".join(_partes)
+
+
+# [ENDERECO-PRECISAO] Palavras que denunciam um ENDEREÇO específico (via/logradouro) na entrada — se a
+# entrada tem uma dessas OU um número de casa, o usuário esperava precisão de RUA, não de município.
+_LOGRAD_KEYWORDS = (
+    "RUA", "AVENIDA", " AV ", "TRAVESSA", "ALAMEDA", "RODOVIA", "ESTRADA", "QUADRA", "PRACA",
+    "LADEIRA", "BECO", "LARGO", "VIELA", "CONJUNTO", "LOTEAMENTO", "LOTE", "SETOR", "VILA",
+    "JARDIM", "CONDOMINIO", "RESIDENCIAL", "EDIFICIO", "APARTAMENTO", "APTO", "CASA", "NUMERO",
+    "SITIO", "FAZENDA", "CHACARA", "POVOADO", "COLONIA", "DISTRITO", "KM ", "QUILOMETRO",
+)
+_RE_NUM_CASA = re.compile(r"(?<!\d)\d{1,5}(?!\d)")
+
+
+def _precisao_ponto_endereco(entrada, confianca, fonte):
+    """[ENDERECO-PRECISAO] Sinaliza quando a ENTRADA era um endereço específico (via/nº de casa) mas o ponto
+    obtido tem apenas precisão MUNICIPAL (centro/sede da cidade) — ou seja, a rota partiu do centro do
+    município, não do endereço exato. Retorna um rótulo curto para a planilha ('' quando não se aplica:
+    entrada era município/POI, ou o ponto já é de rua). PURA/testável; nunca levanta.
+
+    Só dispara quando (a) a entrada parece um endereço E (b) a confiança do geocode é MUNICIPAL — o campo
+    que o pipeline marca exatamente para centróide/sede. Assim, municípios puros (precisão municipal é o
+    esperado) e endereços bem resolvidos (confiança alta) NÃO são falsamente alarmados."""
+    try:
+        _e = unidecode(str(entrada or "")).upper()
+        if not _e.strip():
+            return ""
+        # entrada puramente numérica de 7 dígitos = Código IBGE (é município por definição): não alarma.
+        if _e.strip().isdigit():
+            return ""
+        _tem_logr = any(k in f" {_e} " for k in _LOGRAD_KEYWORDS)
+        _tem_num = bool(_RE_NUM_CASA.search(_e))
+        if not (_tem_logr or _tem_num):
+            return ""   # parece município/POI simples → precisão municipal é o resultado esperado
+        _conf = unidecode(str(confianca or "")).upper()
+        if _conf == "MUNICIPAL":
+            return ("⚠️ Precisão municipal — o endereço não foi localizado na via; o ponto usado é o "
+                    "centro/sede do município, então a rota é aproximada (confira o endereço).")
+        return ""
+    except Exception:
+        return ""
 
 
 def _valores_unicos_limpos(serie):
