@@ -123,6 +123,22 @@ def _linha_mapa_kw(width=2, color="blue", dash=None):
     return kw
 
 
+# [MAPAS-SEM-CHAVE] Os estilos Plotly 'carto-*' (positron/darkmatter/voyager) passaram a exigir API key
+# (a mensagem "api key required carto.com/basemaps/apikey" que aparecia nos mapas). Trocamos por um
+# basemap RASTER SEM CHAVE da Esri (mesmo host já usado no mapa de satélite desta app), desenhado sobre
+# o estilo neutro 'white-bg'. Cinza-escuro preserva o visual "dark"; nunca pede chave, permite embedding.
+_MAPA_ESTILO_BASE = "white-bg"
+
+
+def _mapa_basemap_layers(escuro=True):
+    """[MAPAS-SEM-CHAVE] Camada(s) de basemap Esri sem chave para os mapas Plotly. `escuro`=True usa o
+    World_Dark_Gray_Base (equivalente ao antigo carto-darkmatter); False, o World_Light_Gray_Base."""
+    _svc = "World_Dark_Gray_Base" if escuro else "World_Light_Gray_Base"
+    return [{"below": "traces", "sourcetype": "raster", "sourceattribution": "Tiles © Esri",
+             "source": ["https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/"
+                        + _svc + "/MapServer/tile/{z}/{y}/{x}"]}]
+
+
 from unidecode import unidecode
 from rapidfuzz import process, fuzz
 from diskcache import Cache
@@ -3567,7 +3583,7 @@ def _bi_mapa_rotas_js():
         "if(typeof L==='undefined'){host.innerHTML='<div style=\"padding:24px;color:#64748b;font-size:13px\">"
         "🗺️ Mapa indisponível: o Leaflet não carregou (requer internet). As demais análises do dashboard continuam funcionando.</div>';return;}"
         "if(!_RM){_RM=L.map('bi-rotamap',{scrollWheelZoom:true,worldCopyJump:true}).setView([-14.2,-51.9],4);"
-        "L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',{maxZoom:18,attribution:'© OpenStreetMap · © CARTO'}).addTo(_RM);"
+        "L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:18,attribution:'Tiles © Esri'}).addTo(_RM);"
         "_RL={app:L.layerGroup(),ref:L.layerGroup(),org:L.layerGroup()};_RL.org.addTo(_RM);_RL.app.addTo(_RM);_RL.ref.addTo(_RM);}"
         "_RL.app.clearLayers();_RL.ref.clearLayers();_RL.org.clearLayers();"
         "var soDiv=($('mp-div')&&$('mp-div').checked),soConv=($('mp-conv')&&$('mp-conv').checked);"
@@ -10658,10 +10674,12 @@ def _geo_analise_dataset(df, ratio_suspeito=3.0, dist_longa=200.0):
 _GEO_AZUL, _GEO_VERM = "#1f78b4", "#e31a1c"
 _GEO_VIARIA, _GEO_ESTIM, _GEO_SEMROTA = "#1F8A70", "#E8A33D", "#C6553F"
 _GEO_FLUVIAL = "#0077BE"  # [FLUVIAL - 341a geração] azul-água p/ rotas que cruzam rio por balsa
-_GEO_TILE_OSM = "L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',{maxZoom:18,attribution:'© OpenStreetMap · © CARTO'}).addTo(map);"
+_GEO_TILE_OSM = "L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:18,attribution:'Tiles © Esri',errorTileUrl:'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=='}).addTo(map);"
 # [FLUVIAL - 342a geração] Camada de hidrografia: OpenTopoMap (keyless) realça rios/relevo. Controle de
 # camadas deixa alternar; se o CDN falhar, o usuário fica no OSM (que já mostra rios). Chaves literais.
-_GEO_TILE_FLUVIAL = ("var _osm=L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',{maxZoom:18,attribution:'© OpenStreetMap · © CARTO'});"
+# [MAPAS-SEM-CHAVE] errorTileUrl transparente: se um ladrilho falhar, fica em branco (mapa e marcadores
+# seguem visíveis) em vez de mostrar uma imagem de erro/"api key required".
+_GEO_TILE_FLUVIAL = ("var _osm=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:18,attribution:'Tiles © Esri',errorTileUrl:'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=='});"
                      "var _topo=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17,attribution:'© OpenTopoMap (CC-BY-SA)'});"
                      "_osm.addTo(map);L.control.layers({'Padrão (OSM)':_osm,'Relevo/Água (OpenTopoMap)':_topo}).addTo(map);")
 
@@ -10976,7 +10994,7 @@ padding:8px 10px;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.2);font-size
 <script>
 var D=__PAYLOAD__;
 var map=L.map('m',{scrollWheelZoom:false});
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',{maxZoom:18,attribution:'© OpenStreetMap · © CARTO'}).addTo(map);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:18,attribution:'Tiles © Esri'}).addTo(map);
 var b=[];
 D.lin.forEach(function(l){L.polyline([l.a,l.b],{color:'#1F8A70',weight:l.w,opacity:.5}).addTo(map);});
 D.dst.forEach(function(d){L.circleMarker([d.lat,d.lng],{radius:7,color:'#fff',weight:1.5,fillColor:'#e31a1c',fillOpacity:1})
@@ -11229,7 +11247,7 @@ border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.2);font-size:11px;max-width:2
 <small>__NOTA__</small></div>
 <script>
 var D=__PAYLOAD__;var map=L.map('m',{scrollWheelZoom:false});
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',{maxZoom:18,attribution:'© OpenStreetMap · © CARTO'}).addTo(map);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:18,attribution:'Tiles © Esri'}).addTo(map);
 var b=[];
 D.linhas.forEach(function(l){var o={color:l.cor,weight:l.w,opacity:.8};if(l.dash)o.dashArray=l.dash;L.polyline(l.pts,o).addTo(map);l.pts.forEach(function(p){b.push(p)});});
 D.marcadores.forEach(function(m){L.circleMarker([m.lat,m.lng],{radius:8,color:'#fff',weight:1.5,fillColor:m.cor,fillOpacity:1})
@@ -11639,7 +11657,7 @@ def _geodiv_mapa(rows, altura=520, max_features=400, destaque=False, estilo="arc
                     "Tra\u00e7ados s\u00e3o <b>conectores geod\u00e9sicos</b> \u2014 a geometria vi\u00e1ria real n\u00e3o \u00e9 armazenada no comparativo em lote.")
         payload = json.dumps({"orig": orig, "appd": appd, "refd": refd, "lin": lin, "reais": _reais},
                              ensure_ascii=False).replace("</", "<\\/")
-        html = '<!DOCTYPE html><html><head><meta charset="utf-8"/>\n<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>\n<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>\n<style>html,body,#m{margin:0;height:__H__px;width:100%;font-family:Inter,system-ui,sans-serif}\n.leaflet-popup-content{font-size:12px;line-height:1.45}.lg{position:absolute;z-index:999;right:8px;top:8px;background:#fff;\npadding:9px 11px;border-radius:9px;box-shadow:0 2px 10px rgba(0,0,0,.22);font-size:11px;max-width:265px}\n.sw{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:middle;border:1px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.15)}\n.sl{display:inline-block;width:20px;height:0;border-top:4px solid;margin-right:5px;vertical-align:middle;border-radius:2px}\n.dl{display:inline-block;width:20px;height:0;border-top:3px dashed;margin-right:5px;vertical-align:middle}</style>\n</head><body><div id="m" style="position:relative"><div style="position:absolute;top:0;left:0;right:0;bottom:0;z-index:0;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;text-align:center;font-family:system-ui,Arial,sans-serif;color:#0E2A3B;background:#f4f6f8;"><div><div style="font-size:1.7em;margin-bottom:6px;">🗺️⚠️</div><div style="font-weight:600;margin-bottom:4px;">Mapa indisponível offline</div><div style="font-size:.9em;line-height:1.45;max-width:440px;">A biblioteca de mapas (Leaflet) ou os ladrilhos não puderam ser carregados — sem internet ou o CDN foi bloqueado neste ambiente. Os <b>dados da análise permanecem completos</b> nas tabelas, KPIs e no restante da página; apenas a visualização geográfica precisa de conexão.</div></div></div></div>\n<div class="lg"><b>Trajetos: aplicação × referência</b><br>\n<span class="sw" style="background:#1f78b4"></span>Origem (tamanho = candidatos)<br>\n<span class="sw" style="background:#1F8A70"></span>Destino da aplicação<br>\n<span class="sw" style="background:#7c3aed"></span>Destino da referência<br>\n<span class="sl" style="border-color:#334155"></span>rota <b>vencedora</b> (menor)<br>\n<span class="dl" style="border-color:#334155"></span>rota alternativa<br>\n<small>__LEGNOTE__</small></div>\n<script>\nvar D=__PAYLOAD__;var map=L.map(\'m\',{scrollWheelZoom:false});\nL.tileLayer(\'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png\',{maxZoom:18,attribution:\'© OpenStreetMap · © CARTO\'}).addTo(map);\nfunction arc(a,b,bend){var la1=a[0],ln1=a[1],la2=b[0],ln2=b[1];var dx=ln2-ln1,dy=la2-la1;var d=Math.sqrt(dx*dx+dy*dy)||1e-6;\nvar mlat=(la1+la2)/2,mlng=(ln1+ln2)/2;var clat=mlat+(dx/d)*bend*d,clng=mlng-(dy/d)*bend*d;var pts=[],t;\nfor(t=0;t<=1.0001;t+=0.04){var u=1-t;pts.push([u*u*la1+2*u*t*clat+t*t*la2,u*u*ln1+2*u*t*clng+t*t*ln2]);}return pts;}\nvar b=[];var RE=D.reais||[];\nif(RE.length){RE.forEach(function(l){if(l.win){L.polyline(l.pts,{color:\'#ffffff\',weight:9,opacity:.95,lineJoin:\'round\'}).addTo(map);\nL.polyline(l.pts,{color:l.cor,weight:5.5,opacity:1,lineJoin:\'round\'}).addTo(map);}\nelse{L.polyline(l.pts,{color:l.cor,weight:3.5,opacity:.85,lineJoin:\'round\'}).addTo(map);}l.pts.forEach(function(p){b.push(p);});});}\nelse{D.lin.slice().sort(function(x,y){return (x.win?1:0)-(y.win?1:0);}).forEach(function(l){var pth=arc(l.a,l.b,l.bend);\nif(l.win){L.polyline(pth,{color:\'#ffffff\',weight:8,opacity:.9,lineJoin:\'round\'}).addTo(map);\nL.polyline(pth,{color:l.cor,weight:5,opacity:.95,lineJoin:\'round\'}).addTo(map);}\nelse{L.polyline(pth,{color:l.cor,weight:2.5,opacity:.5,dashArray:\'6,7\'}).addTo(map);}});}\nD.appd.forEach(function(d){L.circleMarker([d.lat,d.lng],{radius:d.win?7:5,color:\'#fff\',weight:d.win?2:1.3,fillColor:\'#1F8A70\',fillOpacity:1}).bindPopup(\'<b>\\ud83d\\udfe2 Destino da aplica\\u00e7\\u00e3o</b><br>\'+d.n).addTo(map);b.push([d.lat,d.lng]);});\nD.refd.forEach(function(d){L.circleMarker([d.lat,d.lng],{radius:d.win?7:5,color:\'#fff\',weight:d.win?2:1.3,fillColor:\'#7c3aed\',fillOpacity:1}).bindPopup(\'<b>\\ud83d\\udfe3 Destino da refer\\u00eancia</b><br>\'+d.n).addTo(map);b.push([d.lat,d.lng]);});\nD.orig.forEach(function(o){var al=(o.al&&o.al.length)?(\'<br><b>\\u26a0\\ufe0f \'+o.al.join(\'<br>\\u26a0\\ufe0f \')+\'</b>\'):\'\';\nvar dif=(o.dif==null)?\'\':(\'<br>Diferen\\u00e7a: <b>\'+o.dif+\' km</b>\'+(o.kmc?(\' \\u00b7 \'+o.kmc+\' km-candidato\'):\'\'));\nvar dtp=(o.dt==null)?\'\':(\'<br>\\u23f1\\ufe0f Diferen\\u00e7a de tempo: <b>\'+o.dt+\' min</b>\');\nvar vc=(o.venc&&o.venc!=\'\\u2014\')?(\'<br>\\ud83c\\udfc6 Vencedor: <b>\'+o.venc+\'</b>\'):\'\';\nL.circleMarker([o.lat,o.lng],{radius:o.r,color:\'#fff\',weight:1.2,fillColor:\'#1f78b4\',fillOpacity:.9})\n.bindPopup(\'<b>\\ud83d\\udd35 \'+o.m+\'</b>\'+(o.insc?(\'<br>\'+o.insc+\' candidato(s)\'):\'\')\n+\'<br>\\ud83d\\udfe2 App: \'+(o.ad||\'\\u2014\')+(o.adk!=null?(\' (\'+o.adk+\' km)\'):\'\')\n+\'<br>\\ud83d\\udfe3 Ref: \'+(o.rd||\'\\u2014\')+(o.rdk!=null?(\' (\'+o.rdk+\' km)\'):\'\')+vc+dif\n+dtp+\'<br><i>\'+(o.cat||\'\')+\'</i>\'+al).addTo(map);b.push([o.lat,o.lng]);});\n__HALO__if(b.length)map.fitBounds(b,{padding:[30,30]});else map.setView([-15.8,-47.9],4);\n</script></body></html>'
+        html = '<!DOCTYPE html><html><head><meta charset="utf-8"/>\n<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>\n<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>\n<style>html,body,#m{margin:0;height:__H__px;width:100%;font-family:Inter,system-ui,sans-serif}\n.leaflet-popup-content{font-size:12px;line-height:1.45}.lg{position:absolute;z-index:999;right:8px;top:8px;background:#fff;\npadding:9px 11px;border-radius:9px;box-shadow:0 2px 10px rgba(0,0,0,.22);font-size:11px;max-width:265px}\n.sw{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:middle;border:1px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.15)}\n.sl{display:inline-block;width:20px;height:0;border-top:4px solid;margin-right:5px;vertical-align:middle;border-radius:2px}\n.dl{display:inline-block;width:20px;height:0;border-top:3px dashed;margin-right:5px;vertical-align:middle}</style>\n</head><body><div id="m" style="position:relative"><div style="position:absolute;top:0;left:0;right:0;bottom:0;z-index:0;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;text-align:center;font-family:system-ui,Arial,sans-serif;color:#0E2A3B;background:#f4f6f8;"><div><div style="font-size:1.7em;margin-bottom:6px;">🗺️⚠️</div><div style="font-weight:600;margin-bottom:4px;">Mapa indisponível offline</div><div style="font-size:.9em;line-height:1.45;max-width:440px;">A biblioteca de mapas (Leaflet) ou os ladrilhos não puderam ser carregados — sem internet ou o CDN foi bloqueado neste ambiente. Os <b>dados da análise permanecem completos</b> nas tabelas, KPIs e no restante da página; apenas a visualização geográfica precisa de conexão.</div></div></div></div>\n<div class="lg"><b>Trajetos: aplicação × referência</b><br>\n<span class="sw" style="background:#1f78b4"></span>Origem (tamanho = candidatos)<br>\n<span class="sw" style="background:#1F8A70"></span>Destino da aplicação<br>\n<span class="sw" style="background:#7c3aed"></span>Destino da referência<br>\n<span class="sl" style="border-color:#334155"></span>rota <b>vencedora</b> (menor)<br>\n<span class="dl" style="border-color:#334155"></span>rota alternativa<br>\n<small>__LEGNOTE__</small></div>\n<script>\nvar D=__PAYLOAD__;var map=L.map(\'m\',{scrollWheelZoom:false});\nL.tileLayer(\'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}\',{maxZoom:18,attribution:\'Tiles © Esri\'}).addTo(map);\nfunction arc(a,b,bend){var la1=a[0],ln1=a[1],la2=b[0],ln2=b[1];var dx=ln2-ln1,dy=la2-la1;var d=Math.sqrt(dx*dx+dy*dy)||1e-6;\nvar mlat=(la1+la2)/2,mlng=(ln1+ln2)/2;var clat=mlat+(dx/d)*bend*d,clng=mlng-(dy/d)*bend*d;var pts=[],t;\nfor(t=0;t<=1.0001;t+=0.04){var u=1-t;pts.push([u*u*la1+2*u*t*clat+t*t*la2,u*u*ln1+2*u*t*clng+t*t*ln2]);}return pts;}\nvar b=[];var RE=D.reais||[];\nif(RE.length){RE.forEach(function(l){if(l.win){L.polyline(l.pts,{color:\'#ffffff\',weight:9,opacity:.95,lineJoin:\'round\'}).addTo(map);\nL.polyline(l.pts,{color:l.cor,weight:5.5,opacity:1,lineJoin:\'round\'}).addTo(map);}\nelse{L.polyline(l.pts,{color:l.cor,weight:3.5,opacity:.85,lineJoin:\'round\'}).addTo(map);}l.pts.forEach(function(p){b.push(p);});});}\nelse{D.lin.slice().sort(function(x,y){return (x.win?1:0)-(y.win?1:0);}).forEach(function(l){var pth=arc(l.a,l.b,l.bend);\nif(l.win){L.polyline(pth,{color:\'#ffffff\',weight:8,opacity:.9,lineJoin:\'round\'}).addTo(map);\nL.polyline(pth,{color:l.cor,weight:5,opacity:.95,lineJoin:\'round\'}).addTo(map);}\nelse{L.polyline(pth,{color:l.cor,weight:2.5,opacity:.5,dashArray:\'6,7\'}).addTo(map);}});}\nD.appd.forEach(function(d){L.circleMarker([d.lat,d.lng],{radius:d.win?7:5,color:\'#fff\',weight:d.win?2:1.3,fillColor:\'#1F8A70\',fillOpacity:1}).bindPopup(\'<b>\\ud83d\\udfe2 Destino da aplica\\u00e7\\u00e3o</b><br>\'+d.n).addTo(map);b.push([d.lat,d.lng]);});\nD.refd.forEach(function(d){L.circleMarker([d.lat,d.lng],{radius:d.win?7:5,color:\'#fff\',weight:d.win?2:1.3,fillColor:\'#7c3aed\',fillOpacity:1}).bindPopup(\'<b>\\ud83d\\udfe3 Destino da refer\\u00eancia</b><br>\'+d.n).addTo(map);b.push([d.lat,d.lng]);});\nD.orig.forEach(function(o){var al=(o.al&&o.al.length)?(\'<br><b>\\u26a0\\ufe0f \'+o.al.join(\'<br>\\u26a0\\ufe0f \')+\'</b>\'):\'\';\nvar dif=(o.dif==null)?\'\':(\'<br>Diferen\\u00e7a: <b>\'+o.dif+\' km</b>\'+(o.kmc?(\' \\u00b7 \'+o.kmc+\' km-candidato\'):\'\'));\nvar dtp=(o.dt==null)?\'\':(\'<br>\\u23f1\\ufe0f Diferen\\u00e7a de tempo: <b>\'+o.dt+\' min</b>\');\nvar vc=(o.venc&&o.venc!=\'\\u2014\')?(\'<br>\\ud83c\\udfc6 Vencedor: <b>\'+o.venc+\'</b>\'):\'\';\nL.circleMarker([o.lat,o.lng],{radius:o.r,color:\'#fff\',weight:1.2,fillColor:\'#1f78b4\',fillOpacity:.9})\n.bindPopup(\'<b>\\ud83d\\udd35 \'+o.m+\'</b>\'+(o.insc?(\'<br>\'+o.insc+\' candidato(s)\'):\'\')\n+\'<br>\\ud83d\\udfe2 App: \'+(o.ad||\'\\u2014\')+(o.adk!=null?(\' (\'+o.adk+\' km)\'):\'\')\n+\'<br>\\ud83d\\udfe3 Ref: \'+(o.rd||\'\\u2014\')+(o.rdk!=null?(\' (\'+o.rdk+\' km)\'):\'\')+vc+dif\n+dtp+\'<br><i>\'+(o.cat||\'\')+\'</i>\'+al).addTo(map);b.push([o.lat,o.lng]);});\n__HALO__if(b.length)map.fitBounds(b,{padding:[30,30]});else map.setView([-15.8,-47.9],4);\n</script></body></html>'
         _halo = ("D.orig.forEach(function(o){L.circleMarker([o.lat,o.lng],{radius:(o.r+9),color:'#f59e0b',"
                  "weight:2.5,fill:false,opacity:.95,dashArray:'5,4'}).addTo(map);});") if destaque else ""
         return (html.replace("__H__", str(int(altura))).replace("__HALO__", _halo)
@@ -37086,7 +37104,7 @@ def _gerar_mapa_leaflet_rota(geometria_polyline, lat_o, lon_o, lat_d, lon_d, nom
 </head><body>{info_badge}{_aviso_geo}<div id="map" style="position:relative"><div style="position:absolute;top:0;left:0;right:0;bottom:0;z-index:0;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;text-align:center;font-family:system-ui,Arial,sans-serif;color:#0E2A3B;background:#f4f6f8;"><div><div style="font-size:1.7em;margin-bottom:6px;">🗺️⚠️</div><div style="font-weight:600;margin-bottom:4px;">Mapa indisponível offline</div><div style="font-size:.9em;line-height:1.45;max-width:440px;">A biblioteca de mapas (Leaflet) ou os ladrilhos não puderam ser carregados — sem internet ou o CDN foi bloqueado neste ambiente. Os <b>dados da análise permanecem completos</b> nas tabelas, KPIs e no restante da página; apenas a visualização geográfica precisa de conexão.</div></div></div></div><script>
 var pts={pontos_js};
 var map=L.map('map');
-L.tileLayer('https://{{s}}.basemaps.cartocdn.com/light_all/{{z}}/{{x}}/{{y}}.png',{{maxZoom:19,attribution:'© OpenStreetMap · © CARTO | Rota: {_escapar_js(provedor)}'}}).addTo(map);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{{z}}/{{y}}/{{x}}',{{maxZoom:19,attribution:'Tiles © Esri | Rota: {_escapar_js(provedor)}'}}).addTo(map);
 var linha=L.polyline(pts,{{color:'{cor}',weight:5,opacity:0.85}}).addTo(map);
 L.marker(pts[0]).addTo(map).bindPopup('<b>Origem:</b><br>{_no}').openPopup();
 L.marker(pts[pts.length-1]).addTo(map).bindPopup('<b>Destino:</b><br>{_nd}');
@@ -37181,7 +37199,7 @@ padding:16px;text-align:center;font:14px system-ui;color:#0E2A3B;background:#eef
 <span style="font-size:.9em">A biblioteca de mapas ou os ladrilhos não carregaram (sem internet/CDN bloqueado). Os dados da hidrografia estão completos; só a visualização precisa de conexão.</span></div></div></div><script>
 var RIOS=__RIOS__, MASSAS=__MASSAS__, ROTAS=__ROTAS__;
 var map=L.map('map');
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap · © CARTO · Hidrografia IBGE/ANA'}).addTo(map);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles © Esri · Hidrografia IBGE/ANA'}).addTo(map);
 var all=[];
 var gRios=L.layerGroup(), gMassas=L.layerGroup(), gRotas=L.layerGroup();
 MASSAS.forEach(function(p){var pl=L.polygon(p,{color:'#0891b2',weight:1,fillColor:'#22d3ee',fillOpacity:.25});pl.addTo(gMassas);all.push(pl);});
@@ -37345,7 +37363,7 @@ completos nas tabelas e KPIs.</div></div></div></div>
 <script>
 var pts={pontos_js};
 var map=L.map('map');
-L.tileLayer('https://{{s}}.basemaps.cartocdn.com/light_all/{{z}}/{{x}}/{{y}}.png',{{maxZoom:19,attribution:'© OpenStreetMap · © CARTO'}}).addTo(map);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{{z}}/{{y}}/{{x}}',{{maxZoom:19,attribution:'Tiles © Esri'}}).addTo(map);
 var linha=L.polyline(pts,{{color:'#2563eb',weight:5,opacity:0.85}}).addTo(map);
 L.marker(pts[0]).addTo(map).bindPopup('<b>Origem:</b><br>{_no}').openPopup();
 L.marker(pts[pts.length-1]).addTo(map).bindPopup('<b>Destino:</b><br>{_nd}');
@@ -47519,7 +47537,7 @@ def _geo_mapa_calor(rotas, altura=520, por_candkm=False):
             for _p in _pts:
                 _p[2] = round(_p[2] / _maxw, 4)
         payload = json.dumps({"pts": _pts}, ensure_ascii=False).replace("</", "<\\/")
-        html = '<!DOCTYPE html><html><head><meta charset="utf-8"/><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script><style>html,body,#m{margin:0;height:__H__px;width:100%}#m{position:relative}</style></head><body><div id="m"><div style="position:absolute;inset:0;z-index:0;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;text-align:center;font-family:system-ui,Arial,sans-serif;color:#0E2A3B;background:#f4f6f8;"><div><div style="font-size:1.7em;margin-bottom:6px;">🔥🗺️</div><div style="font-weight:600;margin-bottom:4px;">Mapa indisponível offline</div><div style="font-size:.9em;max-width:440px;">A biblioteca de mapas não pôde ser carregada (sem internet ou CDN bloqueado). Os <b>dados permanecem completos</b> nas tabelas e KPIs.</div></div></div></div><script>var D=__PAYLOAD__;try{var map=L.map("m").setView([-15.8,-47.9],4);L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",{maxZoom:18,attribution:"© OpenStreetMap · © CARTO"}).addTo(map);var heat=L.heatLayer(D.pts,{radius:28,blur:20,maxZoom:11,minOpacity:.35,max:1.0}).addTo(map);if(D.pts.length){var b=D.pts.map(function(p){return [p[0],p[1]];});map.fitBounds(b,{padding:[30,30]});}}catch(e){}</script></body></html>'
+        html = '<!DOCTYPE html><html><head><meta charset="utf-8"/><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script><style>html,body,#m{margin:0;height:__H__px;width:100%}#m{position:relative}</style></head><body><div id="m"><div style="position:absolute;inset:0;z-index:0;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;text-align:center;font-family:system-ui,Arial,sans-serif;color:#0E2A3B;background:#f4f6f8;"><div><div style="font-size:1.7em;margin-bottom:6px;">🔥🗺️</div><div style="font-weight:600;margin-bottom:4px;">Mapa indisponível offline</div><div style="font-size:.9em;max-width:440px;">A biblioteca de mapas não pôde ser carregada (sem internet ou CDN bloqueado). Os <b>dados permanecem completos</b> nas tabelas e KPIs.</div></div></div></div><script>var D=__PAYLOAD__;try{var map=L.map("m").setView([-15.8,-47.9],4);L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",{maxZoom:18,attribution:"Tiles © Esri"}).addTo(map);var heat=L.heatLayer(D.pts,{radius:28,blur:20,maxZoom:11,minOpacity:.35,max:1.0}).addTo(map);if(D.pts.length){var b=D.pts.map(function(p){return [p[0],p[1]];});map.fitBounds(b,{padding:[30,30]});}}catch(e){}</script></body></html>'
         return html.replace("__H__", str(int(altura))).replace("__PAYLOAD__", payload)
     except Exception:
         logger.error("[MAPA-CALOR] Falha (isolada).", exc_info=True)
@@ -58715,10 +58733,12 @@ def _fragmento_analytics_dashboard():
                     total_rotas_mapa = df_agg['Qtd_Rotas'].sum()
                     df_agg['Participacao_Nacional_%'] = (df_agg['Qtd_Rotas'] / total_rotas_mapa) * 100
                     
-                    estilo_mapbox = "carto-darkmatter"
+                    # [MAPAS-SEM-CHAVE] o padrão deixa de ser 'carto-darkmatter' (passou a exigir API key);
+                    # usa basemap Esri sem chave sobre 'white-bg'.
+                    estilo_mapbox = _MAPA_ESTILO_BASE
                     if map_style_selection == "OpenStreetMap Clássico": estilo_mapbox = "open-street-map"
                     if map_style_selection == "Satélite (Esri Imagens)": estilo_mapbox = "white-bg"
-                    
+
                     fig = _PX_SCATTER_MAPA(
                         df_agg, lat='Lat_Media', lon='Lon_Media', size='Qtd_Rotas', color='Qtd_Rotas', color_continuous_scale=px.colors.sequential.Blues,
                         size_max=45, zoom=3.5, hover_name='Municipio Destino',
@@ -58729,7 +58749,9 @@ def _fragmento_analytics_dashboard():
 
                     if map_style_selection == "Satélite (Esri Imagens)":
                         fig.update_layout(**{_MAPA_LAYERS_KW: [{"below": 'traces', "sourcetype": "raster", "sourceattribution": "Esri World Imagery", "source": ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"]}]})
-                        
+                    elif estilo_mapbox == _MAPA_ESTILO_BASE:
+                        fig.update_layout(**{_MAPA_LAYERS_KW: _mapa_basemap_layers(escuro=True)})
+
                     fig.update_layout(margin={"r":0,"t":40,"l":0,"b":0}, height=600)
                     st.plotly_chart(fig, use_container_width=True)
                 else: 
@@ -59453,8 +59475,9 @@ if _secao == _SECOES[6]:   # tab_classificacao
                     size_max=35, zoom=3.5, hover_name='Municipio Origem',
                     hover_data={'Lat_Media': False, 'Lon_Media': False, 'UF_Sintetica_Origem': True, col_metrica: True, 'Percentual (%)': True, 'Rótulo': False},
                     title="Mapeamento Temático Pós-Classificação",
-                    **{_MAPA_STYLE_KW: "carto-darkmatter"}
+                    **{_MAPA_STYLE_KW: _MAPA_ESTILO_BASE}
                 )
+                fig_mapa_clas.update_layout(**{_MAPA_LAYERS_KW: _mapa_basemap_layers(escuro=True)})
                 fig_mapa_clas.update_layout(margin={"r":0,"t":40,"l":0,"b":0}, height=550)
                 st.plotly_chart(fig_mapa_clas, use_container_width=True)
                 
@@ -62520,7 +62543,7 @@ def _fig_pares_od(df, altura=560):
                 mode='lines', line=_linha_mapa_kw(color='blue', dash='dash'),
                 showlegend=False, hoverinfo='skip'))
         _fig.update_layout(
-            **{_MAPA_LAYOUT_CHAVE: dict(style="carto-darkmatter", center=dict(lat=-15, lon=-55), zoom=3.5)},
+            **{_MAPA_LAYOUT_CHAVE: dict(style=_MAPA_ESTILO_BASE, layers=_mapa_basemap_layers(escuro=True), center=dict(lat=-15, lon=-55), zoom=3.5)},
             height=altura, margin={"r": 0, "t": 40, "l": 0, "b": 0}, showlegend=True)
         return _fig
     except Exception:
@@ -62575,7 +62598,7 @@ def _fig_mapa_tematico(df, col_valor, titulo_legenda, colorscale="YlOrRd", altur
             text=_dfp["origem"] + " → " + _dfp["destino"] + "<br>" + titulo_legenda + ": " + _dfp["valor"].astype(str),
             hoverinfo="text"))
         _fig.update_layout(
-            **{_MAPA_LAYOUT_CHAVE: dict(style="carto-darkmatter", center=dict(lat=-15, lon=-55), zoom=3.5)},
+            **{_MAPA_LAYOUT_CHAVE: dict(style=_MAPA_ESTILO_BASE, layers=_mapa_basemap_layers(escuro=True), center=dict(lat=-15, lon=-55), zoom=3.5)},
             height=altura, margin={"r": 0, "t": 40, "l": 0, "b": 0})
         return _fig
     except Exception:
@@ -63887,8 +63910,9 @@ if _secao == _SECOES[17]:   # tab_hidrografia
                         zoom=3.5,
                         height=600, size_max=10,
                         color_discrete_map={'Rio': '#3498db', 'Estação': '#e74c3c'},
-                        **{_MAPA_STYLE_KW: "carto-darkmatter"}
+                        **{_MAPA_STYLE_KW: _MAPA_ESTILO_BASE}
                     )
+                    fig.update_layout(**{_MAPA_LAYERS_KW: _mapa_basemap_layers(escuro=True)})
                     fig.update_layout(margin={"r":0,"t":40,"l":0,"b":0}, height=600)
                     st.plotly_chart(fig, use_container_width=True)
                     st.caption(f"Exibindo {len(_map_df)} elementos no mapa (rios + estações)")
@@ -64313,7 +64337,8 @@ if _secao == _SECOES[18]:   # tab_ferry_routes
 
                             fig.update_layout(
                                 **{_MAPA_LAYOUT_CHAVE: dict(
-                                    style="carto-darkmatter",
+                                    style=_MAPA_ESTILO_BASE,
+                                    layers=_mapa_basemap_layers(escuro=True),
                                     center=dict(lat=-15, lon=-55),
                                     zoom=3.5
                                 )},
