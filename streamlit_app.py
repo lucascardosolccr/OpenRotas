@@ -29784,7 +29784,12 @@ def _fecho_fronteira_admissivel(viaria_incumbente, destino_escolhido, candidatos
     return _out
 
 
-_MEDICAO_JUSTA_FECHAMENTO = True   # 2ª opinião multi-motor p/ candidato na ZONA DE VIRADA (remove viés de medição)
+_MEDICAO_JUSTA_FECHAMENTO = False  # [ESTABILIDADE] 2ª opinião multi-motor no fechamento — DESLIGADA por
+# padrão. Ela chamava calcular_pipeline_logistico (Google scrape + Valhalla) DENTRO do laço do fechamento;
+# em estudos grandes/nacionais isso somava muitas chamadas de rede caras e podia estourar o orçamento de
+# recursos do Streamlit Community Cloud durante o processamento. Além disso é REDUNDANTE: o passe de resgate
+# que roda ANTES já mede os candidatos pelo pipeline completo (multi-motor). Manter False deixa o fechamento
+# enxuto (OSRM por coordenada, isonômico) — o comportamento estável. Reversível: True reativa a 2ª opinião.
 
 
 def _fechamento_medicao_min(osrm_out, dist_pipe, reta_pipe, reta_coord, tem_balsa_pipe=None,
@@ -54661,26 +54666,31 @@ if _secao == _SECOES[2]:   # tab_alocacao
                                f"perfil de risco; todas já eram as melhores para o candidato — nenhuma troca necessária.")
                 # [FECHAMENTO-OTIMALIDADE · observabilidade] O passe FINAL (à prova de bypass) melhorava rotas
                 # mas seu resultado nunca chegava à tela — só o resgate aparecia. Agora o usuário vê quantas
-                # escolhas ele fechou para a menor rota real e quantos km isso economizou. READ-ONLY/defensivo.
-                _fecho = st.session_state.get('alo_fechamento_otimalidade') or {}
-                if _fecho.get('trocas'):
-                    with st.container(border=True):
-                        st.markdown("#### 🎯 Fechamento de otimalidade (passe final — menor rota garantida)")
-                        _cfx = st.columns(3)
-                        _cfx[0].metric("Rotas fechadas para a menor", int(_fecho.get('trocas', 0)),
-                                       help="Origens em que o passe final encontrou e adotou um polo mais curto "
-                                            "por estrada que ainda não tinha sido avaliado — nenhuma rota mais "
-                                            "curta ficou de fora.")
-                        _cfx[1].metric("Km economizados",
-                                       f"{_fecho.get('km_salvo_total', 0):,.0f}".replace(",", "."))
-                        _cfx[2].metric("Polos reavaliados", int(_fecho.get('polos_roteados', 0)),
-                                       help="Candidatos da fronteira admissível (reta < viária atual) roteados "
-                                            "pelo motor autoritativo para confirmar se algum vence a escolha atual.")
-                        st.caption("Este passe varre TODA a fronteira geometricamente admissível e adota o menor "
-                                   "por estrada (monotônico: nunca piora). Complementa o resgate acima.")
-                elif _fecho and not _fecho.get('origens_fronteira_aberta'):
-                    st.caption("🎯 Fechamento de otimalidade: nenhuma origem tinha polo mais direto por avaliar — "
-                               "as escolhas já eram a menor rota real (prova de otimalidade concluída).")
+                # escolhas ele fechou para a menor rota real e quantos km isso economizou. READ-ONLY/defensivo:
+                # QUALQUER erro aqui é isolado — o painel some, mas a tela de resultados nunca cai por causa dele.
+                try:
+                    _fecho = st.session_state.get('alo_fechamento_otimalidade') or {}
+                    if _fecho.get('trocas'):
+                        with st.container(border=True):
+                            st.markdown("#### 🎯 Fechamento de otimalidade (passe final — menor rota garantida)")
+                            _cfx = st.columns(3)
+                            _cfx[0].metric("Rotas fechadas para a menor", int(_num(_fecho.get('trocas'), 0) or 0),
+                                           help="Origens em que o passe final encontrou e adotou um polo mais curto "
+                                                "por estrada que ainda não tinha sido avaliado — nenhuma rota mais "
+                                                "curta ficou de fora.")
+                            _cfx[1].metric("Km economizados",
+                                           f"{_num(_fecho.get('km_salvo_total'), 0) or 0:,.0f}".replace(",", "."))
+                            _cfx[2].metric("Polos reavaliados", int(_num(_fecho.get('polos_roteados'), 0) or 0),
+                                           help="Candidatos da fronteira admissível (reta < viária atual) roteados "
+                                                "pelo motor autoritativo para confirmar se algum vence a escolha atual.")
+                            st.caption("Este passe varre TODA a fronteira geometricamente admissível e adota o menor "
+                                       "por estrada (monotônico: nunca piora). Complementa o resgate acima.")
+                    elif _fecho and not _fecho.get('origens_fronteira_aberta'):
+                        st.caption("🎯 Fechamento de otimalidade: nenhuma origem tinha polo mais direto por avaliar — "
+                                   "as escolhas já eram a menor rota real (prova de otimalidade concluída).")
+                except Exception:
+                    logger.error("[FECHAMENTO-OTIMALIDADE/painel] Falha ao renderizar o resumo (isolada).",
+                                 exc_info=True)
                 # [V312 · §15] VALIDAÇÃO CRUZADA DA ALOCAÇÃO — leva o alerta de qualidade da decisão (antes só no
                 # Comparador) para a própria Alocação. READ-ONLY: classifica a proveniência de cada vencedor e
                 # destaca quantos NÃO são viária genuína (fluvial/fallback) ou têm geometria suspeita. Memoizado
