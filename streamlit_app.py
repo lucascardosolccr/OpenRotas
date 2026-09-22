@@ -22727,6 +22727,15 @@ def _conciliar_comparativo(df_app, df_ref, mapa, limiar_fuzzy=90, limiar_empate_
                           ("Anomalia Mais Severa", "Anomalia Geográfica Mais Severa")):
             if _ak in a and a.get(_ak) not in (None, ""):
                 linhas[-1][f"APP · {_rot}"] = a.get(_ak)
+        # [MOTOR-APP - observabilidade] O "Motor Aplicação" do diagnóstico saía "—" em TODAS as linhas: o
+        # mapeamento acima lia a chave "Fonte Rota", mas a linha do NOSSO estudo traz a coluna real
+        # "Fonte da Rota" (com "da"). Sem "APP · Fonte da Rota", o comparador não conseguia atribuir o motor
+        # que produziu cada rota. Resolve por MÚLTIPLAS chaves para nunca perder a atribuição.
+        if not linhas[-1].get("APP · Fonte da Rota"):
+            _fr_app = (a.get("Fonte da Rota") or a.get("Fonte Rota") or a.get("fonte_rota")
+                       or a.get("Status da Rota") or "")
+            if _fr_app not in (None, ""):
+                linhas[-1]["APP · Fonte da Rota"] = _fr_app
     return linhas, aud
 
 
