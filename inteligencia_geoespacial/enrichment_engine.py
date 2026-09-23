@@ -20,6 +20,21 @@ try:
 except Exception:  # fail-open: enriquecimento segue sem a estação ANA
     _ana = None
 
+try:
+    from . import rodovias_local as _rodo
+except Exception:  # fail-open: enriquecimento segue sem a rodovia de referência
+    _rodo = None
+
+
+def _rodovia_ref(lat, lon):
+    """Rodovia de referência do ponto (índice local, sem rede). None se indisponível."""
+    if _rodo is None:
+        return None
+    try:
+        return _rodo.rodovia_mais_proxima(lat, lon)
+    except Exception:
+        return None
+
 
 def _estacao_ana(lat, lon, rio_nome=None):
     """Estação ANA fluviométrica de referência (rede nacional LOCAL, sem rede) — casa pelo MESMO RIO quando
@@ -67,6 +82,7 @@ def enriquecer_ponto(lat: float, lon: float, raio_km: float = 30.0,
         "pontes_encontradas": perfil.get("feicoes", {}).get("pontes", []),
         "balsas_confirmadas": balsas_confirmadas,
         "estacao_ana": _estacao_ana(lat, lon, _rio_do_perfil(perfil)),
+        "rodovia_ref": _rodovia_ref(lat, lon),
         "confianca": confianca,
         "fonte": "IBGE BC250 v2025 + BC100 (camadas derivadas locais) + estações ANA/SNIRH",
     }
@@ -160,11 +176,13 @@ def enriquecer_rota(origem: tuple, destino: tuple, raio_km: float = 30.0,
             "municipio": o.get("municipio") or None,
             "confianca": co,
             "estacao_ana": _estacao_ana(origem[0], origem[1], _rio_do_perfil(o)),
+            "rodovia_ref": _rodovia_ref(origem[0], origem[1]),
         },
         "destino": {
             "municipio": d.get("municipio") or None,
             "confianca": cd,
             "estacao_ana": _estacao_ana(destino[0], destino[1], _rio_do_perfil(d)),
+            "rodovia_ref": _rodovia_ref(destino[0], destino[1]),
         },
         "rios_detectados": rios,
         "bacia_hidrografica": None,

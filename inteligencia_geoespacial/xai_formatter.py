@@ -48,6 +48,18 @@ def _estacao_rotulo(est: dict | None, ref: str = "") -> str:
         _uf, est.get("distancia_km"), _tel)
 
 
+def _rodovia_rotulo(rod: dict | None) -> str:
+    """Linha compacta da rodovia de referência (sigla · jurisdição · revestimento · distância)."""
+    if not rod:
+        return ""
+    _partes = [str(rod.get("via", "")).strip()]
+    if rod.get("jurisdicao"):
+        _partes.append(str(rod["jurisdicao"]))
+    if rod.get("revestimento") and rod["revestimento"] != "—":
+        _partes.append(str(rod["revestimento"]))
+    return "**🛣️ Rodovia de referência:** %s a %s km" % (" · ".join(_partes), rod.get("distancia_km"))
+
+
 def _mun_rotulo(municipio: dict | None) -> str:
     if not municipio:
         return "_fora das malhas municipais IBGE_"
@@ -91,6 +103,10 @@ def formatar_ponto(enriquecido: dict) -> str:
         if _cl and _cl[2]:
             linhas.append("<small>_%s._</small>" % _cl[2])
 
+    rod = (enriquecido or {}).get("rodovia_ref")
+    if rod:
+        linhas.append(_rodovia_rotulo(rod))
+
     fonte = (enriquecido or {}).get("fonte")
     if fonte:
         linhas.append("")
@@ -121,10 +137,14 @@ def formatar_enriquecimento(enriquecido: dict) -> str:
     linhas.append(formatar_confianca(orig.get("confianca")))
     if orig.get("estacao_ana"):
         linhas.append(_estacao_rotulo(orig["estacao_ana"], "origem"))
+    if orig.get("rodovia_ref"):
+        linhas.append(_rodovia_rotulo(orig["rodovia_ref"]))
     linhas.append("**📍 Destino:** %s" % _mun_rotulo(dest.get("municipio")))
     linhas.append(formatar_confianca(dest.get("confianca")))
     if dest.get("estacao_ana"):
         linhas.append(_estacao_rotulo(dest["estacao_ana"], "destino"))
+    if dest.get("rodovia_ref"):
+        linhas.append(_rodovia_rotulo(dest["rodovia_ref"]))
     linhas.append("")
 
     rios = enriquecido.get("rios_detectados") or []
@@ -212,6 +232,13 @@ def formatar_enriquecimento_html(enriquecido: dict) -> str:
                                               _e.get("distancia_km"))) if _e else "—"
         _add("<p><b>Estação ANA (origem):</b> %s &nbsp;|&nbsp; <b>(destino):</b> %s</p>" % (
             _e_html(_eo), _e_html(_ed)))
+    _ro = (enriquecido.get("origem") or {}).get("rodovia_ref")
+    _rd = (enriquecido.get("destino") or {}).get("rodovia_ref")
+    if _ro or _rd:
+        def _r_html(_r):
+            return ("%s (%s) a %s km" % (_r.get("via"), _r.get("jurisdicao"), _r.get("distancia_km"))) if _r else "—"
+        _add("<p><b>Rodovia (origem):</b> %s &nbsp;|&nbsp; <b>(destino):</b> %s</p>" % (
+            _r_html(_ro), _r_html(_rd)))
 
     rios = enriquecido.get("rios_detectados") or []
     if rios:

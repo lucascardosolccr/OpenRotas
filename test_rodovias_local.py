@@ -1,0 +1,32 @@
+# -*- coding: utf-8 -*-
+"""[RODOVIA DE REFERÊNCIA · local] Índice nacional de rodovias significativas (asset ~1 MB versionado) →
+descobre a rodovia mais próxima de um ponto (sigla BR-/estadual, jurisdição, revestimento) sem o Parquet
+pesado de 122 MB. Enriquece o contexto rodoviário das rotas. Fail-open."""
+from inteligencia_geoespacial import rodovias_local as r
+
+
+def test_rodovia_mais_proxima_traz_sigla_e_jurisdicao():
+    rod = r.rodovia_mais_proxima(-3.119, -60.02)          # Manaus → AM-010
+    assert rod is not None
+    assert rod["via"] and rod["jurisdicao"]
+    assert rod["distancia_km"] <= 5.0
+    assert isinstance(rod["revestimento"], str)
+
+
+def test_rodovia_fora_do_alcance_e_none():
+    # meio do Atlântico → nenhuma rodovia dentro do raio
+    assert r.rodovia_mais_proxima(-20.0, -30.0, max_km=5.0) is None
+
+
+def test_indice_carrega_milhares_de_pontos():
+    idx = r._indice()
+    assert idx is not None
+    _rows, _tree = idx
+    assert len(_rows) > 10000
+
+
+def test_enriquecimento_de_rota_recebe_rodovia():
+    from inteligencia_geoespacial import enrichment_engine as e
+    enr = e.enriquecer_ponto(-15.79, -47.88, raio_km=30, limite=5)   # Brasília
+    assert enr.get("rodovia_ref") is not None
+    assert enr["rodovia_ref"]["via"]
