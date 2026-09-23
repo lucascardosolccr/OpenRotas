@@ -21,12 +21,21 @@ except Exception:  # fail-open: enriquecimento segue sem a estação ANA
     _ana = None
 
 
-def _estacao_ana(lat, lon):
-    """Estação ANA fluviométrica de referência (rede nacional LOCAL, sem rede). None se indisponível."""
+def _estacao_ana(lat, lon, rio_nome=None):
+    """Estação ANA fluviométrica de referência (rede nacional LOCAL, sem rede) — casa pelo MESMO RIO quando
+    o rio do ponto é conhecido, para a referência mais exata. None se indisponível."""
     if _ana is None:
         return None
     try:
-        return _ana.estacao_mais_proxima(lat, lon)
+        return _ana.estacao_de_referencia(lat, lon, rio_nome=rio_nome)
+    except Exception:
+        return None
+
+
+def _rio_do_perfil(perfil):
+    try:
+        _r = (perfil or {}).get("rio_mais_proximo") or {}
+        return _r.get("nome") if isinstance(_r, dict) else None
     except Exception:
         return None
 
@@ -57,7 +66,7 @@ def enriquecer_ponto(lat: float, lon: float, raio_km: float = 30.0,
         "rio_mais_proximo": perfil.get("rio_mais_proximo"),
         "pontes_encontradas": perfil.get("feicoes", {}).get("pontes", []),
         "balsas_confirmadas": balsas_confirmadas,
-        "estacao_ana": _estacao_ana(lat, lon),
+        "estacao_ana": _estacao_ana(lat, lon, _rio_do_perfil(perfil)),
         "confianca": confianca,
         "fonte": "IBGE BC250 v2025 + BC100 (camadas derivadas locais) + estações ANA/SNIRH",
     }
@@ -150,12 +159,12 @@ def enriquecer_rota(origem: tuple, destino: tuple, raio_km: float = 30.0,
         "origem": {
             "municipio": o.get("municipio") or None,
             "confianca": co,
-            "estacao_ana": _estacao_ana(origem[0], origem[1]),
+            "estacao_ana": _estacao_ana(origem[0], origem[1], _rio_do_perfil(o)),
         },
         "destino": {
             "municipio": d.get("municipio") or None,
             "confianca": cd,
-            "estacao_ana": _estacao_ana(destino[0], destino[1]),
+            "estacao_ana": _estacao_ana(destino[0], destino[1], _rio_do_perfil(d)),
         },
         "rios_detectados": rios,
         "bacia_hidrografica": None,

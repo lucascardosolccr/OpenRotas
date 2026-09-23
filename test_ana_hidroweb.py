@@ -74,3 +74,36 @@ def test_enriquecimento_de_ponto_carrega_estacao_ana():
     assert est and est["uf"] == "AM", "o enriquecimento da rota deve receber a estação ANA de referência"
     md = x.formatar_ponto(enr)
     assert "Estação ANA" in md and est["codigo"] in md
+
+
+# ---- Estação de referência EXATA: casa pelo mesmo rio + classificação direta/aproximada/regional -----
+def test_referencia_casa_pelo_mesmo_rio_e_classifica():
+    # Manaus SEM rio → mais próxima, mas rio não confirmado → 'aproximada'
+    s0 = a.estacao_de_referencia(-3.119, -60.0217)
+    assert s0["mesmo_rio"] is False and s0["classificacao"] == "aproximada"
+    # Manaus COM 'Rio Negro' → mesmo rio e próxima → 'direta'
+    s1 = a.estacao_de_referencia(-3.119, -60.0217, "Rio Negro")
+    assert s1["mesmo_rio"] is True and s1["classificacao"] == "direta"
+    assert s1["rio_consultado"] == "Rio Negro"
+
+
+def test_referencia_casamento_fuzzy_de_rio():
+    # 'Rio Solimões' casa com 'RIO SOLIMÕES-AMAZONAS' (um contém o outro)
+    assert a._rios_casam("Rio Solimões", "RIO SOLIMÕES-AMAZONAS") is True
+    # prefixos e acentos normalizados
+    assert a._norm_rio("Rio Negro") == "NEGRO" and a._norm_rio("Igarapé Tarumã") == "TARUMA"
+    # rios diferentes não casam
+    assert a._rios_casam("Rio Negro", "Rio Branco") is False
+
+
+def test_referencia_prefere_rio_certo_mesmo_mais_longe():
+    # perto de um ponto, escolher o rio pedido pode trazer uma estação mais distante que a mais próxima geral
+    perto = a.estacao_de_referencia(-3.5, -60.5)                 # mais próxima qualquer
+    solimoes = a.estacao_de_referencia(-3.5, -60.5, "Rio Solimões")
+    assert solimoes is not None and solimoes["mesmo_rio"] is True
+    assert a._rios_casam(solimoes["rio"], "Solimões")
+
+
+def test_estacao_mais_proxima_ainda_funciona():
+    e = a.estacao_mais_proxima(-23.55, -46.63)                  # São Paulo
+    assert e and "codigo" in e and "distancia_km" in e

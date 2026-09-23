@@ -61,25 +61,86 @@ def _haversine_km(la1, lo1, la2, lo2):
     return 2 * _R * math.asin(min(1.0, math.sqrt(_a)))
 
 
-def estacao_mais_proxima(lat, lon, max_km=150.0):
-    """Estação ANA fluviométrica mais próxima de um ponto (rede nacional LOCAL). Devolve
-    {codigo,nome,rio,uf,tipo,distancia_km} ou None (fora do alcance/sem dado). PURA, sem rede."""
+_RIO_PREFIXOS = ("RIO ", "IGARAPE ", "CORREGO ", "RIBEIRAO ", "RIACHO ", "ARROIO ", "LAGO ",
+                 "LAGOA ", "CANAL ", "REPRESA ", "ACUDE ", "BRACO ", "PARANA ")
+
+
+def _sem_acento(s):
+    import unicodedata
+    return "".join(_c for _c in unicodedata.normalize("NFD", str(s)) if unicodedata.category(_c) != "Mn")
+
+
+def _norm_rio(s):
+    """Normaliza nome de rio p/ casamento: sem acento, maiúsculas, sem o prefixo (Rio/Igarapé/…), 1 espaço."""
+    if not s:
+        return ""
+    _t = _sem_acento(s).upper().strip()
+    for _p in _RIO_PREFIXOS:
+        if _t.startswith(_p):
+            _t = _t[len(_p):]
+            break
+    return " ".join(_t.split())
+
+
+def _rios_casam(a, b):
+    """True se dois nomes de rio se referem ao mesmo curso (igual, ou um contém o outro; ex.: Solimões-Amazonas)."""
+    _a = _norm_rio(a); _b = _norm_rio(b)
+    if not _a or not _b:
+        return False
+    if _a == _b:
+        return True
+    return len(_a) >= 4 and len(_b) >= 4 and (_a in _b or _b in _a)
+
+
+def _classificar_ref(mesmo_rio, dist_km, rio_conhecido):
+    """direta = mede o mesmo rio e pertinho; aproximada = mesmo rio porém distante, ou colada sem rio p/
+    confirmar; regional = referência distante e/ou de outro curso d'água."""
+    if mesmo_rio and dist_km <= 25:
+        return "direta"
+    if mesmo_rio:
+        return "aproximada"
+    if not rio_conhecido and dist_km <= 15:
+        return "aproximada"
+    return "regional"
+
+
+def estacao_de_referencia(lat, lon, rio_nome=None, max_km=200.0):
+    """Estação ANA fluviométrica de referência para um ponto — a MAIS EXATA possível: prefere a estação no
+    MESMO RIO (quando o rio é conhecido) dentro do raio; senão, a mais próxima em linha reta. Devolve
+    {codigo,nome,rio,uf,tipo,distancia_km,mesmo_rio,rio_consultado,classificacao} ou None. PURA, sem rede."""
     try:
         _la = float(lat); _lo = float(lon)
     except Exception:
         return None
     if not (-34.5 <= _la <= 6.0 and -74.5 <= _lo <= -34.0):
         return None
-    _best = None; _bd = None
+    _rio_conhecido = bool(_norm_rio(rio_nome))
+    _b_rio = _d_rio = _b_any = _d_any = None
     for _r in carregar_rede_nacional():
         _d = _haversine_km(_la, _lo, _r["lat"], _r["lon"])
-        if _bd is None or _d < _bd:
-            _bd = _d; _best = _r
-    if _best is None or (max_km and _bd > float(max_km)):
+        if _d_any is None or _d < _d_any:
+            _d_any = _d; _b_any = _r
+        if _rio_conhecido and _rios_casam(rio_nome, _r.get("rio")):
+            if _d_rio is None or _d < _d_rio:
+                _d_rio = _d; _b_rio = _r
+    if _b_rio is not None and _d_rio <= float(max_km):
+        _best, _dist, _mesmo = _b_rio, _d_rio, True
+    elif _b_any is not None and _d_any <= float(max_km):
+        _best, _dist = _b_any, _d_any
+        _mesmo = _rio_conhecido and _rios_casam(rio_nome, _best.get("rio"))
+    else:
         return None
     return {"codigo": str(_best.get("codigo", "")).strip(), "nome": str(_best.get("nome", "")).strip(),
             "rio": str(_best.get("rio", "")).strip(), "uf": str(_best.get("uf", "")).strip(),
-            "tipo": str(_best.get("tipo", "")).strip(), "distancia_km": round(_bd, 1)}
+            "tipo": str(_best.get("tipo", "")).strip(), "distancia_km": round(_dist, 1),
+            "mesmo_rio": bool(_mesmo), "rio_consultado": str(rio_nome or "").strip(),
+            "classificacao": _classificar_ref(_mesmo, _dist, _rio_conhecido)}
+
+
+def estacao_mais_proxima(lat, lon, max_km=150.0):
+    """Estação ANA mais próxima em linha reta (sem casar rio). Mantida para compatibilidade; prefira
+    `estacao_de_referencia`, que casa pelo mesmo rio quando possível."""
+    return estacao_de_referencia(lat, lon, rio_nome=None, max_km=max_km)
 
 # HidroSerieHistorica: tipoDados 1=Cotas(cm), 2=Chuvas(mm), 3=Vazões(m³/s)
 TIPO_DADOS = {"cotas": 1, "cota": 1, "chuvas": 2, "chuva": 2, "vazoes": 3, "vazões": 3, "vazao": 3, "vazão": 3}

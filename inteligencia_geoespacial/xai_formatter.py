@@ -29,14 +29,22 @@ def formatar_confianca(confianca: dict) -> str:
     return linha
 
 
+_CLASSIF_ESTACAO = {
+    "direta": ("🎯", "referência direta", "mede o **mesmo rio** e fica próxima — representa bem o ponto"),
+    "aproximada": ("📍", "referência aproximada", "mesmo rio porém mais distante, ou muito próxima sem rio confirmado"),
+    "regional": ("🗺️", "referência regional", "estação mais distante e/ou de outro curso d'água — leitura só indicativa"),
+}
+
+
 def _estacao_rotulo(est: dict | None, ref: str = "") -> str:
-    """Linha compacta da estação ANA de referência (para cotas/vazões)."""
+    """Linha compacta da estação ANA de referência, com a CLASSIFICAÇÃO de exatidão (direta/aproximada/regional)."""
     if not est:
         return ""
     _tel = " · telemétrica" if str(est.get("tipo", "")).lower().startswith("telem") else ""
     _uf = ", %s" % est.get("uf") if est.get("uf") else ""
-    return "**📈 Estação ANA (%s):** `%s` — %s (%s%s) a %s km%s" % (
-        ref or "ref", est.get("codigo"), est.get("nome"), est.get("rio") or "rio n/d",
+    _ic, _rot, _ = _CLASSIF_ESTACAO.get(str(est.get("classificacao", "")), ("📈", "referência", ""))
+    return "**%s Estação ANA (%s · %s):** `%s` — %s (%s%s) a %s km%s" % (
+        _ic, ref or "ref", _rot, est.get("codigo"), est.get("nome"), est.get("rio") or "rio n/d",
         _uf, est.get("distancia_km"), _tel)
 
 
@@ -78,9 +86,10 @@ def formatar_ponto(enriquecido: dict) -> str:
 
     est = (enriquecido or {}).get("estacao_ana")
     if est:
-        linhas.append("**📈 Estação ANA de referência:** `%s` — %s (%s%s) a %s km%s" % (
-            est.get("codigo"), est.get("nome"), est.get("rio") or "rio n/d", ", %s" % est.get("uf") if est.get("uf") else "",
-            est.get("distancia_km"), " · telemétrica (cotas/vazões)" if str(est.get("tipo", "")).lower().startswith("telem") else ""))
+        linhas.append(_estacao_rotulo(est, "ponto"))
+        _cl = _CLASSIF_ESTACAO.get(str(est.get("classificacao", "")))
+        if _cl and _cl[2]:
+            linhas.append("<small>_%s._</small>" % _cl[2])
 
     fonte = (enriquecido or {}).get("fonte")
     if fonte:
