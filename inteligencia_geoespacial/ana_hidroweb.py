@@ -39,16 +39,14 @@ _RIOS_INDEX = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 
 @lru_cache(maxsize=1)
 def _rios_index():
-    """(nomes:list[str], tree:cKDTree) do índice de rios nomeados, ou None se indisponível. LOCAL, sem rede."""
+    """(nomes:list[str], tree:cKDTree 3D) do índice de rios nomeados, ou None se indisponível. LOCAL, sem rede."""
     try:
-        import numpy as _np
         import pandas as _pd
-        from scipy.spatial import cKDTree as _KD
+        from . import geo_kdtree as _gk
         _df = _pd.read_parquet(_RIOS_INDEX, columns=["lat", "lon", "nome"])
         if _df is None or _df.empty:
             return None
-        _pts = _np.radians(_df[["lat", "lon"]].to_numpy(dtype=float))
-        return (_df["nome"].astype(str).tolist(), _KD(_pts))
+        return (_df["nome"].astype(str).tolist(), _gk.build(_df["lat"].to_numpy(), _df["lon"].to_numpy()))
     except Exception:
         return None
 
@@ -60,13 +58,12 @@ def rio_mais_proximo_local(lat, lon, max_km=8.0):
     if _idx is None:
         return None
     try:
-        import numpy as _np
+        from . import geo_kdtree as _gk
         _nomes, _tree = _idx
-        _d, _i = _tree.query(_np.radians([[float(lat), float(lon)]]), k=1)
-        _dk = 6371.0088 * float(_np.atleast_1d(_d)[0])
+        _i, _dk = _gk.nearest(_tree, float(lat), float(lon))
         if max_km and _dk > float(max_km):
             return None
-        return _nomes[int(_np.atleast_1d(_i)[0])]
+        return _nomes[_i]
     except Exception:
         return None
 

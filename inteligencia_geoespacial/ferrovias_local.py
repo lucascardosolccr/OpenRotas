@@ -18,15 +18,13 @@ _FERRO_INDEX = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 @lru_cache(maxsize=1)
 def _indice():
     try:
-        import numpy as _np
         import pandas as _pd
-        from scipy.spatial import cKDTree as _KD
+        from . import geo_kdtree as _gk
         _df = _pd.read_parquet(_FERRO_INDEX, columns=["lat", "lon", "via", "bitola", "situacao"])
         if _df is None or _df.empty:
             return None
-        _pts = _np.radians(_df[["lat", "lon"]].to_numpy(dtype=float))
         _rows = _df[["via", "bitola", "situacao"]].astype(str).to_dict("records")
-        return (_rows, _KD(_pts))
+        return (_rows, _gk.build(_df["lat"].to_numpy(), _df["lon"].to_numpy()))
     except Exception:
         return None
 
@@ -37,13 +35,12 @@ def ferrovia_mais_proxima(lat, lon, max_km=8.0):
     if _idx is None:
         return None
     try:
-        import numpy as _np
+        from . import geo_kdtree as _gk
         _rows, _tree = _idx
-        _d, _i = _tree.query(_np.radians([[float(lat), float(lon)]]), k=1)
-        _dk = 6371.0088 * float(_np.atleast_1d(_d)[0])
+        _i, _dk = _gk.nearest(_tree, float(lat), float(lon))
         if max_km and _dk > float(max_km):
             return None
-        _r = _rows[int(_np.atleast_1d(_i)[0])]
+        _r = _rows[_i]
         return {"via": _r.get("via", ""), "bitola": _r.get("bitola", ""),
                 "situacao": _r.get("situacao", ""), "distancia_km": round(_dk, 1)}
     except Exception:
