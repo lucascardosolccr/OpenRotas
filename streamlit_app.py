@@ -186,6 +186,11 @@ except Exception:
     _geo_route_context = None
     _BASES_LOCAIS_IBGE = False
 
+try:
+    from inteligencia_geoespacial import ana_hidroweb as _ana_ws
+except Exception:
+    _ana_ws = None
+
 # ==============================================================================
 # CONFIGURAÇÃO DE LOGS E AUDITORIA CRÍTICA
 # ==============================================================================
@@ -64253,7 +64258,24 @@ if _secao == _SECOES[17]:   # tab_hidrografia
                         st.bar_chart(_est_uf.value_counts().head(12), color="#e74c3c", horizontal=True)
             except Exception:
                 logger.debug("[HYDRO-VIS] Gráfico de estações/UF isolado falhou (aditivo).", exc_info=True)
-            
+
+            # [COBERTURA NACIONAL] Mapa de TODAS as estações — prova visual de que a rede cobre o Brasil inteiro.
+            try:
+                _lat_c = next((c for c in ["lat", "latitude"] if c in _est_df.columns), None)
+                _lon_c = next((c for c in ["lon", "longitude"] if c in _est_df.columns), None)
+                if _lat_c and _lon_c:
+                    _mapa_est = _est_df[[_lat_c, _lon_c]].rename(columns={_lat_c: "lat", _lon_c: "lon"}).copy()
+                    _mapa_est["lat"] = pd.to_numeric(_mapa_est["lat"], errors="coerce")
+                    _mapa_est["lon"] = pd.to_numeric(_mapa_est["lon"], errors="coerce")
+                    _mapa_est = _mapa_est.dropna()
+                    _mapa_est = _mapa_est[(_mapa_est["lat"].between(-34, 6)) & (_mapa_est["lon"].between(-74, -34))]
+                    if len(_mapa_est) > 50:
+                        st.caption("🗺️ Cobertura nacional — %s estações da rede em todo o Brasil"
+                                   % f"{len(_mapa_est):,}".replace(",", "."))
+                        st.map(_mapa_est, size=8, color="#2563eb")
+            except Exception:
+                logger.debug("[HYDRO-VIS] Mapa nacional de estações isolado falhou (aditivo).", exc_info=True)
+
             # Botões de exportação (bloco único DRY — [Melhoria4-EXCEL 453ª · M3])
             _botoes_exportacao_geo("estacoes_hidrologicas", _est_df, sheet_name="Estacoes")
         else:
@@ -64274,16 +64296,16 @@ if _secao == _SECOES[17]:   # tab_hidrografia
     with _aba_hidro[3]:
         st.subheader("📊 Séries Hidrológicas Disponíveis")
         st.info("""
-        **Tipos de séries consultáveis via API ANA/HidroWeb** (endpoint `…/api/v1/<série>/estacao/<código>`):
-        - **Cotas** (`cotas`): Nível d'água em metros
-        - **Vazões** (`vazoes`): Vazão em m³/s
-        - **Sedimentos** (`sedimentos`): Carga de sedimentos
-        - **Qualidade da água** (`qualidadeagua`): Parâmetros físico-químicos
-        - **Curvas de descarga** (`curvasdescarga`): Relação cota-vazão
-        - **Chuvas** (`chuvas`): Precipitação pluviométrica
+        **Séries consultáveis ao vivo pelo WebService PÚBLICO da ANA** (`ServiceANA.asmx`, sem token):
+        - **Cotas** (nível d'água, cm) · **Vazões** (m³/s) · **Chuvas** (mm) — via `HidroSerieHistorica`, para
+          qualquer estação fluviométrica do Brasil (histórico diário consolidado).
+        - **Telemetria** (nível/vazão/chuva quase em tempo real) — via `DadosHidrometeorologicos`, nas estações
+          telemétricas.
 
-        **Como consultar:** selecione a estação na sub-aba **📈 Cotas & Vazões** — a app monta o endpoint com o
-        código real da estação. (A API pública da ANA pode exigir cadastro/token.)
+        Sedimentos, qualidade da água e curva de descarga exigem o **HidroWebService** autenticado da ANA.
+
+        **Como consultar:** vá em **📈 Cotas & Vazões**, escolha a estação, o tipo, o período e clique em
+        **Série histórica** ou **Telemetria** — a app extrai estatística, série temporal, tabela e exportação.
         """)
         if _est_e_amostra or _est_e_overview:
             _aviso_amostra_estacoes()
@@ -64381,97 +64403,121 @@ if _secao == _SECOES[17]:   # tab_hidrografia
                 except Exception:
                     logger.debug("[HYDRO-COTAS] Ficha local da estação isolada falhou (aditivo).", exc_info=True)
 
-            # [Expansão de conteúdo] O botão agora TENTA a consulta real (antes só imprimia o
-            # curl). A API pública da ANA pode exigir autenticação e/ou estar indisponível a
-            # partir deste ambiente — por isso o tratamento é honesto: mostra os dados quando
-            # vierem, e uma mensagem clara + o endpoint para uso manual quando não vierem.
-            # Nunca inventa uma série: em falha, nenhum número é exibido.
-            _tipo_slug_map = {"Cotas": "cotas", "Vazões": "vazoes", "Sedimentos": "sedimentos",
-                              "Qualidade": "qualidadeagua", "Curvas descarga": "curvasdescarga",
-                              "Chuvas": "chuvas"}
-            if st.button("🔍 Consultar API SNIRH (ao vivo)", key="hidro_consultar_api",
-                         disabled=_est_e_amostra,
-                         help=("Baixe o catálogo real de estações (sub-aba 📍 Estações) para habilitar — a amostra "
-                               "ilustrativa não tem os códigos ANA." if _est_e_amostra else None)):
-                if _est_e_amostra:
-                    st.info("Consulta ao vivo indisponível em modo amostra — baixe o catálogo real de estações "
-                            "para consultar cotas/vazões.")
-                elif _est_sel != "(nenhuma)":
-                    _cod = _est_sel.split(" - ")[0]
-                    _slug = _tipo_slug_map.get(_tipo_serie, str(_tipo_serie).lower())
-                    _url_ana = f"https://hidroweb.ana.gov.br/api/v1/{_slug}/estacao/{_cod}"
-                    _ok_ana, _dados_ana = False, None
-                    with st.spinner("Consultando ANA/HidroWeb (%s · estação %s)..." % (_tipo_serie, _cod)):
-                        try:
-                            _resp_ana = requests.get(_url_ana, timeout=25, headers={"Accept": "application/json"})
-                            if _resp_ana.status_code == 200:
-                                try:
-                                    _dados_ana = _resp_ana.json()
-                                except Exception:
-                                    _dados_ana = _resp_ana.text[:8000]
-                                _ok_ana = True
-                            else:
-                                _dados_ana = ("A API respondeu HTTP %d — pode exigir autenticação (cadastro no SNIRH) "
-                                              "ou a estação não ter esta série." % _resp_ana.status_code)
-                        except Exception as _e_ana:
-                            _dados_ana = ("Não foi possível alcançar a API da ANA a partir deste ambiente "
-                                          "(%s). Use o endpoint abaixo diretamente." % type(_e_ana).__name__)
-                    if _ok_ana:
-                        st.success("✅ Resposta recebida da ANA/HidroWeb.")
-                        try:
-                            _df_ana = None
-                            if isinstance(_dados_ana, list):
-                                _df_ana = pd.DataFrame(_dados_ana)
-                            elif isinstance(_dados_ana, dict):
-                                _emb = (_dados_ana.get("_embedded") or _dados_ana.get("items")
-                                        or _dados_ana.get("data") or _dados_ana.get("content"))
-                                if isinstance(_emb, dict):
-                                    _emb = next((v for v in _emb.values() if isinstance(v, list)), None)
-                                if isinstance(_emb, list):
-                                    _df_ana = pd.DataFrame(_emb)
-                            if _df_ana is not None and not _df_ana.empty:
-                                # [ANA-SERIE - 447ª geração] Extrai o MÁXIMO da série: estatística + gráfico
-                                # temporal (antes só a tabela crua). Fail-open: em qualquer falha, cai na tabela.
-                                _an = None
-                                try:
-                                    _an = _ana_serie_analitica(_df_ana, _tipo_serie)
-                                except Exception:
-                                    _an = None
-                                if _an:
-                                    _sa = _an["stats"]
-                                    _ka = st.columns(4)
-                                    _ka[0].metric("Leituras", f"{_sa['n']:,}".replace(",", "."))
-                                    _ka[1].metric("Mínimo", f"{_sa['min']:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-                                    _ka[2].metric("Máximo", f"{_sa['max']:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-                                    _ult_lbl = f"{_sa['ultimo']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                                    _ka[3].metric("Último", _ult_lbl,
-                                                  help=(f"Leitura mais recente em {_sa['ultimo_data']:%d/%m/%Y}"
-                                                        if _sa.get('ultimo_data') is not None and pd.notna(_sa.get('ultimo_data')) else None))
-                                    st.caption(f"Média da série: **{str(round(_sa['media'], 2)).replace('.', ',')}** · "
-                                               f"coluna de valor detectada: `{_sa['col_valor']}` ({_tipo_serie}).")
-                                    try:
-                                        _sdf = _an["serie"]
-                                        if "data" in _sdf.columns and _sdf["data"].notna().any():
-                                            _plot = _sdf.dropna(subset=["data"]).set_index("data")["valor"]
-                                            if len(_plot) >= 2:
-                                                st.caption("Série temporal (%s · estação %s)" % (_tipo_serie, _cod))
-                                                st.line_chart(_plot)
-                                    except Exception:
-                                        logger.debug("[HYDRO-ANA] Gráfico da série falhou (aditivo).", exc_info=True)
-                                    with st.expander("📄 Registros brutos retornados pela API (até 500)", expanded=False):
-                                        st.dataframe(_df_ana.head(500), use_container_width=True, hide_index=True)
-                                else:
-                                    st.dataframe(_df_ana.head(500), use_container_width=True, hide_index=True)
-                                    st.caption("Exibindo até 500 registros retornados pela API.")
-                            else:
-                                st.json(_dados_ana if isinstance(_dados_ana, (dict, list)) else {"resposta": _dados_ana})
-                        except Exception:
-                            logger.debug("[HYDRO-ANA] Falha ao tabular resposta da ANA (aditivo).", exc_info=True)
-                            st.json(_dados_ana if isinstance(_dados_ana, (dict, list)) else {"resposta": str(_dados_ana)})
+            # [ANA-WS] Consulta REAL à ANA/SNIRH pelo WebService PÚBLICO ServiceANA.asmx (sem token):
+            # HidroSerieHistorica (cotas/vazões/chuvas de qualquer estação fluviométrica do Brasil) +
+            # DadosHidrometeorologicos (telemetria quase em tempo real). Extrai o MÁXIMO: estatística, série
+            # temporal, tabela e exportação. Nunca inventa dado — em falha mostra o motivo e o endpoint.
+            _serie_publica = str(_tipo_serie) in ("Cotas", "Vazões", "Chuvas")
+            _cA, _cB, _cC = st.columns(3)
+            with _cA:
+                _dt_ini = st.date_input("De", value=(pd.Timestamp.today() - pd.Timedelta(days=365)).date(),
+                                        key="ana_dt_ini", format="DD/MM/YYYY")
+            with _cB:
+                _dt_fim = st.date_input("Até", value=pd.Timestamp.today().date(),
+                                        key="ana_dt_fim", format="DD/MM/YYYY")
+            with _cC:
+                _consist = st.selectbox("Consistência", ["Consistido (2)", "Bruto (1)"], key="ana_consist",
+                                        help="Consistido = revisado pela ANA; Bruto = leitura original (mais recente).")
+            _consist_v = 1 if _consist.startswith("Bruto") else 2
+            if not _serie_publica:
+                st.caption("ℹ️ **%s** não está no WebService público (que serve **Cotas/Vazões/Chuvas** de todo o "
+                           "país). Sedimentos, qualidade da água e curva de descarga exigem o HidroWebService "
+                           "autenticado da ANA." % _tipo_serie)
+
+            def _render_serie_ana(_df_serie, _rotulo, _unidade, _cod):
+                if _df_serie is None or _df_serie.empty:
+                    st.info("A ANA não retornou dados para esta estação/período.")
+                    return
+                _fmtn = lambda _v: f"{_v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                _an = None
+                try:
+                    _an = _ana_serie_analitica(_df_serie, _rotulo)
+                except Exception:
+                    _an = None
+                if _an:
+                    _sa = _an["stats"]
+                    _k = st.columns(4)
+                    _k[0].metric("Leituras", f"{_sa['n']:,}".replace(",", "."))
+                    _k[1].metric("Mínimo", "%s %s" % (_fmtn(_sa["min"]), _unidade))
+                    _k[2].metric("Máximo", "%s %s" % (_fmtn(_sa["max"]), _unidade))
+                    _k[3].metric("Último", "%s %s" % (_fmtn(_sa["ultimo"]), _unidade),
+                                 help=(f"Leitura mais recente em {_sa['ultimo_data']:%d/%m/%Y}"
+                                       if _sa.get("ultimo_data") is not None and pd.notna(_sa.get("ultimo_data")) else None))
+                    st.caption("Média da série: **%s %s** · %s · estação %s." % (_fmtn(_sa["media"]), _unidade, _rotulo, _cod))
+                    try:
+                        _sdf = _an["serie"]
+                        if "data" in _sdf.columns and _sdf["data"].notna().any():
+                            _plot = _sdf.dropna(subset=["data"]).set_index("data")["valor"]
+                            if len(_plot) >= 2:
+                                st.caption("Série temporal (%s · %s)" % (_rotulo, _unidade))
+                                st.line_chart(_plot, color="#2563eb")
+                    except Exception:
+                        logger.debug("[ANA-WS] Gráfico da série falhou (aditivo).", exc_info=True)
+                with st.expander("📄 Dados retornados pela ANA (até 1000 linhas)", expanded=False):
+                    st.dataframe(_df_serie.tail(1000), use_container_width=True, hide_index=True)
+                try:
+                    _botoes_exportacao_geo("ana_%s_%s" % (str(_rotulo).lower().replace(" ", "_"), _cod),
+                                           _df_serie, sheet_name="Serie")
+                except Exception:
+                    logger.debug("[ANA-WS] Exportação da série falhou (aditivo).", exc_info=True)
+
+            _cod = _est_sel.split(" - ")[0] if (_est_sel and _est_sel != "(nenhuma)") else None
+            _bc1, _bc2 = st.columns(2)
+            _go_hist = _bc1.button("🔍 Série histórica (ANA)", key="ana_go_hist", type="primary",
+                                   disabled=_est_e_amostra or not _serie_publica)
+            _go_tel = _bc2.button("📡 Telemetria (tempo real)", key="ana_go_tel", disabled=_est_e_amostra)
+            if _est_e_amostra:
+                st.info("Consulta ao vivo indisponível em **modo amostra**. Com a rede nacional de estações "
+                        "reais (padrão), cotas/vazões ficam disponíveis em todo o Brasil.")
+            elif _ana_ws is None:
+                st.warning("Cliente da ANA indisponível nesta execução.")
+            else:
+                if _go_hist and _cod:
+                    with st.spinner("Consultando a ANA/SNIRH (série histórica de %s · estação %s)…" % (_tipo_serie, _cod)):
+                        _res = _ana_ws.serie_historica_online(_cod, _tipo_serie, _dt_ini, _dt_fim, consistencia=_consist_v)
+                    if _res.get("ok") and _res.get("serie"):
+                        st.success("✅ ANA/SNIRH respondeu — %d leituras diárias." % len(_res["serie"]))
+                        _render_serie_ana(pd.DataFrame(_res["serie"]), _tipo_serie, _res.get("unidade", ""), _cod)
+                    elif _res.get("ok"):
+                        st.info("A ANA respondeu, mas **sem dados** para o período/série. Amplie o intervalo ou "
+                                "troque a consistência para **Bruto**.")
                     else:
-                        st.warning("⚠️ %s" % _dados_ana)
-                        st.caption("Endpoint para uso manual (ex.: seu navegador ou integração com token):")
-                        st.code(f"curl '{_url_ana}'", language="bash")
+                        st.warning("Não foi possível obter a série da ANA (%s). O serviço público pode estar "
+                                   "instável no momento." % _res.get("erro", "falha"))
+                        st.caption("Endpoint (uso manual / navegador):")
+                        st.code(_res.get("url", ""), language="text")
+                if _go_tel and _cod:
+                    with st.spinner("Consultando a telemetria da ANA (estação %s)…" % _cod):
+                        _rt = _ana_ws.telemetria_online(_cod, _dt_ini, _dt_fim)
+                    if _rt.get("ok") and _rt.get("serie"):
+                        _dft = pd.DataFrame(_rt["serie"])
+                        st.success("📡 Telemetria recebida — %d registros." % len(_dft))
+                        _cols_tel = [c for c in ["vazao", "nivel", "chuva"] if c in _dft.columns and _dft[c].notna().any()]
+                        _rot_tel = {"vazao": "Vazão (m³/s)", "nivel": "Nível (cm)", "chuva": "Chuva (mm)"}
+                        _kt = st.columns(max(1, len(_cols_tel)))
+                        for _i, _c in enumerate(_cols_tel):
+                            _ult = _dft[_c].dropna()
+                            if not _ult.empty:
+                                _kt[_i].metric(_rot_tel.get(_c, _c), ("%.2f" % float(_ult.iloc[-1])).replace(".", ","))
+                        try:
+                            if "data" in _dft.columns and _cols_tel:
+                                st.caption("Telemetria (%s)" % " · ".join(_rot_tel.get(c, c) for c in _cols_tel))
+                                st.line_chart(_dft.dropna(subset=["data"]).set_index("data")[_cols_tel])
+                        except Exception:
+                            logger.debug("[ANA-WS] Gráfico da telemetria falhou (aditivo).", exc_info=True)
+                        with st.expander("📄 Telemetria bruta (até 1000 linhas)", expanded=False):
+                            st.dataframe(_dft.tail(1000), use_container_width=True, hide_index=True)
+                        try:
+                            _botoes_exportacao_geo("ana_telemetria_%s" % _cod, _dft, sheet_name="Telemetria")
+                        except Exception:
+                            logger.debug("[ANA-WS] Exportação da telemetria falhou (aditivo).", exc_info=True)
+                    elif _rt.get("ok"):
+                        st.info("Sem telemetria no período — a estação pode não ser **telemétrica** ou estar sem "
+                                "transmissão. Use a **Série histórica** para o histórico consolidado.")
+                    else:
+                        st.warning("Telemetria indisponível (%s)." % _rt.get("erro", "falha"))
+                        st.caption("Endpoint (uso manual / navegador):")
+                        st.code(_rt.get("url", ""), language="text")
         else:
             st.warning("Nenhuma estação disponível para consulta.")
     
