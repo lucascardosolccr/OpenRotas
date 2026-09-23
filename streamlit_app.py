@@ -37425,34 +37425,65 @@ map.fitBounds(linha.getBounds(),{{padding:[40,40]}});
     import base64 as _b64
     return "data:text/html;base64," + _b64.b64encode(html.encode("utf-8")).decode("ascii")
 
-def _hidrografia_ana_regiao(lat_min, lat_max, lon_min, lon_max, max_rios=1500, max_massas=500):
-    """[HIDRO-ANA-MAPA - 461ª geração] Extrai a hidrografia REAL do IBGE/ANA dentro de uma janela geográfica —
-    a MESMA base densa usada na detecção (BC250 `drenagem` = rios/córregos, 2,18 mi de linhas; `massas_dagua`
-    = lagos/represas/lagunas) — para desenhar o mapa hidrográfico de verdade (todos os corpos d'água da
-    janela), não uma amostra de pontos. Lê direto do Parquet com filtro de BBOX (pyarrow), sem carregar a
-    camada inteira. Devolve {'rios': [[(lat,lon),...]], 'massas': [[(lat,lon),...]], 'n_rios','n_massas',
-    'truncado', 'fonte'}. PURO/defensivo: em falha ou base ausente, devolve estruturas vazias."""
-    _out = {"rios": [], "massas": [], "n_rios": 0, "n_massas": 0, "truncado": False,
+@st.cache_data(show_spinner=False)
+def _hidrografia_ana_regiao(lat_min, lat_max, lon_min, lon_max, max_rios=1500, max_massas=500,
+                            apenas_principais=False, max_pts=None):
+    """[HIDRO-ANA-MAPA - 468ª geração] Extrai a hidrografia REAL do IBGE/ANA dentro de uma janela geográfica —
+    a MESMA base densa da detecção (BC250 `drenagem` = 2,18 mi de linhas; `massas_dagua` = lagos/represas). Lê
+    direto do Parquet com filtro de BBOX (pyarrow), sem carregar a camada inteira.
+
+    Cobertura CORRETA E INTELIGENTE (não uma fatia enviesada):
+    - `apenas_principais=True` → filtra a drenagem à REDE PRINCIPAL avaliada (navegável 'Sim'/'Não', ~8 mil
+      trechos), que cobre o país inteiro sem truncar — é o modo da VISÃO NACIONAL.
+    - Quando ainda assim passa do limite, a truncagem é por IMPORTÂNCIA (maior extensão geográfica = rios mais
+      longos / corpos d'água maiores), NUNCA pela ordem do arquivo — assim a janela toda fica representada, em
+      vez de só o primeiro canto do Parquet (o bug antigo do `.head`).
+    - `max_pts` decima os vértices de cada linha (visão nacional) para o mapa ficar leve sem perder o traçado.
+
+    Devolve {'rios','massas','n_rios','n_massas','total_rios','total_massas','truncado','principais','fonte'}.
+    PURO/defensivo: em falha ou base ausente, devolve estruturas vazias. Cacheado por argumentos."""
+    _out = {"rios": [], "massas": [], "n_rios": 0, "n_massas": 0, "total_rios": 0, "total_massas": 0,
+            "truncado": False, "principais": bool(apenas_principais),
             "fonte": "IBGE BC250 (drenagem) + massas d'água — mesma base da ANA/SNIRH"}
     if not _BASES_LOCAIS_IBGE:
         return _out
     try:
         import pandas as _pd
         _bl = _bases_locais_ibge
-        _filtros = [("xmin", "<=", float(lon_max)), ("xmax", ">=", float(lon_min)),
-                    ("ymin", "<=", float(lat_max)), ("ymax", ">=", float(lat_min))]
+        _bbox = [("xmin", "<=", float(lon_max)), ("xmax", ">=", float(lon_min)),
+                 ("ymin", "<=", float(lat_max)), ("ymax", ">=", float(lat_min))]
 
-        def _linhas_de(_camada, _limite):
+        def _decima(_pts, _lim):
+            # mantém extremos + amostra uniforme dos vértices (preserva a forma do rio)
+            if not _lim or len(_pts) <= _lim:
+                return _pts
+            _passo = max(1, len(_pts) // _lim)
+            _s = _pts[::_passo]
+            if _s[-1] != _pts[-1]:
+                _s.append(_pts[-1])
+            return _s
+
+        def _linhas_de(_camada, _limite, _filtros_extra=None, _decimar=None):
+            _filtros = list(_bbox) + list(_filtros_extra or [])
             try:
-                _df = _pd.read_parquet(_bl._caminho(_camada),
-                                       columns=["geometry_wkb", "tipo_geom"], filters=_filtros)
+                _df = _pd.read_parquet(
+                    _bl._caminho(_camada),
+                    columns=["geometry_wkb", "tipo_geom", "xmin", "ymin", "xmax", "ymax"],
+                    filters=_filtros)
             except Exception:
-                return [], False
+                return [], False, 0, 0
             if _df is None or _df.empty:
-                return [], False
-            _trunc = len(_df) > _limite
+                return [], False, 0, 0
+            _total = int(len(_df))
+            _trunc = _total > _limite
+            if _trunc:
+                # truncagem por IMPORTÂNCIA: extensão do bounding box (rios longos / grandes lagos primeiro)
+                _ext = ((_pd.to_numeric(_df["xmax"], errors="coerce") - _pd.to_numeric(_df["xmin"], errors="coerce")).abs()
+                        + (_pd.to_numeric(_df["ymax"], errors="coerce") - _pd.to_numeric(_df["ymin"], errors="coerce")).abs())
+                _df = _df.assign(_ext=_ext.fillna(0.0)).nlargest(_limite, "_ext")
             _polis = []
-            for _w in _df["geometry_wkb"].head(_limite).tolist():
+            _desenhadas = 0  # feições (não anéis) efetivamente desenhadas
+            for _w in _df["geometry_wkb"].tolist():
                 try:
                     _g = _bl._deco_wkb(_w)
                 except Exception:
@@ -37462,23 +37493,96 @@ def _hidrografia_ana_regiao(lat_min, lat_max, lon_min, lon_max, max_rios=1500, m
                 # LINESTRING → 1 lista; POLYGON → anéis (cada anel vira uma polilinha fechada)
                 _rings = _g if (isinstance(_g, list) and _g and isinstance(_g[0], list)) else \
                     ([_g] if (isinstance(_g, list) and _g and isinstance(_g[0], tuple)) else [])
+                _add = False
                 for _r in _rings:
-                    # WKB é (lon, lat) → Leaflet quer (lat, lon); recorta ao bbox por segurança visual
+                    # WKB é (lon, lat) → Leaflet quer (lat, lon)
                     _pts = [(round(float(_y), 5), round(float(_x), 5)) for (_x, _y) in _r]
+                    _pts = _decima(_pts, _decimar)
                     if len(_pts) >= 2:
                         _polis.append(_pts)
-            return _polis, _trunc
+                        _add = True
+                if _add:
+                    _desenhadas += 1
+            return _polis, _trunc, _total, _desenhadas
 
-        _rios, _tr = _linhas_de("drenagem", max_rios)
-        _massas, _tm = _linhas_de("massas_dagua", max_massas)
+        _fpri = [("navegavel", "in", ["Sim", "Não"])] if apenas_principais else None
+        _rios, _tr, _tot_r, _des_r = _linhas_de("drenagem", max_rios, _fpri, max_pts)
+        _massas, _tm, _tot_m, _des_m = _linhas_de("massas_dagua", max_massas, None, max_pts)
         _out["rios"] = _rios
         _out["massas"] = _massas
-        _out["n_rios"] = len(_rios)
-        _out["n_massas"] = len(_massas)
+        # n_* = feições desenhadas (rios/corpos d'água), não anéis de polígono
+        _out["n_rios"] = _des_r
+        _out["n_massas"] = _des_m
+        _out["total_rios"] = _tot_r
+        _out["total_massas"] = _tot_m
         _out["truncado"] = bool(_tr or _tm)
     except Exception:
         logger.error("[HIDRO-ANA-MAPA] Falha ao extrair hidrografia da janela (isolada).", exc_info=True)
     return _out
+
+
+_OVERVIEW_HIDRO_NACIONAL = "hidro_nacional_overview.json.gz"
+
+
+@st.cache_data(show_spinner=False)
+def _hidrografia_overview_nacional():
+    """[HIDRO-NACIONAL] Carrega o OVERVIEW hidrográfico nacional pré-computado e VERSIONADO no repositório
+    (data/brasil/ibge/derivadas/hidro_nacional_overview.json.gz). É uma amostragem espacial da drenagem BC250
+    (os rios de maior extensão em cada célula de grade → cobre TODO o país, de Roraima ao Chuí) + os maiores
+    corpos d'água. Como está no repo, NÃO depende do Parquet pesado de 451 MB (baixado sob demanda): a VISÃO
+    NACIONAL funciona sempre e cobre o Brasil inteiro de imediato. Devolve o mesmo shape de
+    `_hidrografia_ana_regiao` ({'rios','massas',...}) ou None. Cacheado."""
+    try:
+        import gzip as _gz, json as _js
+        _cands = []
+        _dir = getattr(_bases_locais_ibge, "_DERIVADAS", None) if _bases_locais_ibge is not None else None
+        if _dir is not None:
+            _cands.append(os.path.join(str(_dir), _OVERVIEW_HIDRO_NACIONAL))
+        _cands.append(os.path.join("data", "brasil", "ibge", "derivadas", _OVERVIEW_HIDRO_NACIONAL))
+        _cands.append(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   "data", "brasil", "ibge", "derivadas", _OVERVIEW_HIDRO_NACIONAL))
+        _p = next((c for c in _cands if os.path.exists(c)), None)
+        if not _p:
+            return None
+        with _gz.open(_p, "rb") as _f:
+            _d = _js.loads(_f.read().decode("utf-8"))
+        _d["rios"] = [[(float(_a), float(_b)) for (_a, _b) in _ln] for _ln in _d.get("rios", [])]
+        _d["massas"] = [[(float(_a), float(_b)) for (_a, _b) in _pg] for _pg in _d.get("massas", [])]
+        _d["n_rios"] = len(_d["rios"])
+        _d["n_massas"] = len(_d["massas"])
+        _d.setdefault("total_rios", _d["n_rios"])
+        _d.setdefault("total_massas", _d["n_massas"])
+        _d["truncado"] = False
+        _d["principais"] = True
+        _d["nacional"] = True
+        _d.setdefault("fonte", "IBGE BC250 — overview hidrográfico nacional (amostragem espacial, no repo)")
+        return _d
+    except Exception:
+        logger.error("[HIDRO-NACIONAL] Falha ao carregar o overview nacional (isolada).", exc_info=True)
+        return None
+
+
+def _hidrografia_overview_recortado(lat_min, lat_max, lon_min, lon_max, margem=0.25):
+    """Recorta o overview nacional a uma janela (para quando o Parquet denso de drenagem não foi baixado —
+    assim a janela regional ainda mostra os rios principais em vez de ficar vazia). PURO/defensivo."""
+    _ov = _hidrografia_overview_nacional()
+    if not _ov:
+        return None
+    _la0, _la1 = min(lat_min, lat_max) - margem, max(lat_min, lat_max) + margem
+    _lo0, _lo1 = min(lon_min, lon_max) - margem, max(lon_min, lon_max) + margem
+
+    def _toca(_seq):
+        for _p in _seq:
+            if _la0 <= _p[0] <= _la1 and _lo0 <= _p[1] <= _lo1:
+                return True
+        return False
+
+    _rios = [_ln for _ln in _ov["rios"] if _toca(_ln)]
+    _massas = [_pg for _pg in _ov["massas"] if _toca(_pg)]
+    return {"rios": _rios, "massas": _massas, "n_rios": len(_rios), "n_massas": len(_massas),
+            "total_rios": _ov.get("total_rios", 0), "total_massas": _ov.get("total_massas", 0),
+            "truncado": True, "principais": True, "nacional": False, "overview": True,
+            "fonte": "Overview nacional (drenagem densa BC250 não baixada neste ambiente)"}
 
 
 def _mapa_leaflet_hidrografia_ana(hidro, rotas=None, altura=620):
@@ -37493,8 +37597,9 @@ def _mapa_leaflet_hidrografia_ana(hidro, rotas=None, altura=620):
         _rotas = rotas or []
         if not _rios and not _massas and not _rotas:
             return ""
-        _rios_js = _json.dumps(_rios[:1500])
-        _massas_js = _json.dumps(_massas[:500])
+        # tetos altos o bastante para não recortar o overview nacional (~3,9 mil rios) nem a janela regional
+        _rios_js = _json.dumps(_rios[:8000])
+        _massas_js = _json.dumps(_massas[:2500])
         _rotas_js = _json.dumps([{"pts": r.get("pts") or [], "nome": str(r.get("nome") or "Rota")}
                                  for r in _rotas if r.get("pts")][:400])
         _html = """<!DOCTYPE html><html><head><meta charset="utf-8"/>
@@ -64282,8 +64387,10 @@ if _secao == _SECOES[17]:   # tab_hidrografia
         # do IBGE/ANA na janela e sobrepõe as rotas do último estudo. Antes esta aba só plotava ~500 PONTOS de
         # rios; agora mostra a hidrografia como a ANA a mostra, com todos os corpos d'água da janela.
         try:
+            _NAC = "🇧🇷 Brasil — rede hidrográfica principal (todo o país)"
             _regioes_bbox = {
                 "Rotas do último estudo (recomendado)": None,
+                _NAC: (-33.8, 5.3, -73.9, -34.8),
                 "Norte / Amazônia (Manaus)": (-6.0, 0.5, -64.0, -56.0),
                 "Amazônia Ocidental (Solimões)": (-8.0, -2.0, -73.0, -65.0),
                 "Nordeste (São Francisco)": (-12.0, -6.0, -44.0, -36.0),
@@ -64296,10 +64403,13 @@ if _secao == _SECOES[17]:   # tab_hidrografia
                 _col_existente(_df_hid, "Lat Origem") and _col_existente(_df_hid, "Lat Destino")
             _opcoes = list(_regioes_bbox.keys())
             if not _tem_estudo:
-                _opcoes = _opcoes[1:]  # sem estudo, esconde a opção "rotas do último estudo"
+                _opcoes = _opcoes[1:]  # sem estudo, abre já na VISÃO NACIONAL (rede principal)
             _sel_reg = st.selectbox("Região a desenhar", _opcoes, index=0,
-                                    help="Desenhar o Brasil inteiro de uma vez é inviável (2,18 mi de linhas); "
-                                         "escolha a janela. 'Rotas do último estudo' enquadra automaticamente onde você trabalhou.")
+                                    help="A **visão nacional** desenha a rede principal (rios navegáveis/avaliados) "
+                                         "de TODO o país. As janelas regionais mostram a drenagem completa e densa "
+                                         "daquela área (a malha inteira tem 2,18 mi de linhas — inviável desenhar de "
+                                         "uma vez em detalhe). 'Rotas do último estudo' enquadra onde você trabalhou.")
+            _principais = (_sel_reg == _NAC)
             # monta as rotas processadas (traçado REAL do OSRM quando houver; senão, segmento origem→destino)
             _rotas_hid = []
             _bbox = _regioes_bbox.get(_sel_reg)
@@ -64325,22 +64435,62 @@ if _secao == _SECOES[17]:   # tab_hidrografia
                     _bbox = (min(_las) - _mg, max(_las) + _mg, min(_lus) - _mg, max(_lus) + _mg)
             if _bbox is None:
                 _bbox = _regioes_bbox["Norte / Amazônia (Manaus)"]
-            # clamp de segurança para não pedir uma janela gigante
             _la0, _la1, _lo0, _lo1 = _bbox
-            if (_la1 - _la0) > 12 or (_lo1 - _lo0) > 12:
+            # Na VISÃO NACIONAL a cobertura é a rede principal (poucos milhares de trechos) → sem clamp, país todo.
+            # Nas janelas regionais mantém o clamp de segurança (evita pedir uma janela gigante em detalhe denso).
+            if not _principais and ((_la1 - _la0) > 12 or (_lo1 - _lo0) > 12):
                 _cla = (_la0 + _la1) / 2; _clo2 = (_lo0 + _lo1) / 2
                 _la0, _la1, _lo0, _lo1 = _cla - 6, _cla + 6, _clo2 - 6, _clo2 + 6
-            with st.spinner("Carregando a hidrografia da janela (IBGE/ANA)…"):
-                _hid = _hidrografia_ana_regiao(_la0, _la1, _lo0, _lo1)
+            # Limites e decimação (janelas regionais). A VISÃO NACIONAL usa o overview versionado no repo.
+            _mx_rios = 4000
+            _mx_massas = 1200
+            _fonte_overview = False
+            if _principais:
+                # cobertura de TODO o país, sempre (não depende do Parquet pesado de 451 MB baixado sob demanda)
+                _hid = _hidrografia_overview_nacional()
+                if not _hid or not (_hid.get("rios") or _hid.get("massas")):
+                    # fallback: se por acaso o overview faltar mas o Parquet denso existir, extrai a rede principal
+                    _hid = _hidrografia_ana_regiao(-33.8, 5.3, -73.9, -34.8, max_rios=20000, max_massas=2500,
+                                                   apenas_principais=True, max_pts=60)
+                else:
+                    _fonte_overview = True
+            else:
+                with st.spinner("Carregando a hidrografia da janela (IBGE/ANA)…"):
+                    _hid = _hidrografia_ana_regiao(_la0, _la1, _lo0, _lo1, max_rios=_mx_rios,
+                                                   max_massas=_mx_massas, apenas_principais=False)
+                # Se a drenagem densa não foi baixada (Parquet pesado ausente), a janela cai no overview
+                # recortado — assim ela ainda mostra os rios principais em vez de ficar vazia.
+                if not (_hid["n_rios"] or _hid["n_massas"]):
+                    _rec = _hidrografia_overview_recortado(_la0, _la1, _lo0, _lo1)
+                    if _rec and (_rec["n_rios"] or _rec["n_massas"]):
+                        _hid = _rec
+                        _fonte_overview = True
             if _hid["n_rios"] or _hid["n_massas"]:
                 _uri_hid = _mapa_leaflet_hidrografia_ana(_hid, rotas=_rotas_hid)
                 if _uri_hid:
                     import base64 as _b64hid
                     components.html(_b64hid.b64decode(_uri_hid.split(",", 1)[1]).decode("utf-8"),
                                     height=640, scrolling=False)
-                    st.caption(f"🌊 {_hid['n_rios']} rios/córregos e {_hid['n_massas']} corpos d'água desenhados "
-                               f"({_hid['fonte']})" + (" · janela truncada para desempenho" if _hid["truncado"] else "")
-                               + (f" · {len(_rotas_hid)} rota(s) do estudo sobreposta(s)" if _rotas_hid else ""))
+                    _fmt_mil_h = lambda _n: f"{int(_n):,}".replace(",", ".")
+                    if _principais:
+                        _cap = ("🇧🇷 **Visão nacional** — rede hidrográfica principal de **todo o Brasil** "
+                                f"(de Roraima ao Chuí): **{_fmt_mil_h(_hid['n_rios'])}** rios + "
+                                f"**{_fmt_mil_h(_hid['n_massas'])}** corpos d'água, amostrados por célula de grade "
+                                "para cobrir o país inteiro. Escolha uma **janela regional** para ver a drenagem "
+                                "completa e densa daquela área.")
+                    elif _fonte_overview:
+                        _cap = (f"🌊 **{_fmt_mil_h(_hid['n_rios'])}** rios principais e "
+                                f"**{_fmt_mil_h(_hid['n_massas'])}** corpos d'água nesta janela "
+                                "(overview nacional — a drenagem densa BC250, ~451 MB, não foi baixada neste "
+                                "ambiente; baixe a camada pesada para o detalhe completo).")
+                    else:
+                        _cap = (f"🌊 **{_fmt_mil_h(_hid['n_rios'])}** rios/córregos"
+                                + (f" (dos {_fmt_mil_h(_hid['total_rios'])} na janela — mostrados os mais extensos)"
+                                   if _hid["truncado"] else "")
+                                + f" e **{_fmt_mil_h(_hid['n_massas'])}** corpos d'água · {_hid['fonte']}")
+                    if _rotas_hid:
+                        _cap += f" · {len(_rotas_hid)} rota(s) do estudo sobreposta(s)"
+                    st.caption(_cap)
             else:
                 st.info("Sem hidrografia IBGE/ANA nesta janela (ou base local ausente neste ambiente).")
         except Exception:
