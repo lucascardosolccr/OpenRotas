@@ -60,6 +60,18 @@ def _rodovia_rotulo(rod: dict | None) -> str:
     return "**🛣️ Rodovia de referência:** %s a %s km" % (" · ".join(_partes), rod.get("distancia_km"))
 
 
+def _ferrovia_rotulo(fer: dict | None) -> str:
+    """Linha compacta da ferrovia de referência (operadora/linha · bitola · situação · distância)."""
+    if not fer:
+        return ""
+    _partes = [str(fer.get("via", "")).strip()]
+    for _k in ("bitola", "situacao"):
+        _v = str(fer.get(_k, "")).strip()
+        if _v and _v.lower() not in ("", "desconhecida", "desconhecido", "—", "nan"):
+            _partes.append(_v)
+    return "**🚂 Ferrovia de referência:** %s a %s km" % (" · ".join(_partes), fer.get("distancia_km"))
+
+
 def _mun_rotulo(municipio: dict | None) -> str:
     if not municipio:
         return "_fora das malhas municipais IBGE_"
@@ -107,6 +119,10 @@ def formatar_ponto(enriquecido: dict) -> str:
     if rod:
         linhas.append(_rodovia_rotulo(rod))
 
+    fer = (enriquecido or {}).get("ferrovia_ref")
+    if fer:
+        linhas.append(_ferrovia_rotulo(fer))
+
     fonte = (enriquecido or {}).get("fonte")
     if fonte:
         linhas.append("")
@@ -139,12 +155,16 @@ def formatar_enriquecimento(enriquecido: dict) -> str:
         linhas.append(_estacao_rotulo(orig["estacao_ana"], "origem"))
     if orig.get("rodovia_ref"):
         linhas.append(_rodovia_rotulo(orig["rodovia_ref"]))
+    if orig.get("ferrovia_ref"):
+        linhas.append(_ferrovia_rotulo(orig["ferrovia_ref"]))
     linhas.append("**📍 Destino:** %s" % _mun_rotulo(dest.get("municipio")))
     linhas.append(formatar_confianca(dest.get("confianca")))
     if dest.get("estacao_ana"):
         linhas.append(_estacao_rotulo(dest["estacao_ana"], "destino"))
     if dest.get("rodovia_ref"):
         linhas.append(_rodovia_rotulo(dest["rodovia_ref"]))
+    if dest.get("ferrovia_ref"):
+        linhas.append(_ferrovia_rotulo(dest["ferrovia_ref"]))
     linhas.append("")
 
     rios = enriquecido.get("rios_detectados") or []

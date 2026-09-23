@@ -25,6 +25,11 @@ try:
 except Exception:  # fail-open: enriquecimento segue sem a rodovia de referência
     _rodo = None
 
+try:
+    from . import ferrovias_local as _ferro
+except Exception:  # fail-open: enriquecimento segue sem a ferrovia de referência
+    _ferro = None
+
 
 def _rodovia_ref(lat, lon):
     """Rodovia de referência do ponto (índice local, sem rede). None se indisponível."""
@@ -32,6 +37,16 @@ def _rodovia_ref(lat, lon):
         return None
     try:
         return _rodo.rodovia_mais_proxima(lat, lon)
+    except Exception:
+        return None
+
+
+def _ferrovia_ref(lat, lon):
+    """Ferrovia de referência do ponto (índice local, sem rede). None se indisponível/sem ferrovia perto."""
+    if _ferro is None:
+        return None
+    try:
+        return _ferro.ferrovia_mais_proxima(lat, lon)
     except Exception:
         return None
 
@@ -83,6 +98,7 @@ def enriquecer_ponto(lat: float, lon: float, raio_km: float = 30.0,
         "balsas_confirmadas": balsas_confirmadas,
         "estacao_ana": _estacao_ana(lat, lon, _rio_do_perfil(perfil)),
         "rodovia_ref": _rodovia_ref(lat, lon),
+        "ferrovia_ref": _ferrovia_ref(lat, lon),
         "confianca": confianca,
         "fonte": "IBGE BC250 v2025 + BC100 (camadas derivadas locais) + estações ANA/SNIRH",
     }
@@ -177,12 +193,14 @@ def enriquecer_rota(origem: tuple, destino: tuple, raio_km: float = 30.0,
             "confianca": co,
             "estacao_ana": _estacao_ana(origem[0], origem[1], _rio_do_perfil(o)),
             "rodovia_ref": _rodovia_ref(origem[0], origem[1]),
+            "ferrovia_ref": _ferrovia_ref(origem[0], origem[1]),
         },
         "destino": {
             "municipio": d.get("municipio") or None,
             "confianca": cd,
             "estacao_ana": _estacao_ana(destino[0], destino[1], _rio_do_perfil(d)),
             "rodovia_ref": _rodovia_ref(destino[0], destino[1]),
+            "ferrovia_ref": _ferrovia_ref(destino[0], destino[1]),
         },
         "rios_detectados": rios,
         "bacia_hidrografica": None,

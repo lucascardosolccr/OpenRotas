@@ -30,3 +30,19 @@ def test_enriquecimento_de_rota_recebe_rodovia():
     enr = e.enriquecer_ponto(-15.79, -47.88, raio_km=30, limite=5)   # Brasília
     assert enr.get("rodovia_ref") is not None
     assert enr["rodovia_ref"]["via"]
+
+
+# ---- Ferrovia de referência (índice local) ---------------------------------------------------
+def test_ferrovia_mais_proxima():
+    from inteligencia_geoespacial import ferrovias_local as fl
+    fer = fl.ferrovia_mais_proxima(-23.55, -46.63)     # São Paulo → há ferrovia perto
+    assert fer is not None and fer["via"]
+    assert fer["distancia_km"] <= 8.0
+    # Amazônia central não tem ferrovia por perto
+    assert fl.ferrovia_mais_proxima(-3.119, -60.02, max_km=8.0) is None
+
+
+def test_enriquecimento_recebe_ferrovia_onde_existe():
+    from inteligencia_geoespacial import enrichment_engine as e
+    enr = e.enriquecer_ponto(-19.92, -43.94, raio_km=30, limite=5)   # Belo Horizonte
+    assert enr.get("ferrovia_ref") is not None
