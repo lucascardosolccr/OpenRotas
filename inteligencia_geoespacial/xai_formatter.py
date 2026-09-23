@@ -29,6 +29,17 @@ def formatar_confianca(confianca: dict) -> str:
     return linha
 
 
+def _estacao_rotulo(est: dict | None, ref: str = "") -> str:
+    """Linha compacta da estação ANA de referência (para cotas/vazões)."""
+    if not est:
+        return ""
+    _tel = " · telemétrica" if str(est.get("tipo", "")).lower().startswith("telem") else ""
+    _uf = ", %s" % est.get("uf") if est.get("uf") else ""
+    return "**📈 Estação ANA (%s):** `%s` — %s (%s%s) a %s km%s" % (
+        ref or "ref", est.get("codigo"), est.get("nome"), est.get("rio") or "rio n/d",
+        _uf, est.get("distancia_km"), _tel)
+
+
 def _mun_rotulo(municipio: dict | None) -> str:
     if not municipio:
         return "_fora das malhas municipais IBGE_"
@@ -65,6 +76,12 @@ def formatar_ponto(enriquecido: dict) -> str:
         linhas.append("**🌉 Pontes próximas (top):** %s" % "; ".join(
             "`%s` a %s km" % (p.get("nome"), p.get("distancia_km")) for p in pontes[:5]))
 
+    est = (enriquecido or {}).get("estacao_ana")
+    if est:
+        linhas.append("**📈 Estação ANA de referência:** `%s` — %s (%s%s) a %s km%s" % (
+            est.get("codigo"), est.get("nome"), est.get("rio") or "rio n/d", ", %s" % est.get("uf") if est.get("uf") else "",
+            est.get("distancia_km"), " · telemétrica (cotas/vazões)" if str(est.get("tipo", "")).lower().startswith("telem") else ""))
+
     fonte = (enriquecido or {}).get("fonte")
     if fonte:
         linhas.append("")
@@ -93,8 +110,12 @@ def formatar_enriquecimento(enriquecido: dict) -> str:
     dest = enriquecido.get("destino") or {}
     linhas.append("**📍 Origem:** %s" % _mun_rotulo(orig.get("municipio")))
     linhas.append(formatar_confianca(orig.get("confianca")))
+    if orig.get("estacao_ana"):
+        linhas.append(_estacao_rotulo(orig["estacao_ana"], "origem"))
     linhas.append("**📍 Destino:** %s" % _mun_rotulo(dest.get("municipio")))
     linhas.append(formatar_confianca(dest.get("confianca")))
+    if dest.get("estacao_ana"):
+        linhas.append(_estacao_rotulo(dest["estacao_ana"], "destino"))
     linhas.append("")
 
     rios = enriquecido.get("rios_detectados") or []
@@ -174,6 +195,14 @@ def formatar_enriquecimento_html(enriquecido: dict) -> str:
     dest = (enriquecido.get("destino") or {}).get("municipio")
     _add("<p><b>Origem:</b> %s &nbsp;|&nbsp; <b>Destino:</b> %s</p>" % (
         _mun_rotulo(orig), _mun_rotulo(dest)))
+    _eo = (enriquecido.get("origem") or {}).get("estacao_ana")
+    _ed = (enriquecido.get("destino") or {}).get("estacao_ana")
+    if _eo or _ed:
+        def _e_html(_e):
+            return ("`%s` %s (%s) a %s km" % (_e.get("codigo"), _e.get("nome"), _e.get("rio") or "rio n/d",
+                                              _e.get("distancia_km"))) if _e else "—"
+        _add("<p><b>Estação ANA (origem):</b> %s &nbsp;|&nbsp; <b>(destino):</b> %s</p>" % (
+            _e_html(_eo), _e_html(_ed)))
 
     rios = enriquecido.get("rios_detectados") or []
     if rios:

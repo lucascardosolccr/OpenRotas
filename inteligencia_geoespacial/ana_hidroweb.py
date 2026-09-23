@@ -16,11 +16,70 @@ Módulo PURO em relação à rede: os PARSERS não fazem I/O (testáveis com fix
 """
 from __future__ import annotations
 
+import csv
+import gzip
+import math
+import os
 import re
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
+from functools import lru_cache
 
 BASE = "http://telemetriaws1.ana.gov.br/ServiceANA.asmx"
+
+# Rede nacional de estações fluviométricas (asset LOCAL versionado — sem rede). Usada para associar a
+# estação ANA de referência a um ponto/rota no PROCESSAMENTO (enriquecimento), sem nenhuma chamada externa.
+_REDE_CSV = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         "data", "brasil", "ibge", "derivadas", "estacoes_nacional_overview.csv.gz")
+
+
+@lru_cache(maxsize=1)
+def carregar_rede_nacional():
+    """Lista de dicts das estações fluviométricas reais (código ANA, rio, uf, lat, lon, tipo). LOCAL, sem rede.
+    Fail-open: se o asset não existir, devolve []."""
+    try:
+        with gzip.open(_REDE_CSV, "rt", encoding="utf-8") as _f:
+            _rows = list(csv.DictReader(_f))
+    except Exception:
+        return []
+    _out = []
+    for _r in _rows:
+        try:
+            _r["lat"] = float(_r.get("lat"))
+            _r["lon"] = float(_r.get("lon"))
+        except Exception:
+            continue
+        _out.append(_r)
+    return _out
+
+
+def _haversine_km(la1, lo1, la2, lo2):
+    _R = 6371.0088
+    _p = math.pi / 180.0
+    _a = (math.sin((la2 - la1) * _p / 2) ** 2
+          + math.cos(la1 * _p) * math.cos(la2 * _p) * math.sin((lo2 - lo1) * _p / 2) ** 2)
+    return 2 * _R * math.asin(min(1.0, math.sqrt(_a)))
+
+
+def estacao_mais_proxima(lat, lon, max_km=150.0):
+    """Estação ANA fluviométrica mais próxima de um ponto (rede nacional LOCAL). Devolve
+    {codigo,nome,rio,uf,tipo,distancia_km} ou None (fora do alcance/sem dado). PURA, sem rede."""
+    try:
+        _la = float(lat); _lo = float(lon)
+    except Exception:
+        return None
+    if not (-34.5 <= _la <= 6.0 and -74.5 <= _lo <= -34.0):
+        return None
+    _best = None; _bd = None
+    for _r in carregar_rede_nacional():
+        _d = _haversine_km(_la, _lo, _r["lat"], _r["lon"])
+        if _bd is None or _d < _bd:
+            _bd = _d; _best = _r
+    if _best is None or (max_km and _bd > float(max_km)):
+        return None
+    return {"codigo": str(_best.get("codigo", "")).strip(), "nome": str(_best.get("nome", "")).strip(),
+            "rio": str(_best.get("rio", "")).strip(), "uf": str(_best.get("uf", "")).strip(),
+            "tipo": str(_best.get("tipo", "")).strip(), "distancia_km": round(_bd, 1)}
 
 # HidroSerieHistorica: tipoDados 1=Cotas(cm), 2=Chuvas(mm), 3=Vazões(m³/s)
 TIPO_DADOS = {"cotas": 1, "cota": 1, "chuvas": 2, "chuva": 2, "vazoes": 3, "vazões": 3, "vazao": 3, "vazão": 3}

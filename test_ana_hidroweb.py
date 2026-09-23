@@ -54,3 +54,23 @@ def test_parsers_fail_open_em_xml_invalido():
     assert a.parse_serie_historica("<nao-fecha", 3) == []
     assert a.parse_serie_historica("", 1) == []
     assert a.parse_telemetria(None) == []
+
+
+# ---- Rede nacional LOCAL (asset versionado) + integração ao enriquecimento de rotas ----------
+def test_rede_nacional_local_e_estacao_mais_proxima():
+    rede = a.carregar_rede_nacional()
+    assert len(rede) > 1000, "a rede nacional local deve carregar milhares de estações"
+    e = a.estacao_mais_proxima(-3.119, -60.0217)      # Manaus
+    assert e and e["uf"] == "AM" and e["distancia_km"] < 20
+    assert str(e["codigo"]).isdigit()
+    # ponto no oceano → sem estação (fail-open)
+    assert a.estacao_mais_proxima(-20.0, -30.0) is None
+
+
+def test_enriquecimento_de_ponto_carrega_estacao_ana():
+    from inteligencia_geoespacial import enrichment_engine as e, xai_formatter as x
+    enr = e.enriquecer_ponto(-3.119, -60.0217, raio_km=30, limite=5)
+    est = enr.get("estacao_ana")
+    assert est and est["uf"] == "AM", "o enriquecimento da rota deve receber a estação ANA de referência"
+    md = x.formatar_ponto(enr)
+    assert "Estação ANA" in md and est["codigo"] in md

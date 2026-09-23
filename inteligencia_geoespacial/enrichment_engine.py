@@ -15,6 +15,21 @@ from __future__ import annotations
 from . import bases_locais as _bl
 from .validators import CoordinateValidator, _nome, _NIVEL_CONFIANCA
 
+try:
+    from . import ana_hidroweb as _ana
+except Exception:  # fail-open: enriquecimento segue sem a estação ANA
+    _ana = None
+
+
+def _estacao_ana(lat, lon):
+    """Estação ANA fluviométrica de referência (rede nacional LOCAL, sem rede). None se indisponível."""
+    if _ana is None:
+        return None
+    try:
+        return _ana.estacao_mais_proxima(lat, lon)
+    except Exception:
+        return None
+
 _CAMPOS_NULOS_SE_AUSENTE = ("bacia_hidrografica", "alternativa_sem_balsa")
 
 
@@ -42,8 +57,9 @@ def enriquecer_ponto(lat: float, lon: float, raio_km: float = 30.0,
         "rio_mais_proximo": perfil.get("rio_mais_proximo"),
         "pontes_encontradas": perfil.get("feicoes", {}).get("pontes", []),
         "balsas_confirmadas": balsas_confirmadas,
+        "estacao_ana": _estacao_ana(lat, lon),
         "confianca": confianca,
-        "fonte": "IBGE BC250 v2025 + BC100 (camadas derivadas locais)",
+        "fonte": "IBGE BC250 v2025 + BC100 (camadas derivadas locais) + estações ANA/SNIRH",
     }
 
 
@@ -134,10 +150,12 @@ def enriquecer_rota(origem: tuple, destino: tuple, raio_km: float = 30.0,
         "origem": {
             "municipio": o.get("municipio") or None,
             "confianca": co,
+            "estacao_ana": _estacao_ana(origem[0], origem[1]),
         },
         "destino": {
             "municipio": d.get("municipio") or None,
             "confianca": cd,
+            "estacao_ana": _estacao_ana(destino[0], destino[1]),
         },
         "rios_detectados": rios,
         "bacia_hidrografica": None,

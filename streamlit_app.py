@@ -64984,6 +64984,29 @@ if _secao == _SECOES[22]:   # tab_geo_ibge
                     _geo_enr = st.session_state.get("geo_ibge_xai")
                     if _geo_enr:
                         st.markdown(_geo_xai.formatar_ponto(_geo_enr))
+                        # [ANA-WS · sob demanda] vazão/nível recente da estação ANA de referência (rede só no clique)
+                        _est_ana = (_geo_enr or {}).get("estacao_ana")
+                        if _est_ana and _ana_ws is not None:
+                            _cod_e = str(_est_ana.get("codigo", "")).strip()
+                            if _cod_e and st.button("📡 Vazão/nível recente da estação %s (ANA)" % _cod_e,
+                                                    key="geo_ana_vazao"):
+                                with st.spinner("Consultando a ANA (últimos 30 dias · estação %s)…" % _cod_e):
+                                    _dt_f = pd.Timestamp.today().date()
+                                    _dt_i = (pd.Timestamp.today() - pd.Timedelta(days=30)).date()
+                                    _tl = _ana_ws.telemetria_online(_cod_e, _dt_i, _dt_f)
+                                    if not (_tl.get("ok") and _tl.get("serie")):
+                                        _tl = _ana_ws.serie_historica_online(_cod_e, "Vazões",
+                                                                             (pd.Timestamp.today() - pd.Timedelta(days=365)).date(), _dt_f)
+                                if _tl.get("ok") and _tl.get("serie"):
+                                    _dfa = pd.DataFrame(_tl["serie"])
+                                    _colv = next((c for c in ["vazao", "nivel", "valor"] if c in _dfa.columns and _dfa[c].notna().any()), None)
+                                    st.success("✅ ANA respondeu — %d leituras da estação %s (%s)." % (
+                                        len(_dfa), _cod_e, _est_ana.get("rio") or "rio n/d"))
+                                    if "data" in _dfa.columns and _colv:
+                                        st.line_chart(_dfa.dropna(subset=["data"]).set_index("data")[[_colv]], color="#2563eb")
+                                    st.caption("Fonte: ANA/SNIRH · WebService público. Para a série completa, use a aba **Hidrografia → Cotas & Vazões**.")
+                                else:
+                                    st.info("A ANA não retornou leituras recentes para esta estação (%s)." % _tl.get("erro", "sem dados"))
                 else:
                     st.caption("Enriquecimento XAI indisponível nesta execução.")
         except Exception:
