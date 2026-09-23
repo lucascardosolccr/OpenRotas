@@ -37585,6 +37585,88 @@ def _hidrografia_overview_recortado(lat_min, lat_max, lon_min, lon_max, margem=0
             "fonte": "Overview nacional (drenagem densa BC250 não baixada neste ambiente)"}
 
 
+# ============================ ESTAÇÕES ANA/SNIRH — COBERTURA NACIONAL ============================
+_OVERVIEW_ESTACOES_NACIONAL = "estacoes_nacional_overview.csv.gz"
+_FONTE_ESTACOES_NACIONAL = "ANA/SNIRH — rede nacional (estações reais, amostra por todo o país)"
+_FONTE_ESTACOES_CATALOGO = "ANA/SNIRH — catálogo completo (nacional)"
+_UF_SIGLA = {
+    "ACRE": "AC", "ALAGOAS": "AL", "AMAPÁ": "AP", "AMAZONAS": "AM", "BAHIA": "BA", "CEARÁ": "CE",
+    "DISTRITO FEDERAL": "DF", "ESPÍRITO SANTO": "ES", "GOIÁS": "GO", "MARANHÃO": "MA",
+    "MATO GROSSO": "MT", "MATO GROSSO DO SUL": "MS", "MINAS GERAIS": "MG", "PARANÁ": "PR",
+    "PARAÍBA": "PB", "PARÁ": "PA", "PERNAMBUCO": "PE", "PIAUÍ": "PI", "RIO DE JANEIRO": "RJ",
+    "RIO GRANDE DO NORTE": "RN", "RIO GRANDE DO SUL": "RS", "RONDÔNIA": "RO", "RORAIMA": "RR",
+    "SANTA CATARINA": "SC", "SÃO PAULO": "SP", "SERGIPE": "SE", "TOCANTINS": "TO",
+}
+
+
+def _normalizar_estacoes_ana(df):
+    """[HIDRO-EST] Normaliza o catálogo CRU da ANA/SNIRH (colunas idFormatadoComZero/nomeRio/nomeEstado/…)
+    para o esquema que a UI espera (codigo/nome/rio/bacia/uf/lat/lon/tipo). Sem isto, mesmo baixando o
+    catálogo de 91 MB, a consulta de cotas/vazões não achava o código da estação. Mantém só as
+    FLUVIOMÉTRICAS (tipoEstacao=1 → medem nível/vazão) quando a coluna existir. PURO/defensivo."""
+    try:
+        if df is None or getattr(df, "empty", True):
+            return None
+        _c = df
+        _cod = next((x for x in ["idFormatadoComZero", "codigo", "codigoNome"] if x in _c.columns), None)
+        _out = pd.DataFrame()
+        _out["codigo"] = (_c[_cod].astype(str).str.strip() if _cod else "—")
+        _nome_col = next((x for x in ["nome", "codigoNome"] if x in _c.columns), _cod)
+        _out["nome"] = _c[_nome_col].astype(str).str.strip() if _nome_col else ""
+        _out["rio"] = (_c["nomeRio"] if "nomeRio" in _c.columns else _c.get("rio", "")).astype(str).str.strip()
+        _bac = next((x for x in ["codigoNomeBacia", "baciaCodigo", "bacia"] if x in _c.columns), None)
+        _out["bacia"] = _c[_bac].astype(str).str.strip() if _bac else ""
+        _so_brasil = False
+        if "nomeEstado" in _c.columns:
+            # mapeia só as 27 UFs; estações de países vizinhos (Peru/Paraguai/…) viram NaN e são removidas
+            # (evita também a colisão PERU→'PE'=Pernambuco / PARAGUAI→'PA'=Pará do fallback ingênuo).
+            _out["uf"] = _c["nomeEstado"].map(_UF_SIGLA)
+            _so_brasil = True
+        else:
+            _out["uf"] = _c.get("uf", "").astype(str) if "uf" in _c.columns else ""
+        _out["lat"] = pd.to_numeric(_c["latitude"] if "latitude" in _c.columns else _c.get("lat"), errors="coerce")
+        _out["lon"] = pd.to_numeric(_c["longitude"] if "longitude" in _c.columns else _c.get("lon"), errors="coerce")
+        if "tipoEstacaoTelemetrica" in _c.columns:
+            _out["tipo"] = _c["tipoEstacaoTelemetrica"].apply(
+                lambda _v: "Telemétrica" if str(_v).strip() in ("1", "1.0") else "Convencional")
+        else:
+            _out["tipo"] = _c.get("tipo", "").astype(str) if "tipo" in _c.columns else ""
+        if "tipoEstacao" in _c.columns:
+            _flu = (pd.to_numeric(_c["tipoEstacao"], errors="coerce") == 1).values
+            if _flu.any():
+                _out = _out[_flu]
+        _sub = ["lat", "lon", "uf"] if _so_brasil else ["lat", "lon"]
+        _out = _out.dropna(subset=_sub)   # sem UF mapeada = estação de país vizinho → fora
+        return _out.reset_index(drop=True) if not _out.empty else None
+    except Exception:
+        logger.error("[HIDRO-EST] Falha ao normalizar o catálogo ANA (isolada).", exc_info=True)
+        return None
+
+
+@st.cache_data(show_spinner=False)
+def _carregar_estacoes_overview_nacional():
+    """[HIDRO-EST] Carrega o OVERVIEW NACIONAL de estações fluviométricas (asset versionado no repo):
+    estações REAIS com código ANA de 8 dígitos, amostradas por grade para cobrir TODO o Brasil (27 UFs).
+    Permite consultar cotas/vazões em qualquer região SEM baixar o catálogo de 91 MB. None se ausente."""
+    try:
+        _cands = []
+        _dir = getattr(_bases_locais_ibge, "_DERIVADAS", None) if _bases_locais_ibge is not None else None
+        if _dir is not None:
+            _cands.append(os.path.join(str(_dir), _OVERVIEW_ESTACOES_NACIONAL))
+        _cands.append(os.path.join("data", "brasil", "ibge", "derivadas", _OVERVIEW_ESTACOES_NACIONAL))
+        _cands.append(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   "data", "brasil", "ibge", "derivadas", _OVERVIEW_ESTACOES_NACIONAL))
+        _p = next((c for c in _cands if os.path.exists(c)), None)
+        if not _p:
+            return None
+        _df = pd.read_csv(_p, dtype={"codigo": str})
+        _df["fonte"] = _FONTE_ESTACOES_NACIONAL
+        return _df
+    except Exception:
+        logger.error("[HIDRO-EST] Falha ao carregar overview nacional de estações (isolada).", exc_info=True)
+        return None
+
+
 def _mapa_leaflet_hidrografia_ana(hidro, rotas=None, altura=620):
     """[HIDRO-ANA-MAPA - 461ª geração] Mapa Leaflet AUTOCONTIDO que desenha a hidrografia REAL (rios da
     `drenagem` IBGE/ANA + corpos d'água de `massas_dagua`) da janela e SOBREPÕE as rotas processadas
@@ -63927,35 +64009,49 @@ if _secao == _SECOES[17]:   # tab_hidrografia
 
     @st.cache_data(show_spinner=False)
     def _carregar_estacoes_com_fallback():
+        # 1) CATÁLOGO COMPLETO (91 MB) se presente → normaliza as colunas cruas da ANA para o esquema da UI
         try:
             _p = _resolver_csv("snirh_estacaos.csv")
-            if not _p:
-                raise FileNotFoundError("snirh_estacaos.csv")
-            _df = pd.read_csv(_p)
-            _df["fonte"] = "SNIRH (CSV local)"
-            return _df
+            if _p:
+                _raw = pd.read_csv(_p, low_memory=False, dtype={"idFormatadoComZero": str})
+                _norm = _normalizar_estacoes_ana(_raw)
+                if _norm is not None and not _norm.empty:
+                    _norm["fonte"] = _FONTE_ESTACOES_CATALOGO
+                    return _norm
         except Exception:
-            return _gerar_dados_estacoes_fallback()
-    
+            logger.debug("[HIDRO-EST] catálogo completo indisponível/ilegível (aditivo).", exc_info=True)
+        # 2) OVERVIEW NACIONAL versionado (estações reais, cobre o Brasil inteiro) → cotas/vazões funcionam
+        _ov = _carregar_estacoes_overview_nacional()
+        if _ov is not None and not _ov.empty:
+            return _ov
+        # 3) amostra ilustrativa de 8 pontos (último recurso)
+        return _gerar_dados_estacoes_fallback()
+
     _rios_df = _carregar_rios_com_fallback()
     _bacias_df = _carregar_bacias_com_fallback()
     _est_df = _carregar_estacoes_com_fallback()
-    # [HONESTIDADE-DADOS] O catálogo de estações (snirh_estacaos.csv, ~91 MB) é baixado sob demanda; até lá
-    # a app usa uma AMOSTRA ILUSTRATIVA (locais reais, mas sem os códigos ANA). Detecta isso UMA vez para as
-    # sub-abas avisarem com clareza e não oferecerem a consulta ao vivo com códigos que não existem.
-    _est_e_amostra = True
+    # [COBERTURA NACIONAL] Estações reais (código ANA) → consulta de cotas/vazões habilitada. Só a amostra
+    # ilustrativa de 8 pontos (fabricada) desabilita a consulta ao vivo. `_est_e_overview` = amostra nacional
+    # real (3,7 mil estações por todo o país) — funciona, mas oferece baixar o catálogo completo de ~40 mil.
     try:
         _fnt0 = str(_est_df["fonte"].iloc[0]) if (not _est_df.empty and "fonte" in _est_df.columns) else ""
-        _est_e_amostra = _est_df.empty or ("SNIRH (CSV local)" not in _fnt0)
     except Exception:
-        _est_e_amostra = True
+        _fnt0 = ""
+    _est_e_amostra = _est_df.empty or (_fnt0 == _FONTE_ESTACOES_AMOSTRA)
+    _est_e_overview = (_fnt0 == _FONTE_ESTACOES_NACIONAL)
+    _est_e_catalogo = (_fnt0 == _FONTE_ESTACOES_CATALOGO)
 
     def _aviso_amostra_estacoes():
-        """Banner honesto quando as estações são a amostra ilustrativa (catálogo real ausente)."""
-        st.warning("ℹ️ **Estações em modo amostra.** O catálogo oficial da ANA/SNIRH (~91 MB) ainda não foi "
-                   "baixado neste ambiente, então esta é uma **amostra ilustrativa** — os locais são reais, mas "
-                   "**sem os códigos ANA**, então a consulta ao vivo de cotas/vazões fica indisponível. Baixe o "
-                   "catálogo completo (botão na sub-aba **📍 Estações**) para dados e consultas reais.")
+        """Aviso conforme a fonte das estações: amostra fabricada (8), rede nacional real ou catálogo completo."""
+        if _est_e_amostra:
+            st.warning("ℹ️ **Estações em modo amostra.** O catálogo da ANA/SNIRH não pôde ser carregado neste "
+                       "ambiente, então esta é uma **amostra ilustrativa** (sem os códigos ANA) e a consulta ao "
+                       "vivo de cotas/vazões fica indisponível.")
+        elif _est_e_overview:
+            st.info("🇧🇷 **Rede nacional de estações (amostra por todo o Brasil).** São **estações reais** da "
+                    "ANA/SNIRH com código oficial, distribuídas pelas 27 UFs — a consulta de **cotas/vazões** "
+                    "funciona em qualquer região. Para as ~40 mil estações completas, baixe o catálogo na sub-aba "
+                    "**📍 Estações**.")
     
     with _aba_hidro[0]:
         st.subheader("🌊 Rios Brasileiros")
@@ -64118,7 +64214,7 @@ if _secao == _SECOES[17]:   # tab_hidrografia
     
     with _aba_hidro[2]:
         st.subheader("📍 Estações Hidrológicas")
-        if _est_e_amostra:
+        if _est_e_amostra or _est_e_overview:
             _aviso_amostra_estacoes()
         if not _est_df.empty:
             st.caption(f"Fonte: {_est_df['fonte'].iloc[0] if 'fonte' in _est_df.columns else 'Desconhecida'} | Total: {len(_est_df)} estações")
@@ -64162,9 +64258,10 @@ if _secao == _SECOES[17]:   # tab_hidrografia
             _botoes_exportacao_geo("estacoes_hidrologicas", _est_df, sheet_name="Estacoes")
         else:
             st.warning("Nenhum dado de estações disponível.")
-        _est_fonte = _est_df['fonte'].iloc[0] if (not _est_df.empty and 'fonte' in _est_df.columns) else None
-        if _est_fonte != "SNIRH (CSV local)" and _dados_bootstrap is not None and _dados_bootstrap.ausente("estacoes"):
-            _btn_est = st.button("⬇️ Baixar catálogo completo de estações ANA/SNIRH (~87 MB)",
+        # Oferece o catálogo COMPLETO (~40 mil estações) quando ainda não baixado — a rede nacional já
+        # funciona (overview versionado), isto só amplia a densidade.
+        if not _est_e_catalogo and _dados_bootstrap is not None and _dados_bootstrap.ausente("estacoes"):
+            _btn_est = st.button("⬇️ Baixar catálogo completo de estações ANA/SNIRH (~40 mil, ~87 MB)",
                                  key="hidro_bootstrap_estacoes")
             if _btn_est:
                 with st.spinner("Baixando catálogo de estações do GitHub Release..."):
@@ -64188,7 +64285,7 @@ if _secao == _SECOES[17]:   # tab_hidrografia
         **Como consultar:** selecione a estação na sub-aba **📈 Cotas & Vazões** — a app monta o endpoint com o
         código real da estação. (A API pública da ANA pode exigir cadastro/token.)
         """)
-        if _est_e_amostra:
+        if _est_e_amostra or _est_e_overview:
             _aviso_amostra_estacoes()
 
         if not _est_df.empty:
@@ -64235,7 +64332,7 @@ if _secao == _SECOES[17]:   # tab_hidrografia
     with _aba_hidro[4]:
         st.subheader("📈 Cotas & Vazões — Consulta Rápida")
         st.caption("Consulta direta via API ANA/HidroWeb. Requer conexão com internet e o catálogo real de estações.")
-        if _est_e_amostra:
+        if _est_e_amostra or _est_e_overview:
             _aviso_amostra_estacoes()
 
         if not _est_df.empty:
