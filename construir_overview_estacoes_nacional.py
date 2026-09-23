@@ -52,6 +52,12 @@ def main():
     df["bacia"] = df.get("codigoNomeBacia", df.get("baciaCodigo", "")).astype(str).str.strip()
     df["op"] = pd.to_numeric(df["operando"], errors="coerce").fillna(0)
     df["tel"] = pd.to_numeric(df["tipoEstacaoTelemetrica"], errors="coerce").fillna(0)
+    # atributos reais extras da ANA (enriquecem a ficha da estação): município, altitude, área de drenagem,
+    # e o estado operacional.
+    df["municipio"] = df.get("nomeMunicipio", "").astype(str).str.strip().replace({"nan": "", "None": ""})
+    df["altitude_m"] = pd.to_numeric(df.get("altitude"), errors="coerce").round(1)
+    df["area_km2"] = pd.to_numeric(df.get("areaDrenagem"), errors="coerce").round(0)
+    df["operando"] = df["op"].map(lambda v: "Sim" if float(v) == 1 else "Não")
 
     # amostragem espacial: prioriza operando + telemétrica; top-N por célula → cobre o país todo
     df["cx"] = (df["longitude"] / CELL_DEG).round()
@@ -59,7 +65,8 @@ def main():
     df = df.sort_values(["op", "tel"], ascending=False)
     sel = df.groupby(["cx", "cy"], sort=False).head(POR_CELULA)
 
-    out = (sel[["codigo", "nome", "rio", "bacia", "uf", "latitude", "longitude", "tipo"]]
+    out = (sel[["codigo", "nome", "rio", "bacia", "uf", "municipio", "latitude", "longitude",
+                "tipo", "operando", "altitude_m", "area_km2"]]
            .rename(columns={"latitude": "lat", "longitude": "lon"})
            .sort_values(["uf", "nome"]).reset_index(drop=True))
     out["lat"] = out["lat"].round(5)

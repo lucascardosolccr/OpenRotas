@@ -37636,6 +37636,16 @@ def _normalizar_estacoes_ana(df):
                 lambda _v: "Telemétrica" if str(_v).strip() in ("1", "1.0") else "Convencional")
         else:
             _out["tipo"] = _c.get("tipo", "").astype(str) if "tipo" in _c.columns else ""
+        # atributos reais extras (quando presentes no catálogo cru) para enriquecer a ficha
+        if "nomeMunicipio" in _c.columns:
+            _out["municipio"] = _c["nomeMunicipio"].astype(str).str.strip()
+        if "altitude" in _c.columns:
+            _out["altitude_m"] = pd.to_numeric(_c["altitude"], errors="coerce").round(1)
+        if "areaDrenagem" in _c.columns:
+            _out["area_km2"] = pd.to_numeric(_c["areaDrenagem"], errors="coerce").round(0)
+        if "operando" in _c.columns:
+            _out["operando"] = pd.to_numeric(_c["operando"], errors="coerce").map(
+                lambda _v: "Sim" if _v == 1 else ("Não" if pd.notna(_v) else ""))
         if "tipoEstacao" in _c.columns:
             _flu = (pd.to_numeric(_c["tipoEstacao"], errors="coerce") == 1).values
             if _flu.any():
@@ -64395,6 +64405,25 @@ if _secao == _SECOES[17]:   # tab_hidrografia
                         _m3.metric("UF", str(_re.get("uf", "—")))
                         _m4.metric("Tipo", str(_re.get("tipo", "—")),
                                    help="Telemétrica = transmissão automática (dados quase em tempo real); Convencional = leitura manual periódica.")
+                        # atributos reais extras da ANA (quando presentes no catálogo/rede nacional)
+                        try:
+                            _extra = []
+                            if str(_re.get("municipio", "")).strip():
+                                _extra.append(("Município", str(_re.get("municipio"))))
+                            _alt = _num_seguro(_re.get("altitude_m"))
+                            if _alt is not None:
+                                _extra.append(("Altitude", "%s m" % (f"{_alt:,.0f}".replace(",", "."))))
+                            _ar = _num_seguro(_re.get("area_km2"))
+                            if _ar and _ar > 0:
+                                _extra.append(("Área de drenagem", "%s km²" % (f"{_ar:,.0f}".replace(",", "."))))
+                            if str(_re.get("operando", "")).strip():
+                                _extra.append(("Operando", str(_re.get("operando"))))
+                            if _extra:
+                                _ce = st.columns(len(_extra))
+                                for _i, (_lab, _val) in enumerate(_extra):
+                                    _ce[_i].metric(_lab, _val)
+                        except Exception:
+                            logger.debug("[HYDRO-COTAS] Atributos extras da estação falharam (aditivo).", exc_info=True)
                         _lat_e = _num_seguro(_re.get("lat", _re.get("latitude")))
                         _lon_e = _num_seguro(_re.get("lon", _re.get("longitude")))
                         if _lat_e and _lon_e and _lat_e != 0 and _lon_e != 0:
