@@ -68,6 +68,7 @@ cachetools>=6.1.0          # import direto (LRU)
 # MACHINE LEARNING (uso pontual, mas real)
 # ------------------------------------------------------------------------------------------
 scikit-learn>=1.7.0        # import direto: sklearn.cluster.DBSCAN (consenso de geocodificação)
+scipy>=1.10.0             # import direto: scipy.spatial.cKDTree (índice de rios nomeados p/ estação ANA exata)
 
 
 # ==========================================================================================

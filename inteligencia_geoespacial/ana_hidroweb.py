@@ -31,6 +31,44 @@ BASE = "http://telemetriaws1.ana.gov.br/ServiceANA.asmx"
 # estação ANA de referência a um ponto/rota no PROCESSAMENTO (enriquecimento), sem nenhuma chamada externa.
 _REDE_CSV = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                          "data", "brasil", "ibge", "derivadas", "estacoes_nacional_overview.csv.gz")
+# Índice nacional de rios nomeados (asset LOCAL versionado): descobre o NOME do rio mais próximo de um ponto
+# sem depender do Parquet pesado de drenagem (451 MB). Torna exata a estação ANA de referência (casa por rio).
+_RIOS_INDEX = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                           "data", "brasil", "ibge", "derivadas", "rios_nomeados_index.parquet")
+
+
+@lru_cache(maxsize=1)
+def _rios_index():
+    """(nomes:list[str], tree:cKDTree) do índice de rios nomeados, ou None se indisponível. LOCAL, sem rede."""
+    try:
+        import numpy as _np
+        import pandas as _pd
+        from scipy.spatial import cKDTree as _KD
+        _df = _pd.read_parquet(_RIOS_INDEX, columns=["lat", "lon", "nome"])
+        if _df is None or _df.empty:
+            return None
+        _pts = _np.radians(_df[["lat", "lon"]].to_numpy(dtype=float))
+        return (_df["nome"].astype(str).tolist(), _KD(_pts))
+    except Exception:
+        return None
+
+
+def rio_mais_proximo_local(lat, lon, max_km=8.0):
+    """Nome do rio SIGNIFICATIVO mais próximo de um ponto (índice local, sem rede). None se nada dentro do raio.
+    Usado para dar exatidão à estação de referência quando a drenagem densa não está presente."""
+    _idx = _rios_index()
+    if _idx is None:
+        return None
+    try:
+        import numpy as _np
+        _nomes, _tree = _idx
+        _d, _i = _tree.query(_np.radians([[float(lat), float(lon)]]), k=1)
+        _dk = 6371.0088 * float(_np.atleast_1d(_d)[0])
+        if max_km and _dk > float(max_km):
+            return None
+        return _nomes[int(_np.atleast_1d(_i)[0])]
+    except Exception:
+        return None
 
 
 @lru_cache(maxsize=1)
@@ -92,14 +130,12 @@ def _rios_casam(a, b):
     return len(_a) >= 4 and len(_b) >= 4 and (_a in _b or _b in _a)
 
 
-def _classificar_ref(mesmo_rio, dist_km, rio_conhecido):
-    """direta = mede o mesmo rio e pertinho; aproximada = mesmo rio porém distante, ou colada sem rio p/
-    confirmar; regional = referência distante e/ou de outro curso d'água."""
+def _classificar_ref(mesmo_rio, dist_km):
+    """direta = mede o MESMO rio e está perto (≤25 km); aproximada = mesmo rio porém distante (≤80 km) ou
+    estação próxima (≤15 km) mesmo sem confirmar o rio; regional = distante e de outro curso d'água."""
     if mesmo_rio and dist_km <= 25:
         return "direta"
-    if mesmo_rio:
-        return "aproximada"
-    if not rio_conhecido and dist_km <= 15:
+    if (mesmo_rio and dist_km <= 80) or dist_km <= 15:
         return "aproximada"
     return "regional"
 
@@ -114,6 +150,9 @@ def estacao_de_referencia(lat, lon, rio_nome=None, max_km=200.0):
         return None
     if not (-34.5 <= _la <= 6.0 and -74.5 <= _lo <= -34.0):
         return None
+    # Sem o rio informado, descobre-o no ÍNDICE LOCAL de rios nomeados → referência mais exata (mesmo rio).
+    if not _norm_rio(rio_nome):
+        rio_nome = rio_mais_proximo_local(_la, _lo)
     _rio_conhecido = bool(_norm_rio(rio_nome))
     _b_rio = _d_rio = _b_any = _d_any = None
     for _r in carregar_rede_nacional():
@@ -134,7 +173,7 @@ def estacao_de_referencia(lat, lon, rio_nome=None, max_km=200.0):
             "rio": str(_best.get("rio", "")).strip(), "uf": str(_best.get("uf", "")).strip(),
             "tipo": str(_best.get("tipo", "")).strip(), "distancia_km": round(_dist, 1),
             "mesmo_rio": bool(_mesmo), "rio_consultado": str(rio_nome or "").strip(),
-            "classificacao": _classificar_ref(_mesmo, _dist, _rio_conhecido)}
+            "classificacao": _classificar_ref(_mesmo, _dist)}
 
 
 def estacao_mais_proxima(lat, lon, max_km=150.0):

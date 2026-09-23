@@ -107,3 +107,17 @@ def test_referencia_prefere_rio_certo_mesmo_mais_longe():
 def test_estacao_mais_proxima_ainda_funciona():
     e = a.estacao_mais_proxima(-23.55, -46.63)                  # São Paulo
     assert e and "codigo" in e and "distancia_km" in e
+
+
+# ---- Índice LOCAL de rios nomeados → estação de referência exata SEM a drenagem pesada -------
+def test_rio_mais_proximo_local_significativo():
+    assert a.rio_mais_proximo_local(-1.92, -55.52) == "Rio Amazonas"      # Óbidos
+    assert a.rio_mais_proximo_local(-8.76, -63.90) == "Rio Madeira"       # Porto Velho
+    assert a.rio_mais_proximo_local(-20.0, -30.0) is None                 # oceano → nada por perto
+
+
+def test_estacao_auto_descobre_rio_e_classifica_direta():
+    # sem informar o rio, o índice local descobre e a estação casa no MESMO rio → 'direta'
+    r = a.estacao_de_referencia(-1.92, -55.52)                            # Óbidos, sem rio
+    assert r["mesmo_rio"] is True and r["classificacao"] == "direta"
+    assert a._rios_casam(r["rio"], "Amazonas")
