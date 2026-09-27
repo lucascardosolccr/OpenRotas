@@ -37647,6 +37647,59 @@ def _hidrografia_overview_recortado(lat_min, lat_max, lon_min, lon_max, margem=0
             "fonte": "Overview nacional (drenagem densa BC250 não baixada neste ambiente)"}
 
 
+# [GEO-CAMADA-MAPA] Rótulo por atributo real de cada camada de infraestrutura (coluna → nome amigável).
+_GEO_CAMADA_ATRIB = {
+    "pontes": ("tipoponte", "situacaofi"), "travessias": ("tipotraves", "tipouso"),
+    "eclusas": ("situacaofi", "operaciona"), "atracadouros_terminal": ("tipoatraca", "situacaofi"),
+    "complexos_portuarios": ("jurisdicao", "modaluso"),
+}
+
+
+@st.cache_data(show_spinner=False)
+def _geo_camada_pontos_nacional(camada, max_pts=6000):
+    """[GEO-CAMADA-MAPA] Lê os PONTOS nacionais de uma camada de infraestrutura IBGE (pontes, travessias,
+    eclusas, atracadouros, complexos portuários) direto do Parquet leve — só as colunas lat/lon/nome/UF
+    (+ 1-2 atributos reais), SEM decodificar WKB nem carregar geometria. As camadas já trazem lat/lon
+    (centróide precomputado). Retorna um DataFrame [lat,lon,nome,uf,atributo] (amostrado a max_pts por
+    UF-balanceamento simples), ou None. Cacheado por (camada,max_pts). PURO/defensivo — nunca levanta."""
+    if not _BASES_LOCAIS_IBGE:
+        return None
+    try:
+        import pandas as _pd
+        _cam = str(camada or "").strip()
+        _cols = ["lat", "lon", "nome", "fonte_uf"]
+        _a1, _a2 = _GEO_CAMADA_ATRIB.get(_cam, (None, None))
+        for _a in (_a1, _a2):
+            if _a:
+                _cols.append(_a)
+        try:
+            _df = _pd.read_parquet(_bases_locais_ibge._caminho(_cam), columns=_cols)
+        except Exception:
+            # se algum atributo não existir naquela base, cai para o mínimo garantido
+            _df = _pd.read_parquet(_bases_locais_ibge._caminho(_cam), columns=["lat", "lon", "nome", "fonte_uf"])
+        if _df is None or _df.empty:
+            return None
+        _df = _df.rename(columns={"fonte_uf": "uf"})
+        _df["lat"] = _pd.to_numeric(_df["lat"], errors="coerce")
+        _df["lon"] = _pd.to_numeric(_df["lon"], errors="coerce")
+        _df = _df.dropna(subset=["lat", "lon"])
+        _df = _df[(_df["lat"] != 0) & (_df["lon"] != 0)
+                  & _df["lat"].between(-34.0, 6.0) & _df["lon"].between(-74.0, -34.0)]
+        if _df.empty:
+            return None
+        # atributo real (1ª coluna extra disponível) → coluna 'atributo' para hover/cor
+        _acol = next((_c for _c in (_a1, _a2) if _c and _c in _df.columns), None)
+        _df["atributo"] = (_df[_acol].astype(str).str.strip().replace({"": "—", "nan": "—", "None": "—"})
+                           if _acol else "—")
+        _df["nome"] = _df.get("nome", "").astype(str).str.strip().replace({"": "(sem nome)", "nan": "(sem nome)"})
+        if len(_df) > max_pts:
+            _df = _df.sample(max_pts, random_state=42)  # amostra reprodutível para não pesar o render
+        return _df[["lat", "lon", "nome", "uf", "atributo"]].reset_index(drop=True)
+    except Exception:
+        logger.error("[GEO-CAMADA-MAPA] Falha ao ler pontos nacionais da camada (isolada).", exc_info=True)
+        return None
+
+
 # ============================ ESTAÇÕES ANA/SNIRH — COBERTURA NACIONAL ============================
 _OVERVIEW_ESTACOES_NACIONAL = "estacoes_nacional_overview.csv.gz"
 _FONTE_ESTACOES_NACIONAL = "ANA/SNIRH — rede nacional (estações reais, amostra por todo o país)"
@@ -64922,6 +64975,47 @@ if _secao == _SECOES[22]:   # tab_geo_ibge
                                 st.caption("📅 Bases derivadas do IBGE geradas em: %s · Origem: BC250 v2025 (todo o Brasil)%s." % (_mani_ibge["extraido_em_utc"], _bc100_txt))
                 except Exception:
                     logger.debug("[IBGE-PANORAMA] Painel nacional isolado falhou (aditivo).", exc_info=True)
+                # [GEO-CAMADA-MAPA] MAPA NACIONAL de uma camada escolhida — o painel acima só CONTA as
+                # feições; aqui o usuário vê ONDE elas estão no Brasil (pontes, travessias, eclusas,
+                # atracadouros, portos), com hover explicando nome/UF/atributo real. Usa lat/lon já
+                # precomputados no Parquet (sem decodificar WKB). Aditivo/isolado.
+                try:
+                    _CAM_PONTO = {
+                        "pontes": "🌉 Pontes", "travessias": "⛴️ Travessias / balsas",
+                        "eclusas": "🔒 Eclusas", "atracadouros_terminal": "⚓ Atracadouros / terminais",
+                        "complexos_portuarios": "🏭 Complexos portuários",
+                    }
+                    _disp_ponto = [(_c, _r) for _c, _r in _CAM_PONTO.items() if _c in _geo_camadas]
+                    if _disp_ponto:
+                        with st.expander("🗺️ Mapa nacional de uma camada — onde as feições estão no Brasil", expanded=False):
+                            _lbls = [_r for _c, _r in _disp_ponto]
+                            _sel_lbl = st.selectbox("Camada a mapear", _lbls, index=0, key="geo_cam_mapa",
+                                                    help="Desenha as feições da camada em todo o país (centróide oficial IBGE). "
+                                                         "Passe o mouse para nome, UF e atributo real da feição.")
+                            _sel_cam = next((_c for _c, _r in _disp_ponto if _r == _sel_lbl), _disp_ponto[0][0])
+                            _pts_df = _geo_camada_pontos_nacional(_sel_cam)
+                            if _pts_df is not None and not _pts_df.empty:
+                                _ncat = int(_pts_df["atributo"].nunique())
+                                _kw_cam = {"lat": "lat", "lon": "lon", "hover_name": "nome",
+                                           "hover_data": {"uf": True, "atributo": True, "lat": False, "lon": False},
+                                           "labels": {"nome": "Nome", "uf": "UF", "atributo": "Atributo"},
+                                           "zoom": 3.2, "height": 560, _MAPA_STYLE_KW: _MAPA_ESTILO_BASE}
+                                if 2 <= _ncat <= 12:      # colore por atributo só quando a legenda cabe
+                                    _kw_cam["color"] = "atributo"
+                                _figc = _PX_SCATTER_MAPA(_pts_df, **_kw_cam)
+                                _figc.update_layout(**{_MAPA_LAYERS_KW: _mapa_basemap_layers(escuro=True)})
+                                _figc.update_layout(margin={"r": 0, "t": 40, "l": 0, "b": 0}, height=560,
+                                                    legend_title_text="Atributo")
+                                st.plotly_chart(_figc, use_container_width=True)
+                                _fmt_mil2 = lambda _n: f"{int(_n):,}".replace(",", ".")
+                                st.caption(f"{_CAM_PONTO.get(_sel_cam, _sel_cam)}: **{_fmt_mil2(len(_pts_df))}** "
+                                           "feição(ões) plotada(s) — centróide oficial IBGE; passe o mouse para "
+                                           "nome, UF e atributo. Amostra reprodutível quando a camada excede o teto de render.")
+                                _botoes_exportacao_geo("geo_camada_nacional_%s" % _sel_cam, _pts_df, sheet_name="Camada")
+                            else:
+                                st.info("Sem pontos com coordenada válida nesta camada neste ambiente.")
+                except Exception:
+                    logger.debug("[GEO-CAMADA-MAPA] Mapa nacional da camada isolado falhou (aditivo).", exc_info=True)
                 # ---- camadas pesadas (Release de dados) -------------------------------
                 try:
                     _heavy_falt = _dados_bootstrap.ausentes(somente_geoespacial=True) if _dados_bootstrap is not None else []

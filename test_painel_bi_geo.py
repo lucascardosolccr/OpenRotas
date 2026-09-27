@@ -66,3 +66,27 @@ def test_sem_resolucao_ainda_renderiza():
     html = m._painel_interativo_bi_html(df)
     assert html, "mesmo sem geo, o painel renderiza"
     assert "TEM_GEO=false" in html
+
+
+# [GEO-CAMADA-MAPA] Mapa nacional de uma camada de infraestrutura na aba Geoespacial IBGE:
+# _geo_camada_pontos_nacional lê lat/lon/nome/UF/atributo direto do Parquet leve (sem WKB).
+def test_geo_camada_pontos_nacional_travessias():
+    df = m._geo_camada_pontos_nacional("travessias")
+    if df is None:   # camada ausente neste ambiente → fail-open, sem quebrar
+        return
+    assert list(df.columns) == ["lat", "lon", "nome", "uf", "atributo"]
+    assert len(df) > 0
+    # coordenadas dentro do território brasileiro (nunca 0,0 nem fora do bbox)
+    assert df["lat"].between(-34.0, 6.0).all()
+    assert df["lon"].between(-74.0, -34.0).all()
+
+
+def test_geo_camada_pontos_nacional_respeita_teto():
+    df = m._geo_camada_pontos_nacional("pontes", max_pts=500)
+    if df is None:
+        return
+    assert len(df) <= 500
+
+
+def test_geo_camada_pontos_nacional_camada_inexistente_fail_open():
+    assert m._geo_camada_pontos_nacional("camada_que_nao_existe") is None
