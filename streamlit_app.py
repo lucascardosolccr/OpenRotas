@@ -64756,7 +64756,9 @@ if _secao == _SECOES[17]:   # tab_hidrografia
                 if not _rios_map.empty:
                     _rios_map['tipo'] = 'Rio'
                     _rios_map['nome_display'] = _rios_map.get('nome', _rios_map.get('nome_rio', 'Rio'))
-                    _map_dfs.append(_rios_map[['latitude', 'longitude', 'nome_display', 'tipo', 'bacia', 'uf']].head(500))
+                    # [HIDRO-DENSIDADE] teto elevado (era 500) — o Plotly scatter_map desenha milhares de
+                    # pontos sem custo perceptível, e a app agora tem cobertura nacional real a exibir.
+                    _map_dfs.append(_rios_map[['latitude', 'longitude', 'nome_display', 'tipo', 'bacia', 'uf']].head(2000))
             
             if not _est_df.empty:
                 _lat_col = 'lat' if 'lat' in _est_df.columns else ('latitude' if 'latitude' in _est_df.columns else None)
@@ -64768,7 +64770,9 @@ if _secao == _SECOES[17]:   # tab_hidrografia
                         _est_map = _est_map.rename(columns={_lat_col: 'latitude', _lon_col: 'longitude'})
                         _est_map['tipo'] = 'Estação'
                         _est_map['nome_display'] = _est_map.get('nome', 'Estação')
-                        _map_dfs.append(_est_map[['latitude', 'longitude', 'nome_display', 'tipo', 'bacia', 'uf']].head(200))
+                    # [HIDRO-DENSIDADE] teto elevado (era 200) — mostra a REDE NACIONAL real de estações
+                    # fluviométricas inteira (~3,8 mil, 27 UFs) em vez de só as 200 primeiras.
+                        _map_dfs.append(_est_map[['latitude', 'longitude', 'nome_display', 'tipo', 'bacia', 'uf']].head(5000))
             
             if _map_dfs:
                 _map_df = pd.concat(_map_dfs, ignore_index=True)
