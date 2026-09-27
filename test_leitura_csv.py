@@ -58,3 +58,23 @@ def test_ler_planilha_upload_ainda_le_xlsx():
     df_in = pd.DataFrame({"Origem": ["M"], "Destino": ["N"]})
     df = m._ler_planilha_upload(_xlsx_bytes(df_in))
     assert list(df.columns) == ["Origem", "Destino"]
+
+
+# [LEITURA-CSV · ROBUSTEZ] Tolerância a linhas irregulares e recuperação de separador errado.
+def test_csv_linha_irregular_nao_derruba_importacao():
+    # a 3ª linha tem uma vírgula a mais (campo extra) — antes derrubava tudo com ParserError;
+    # agora a linha malformada é pulada e o resto é lido normalmente.
+    b = b"Origem,Destino\nBelem,Ananindeua\nManaus,Manaus,EXTRA\nRecife,Olinda\n"
+    df, aviso = m._parse_csv_bytes(b)
+    assert list(df.columns) == ["Origem", "Destino"]
+    assert len(df) >= 2                      # as linhas válidas sobreviveram
+    assert "Belem" in df["Origem"].values and "Recife" in df["Origem"].values
+
+
+def test_csv_recupera_separador_quando_sniffer_erra():
+    # cabeçalho e dados com ';' mas conteúdo que poderia confundir o sniffer — o resultado final
+    # tem 2 colunas (recuperado pelo separador mais frequente), não 1.
+    b = "Origem;Destino;Inscritos\nBelem;Ananindeua;10\nManaus;Manaus;20\n".encode("utf-8")
+    df, aviso = m._parse_csv_bytes(b)
+    assert len(df.columns) == 3
+    assert aviso is None

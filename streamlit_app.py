@@ -45884,7 +45884,29 @@ def _parse_csv_bytes(conteudo_bytes):
     except Exception:
         _linha0 = next((l for l in _texto.splitlines() if l.strip()), "")
         _sep = max([",", ";", "\t", "|"], key=lambda _d: _linha0.count(_d)) if _linha0 else ","
-    _df = pd.read_csv(_io2.StringIO(_texto), sep=_sep)
+    def _read(_s):
+        # [LEITURA-CSV · ROBUSTEZ] Tolera LINHAS IRREGULARES (nº de campos variável — vírgula solta num
+        # nome, aspas desbalanceadas, célula com quebra de linha): a 1ª tentativa usa o engine C (rápido);
+        # se ele reclamar de "linha ruim"/parse, cai no engine python com on_bad_lines='skip', que pula a
+        # linha malformada em vez de ABORTAR a planilha inteira. Antes, uma única linha torta derrubava toda
+        # a importação com ParserError.
+        try:
+            return pd.read_csv(_io2.StringIO(_texto), sep=_s)
+        except Exception:
+            return pd.read_csv(_io2.StringIO(_texto), sep=_s, engine="python", on_bad_lines="skip")
+    _df = _read(_sep)
+    # [LEITURA-CSV · SEPARADOR] Se o Sniffer errou e veio 1 coluna só, tenta o separador MAIS FREQUENTE no
+    # cabeçalho antes de desistir — recupera automaticamente o arquivo em vez de só avisar.
+    if len(_df.columns) <= 1:
+        _linha0 = next((l for l in _texto.splitlines() if l.strip()), "")
+        _alt = max([",", ";", "\t", "|"], key=lambda _d: _linha0.count(_d)) if _linha0 else _sep
+        if _alt != _sep and _linha0.count(_alt) > 0:
+            try:
+                _df2 = _read(_alt)
+                if len(_df2.columns) > len(_df.columns):
+                    _df, _sep = _df2, _alt
+            except Exception:
+                pass
     _aviso = ("O CSV foi lido como **1 coluna só** — provável separador inesperado. Confira o arquivo."
               if len(_df.columns) <= 1 else None)
     return _df, _aviso
