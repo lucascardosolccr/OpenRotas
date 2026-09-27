@@ -23145,7 +23145,7 @@ def _comparar_alocacoes(linhas, parse_tempo=None, limiar_empate_km=1.0, limiar_r
             _just.append(f"deslocamento {abs(d['Diferenca Pct (%)']):.0f}% mais longo "
                          f"({_da:.0f} km vs {_dr:.0f} km)")
         elif d["Vencedor Distancia"] == "Empate":
-            _just.append("distâncias equivalentes (diferença < 1 km)")
+            _just.append(f"distâncias equivalentes (diferença dentro do limiar de {float(limiar_empate_km):g} km)")
         if d["Vencedor Tempo"] in ("Aplicação", "Referência"):
             _just.append(f"tempo {'menor' if d['Vencedor Tempo'] == 'Aplicação' else 'maior'} "
                          f"em {abs(d['Diferenca Tempo (min)']):.0f} min")
@@ -23882,8 +23882,9 @@ def _v318_vantagem_viaria(dist_app, dist_ref, balsa_app, balsa_ref, limiar_empat
         return "Empate", "sem distância viária comparável dos dois lados"
     _lim = float(limiar_empate_km)
     _dif = _dr - _da
-    # [V446 · GARANTIA] app MAIS CURTA e SEM balsa → vence sempre (menor rota viária confiável).
-    if _dif > _lim and not _ba:
+    # [V446 · GARANTIA + MENOR-ROTA · VITÓRIA DA APP] app MAIS CURTA e SEM balsa → vence SEMPRE, em qualquer
+    # margem (inclusive dentro do limiar) — consistente com a regra assimétrica de _decidir_vencedor_distancia.
+    if _dif > 0 and not _ba:
         return "Aplicação", f"menor rota viária sem balsa ({_dif:.1f} km)"
     if _dif < -_lim and not _br and _ba:
         return "Referência", f"menor rota viária sem balsa ({abs(_dif):.1f} km)"
@@ -40283,7 +40284,10 @@ def _vencedor_multicriterio_comparacao(linha, params=None, limiar_empate_km=1.0)
     #   Geral: custo = viária + risco-de-travessia (bounded). Prioriza rodovia; usa balsa só quando ela
     #   economiza mais que o risco-equivalente (travessia inevitável/óbvia) — nunca força desvio absurdo.
     _dif_km0 = _dr - _da
-    if _dif_km0 > float(limiar_empate_km) and not _ba:
+    # [MENOR-ROTA · VITÓRIA DA APP] Consistente com _decidir_vencedor_distancia (regra assimétrica): a app
+    # ESTRITAMENTE menor E SEM balsa vence SEMPRE — em qualquer margem, inclusive dentro do limiar (antes só
+    # vencia além do limiar, o que fazia o veredito "Esforço Real" divergir do de distância no mesmo caso).
+    if _dif_km0 > 0 and not _ba:
         return "Aplicação", "menor rota viária sem balsa", (
             f"**A aplicação leva o candidato pela MENOR rota viária e SEM balsa** "
             f"({_da:.1f} km × {_dr:.1f} km) — menor deslocamento e sem risco de travessia inoperante. "

@@ -132,6 +132,39 @@ def test_menor_rota_app_menor_por_margem_minima_vence():
     assert venc == "Aplicação"
 
 
+# [MENOR-ROTA · CONSISTÊNCIA ENTRE OS 3 VEREDITOS] O veredito de distância, o "Esforço Real"
+# (_vencedor_multicriterio_comparacao) e a "Vantagem viária" (_v318_vantagem_viaria) não podem
+# divergir no caso claro: app estritamente menor, SEM balsa, dentro do limiar → todos dão Aplicação.
+def test_esforco_real_app_menor_sem_balsa_dentro_limiar_vence_aplicacao():
+    linha = {"Distancia Referencia": 105.0, "Distancia Aplicacao": 100.0,
+             "Balsa Aplicacao": "Não", "Balsa Referencia": "Não"}
+    venc, _crit, _exp = m._vencedor_multicriterio_comparacao(linha, limiar_empate_km=10.0)
+    assert venc == "Aplicação"
+
+
+def test_v318_vantagem_viaria_app_menor_sem_balsa_dentro_limiar_vence_aplicacao():
+    venc, _crit = m._v318_vantagem_viaria(100.0, 105.0, balsa_app="Não", balsa_ref="Não", limiar_empate_km=10.0)
+    assert venc == "Aplicação"
+
+
+def test_v318_app_maior_dentro_do_limiar_e_empate():
+    # app 5 km mais longa, sem balsa, limiar 10 → segue empate (a regra assimétrica só favorece a app quando MENOR).
+    venc, _ = m._v318_vantagem_viaria(105.0, 100.0, balsa_app="Não", balsa_ref="Não", limiar_empate_km=10.0)
+    assert venc == "Empate"
+
+
+def test_justificativa_empate_reflete_limiar_configurado():
+    # a justificativa do empate não pode mais dizer "< 1 km" fixo quando o usuário definiu outro limiar.
+    linha = {"Origem": "Mun", "UF": "PA", "Inscritos": 10,
+             "Destino Referencia": "D", "Distancia Referencia": 100.0,
+             "Destino Aplicacao": "D", "Distancia Aplicacao": 105.0}   # app 5 km maior → empate com limiar 10
+    out = m._comparar_alocacoes([linha], limiar_empate_km=10.0)
+    r = out[0]
+    assert r["Vencedor Distancia"] == "Empate"
+    assert "10 km" in r["Justificativa"]
+    assert "< 1 km" not in r["Justificativa"]
+
+
 def test_decidir_vencedor_distancia_invariante_nunca_inverte_fuzz():
     """Property-based: para milhares de pares aleatórios (incluindo casos-limite de
     arredondamento próximos da tolerância), o vencedor NUNCA pode contradizer o sinal
