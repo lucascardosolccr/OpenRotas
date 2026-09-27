@@ -64779,10 +64779,10 @@ if _secao == _SECOES[17]:   # tab_hidrografia
                     _est_map = _est_map[(_est_map[_lat_col] != 0) & (_est_map[_lon_col] != 0)]
                     if not _est_map.empty:
                         _est_map = _est_map.rename(columns={_lat_col: 'latitude', _lon_col: 'longitude'})
-                        _est_map['tipo'] = 'Estação'
+                        _est_map['tipo'] = 'Estação fluviométrica'
                         _est_map['nome_display'] = _est_map.get('nome', 'Estação')
-                    # [HIDRO-DENSIDADE] teto elevado (era 200) — mostra a REDE NACIONAL real de estações
-                    # fluviométricas inteira (~3,8 mil, 27 UFs) em vez de só as 200 primeiras.
+                        # [HIDRO-DENSIDADE] teto elevado (era 200) — mostra a REDE NACIONAL real de estações
+                        # fluviométricas inteira (~3,8 mil, 27 UFs) em vez de só as 200 primeiras.
                         _map_dfs.append(_est_map[['latitude', 'longitude', 'nome_display', 'tipo', 'bacia', 'uf']].head(5000))
             
             if _map_dfs:
@@ -64792,14 +64792,17 @@ if _secao == _SECOES[17]:   # tab_hidrografia
                 _map_df = _map_df.dropna(subset=['latitude', 'longitude'])
                 
                 if not _map_df.empty:
+                    # [HIDRO-HOVER] rótulos de hover autoexplicativos (em vez dos nomes crus das colunas):
+                    # ao passar o mouse, o ponto diz o que É (Rio / Estação fluviométrica) + Bacia + UF.
                     fig = _PX_SCATTER_MAPA(
                         _map_df, lat='latitude', lon='longitude',
                         color='tipo',
                         hover_name='nome_display',
                         hover_data=['bacia', 'uf'] if 'bacia' in _map_df.columns and 'uf' in _map_df.columns else ['tipo'],
+                        labels={'nome_display': 'Nome', 'tipo': 'O que é', 'bacia': 'Bacia hidrográfica', 'uf': 'UF'},
                         zoom=3.5,
                         height=600, size_max=10,
-                        color_discrete_map={'Rio': '#3498db', 'Estação': '#e74c3c'},
+                        color_discrete_map={'Rio': '#3498db', 'Estação fluviométrica': '#e74c3c'},
                         **{_MAPA_STYLE_KW: _MAPA_ESTILO_BASE}
                     )
                     fig.update_layout(**{_MAPA_LAYERS_KW: _mapa_basemap_layers(escuro=True)})
