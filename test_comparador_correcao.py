@@ -153,6 +153,25 @@ def test_v318_app_maior_dentro_do_limiar_e_empate():
     assert venc == "Empate"
 
 
+def test_estabilidade_limiar_vitorias_app_sao_independentes_da_regua():
+    # Regra assimétrica: a app vence sempre que é menor (Δ>0), então "Aplicação vence" é CONSTANTE ao
+    # variar a régua; a régua só move o lado da referência (empate × derrota).
+    linhas = [
+        {"Diferenca Abs (km)": 3.0, "Inscritos": 100},    # app 3 km menor  → app vence em qualquer régua
+        {"Diferenca Abs (km)": -3.0, "Inscritos": 50},    # ref 3 km menor  → derrota(≤1) vira empate(≥3)
+        {"Diferenca Abs (km)": 15.0, "Inscritos": 20},    # app 15 km menor → app vence
+        {"Diferenca Abs (km)": -15.0, "Inscritos": 30},   # ref 15 km menor → derrota estrutural
+    ]
+    out = m._estabilidade_limiar_empate(linhas, limiares=(1.0, 5.0))
+    by = {r["Limiar (km)"]: r for r in out}
+    assert by[1.0]["Aplicação vence"] == 2
+    assert by[5.0]["Aplicação vence"] == 2            # não muda com a régua (assimétrico)
+    assert by[1.0]["Referência vence"] == 2 and by[1.0]["Empates"] == 0
+    assert by[5.0]["Referência vence"] == 1 and by[5.0]["Empates"] == 1   # 1 derrota vira ruído
+    # "Candidatos beneficiados" (benefício material > régua) encolhe ao ampliar o limiar
+    assert by[1.0]["Candidatos beneficiados"] == 120 and by[5.0]["Candidatos beneficiados"] == 20
+
+
 def test_justificativa_empate_reflete_limiar_configurado():
     # a justificativa do empate não pode mais dizer "< 1 km" fixo quando o usuário definiu outro limiar.
     linha = {"Origem": "Mun", "UF": "PA", "Inscritos": 10,

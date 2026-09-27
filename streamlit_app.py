@@ -7711,10 +7711,13 @@ def _fig_estados_divergente_report(estados, max_estados=18):
 
 
 def _estabilidade_limiar_empate(linhas, limiares=(0.0, 0.5, 1.0, 2.0, 3.0, 5.0, 10.0)):
-    """[M5 - ROBUSTEZ] Varre o limiar de empate técnico e mostra como o placar reage — um vencedor real
-    mantém a vantagem em QUALQUER régua; se a maioria dos casos fica no "empate" ao subir 1 km, a
-    diferença é ruído, não vitória. PURA e defensiva (sem linhas validas → []). Reusa o schema da
-    conciliação: 'Diferenca Abs (km)' (POSITIVO = aplicação mais curta) e 'Inscritos'."""
+    """[M5 - ROBUSTEZ] Varre o limiar de empate técnico e mostra como o placar reage. Coerente com a
+    regra ASSIMÉTRICA de _decidir_vencedor_distancia: a APLICAÇÃO vence sempre que é estritamente menor
+    (Δ>0), INDEPENDENTE da régua — então "Aplicação vence" é constante na varredura. O que a régua move é
+    o lado da REFERÊNCIA: quantas das derrotas (ref mais curta) são ruído (viram empate ao subir o limiar)
+    vs. estruturais (persistem). "Candidatos beneficiados" segue medindo o benefício MATERIAL (Δ > limiar).
+    PURA e defensiva (sem linhas válidas → []). Schema: 'Diferenca Abs (km)' (POSITIVO = app mais curta)
+    e 'Inscritos'."""
     _out = []
     try:
         _ok = [l for l in (linhas or []) if l.get("Diferenca Abs (km)") is not None]
@@ -7735,15 +7738,19 @@ def _estabilidade_limiar_empate(linhas, limiares=(0.0, 0.5, 1.0, 2.0, 3.0, 5.0, 
             for _l in _ok:
                 _d = _n(_l.get("Diferenca Abs (km)"))
                 _ins = _n(_l.get("Inscritos"))
-                if _d > _lim:
+                # [MENOR-ROTA · VITÓRIA DA APP] Regra assimétrica: app estritamente menor (Δ>0) vence
+                # SEMPRE, em qualquer régua. A régua só decide, no lado da referência, entre empate
+                # (dentro do limiar) e derrota (além dele).
+                if _d > 0:
                     _app += 1
                     _econ += _d * _ins
-                    _ben += _ins
+                    if _d > _lim:
+                        _ben += _ins            # benefício MATERIAL (além da régua) — some ao subir o limiar
                 elif _d < -_lim:
                     _ref += 1
                     _prej += _ins
                 else:
-                    _emp += 1
+                    _emp += 1                    # ref mais curta, porém dentro do limiar → empate
             _tot = len(_ok)
             _out.append({
                 "Limiar (km)": _lim,
@@ -57981,10 +57988,12 @@ if _secao == _SECOES[3]:   # tab_comparador
                     if _estab:
                         _df_estab = pd.DataFrame(_estab)
                         with st.expander("🧪 Robustez ao limiar de empate técnico", expanded=False):
-                            st.caption("O que muda no placar se você redefinir o **empate técnico**? Compare a régua "
-                                       "**1 km** (padrão) com **2–5 km** (ruído comum entre matriz oficial e roteamento "
-                                       "ao vivo). Se as vitórias da aplicação evaporarem entre 1 e 2 km, a vantagem é "
-                                       "fina; se persistirem até 5 km, é estrutural.")
+                            st.caption("Como a regra dá a vitória à aplicação **sempre que a rota dela é menor**, o "
+                                       "número de **vitórias da aplicação não muda** com a régua. O que a régua move é "
+                                       "o lado da **referência**: quantas das derrotas (referência mais curta) são "
+                                       "**ruído** (viram empate ao subir o limiar) e quantas são **estruturais** "
+                                       "(persistem até 5–10 km). *Candidatos beneficiados* mede o ganho **material** "
+                                       "(diferença acima da régua) e naturalmente encolhe ao ampliá-la.")
                             st.dataframe(_df_estab, use_container_width=True, hide_index=True)
                 except Exception:
                     logger.error("[CMP-ROBUSTEZ] Falha na varredura do limiar (isolada).", exc_info=True)
@@ -58002,9 +58011,10 @@ if _secao == _SECOES[3]:   # tab_comparador
                                 "candidatos conta o mesmo que um com 10 aqui — por isso este gráfico responde "
                                 "*“onde”*, e o KPI **Economia ponderada** responde *“quanto”*.")
                             st.caption(f"🔎 **O que este gráfico diz:** a aplicação venceu em "
-                                       f"**{int(_vc.get('Aplicação', 0))}** município(s); a referência em "
-                                       f"**{int(_vc.get('Referência', 0))}**; **{int(_vc.get('Empate', 0))}** "
-                                       "**empataram** (diferença < 1 km — ruído de geocodificação, não vitória).")
+                                       f"**{int(_vc.get('Aplicação', 0))}** município(s) — sempre que a rota dela é "
+                                       f"menor; a referência em **{int(_vc.get('Referência', 0))}**; "
+                                       f"**{int(_vc.get('Empate', 0))}** **empataram** (a aplicação não é mais curta e "
+                                       f"a diferença cabe no limiar de {_lim_m5_ui:g} km — ruído, não derrota).")
                         with _gc2:
                             st.markdown("**Economia ponderada por UF (km-candidato)**")
                             _eu = (_df_c.groupby("UF")["Economia km x Inscritos"].sum().sort_values(ascending=False))
