@@ -26773,19 +26773,24 @@ _MARGEM_TROCA = 0.005     # só troca se a alternativa for ao menos 0,5% menor (
 # MONOTÔNICO (só troca por viária estritamente menor via _avaliar_troca), LIMITADO e REVERSÍVEL.
 _RESGATE_ADMISSIVEL_ATIVO = True   # False → comportamento idêntico ao v307 (só resgate por assinatura de risco)
 _MARGEM_ADMISSIVEL_KM = 0.5        # candidato só é "promissor" se a reta for ao menos isto menor que a viária atual
-_MAX_ADMISSIVEL_ROTEAR = 60        # [V426] teto de polos extras roteados por origem na PROVA DE OTIMALIDADE
-                                   # (branch-and-bound). Era 40. Como a decisão é sempre a menor viária e a poda
-                                   # só admite candidatos com reta < viária atual, rotear mais NUNCA piora — só
-                                   # pode achar um polo mais perto por estrada. 60 cobre a fronteira admissível
+_MAX_ADMISSIVEL_ROTEAR = 80        # [V426 · MENOR-ROTA-MAX] teto de polos extras roteados por origem na PROVA
+                                   # DE OTIMALIDADE (branch-and-bound). Era 40→60→80. Como a decisão é sempre a
+                                   # menor viária e a poda só admite candidatos com reta < viária atual, rotear
+                                   # mais NUNCA piora — só pode achar um polo mais perto por estrada. 80 cobre a
+                                   # fronteira admissível
                                    # de mais municípios (ex.: os ~104 residuais da comparação) com custo contido.
-_TETO_ADMISSIVEL_MAX = 160         # [V426] teto MÁXIMO sob alta incerteza (era 120). Escala com V/R/balsa/fluvial.
+_TETO_ADMISSIVEL_MAX = 220         # [V426 · MENOR-ROTA-MAX] teto MÁXIMO sob alta incerteza (120→160→220). Escala
+                                   # com V/R/balsa/fluvial. Só bite em origens de fronteira MUITO aberta (raro);
+                                   # a poda exata e a priorização por impacto contêm o custo de rede.
 # [V429 · GARANTIA DE OTIMALIDADE] Teto de segurança para a PROVA EXAUSTIVA: roteamos TODA a fronteira
 # admissível (polos cuja reta < viária do vencedor atual — os únicos que podem vencer), não apenas um prefixo.
 # Com o universo de polos completo (V428), o top-K já traz um polo próximo, o "melhor atual" fica pequeno e a
 # fronteira encolhe — então rotear tudo é barato na prática. Este teto só evita patologia (origem sem polo
 # próximo com centenas de candidatos na fronteira). Garante matematicamente a MENOR rota viária.
 _GARANTIA_OTIMALIDADE_ATIVA = True
-_GARANTIA_TETO_FRONTEIRA = 300
+_GARANTIA_TETO_FRONTEIRA = 400   # [MENOR-ROTA-MAX] 300→400: com a poda exata (custo_efetivo>=viária>=reta) o
+                                 # laço PARA cedo na prática, então elevar o teto só amplia a prova onde a
+                                 # fronteira é genuinamente larga (patologia rara) — MENOR rota garantida mais fundo.
 _GARANTIA_MESMA_UF_K = 30   # [V442 / Melhoria4-EXCEL 453ª] nº de polos da MESMA UF (mais próximos por reta)
                             # SEMPRE roteados na 1ª passada, mesmo além do corte geométrico — para o candidato
                             # rodoviário do próprio estado poder vencer. Monotônico (só amplia o universo).
@@ -29788,7 +29793,7 @@ def _refinar_por_resgate_circuidade(df, topk_map, router=None, ativo=True, param
 # ==============================================================================
 _FECHAMENTO_OTIMALIDADE_ATIVO = True     # False → comportamento idêntico à 445ª (só o resgate 238ª)
 _FECHAMENTO_MARGEM_KM = 0.5              # espelha _MARGEM_ADMISSIVEL_KM
-_FECHAMENTO_TETO_FRONTEIRA = 300         # espelha _GARANTIA_TETO_FRONTEIRA (polos por origem)
+_FECHAMENTO_TETO_FRONTEIRA = 400         # espelha _GARANTIA_TETO_FRONTEIRA (polos por origem) [MENOR-ROTA-MAX: 300→400]
 _FECHAMENTO_MAX_ORIGENS = 2000           # teto de origens com fronteira aberta processadas por run
 
 
@@ -33601,7 +33606,7 @@ def _shortlist_por_matriz(dist_matriz, margem=1.20, teto=4, teto_incerteza=6):
         return {}
 
 
-def _n_candidatos_adaptativo(uf, cands_reta, _base=40, _max=240, _min=20, lat=None, lon=None):
+def _n_candidatos_adaptativo(uf, cands_reta, _base=40, _max=300, _min=20, lat=None, lon=None):
     """[MATRIZ-ADAPTATIVA - 184ª geração] Decide DINAMICAMENTE quantos polos a matriz deve medir para uma
     origem, conforme a região e a incerteza logística (pontos 6 e 9 da nota). Fundamento: em regiões de malha
     esparsa (Amazônia Legal) ou quando há muitos polos empatados por linha reta, o vencedor viário pode estar
@@ -33642,6 +33647,10 @@ def _n_candidatos_adaptativo(uf, cands_reta, _base=40, _max=240, _min=20, lat=No
         # reta curta pode ter estrada sinuosa — a assinatura das derrotas "Diferença por sinuosidade", ex.
         # Jacundá→Marabá, Medina→Araçuaí, Lima Duarte→Juiz de Fora). Escala até ~60% dos candidatos, com teto
         # _max. Monotônico: só AMPLIA a busca — nunca corta um candidato que já seria medido.
+        # [MENOR-ROTA-MAX] Teto _max elevado 240→300: em universos MUITO densos (>400 polos candidatos, ex.
+        # alocações nacionais), a fronteira do ótimo viário pode passar do 240º por reta; 300 deixa a
+        # descoberta ir mais fundo ANTES do fechamento par-a-par (mais caro), reduzindo a carga do passe de
+        # otimalidade. Protegido pelo ORÇAMENTO DE TEMPO da matriz (degradação graciosa) — nunca trava o lote.
         try:
             _n_total = len(_retas)
             if _n_total > _base:
@@ -34504,15 +34513,20 @@ def API_OSRM_Routing(lat_o, lon_o, lat_d, lon_d):
     except Exception:
         _ck_osrm = None
     try:
-        # [ETAPA5-1] alternatives=3 solicita até 3 rotas; selecionamos a de MENOR
-        # DISTÂNCIA viária (regra de negócio obrigatória), não a padrão/mais rápida.
+        # [ETAPA5-1 · MENOR-ROTA-MAX] alternatives=6 solicita até 6 rotas alternativas (era 3);
+        # selecionamos a de MENOR DISTÂNCIA viária (regra de negócio obrigatória), não a padrão/mais
+        # rápida. O OSRM público é o motor KEYLESS primário e NÃO expõe um peso "shortest" — a única
+        # alavanca para aproximar a rota mais curta aqui é pedir MAIS alternativas e ficar com a menor.
+        # É MONOTÔNICO (o mínimo sobre um superconjunto de rotas nunca é maior) e custa o MESMO: as
+        # alternativas voltam na MESMA resposta HTTP (zero round-trips extras). Amplia a busca pela menor
+        # rota exatamente onde mais roda (o OSRM responde à esmagadora maioria dos pares).
         # [FIX-OSRM-GEO1 - 18ª geração] overview=full + geometries=polyline: agora
         # capturamos a GEOMETRIA REAL da rota (polyline codificada). Antes era
         # overview=false → nenhuma geometria era retornada, e o link/mapa não conseguiam
         # desenhar o traçado (só os pontos). Com a polyline da rota vencedora, o mapa
         # embarcado desenha o trajeto EXATO usado nos cálculos e o link representa a
         # mesma rota. Custo de rede desprezível (mesma requisição, +payload da geometria).
-        url = f"{OSRM_URL}/route/v1/driving/{lon_o},{lat_o};{lon_d},{lat_d}?overview=full&geometries=polyline&steps=true&alternatives=3"
+        url = f"{OSRM_URL}/route/v1/driving/{lon_o},{lat_o};{lon_d},{lat_d}?overview=full&geometries=polyline&steps=true&alternatives=6"
         headers = {"User-Agent": "GerenciadorLogisticoCorp/2.0"}
         # [HOTFIX-OSRM-HANG - 207ª] sessão fail-fast + timeout curto (connect, read): servidor público ruim
         # falha rápido em vez de retry-storm; o Google/consenso assume. Não muda resultado quando responde.

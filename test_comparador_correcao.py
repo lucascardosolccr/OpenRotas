@@ -300,6 +300,26 @@ def test_n_candidatos_adaptativo_nao_amplia_sem_travessia_hidrovia_por_perto():
     assert _sem_agua == _base
 
 
+# [MENOR-ROTA-MAX] Teto _max elevado 240→300: em universos MUITO densos (>400 polos) a descoberta
+# por matriz agora vai mais fundo (a fronteira do ótimo viário pode passar do 240º por reta). O
+# fator de escala (~60%) e o intervalo [_min, _max] continuam governando o resultado.
+def test_n_candidatos_adaptativo_teto_ampliado_em_universo_muito_denso():
+    # 600 polos por reta CRESCENTE (distintos): dispara o caminho de densidade (n_total*0.6=360),
+    # limitado pelo novo teto _max=300 — antes travava em 240.
+    cands = [(float(i + 1), f"Hub{i}") for i in range(600)]
+    _n = m._n_candidatos_adaptativo("MG", cands)
+    assert _n > 240          # de fato ultrapassa o teto antigo (busca mais ampla pela menor rota)
+    assert _n <= 300         # respeita o novo teto máximo
+    # e permanece limitado ao teto mesmo com sinal de barreira hídrica (não estoura _max)
+    assert m._n_candidatos_adaptativo("MG", cands, lat=-18.5, lon=-44.5) <= 300
+
+
+def test_n_candidatos_adaptativo_economia_preservada_em_universo_pequeno():
+    # UF esparsa com 1º colocado dominante: a economia continua valendo (não infla até o teto novo).
+    cands = [(float((i + 1) * 40), f"Hub{i}") for i in range(30)]   # retas bem espaçadas → sem empate
+    assert m._n_candidatos_adaptativo("GO", cands) < 60
+
+
 # ==============================================================================
 # _agregar_diagnostico_divergencias — Rodada 16 (§36): tally de "derrotas recuperáveis"/
 # "derrotas evitáveis" por classe forense (_apr2_forense_derrota), antes só disponível como
