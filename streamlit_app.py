@@ -22879,10 +22879,13 @@ def _resumo_geo_comparador(linhas):
 # ==============================================================================
 # [ANTI-INVERSAO / OBSERVABILIDADE DA DECISAO - 446ª geração / Rodada 1 · itens 11/16/19]
 # ------------------------------------------------------------------------------
-# Núcleo PURO e testável da decisão "quem tem a menor rota viária". Extraído de
-# _comparar_alocacoes SEM alterar seu comportamento: com limiar_rel=0.0 (o padrão)
-# a saída é BYTE-A-BYTE idêntica à lógica legada (|Δ|<limiar_abs → Empate; Δ>0 →
-# Aplicação; senão Referência). [FIX-DOC - Missão 3/Rodada 3] Este comentário
+# Núcleo PURO e testável da decisão "quem tem a menor rota viária". [MENOR-ROTA ·
+# VITÓRIA DA APP] A regra é ASSIMÉTRICA (pedido do usuário): a aplicação vence
+# SEMPRE que sua rota é estritamente menor (Δ>0), em qualquer margem — o limiar de
+# empate só protege a app de ser marcada como derrotada quando ela está IGUAL ou
+# MAIOR que a referência dentro da faixa (|Δ|<=tol → Empate); além da faixa, vence a
+# referência. (Antes a faixa era simétrica: app menor dentro do limiar virava empate.)
+# [FIX-DOC - Missão 3/Rodada 3] Este comentário
 # afirmava "verificado por 200 mil pares aleatórios na suíte test_comparador_V446.py"
 # — esse arquivo nunca existiu no repositório (confirmado via `git log --all` sobre
 # o caminho). A suíte real, re-executável, está em test_comparador_correcao.py (raiz
@@ -22905,9 +22908,12 @@ def _resumo_geo_comparador(linhas):
 def _decidir_vencedor_distancia(dr, da, limiar_abs=1.0, limiar_rel=0.0):
     """Decide o vencedor por MENOR DISTÂNCIA VIÁRIA. Retorna (vencedor, trace).
     dr = distância da referência; da = distância da aplicação. Δ = dr - da
-    (Δ>0 ⇒ aplicação mais curta). Empate técnico quando |Δ| < tolerância, onde
-    tolerância = max(limiar_abs, limiar_rel·min(dr,da)). Com limiar_rel=0.0 é
-    idêntica à lógica legada. Defensiva: entrada inválida ⇒ ('—', trace)."""
+    (Δ>0 ⇒ aplicação mais curta). REGRA ASSIMÉTRICA (pedido do usuário):
+      • Δ>0 (app estritamente menor) ⇒ VITÓRIA DA APLICAÇÃO sempre, em qualquer margem;
+      • Δ<=0 e |Δ| <= tolerância ⇒ EMPATE (app igual/maior, mas dentro do limiar);
+      • Δ<0 além da tolerância ⇒ REFERÊNCIA.
+    tolerância = max(limiar_abs, limiar_rel·min(dr,da)); o limiar é INCLUSIVO
+    (Δ==tolerância ainda é empate). Defensiva: entrada inválida ⇒ ('—', trace)."""
     def _f(x):
         try:
             if x is None:
@@ -22929,23 +22935,33 @@ def _decidir_vencedor_distancia(dr, da, limiar_abs=1.0, limiar_rel=0.0):
     trace["dif"] = _dif
     trace["tol"] = round(_tol, 4)
     trace["app_estritamente_menor"] = bool(_da < _dr)
-    if abs(_dif) < _tol:
+    # [MENOR-ROTA · VITÓRIA DA APLICAÇÃO — regra ASSIMÉTRICA, pedido explícito do usuário]
+    # Substitui a antiga faixa de empate SIMÉTRICA (que dava empate quando a app era menor dentro
+    # do limiar) por uma regra que prioriza a aplicação:
+    #   (A) app ESTRITAMENTE menor (Δ>0 à resolução de 0,01 km) → VITÓRIA DA APLICAÇÃO, em QUALQUER
+    #       margem — mesmo dentro do limiar. "Sempre que a app é menor, a vitória de menor rota é dela."
+    #   (B) app IGUAL ou MAIOR que a referência, mas a diferença cabe no limiar (|Δ| <= tol) → EMPATE.
+    #   (C) app MAIOR que a referência além do limiar → REFERÊNCIA.
+    # `tol` é o "limiar de empate técnico (km)" configurável na tela (ex.: 10 km) — inclusivo (Δ==tol
+    # ainda é empate, honrando "diferença DENTRO da faixa"). O invariante anti-inversão abaixo segue
+    # coerente (app só vence com Δ>0; referência só com Δ<0).
+    if _dif > 0:
+        venc = "Aplicação"
+        if _dif <= _tol:
+            trace["motivo"] = ("app mais curta em %.2f km (dentro do limiar de %.2f km, mas a regra dá a "
+                               "vitória de menor rota à aplicação sempre que ela é a mais curta)" % (_dif, _tol))
+        else:
+            trace["motivo"] = "app mais curta em %.2f km (> limiar %.2f km)" % (_dif, _tol)
+    elif abs(_dif) <= _tol:
         venc = "Empate"
-        if _dif > 0:
-            trace["quase_vitoria_app"] = True
-            trace["motivo"] = ("app estritamente mais curta em %.2f km, dentro da tolerância de %.2f km "
-                               "(empate técnico)" % (_dif, _tol))
-        elif _dif < 0:
-            trace["motivo"] = ("referência estritamente mais curta em %.2f km, dentro da tolerância "
-                               "(empate técnico)" % (-_dif))
+        if _dif < 0:
+            trace["motivo"] = ("referência mais curta em %.2f km, dentro do limiar de %.2f km "
+                               "(empate técnico)" % (-_dif, _tol))
         else:
             trace["motivo"] = "distâncias idênticas"
-    elif _dif > 0:
-        venc = "Aplicação"
-        trace["motivo"] = "app mais curta em %.2f km (> tolerância %.2f km)" % (_dif, _tol)
     else:
         venc = "Referência"
-        trace["motivo"] = "referência mais curta em %.2f km (> tolerância %.2f km)" % (-_dif, _tol)
+        trace["motivo"] = "referência mais curta em %.2f km (> limiar %.2f km)" % (-_dif, _tol)
     # INVARIANTE DE NÃO-INVERSÃO (item 11) — corretivo e defensivo (nunca levanta em produção).
     if (venc == "Aplicação" and _dif <= 0) or (venc == "Referência" and _dif >= 0):
         try:

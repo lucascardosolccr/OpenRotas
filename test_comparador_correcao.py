@@ -88,12 +88,48 @@ def test_decidir_vencedor_distancia_string_nao_numerica_nao_decide():
 
 
 def test_decidir_vencedor_distancia_tolerancia_relativa_amplia_empate_em_distancias_grandes():
-    # 2 km de diferença em 1.000 km deve poder ser empate técnico com limiar_rel ligado
-    # (o item 19 do próprio comentário da função) — mas NÃO com limiar_rel=0.0 (padrão).
-    venc_sem_rel, _ = m._decidir_vencedor_distancia(1000.0, 998.0, limiar_abs=1.0, limiar_rel=0.0)
-    assert venc_sem_rel == "Aplicação"
-    venc_com_rel, _ = m._decidir_vencedor_distancia(1000.0, 998.0, limiar_abs=1.0, limiar_rel=0.01)
+    # A tolerância relativa amplia a faixa de EMPATE em distâncias grandes (item 19). Após a regra
+    # ASSIMÉTRICA (app menor vence sempre), a faixa relevante do empate é o lado em que a app é MAIOR:
+    # referência 2 km mais curta em 1.000 km é derrota SEM limiar_rel, mas empate técnico COM ele.
+    venc_sem_rel, _ = m._decidir_vencedor_distancia(998.0, 1000.0, limiar_abs=1.0, limiar_rel=0.0)
+    assert venc_sem_rel == "Referência"
+    venc_com_rel, _ = m._decidir_vencedor_distancia(998.0, 1000.0, limiar_abs=1.0, limiar_rel=0.01)
     assert venc_com_rel == "Empate"
+
+
+# [MENOR-ROTA · VITÓRIA DA APLICAÇÃO — regra assimétrica pedida pelo usuário]
+# (A) app estritamente menor → vitória da aplicação em QUALQUER margem, mesmo dentro do limiar;
+# (B) app igual/maior, porém a diferença cabe no limiar → empate;
+# (C) app maior que a referência além do limiar → referência.
+def test_menor_rota_app_menor_dentro_do_limiar_vence_aplicacao():
+    # app 5 km mais curta, limiar 10 km: NÃO é mais empate — a vitória de menor rota é da aplicação.
+    venc, trace = m._decidir_vencedor_distancia(105.0, 100.0, limiar_abs=10.0)
+    assert venc == "Aplicação"
+    assert trace["dif"] == 5.0
+
+
+def test_menor_rota_app_maior_dentro_do_limiar_e_empate():
+    # app 5 km MAIS LONGA, limiar 10 km: a diferença cabe na faixa → empate (a app não é derrotada).
+    venc, _ = m._decidir_vencedor_distancia(100.0, 105.0, limiar_abs=10.0)
+    assert venc == "Empate"
+
+
+def test_menor_rota_diferenca_igual_ao_limiar_e_empate_inclusivo():
+    # diferença EXATAMENTE igual ao limiar (app maior) → empate ("dentro da faixa", inclusivo).
+    venc, _ = m._decidir_vencedor_distancia(100.0, 110.0, limiar_abs=10.0)
+    assert venc == "Empate"
+
+
+def test_menor_rota_app_maior_alem_do_limiar_perde():
+    # app 15 km mais longa, limiar 10 km: além da faixa → referência vence.
+    venc, _ = m._decidir_vencedor_distancia(100.0, 115.0, limiar_abs=10.0)
+    assert venc == "Referência"
+
+
+def test_menor_rota_app_menor_por_margem_minima_vence():
+    # app apenas 0,3 km mais curta, limiar 10 km: ainda assim é vitória da aplicação (Δ>0 sempre vence).
+    venc, _ = m._decidir_vencedor_distancia(100.3, 100.0, limiar_abs=10.0)
+    assert venc == "Aplicação"
 
 
 def test_decidir_vencedor_distancia_invariante_nunca_inverte_fuzz():
