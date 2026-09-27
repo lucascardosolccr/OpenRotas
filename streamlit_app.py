@@ -37877,8 +37877,12 @@ def _mapa_leaflet_contexto_geografico(ctx, lat_o, lon_o, lat_d, lon_d, nome_orig
             _nome_it = getattr(it, "nome", None) or getattr(it, "sigla", None)
             _pop = _popup(_nome_it, tipo_rotulo, getattr(it, "distancia_eixo_km", None),
                           getattr(it, "km_desde_origem", None), it.fonte, _extra)
+            # [GEO-TOOLTIP] hover explica O QUE é a feição (tipo + nome), sticky = segue o cursor;
+            # o popup (clique) mantém o detalhe completo. Rótulo curto e escapado para JS.
+            _tt = _escapar_js(f"{tipo_rotulo}: {_nome_it}" if _nome_it else str(tipo_rotulo))
             marcadores.append("L.circleMarker([%.6f,%.6f],{radius:8,color:'%s',fillColor:'%s',"
-                              "fillOpacity:0.85,weight:2}).bindPopup(`%s`)" % (_lat, _lon, icone_cor, icone_cor, _pop))
+                              "fillOpacity:0.85,weight:2}).bindTooltip(`%s`,{sticky:true}).bindPopup(`%s`)"
+                              % (_lat, _lon, icone_cor, icone_cor, _tt, _pop))
         return f"var {nome_var}=L.layerGroup([" + ",".join(marcadores) + "]);"
 
     _js_rios = _camada_js("camadaRios", (ctx.rios_detectados if ctx else []) + (ctx.corpos_dagua if ctx else []),
@@ -37950,9 +37954,9 @@ completos nas tabelas e KPIs.</div></div></div></div>
 var pts={pontos_js};
 var map=L.map('map');
 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{{z}}/{{y}}/{{x}}',{{maxZoom:19,attribution:'Tiles © Esri'}}).addTo(map);
-var linha=L.polyline(pts,{{color:'#2563eb',weight:5,opacity:0.85}}).addTo(map);
-L.marker(pts[0]).addTo(map).bindPopup('<b>Origem:</b><br>{_no}').openPopup();
-L.marker(pts[pts.length-1]).addTo(map).bindPopup('<b>Destino:</b><br>{_nd}');
+var linha=L.polyline(pts,{{color:'#2563eb',weight:5,opacity:0.85}}).bindTooltip('🛣️ Trajeto da rota (origem → destino)',{{sticky:true}}).addTo(map);
+L.marker(pts[0]).addTo(map).bindTooltip('🟢 Origem: {_no}',{{sticky:true}}).bindPopup('<b>Origem:</b><br>{_no}').openPopup();
+L.marker(pts[pts.length-1]).addTo(map).bindTooltip('🔴 Destino: {_nd}',{{sticky:true}}).bindPopup('<b>Destino:</b><br>{_nd}');
 {_js_rios}
 {_js_pontes}
 {_js_trav}
