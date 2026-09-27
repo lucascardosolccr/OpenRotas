@@ -10835,6 +10835,10 @@ L.circleMarker([o.lat,o.lng],{radius:o.r,color:'#fff',weight:1,fillColor:'__AZUL
 .bindPopup('<b>🔵 '+o.nome+'/'+o.uf+'</b><br>'+cd+'<br>→ '+o.dest+'<br>'+ds+tp+'<br>'+o.tipo+bl+cc+'<br><i>Motor: '+o.motor+'</i><br><i>Coord: '+o.fonte+'</i>'+al)
 .addTo(map);b.push([o.lat,o.lng]);});
 if(b.length)map.fitBounds(b,{padding:[30,30]});else map.setView([-15.8,-47.9],4);
+function _fix(){try{map.invalidateSize(true);if(b&&b.length)map.fitBounds(b,{padding:[30,30]});}catch(e){}}
+[120,400,900,1600].forEach(function(t){setTimeout(_fix,t)});window.addEventListener('resize',_fix);
+if(document.addEventListener){document.addEventListener('visibilitychange',function(){if(!document.hidden){_fix();}});}
+try{if(window.ResizeObserver){new ResizeObserver(_fix).observe(document.getElementById('m'));}}catch(e){}
 </script></body></html>"""
         _tilelayer = _GEO_TILE_FLUVIAL if fluvial else _GEO_TILE_OSM
         return (html.replace("__H__", str(int(altura)))
@@ -11073,6 +11077,10 @@ L.circleMarker([c.lat,c.lng],{radius:c.r,color:'#fff',weight:1,fillColor:'#1f78b
 .bindPopup('<b>🔵 Cluster de origens</b><br>'+c.no+' município(s) de origem<br><b>'+c.nc+' candidato(s)</b><br>'
 +c.nd+' destino(s)<br><i>Principais: '+(c.dt.join(', ')||'—')+'</i>'+al).addTo(map);b.push([c.lat,c.lng]);});
 if(b.length)map.fitBounds(b,{padding:[30,30]});else map.setView([-15.8,-47.9],4);
+function _fix(){try{map.invalidateSize(true);if(b&&b.length)map.fitBounds(b,{padding:[30,30]});}catch(e){}}
+[120,400,900,1600].forEach(function(t){setTimeout(_fix,t)});window.addEventListener('resize',_fix);
+if(document.addEventListener){document.addEventListener('visibilitychange',function(){if(!document.hidden){_fix();}});}
+try{if(window.ResizeObserver){new ResizeObserver(_fix).observe(document.getElementById('m'));}}catch(e){}
 </script></body></html>"""
         return html.replace("__H__", str(int(altura))).replace("__PAYLOAD__", payload)
     except Exception:
@@ -11322,6 +11330,10 @@ D.linhas.forEach(function(l){var o={color:l.cor,weight:l.w,opacity:.8};if(l.dash
 D.marcadores.forEach(function(m){L.circleMarker([m.lat,m.lng],{radius:8,color:'#fff',weight:1.5,fillColor:m.cor,fillOpacity:1})
 .bindPopup('<b>'+m.t+'</b><br>'+m.n).addTo(map);b.push([m.lat,m.lng]);});
 if(b.length)map.fitBounds(b,{padding:[35,35]});else map.setView([-15.8,-47.9],4);
+function _fix(){try{map.invalidateSize(true);if(b&&b.length)map.fitBounds(b,{padding:[35,35]});}catch(e){}}
+[120,400,900,1600].forEach(function(t){setTimeout(_fix,t)});window.addEventListener('resize',_fix);
+if(document.addEventListener){document.addEventListener('visibilitychange',function(){if(!document.hidden){_fix();}});}
+try{if(window.ResizeObserver){new ResizeObserver(_fix).observe(document.getElementById('m'));}}catch(e){}
 </script></body></html>"""
         return html.replace("__H__", str(int(altura))).replace("__PAYLOAD__", payload).replace("__NOTA__", nota_2o)
     except Exception:
@@ -37464,6 +37476,9 @@ var linha=L.polyline(pts,{{color:'{cor}',weight:5,opacity:0.85}}).addTo(map);
 L.marker(pts[0]).addTo(map).bindPopup('<b>Origem:</b><br>{_no}').openPopup();
 L.marker(pts[pts.length-1]).addTo(map).bindPopup('<b>Destino:</b><br>{_nd}');
 map.fitBounds(linha.getBounds(),{{padding:[40,40]}});
+function _fix(){{try{{map.invalidateSize(true);map.fitBounds(linha.getBounds(),{{padding:[40,40]}});}}catch(e){{}}}}
+[120,400,900,1600].forEach(function(t){{setTimeout(_fix,t)}});window.addEventListener('resize',_fix);
+if(document.addEventListener){{document.addEventListener('visibilitychange',function(){{if(!document.hidden){{_fix();}}}});}}
 </script></body></html>"""
     import base64 as _b64
     return "data:text/html;base64," + _b64.b64encode(html.encode("utf-8")).decode("ascii")
@@ -37740,12 +37755,12 @@ def _mapa_leaflet_hidrografia_ana(hidro, rotas=None, altura=620):
         _html = """<!DOCTYPE html><html><head><meta charset="utf-8"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<style>html,body,#map{height:100%;margin:0;padding:0}#map{width:100%;height:100%}
+<style>html,body,#map{height:100%;margin:0;padding:0}#map{width:100%;height:100%;position:relative}
 .lg{position:absolute;bottom:10px;left:10px;z-index:1000;background:rgba(255,255,255,.92);padding:6px 10px;
 border-radius:8px;font:12px system-ui;color:#0E2A3B}</style></head><body>
 <div class="lg"><b>Hidrografia IBGE/ANA</b><br><span style="color:#2563eb">▬</span> rios/córregos &nbsp;
 <span style="color:#0891b2">▬</span> corpos d'água &nbsp; <span style="color:#e11d48">▬</span> rotas processadas</div>
-<div id="map"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+<div id="map"><div style="position:absolute;inset:0;z-index:0;display:flex;align-items:center;justify-content:center;
 padding:16px;text-align:center;font:14px system-ui;color:#0E2A3B;background:#eef2f5">
 <div><div style="font-size:1.6em">🗺️⚠️</div><b>Mapa indisponível offline</b><br>
 <span style="font-size:.9em">A biblioteca de mapas ou os ladrilhos não carregaram (sem internet/CDN bloqueado). Os dados da hidrografia estão completos; só a visualização precisa de conexão.</span></div></div></div><script>
@@ -37760,6 +37775,15 @@ ROTAS.forEach(function(r){if(r.pts&&r.pts.length>=2){var pl=L.polyline(r.pts,{co
 gMassas.addTo(map);gRios.addTo(map);gRotas.addTo(map);
 L.control.layers(null,{'Rios/córregos':gRios,"Corpos d'água":gMassas,'Rotas processadas':gRotas},{collapsed:false}).addTo(map);
 if(all.length){var fg=L.featureGroup(all);map.fitBounds(fg.getBounds(),{padding:[30,30]});}else{map.setView([-15,-55],4);}
+// [HIDRO-ANA-MAPA · FIX MAPA-EM-ABA] Leaflet inicializado dentro de uma aba/expander do Streamlit que
+// começa OCULTA mede 0×0 e desenha em branco/cinza até um resize. invalidateSize() em timers + no resize e
+// na visibilidade força o recálculo do tamanho e o carregamento dos ladrilhos — a correção padrão do
+// "mapa não funciona dentro de aba". Refaz o enquadramento após medir o tamanho real.
+function _fix(){try{map.invalidateSize(true);if(all.length){map.fitBounds(L.featureGroup(all).getBounds(),{padding:[30,30]});}}catch(e){}}
+[120,400,900,1600].forEach(function(t){setTimeout(_fix,t);});
+window.addEventListener('resize',_fix);
+if(document.addEventListener){document.addEventListener('visibilitychange',function(){if(!document.hidden){_fix();}});}
+try{if(window.ResizeObserver){new ResizeObserver(_fix).observe(document.getElementById('map'));}}catch(e){}
 </script></body></html>"""
         _html = (_html.replace("__RIOS__", _rios_js).replace("__MASSAS__", _massas_js)
                  .replace("__ROTAS__", _rotas_js))
@@ -37939,6 +37963,9 @@ L.control.layers(null,{{
   '🚆 Ferrovias ({_n_ferro})': camadaFerrovias,
 }},{{collapsed:false}}).addTo(map);
 map.fitBounds(linha.getBounds(),{{padding:[60,60]}});
+function _fix(){{try{{map.invalidateSize(true);map.fitBounds(linha.getBounds(),{{padding:[60,60]}});}}catch(e){{}}}}
+[120,400,900,1600].forEach(function(t){{setTimeout(_fix,t)}});window.addEventListener('resize',_fix);
+if(document.addEventListener){{document.addEventListener('visibilitychange',function(){{if(!document.hidden){{_fix();}}}});}}
 </script></body></html>"""
     import base64 as _b64
     return "data:text/html;base64," + _b64.b64encode(html.encode("utf-8")).decode("ascii")
@@ -48092,7 +48119,7 @@ def _geo_mapa_calor(rotas, altura=520, por_candkm=False):
             for _p in _pts:
                 _p[2] = round(_p[2] / _maxw, 4)
         payload = json.dumps({"pts": _pts}, ensure_ascii=False).replace("</", "<\\/")
-        html = '<!DOCTYPE html><html><head><meta charset="utf-8"/><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script><style>html,body,#m{margin:0;height:__H__px;width:100%}#m{position:relative}</style></head><body><div id="m"><div style="position:absolute;inset:0;z-index:0;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;text-align:center;font-family:system-ui,Arial,sans-serif;color:#0E2A3B;background:#f4f6f8;"><div><div style="font-size:1.7em;margin-bottom:6px;">🔥🗺️</div><div style="font-weight:600;margin-bottom:4px;">Mapa indisponível offline</div><div style="font-size:.9em;max-width:440px;">A biblioteca de mapas não pôde ser carregada (sem internet ou CDN bloqueado). Os <b>dados permanecem completos</b> nas tabelas e KPIs.</div></div></div></div><script>var D=__PAYLOAD__;try{var map=L.map("m").setView([-15.8,-47.9],4);L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",{maxZoom:18,attribution:"Tiles © Esri"}).addTo(map);var heat=L.heatLayer(D.pts,{radius:28,blur:20,maxZoom:11,minOpacity:.35,max:1.0}).addTo(map);if(D.pts.length){var b=D.pts.map(function(p){return [p[0],p[1]];});map.fitBounds(b,{padding:[30,30]});}}catch(e){}</script></body></html>'
+        html = '<!DOCTYPE html><html><head><meta charset="utf-8"/><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script><style>html,body,#m{margin:0;height:__H__px;width:100%}#m{position:relative}</style></head><body><div id="m"><div style="position:absolute;inset:0;z-index:0;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;text-align:center;font-family:system-ui,Arial,sans-serif;color:#0E2A3B;background:#f4f6f8;"><div><div style="font-size:1.7em;margin-bottom:6px;">🔥🗺️</div><div style="font-weight:600;margin-bottom:4px;">Mapa indisponível offline</div><div style="font-size:.9em;max-width:440px;">A biblioteca de mapas não pôde ser carregada (sem internet ou CDN bloqueado). Os <b>dados permanecem completos</b> nas tabelas e KPIs.</div></div></div></div><script>var D=__PAYLOAD__;try{var map=L.map("m").setView([-15.8,-47.9],4);L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",{maxZoom:18,attribution:"Tiles © Esri"}).addTo(map);var heat=L.heatLayer(D.pts,{radius:28,blur:20,maxZoom:11,minOpacity:.35,max:1.0}).addTo(map);if(D.pts.length){var b=D.pts.map(function(p){return [p[0],p[1]];});map.fitBounds(b,{padding:[30,30]});}function _fix(){try{map.invalidateSize(true);if(D.pts.length){map.fitBounds(D.pts.map(function(p){return [p[0],p[1]];}),{padding:[30,30]});}}catch(e){}}[120,400,900,1600].forEach(function(t){setTimeout(_fix,t)});window.addEventListener("resize",_fix);}catch(e){}</script></body></html>'
         return html.replace("__H__", str(int(altura))).replace("__PAYLOAD__", payload)
     except Exception:
         logger.error("[MAPA-CALOR] Falha (isolada).", exc_info=True)
