@@ -28,8 +28,13 @@ DER = os.path.join("data", "brasil", "ibge", "derivadas")
 OUT = os.path.join(DER, "hidro_nacional_overview.json.gz")
 
 # Parâmetros da amostragem (grade em graus e nº de feições por célula) — ajuste fino de densidade × tamanho.
-RIOS_CELULA_DEG, RIOS_POR_CELULA, RIOS_MAX_PTS = 0.9, 4, 32
-MASSAS_CELULA_DEG, MASSAS_POR_CELULA, MASSAS_MAX_PTS = 1.3, 1, 24
+# [HIDRO-DENSIDADE] Grade REFINADA e mais feições por célula (era 0.9°/top4 · 1.3°/top1) para que as
+# janelas REGIONAIS do Mapa Hidrográfico (recorte do overview quando a drenagem densa de 431 MB não foi
+# baixada) mostrem MUITO mais rios — cobertura nacional máxima sem depender da camada pesada. A saída é
+# ordenada por EXTENSÃO (maiores primeiro), então o teto de render da visão nacional mantém os rios mais
+# significativos e os recortes regionais recebem toda a densidade.
+RIOS_CELULA_DEG, RIOS_POR_CELULA, RIOS_MAX_PTS = 0.5, 6, 32
+MASSAS_CELULA_DEG, MASSAS_POR_CELULA, MASSAS_MAX_PTS = 0.8, 2, 24
 
 
 def _deco_wkb(w):
@@ -109,9 +114,14 @@ def _geoms(camada, idx, max_pts, so_maior_anel):
                 for r in rings:
                     pts = _decimar([[round(y, 4), round(x, 4)] for (x, y) in r], max_pts)
                     if len(pts) >= 2:
-                        out.append(pts)
+                        _las = [p[0] for p in pts]; _los = [p[1] for p in pts]
+                        _ext = (max(_las) - min(_las)) + (max(_los) - min(_los))  # extensão do bbox (graus)
+                        out.append((_ext, pts))
         base = hi
-    return out
+    # [HIDRO-DENSIDADE] ordena por EXTENSÃO desc: qualquer teto de render (visão nacional) mantém os
+    # rios/corpos d'água mais significativos primeiro; os recortes regionais recebem toda a densidade.
+    out.sort(key=lambda t: -t[0])
+    return [pts for (_ext, pts) in out]
 
 
 def main():

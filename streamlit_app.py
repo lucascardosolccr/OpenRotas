@@ -37747,8 +37747,11 @@ def _mapa_leaflet_hidrografia_ana(hidro, rotas=None, altura=620):
         _rotas = rotas or []
         if not _rios and not _massas and not _rotas:
             return ""
-        # tetos altos o bastante para não recortar o overview nacional (~3,9 mil rios) nem a janela regional
-        _rios_js = _json.dumps(_rios[:8000])
+        # [HIDRO-DENSIDADE] O overview nacional agora traz ~18 mil rios ORDENADOS por extensão (maiores
+        # primeiro). Na VISÃO NACIONAL renderizamos os 6 mil maiores — cobre toda a rede principal do país
+        # com payload leve; os RECORTES regionais recebem listas menores (a janela), então este teto não os
+        # afeta e eles exibem toda a densidade local. Massas idem.
+        _rios_js = _json.dumps(_rios[:6000])
         _massas_js = _json.dumps(_massas[:2500])
         _rotas_js = _json.dumps([{"pts": r.get("pts") or [], "nome": str(r.get("nome") or "Rota")}
                                  for r in _rotas if r.get("pts")][:400])
