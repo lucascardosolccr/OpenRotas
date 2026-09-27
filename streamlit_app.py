@@ -10821,10 +10821,10 @@ __TILELAYER__
 var b=[];
 D.linhas.forEach(function(l){var o={color:l.cor,weight:l.pts.length>2?4:2,opacity:.75};if(l.dash)o.dashArray=l.dash;
 if(l.balsa){o.color='__FLUVIAL__';o.weight=4;o.opacity=.95;o.dashArray='1,8';o.lineCap='round';}
-L.polyline(l.pts,o).addTo(map);
+L.polyline(l.pts,o).bindTooltip(l.balsa?"⛴️ Trecho com travessia por balsa (rota fluvial)":"🛣️ Trajeto da rota (origem → destino)",{sticky:true}).addTo(map);
 if(l.balsa){var _m=l.pts[Math.floor(l.pts.length/2)];L.marker(_m,{icon:L.divIcon({className:'',html:'<div style="font-size:15px;line-height:15px">\u26f4\ufe0f</div>',iconSize:[18,18],iconAnchor:[9,9]})}).bindPopup('<b>\u26f4\ufe0f Travessia por balsa</b><br>Trecho fluvial: a rota cruza o rio por balsa.').addTo(map);}});
 D.destinos.forEach(function(d){L.circleMarker([d.lat,d.lng],{radius:7,color:'#fff',weight:1.5,fillColor:'__VERM__',fillOpacity:1})
-.bindPopup('<b>🔴 Destino</b><br>'+d.nome).addTo(map);b.push([d.lat,d.lng]);});
+.bindTooltip('🔴 Destino (local de prova): '+d.nome,{sticky:true}).bindPopup('<b>🔴 Destino</b><br>'+d.nome).addTo(map);b.push([d.lat,d.lng]);});
 D.origens.forEach(function(o){var al=(o.alertas&&o.alertas.length)?('<br><b>⚠️ '+o.alertas.join('<br>⚠️ ')+'</b>'):'';
 var cd=(o.cand!=null)?(o.cand+' candidato(s)'):'candidatos: n/d';
 var ds=(o.dist!=null)?(o.dist+' km'):'distância: n/d';
@@ -10832,6 +10832,7 @@ var tp=(o.tempo)?('<br>\u23f1\ufe0f '+o.tempo):'';
 var bl=(o.balsa)?('<br>\u26f4\ufe0f <b>Travessia por balsa</b>'):'';
 var cc=(o.dconc!=null&&o.conc)?('<br>\U0001f948 2\u00ba colocado: '+o.conc+' ('+o.dconc+' km)'):'';
 L.circleMarker([o.lat,o.lng],{radius:o.r,color:'#fff',weight:1,fillColor:'__AZUL__',fillOpacity:.85})
+.bindTooltip('🔵 Origem (município): '+o.nome+'/'+o.uf+(o.cand!=null?(' · '+o.cand+' cand.'):''),{sticky:true})
 .bindPopup('<b>🔵 '+o.nome+'/'+o.uf+'</b><br>'+cd+'<br>→ '+o.dest+'<br>'+ds+tp+'<br>'+o.tipo+bl+cc+'<br><i>Motor: '+o.motor+'</i><br><i>Coord: '+o.fonte+'</i>'+al)
 .addTo(map);b.push([o.lat,o.lng]);});
 if(b.length)map.fitBounds(b,{padding:[30,30]});else map.setView([-15.8,-47.9],4);
@@ -11069,11 +11070,13 @@ var D=__PAYLOAD__;
 var map=L.map('m',{scrollWheelZoom:false});
 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:18,attribution:'Tiles © Esri'}).addTo(map);
 var b=[];
-D.lin.forEach(function(l){L.polyline([l.a,l.b],{color:'#1F8A70',weight:l.w,opacity:.5}).addTo(map);});
+// [GEO-TOOLTIP] hover explica cada elemento (tooltip sticky = segue o cursor)
+D.lin.forEach(function(l){L.polyline([l.a,l.b],{color:'#1F8A70',weight:l.w,opacity:.5}).bindTooltip('🟢 Fluxo: cluster de origens → destino dominante',{sticky:true}).addTo(map);});
 D.dst.forEach(function(d){L.circleMarker([d.lat,d.lng],{radius:7,color:'#fff',weight:1.5,fillColor:'#e31a1c',fillOpacity:1})
-.bindPopup('<b>🔴 Destino</b><br>'+d.nome).addTo(map);b.push([d.lat,d.lng]);});
+.bindTooltip('🔴 Destino (local de prova): '+d.nome,{sticky:true}).bindPopup('<b>🔴 Destino</b><br>'+d.nome).addTo(map);b.push([d.lat,d.lng]);});
 D.cel.forEach(function(c){var al=(c.na>0)?('<br><b>⚠️ '+c.na+' rota(s) com alerta</b>'):'';
 L.circleMarker([c.lat,c.lng],{radius:c.r,color:'#fff',weight:1,fillColor:'#1f78b4',fillOpacity:.8})
+.bindTooltip('🔵 Cluster de origens: '+c.no+' município(s) · '+c.nc+' candidato(s)',{sticky:true})
 .bindPopup('<b>🔵 Cluster de origens</b><br>'+c.no+' município(s) de origem<br><b>'+c.nc+' candidato(s)</b><br>'
 +c.nd+' destino(s)<br><i>Principais: '+(c.dt.join(', ')||'—')+'</i>'+al).addTo(map);b.push([c.lat,c.lng]);});
 if(b.length)map.fitBounds(b,{padding:[30,30]});else map.setView([-15.8,-47.9],4);
@@ -11326,9 +11329,10 @@ border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.2);font-size:11px;max-width:2
 var D=__PAYLOAD__;var map=L.map('m',{scrollWheelZoom:false});
 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:18,attribution:'Tiles © Esri'}).addTo(map);
 var b=[];
-D.linhas.forEach(function(l){var o={color:l.cor,weight:l.w,opacity:.8};if(l.dash)o.dashArray=l.dash;L.polyline(l.pts,o).addTo(map);l.pts.forEach(function(p){b.push(p)});});
+// [GEO-TOOLTIP] hover explica cada elemento (tooltip sticky = segue o cursor)
+D.linhas.forEach(function(l){var o={color:l.cor,weight:l.w,opacity:.8};if(l.dash)o.dashArray=l.dash;L.polyline(l.pts,o).bindTooltip(l.dash?"🥈 Conector até o 2º colocado (linha reta)":"🥇 Rota viária do vencedor (1º colocado)",{sticky:true}).addTo(map);l.pts.forEach(function(p){b.push(p)});});
 D.marcadores.forEach(function(m){L.circleMarker([m.lat,m.lng],{radius:8,color:'#fff',weight:1.5,fillColor:m.cor,fillOpacity:1})
-.bindPopup('<b>'+m.t+'</b><br>'+m.n).addTo(map);b.push([m.lat,m.lng]);});
+.bindTooltip(m.t+': '+m.n,{sticky:true}).bindPopup('<b>'+m.t+'</b><br>'+m.n).addTo(map);b.push([m.lat,m.lng]);});
 if(b.length)map.fitBounds(b,{padding:[35,35]});else map.setView([-15.8,-47.9],4);
 function _fix(){try{map.invalidateSize(true);if(b&&b.length)map.fitBounds(b,{padding:[35,35]});}catch(e){}}
 [120,400,900,1600].forEach(function(t){setTimeout(_fix,t)});window.addEventListener('resize',_fix);
@@ -37772,9 +37776,12 @@ var map=L.map('map');
 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles © Esri · Hidrografia IBGE/ANA'}).addTo(map);
 var all=[];
 var gRios=L.layerGroup(), gMassas=L.layerGroup(), gRotas=L.layerGroup();
-MASSAS.forEach(function(p){var pl=L.polygon(p,{color:'#0891b2',weight:1,fillColor:'#22d3ee',fillOpacity:.25});pl.addTo(gMassas);all.push(pl);});
-RIOS.forEach(function(p){var pl=L.polyline(p,{color:'#2563eb',weight:1.2,opacity:.75});pl.addTo(gRios);all.push(pl);});
-ROTAS.forEach(function(r){if(r.pts&&r.pts.length>=2){var pl=L.polyline(r.pts,{color:'#e11d48',weight:3,opacity:.9});pl.bindPopup(r.nome);pl.addTo(gRotas);all.push(pl);}});
+// [HIDRO-TOOLTIP] Cada feição diz, ao passar o mouse (tooltip sticky = segue o cursor), O QUE ela é —
+// legenda contextual por elemento, além da legenda fixa no canto. Rios/corpos d'água do overview não têm
+// nome individual, então o rótulo explica o TIPO e a fonte; as rotas mostram origem→destino.
+MASSAS.forEach(function(p){var pl=L.polygon(p,{color:'#0891b2',weight:1,fillColor:'#22d3ee',fillOpacity:.25});pl.bindTooltip("💧 Corpo d'água (lago / represa / lagoa) — massas d'água IBGE/ANA",{sticky:true});pl.addTo(gMassas);all.push(pl);});
+RIOS.forEach(function(p){var pl=L.polyline(p,{color:'#2563eb',weight:1.2,opacity:.75});pl.bindTooltip("🌊 Rio / córrego — rede hidrográfica (drenagem BC250 · IBGE/ANA)",{sticky:true});pl.addTo(gRios);all.push(pl);});
+ROTAS.forEach(function(r){if(r.pts&&r.pts.length>=2){var pl=L.polyline(r.pts,{color:'#e11d48',weight:3,opacity:.9});pl.bindTooltip("🚛 Rota processada: "+r.nome,{sticky:true});pl.bindPopup(r.nome);pl.addTo(gRotas);all.push(pl);}});
 gMassas.addTo(map);gRios.addTo(map);gRotas.addTo(map);
 L.control.layers(null,{'Rios/córregos':gRios,"Corpos d'água":gMassas,'Rotas processadas':gRotas},{collapsed:false}).addTo(map);
 if(all.length){var fg=L.featureGroup(all);map.fitBounds(fg.getBounds(),{padding:[30,30]});}else{map.setView([-15,-55],4);}
