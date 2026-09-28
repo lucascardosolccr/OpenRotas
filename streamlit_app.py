@@ -45953,13 +45953,23 @@ def _municipios_com_coordenadas():
     return out
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_resource(show_spinner=False)
 def _arrays_centroides_municipais():
     """[CONC-IBGE - 78ª geração] Arrays cacheados (lat/lon em rad, nome, uf, código) da base de
-    municípios com coordenadas — para busca VETORIZADA do município mais próximo a uma coordenada."""
+    municípios com coordenadas — para busca VETORIZADA do município mais próximo a uma coordenada.
+    [PERF] @st.cache_resource (não @st.cache_data): devolve a MESMA referência a cada chamada, sem copiar
+    os 5 arrays de ~5.571 itens (custava ~0,7 ms/chamada). É consultada por _identidade_por_coordenada_nucleo
+    a cada coordenada única do estudo (milhares num run nacional). Uso SOMENTE LEITURA (argmin/indexação);
+    os arrays NumPy ficam read-only (writeable=False) como guarda contra escrita acidental no objeto agora
+    compartilhado."""
     base = _municipios_com_coordenadas()
     lats = np.radians(np.array([m['lat'] for m in base], dtype=float)) if base else np.array([])
     lons = np.radians(np.array([m['lon'] for m in base], dtype=float)) if base else np.array([])
+    try:
+        lats.flags.writeable = False
+        lons.flags.writeable = False
+    except Exception:
+        pass
     return (lats, lons,
             [str(m['municipio']).title() for m in base],
             [m['uf'] for m in base],
