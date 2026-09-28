@@ -45926,12 +45926,17 @@ def _hierarquia_territorial(codigo_ibge):
         return _vazio
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_resource(show_spinner=False)
 def _municipios_com_coordenadas():
     """[ABA-PROXIMIDADE / FIX-COBERTURA] Municípios da base IBGE com coordenadas para o 'Near'
     geodésico. Usa a coordenada offline da base quando existir; caso contrário, ENRIQUECE com o
     dataset nacional de centróides (por código IBGE — mais confiável — ou nome+UF). Assim o ranking
-    passa a cobrir TODO o país. Cacheada (roda 1×)."""
+    passa a cobrir TODO o país. Cacheada (roda 1×).
+    [PERF] @st.cache_resource (não @st.cache_data): devolve a MESMA referência a cada chamada, sem
+    copiar a lista de ~5.571 dicts (custava ~2 ms/chamada). Consumida em varredura fluvial e no ranking
+    de proximidade — sempre em SOMENTE LEITURA (iteração/indexação/len). Devolve uma TUPLA como guarda
+    contra mutação acidental (append/sort) do objeto agora compartilhado; os dicts internos não são
+    escritos por nenhum chamador."""
     centroides = _carregar_centroides_municipais()
     por_nome = centroides.get("por_nome", {})
     por_codigo = centroides.get("por_codigo", {})
@@ -45950,7 +45955,7 @@ def _municipios_com_coordenadas():
             if lat and lon and lat != 0.0 and lon != 0.0:
                 out.append({"municipio": nome, "uf": uf, "codigo_ibge": item.get("codigo_ibge"),
                             "lat": lat, "lon": lon})
-    return out
+    return tuple(out)
 
 
 @st.cache_resource(show_spinner=False)
