@@ -15669,9 +15669,9 @@ _auditar_saude_coordenadas()
 # → resolve município/UF/coordenada pela base oficial embarcada, sem rede, e segue o pipeline normal.
 # Cobre Validador, Lote e Hubs (todos passam por obter_coordenadas_e_endereco_oficial).
 # ==============================================================================
-@st.cache_data(show_spinner=False)
+@st.cache_resource(show_spinner=False)
 def _indice_ibge_por_codigo():
-    """Índice reverso {codigo_ibge (str 7 díg): {municipio, uf, lat, lon}} para resolução O(1) do
+    """[PERF] Índice reverso {codigo_ibge (str 7 díg): {municipio, uf, lat, lon}} para resolução O(1) do
     Código IBGE. [IBGE-INPUT - 113ª geração] FUNDAÇÃO GARANTIDA: construído a partir da BASE EMBUTIDA
     diretamente (offline, sempre com os 5571 códigos e coordenadas válidas), pois a base viva pode ter
     entradas homônimas SEM codigo_ibge que, no merge, mascaram a embutida e some código do índice. A base
@@ -15713,7 +15713,14 @@ def _indice_ibge_por_codigo():
         _ingerir(IBGE_MUNICIPIOS, True)
     except Exception:
         pass
-    return _idx
+    # [PERF] @st.cache_resource (não @st.cache_data): devolve SEMPRE a MESMA referência, sem copiar o dict de
+    # 5.571 entradas a cada chamada — a cópia do cache_data custava ~2 ms/chamada e este índice é consultado
+    # dezenas de vezes por rota no lote (resgate, enriquecimento, comparador). Todos os usos são SOMENTE
+    # LEITURA (.get/.items/in/iter — auditado: as únicas atribuições a `idx_*` no arquivo são dicts locais
+    # homônimos, não este índice). MappingProxyType torna o compartilhamento seguro: qualquer escrita
+    # acidental futura falha na hora (teste/CI) em vez de corromper o índice entre sessões.
+    import types as _types
+    return _types.MappingProxyType(_idx)
 
 
 def _e_codigo_ibge(texto):
