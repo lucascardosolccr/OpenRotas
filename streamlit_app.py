@@ -12813,6 +12813,30 @@ def _obs_painel_rotas_fragment():
         if _err > 0:
             st.caption("⚠️ %s rota(s) em erro após o sweep — recebem fallback geodésico na finalização "
                        "(rastreável nesta tabela)." % _fmt(_err))
+        # [CHUNK-PERF · DIAGNÓSTICO] Onde o tempo do processamento está indo? (rede × endgame)
+        try:
+            _pf = _perf_chunks_resumo()
+            if _pf and _pf.get("rotas_medidas"):
+                with st.expander("🔧 Diagnóstico de desempenho do processamento", expanded=False):
+                    _p1, _p2, _p3, _p4 = st.columns(4)
+                    _p1.metric("Taxa", f"{_pf['rotas_por_s']:.1f} rotas/s",
+                               help="Rotas concluídas por segundo de roteamento (mede a vazão real).")
+                    _p2.metric("Chunks no deadline", f"{_pf['chunks_no_deadline']}/{_pf['n_chunks']}",
+                               help="Chunks que estouraram o orçamento de tempo. Muitos = rede/motor lento.")
+                    _p3.metric("Adiadas", f"{_pf['pct_adiadas']:.0f}%",
+                               help="% das rotas que não concluíram no chunk e caíram no fallback/sweep.")
+                    _p4.metric("Tempo em roteamento", f"{_pf['tempo_roteamento_s']:.0f}s",
+                               help="Soma do tempo de parede gasto nos chunks de roteamento.")
+                    _cor = ("🔴" if _pf["veredito"].startswith(("rede", "endgame")) else "🟢")
+                    st.caption(f"{_cor} **Leitura:** {_pf['veredito']}")
+                    if _pf["veredito"].startswith("rede"):
+                        st.caption("💡 Um roteador OSRM/Valhalla dedicado (sem rate-limit) ou mais concorrência "
+                                   "atacariam diretamente esse gargalo. Os dados já em cache não repetem a rede.")
+                    elif _pf["endgame"]:
+                        st.caption("💡 A cauda de rotas difíceis domina o tempo — o sweep de recuperação e os "
+                                   "fallbacks já cobrem essas rotas; ampliar candidatos raramente compensa aqui.")
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -42773,6 +42797,87 @@ _CHUNK_WAIT_MAX_S = 45.0         # teto absoluto ~= pior caso de 1 tarefa (era 9
 _CHUNK_WAIT_MIN_S = 8.0          # [DEADLINE-ADAPTATIVO - 401ª] piso: nunca abaixo disto (não abandona rota saudável)
 
 
+# ==============================================================================
+# [CHUNK-PERF · DIAGNÓSTICO] Acumulador em memória das métricas por chunk (que antes só iam para o log).
+# Serve ao painel "Diagnóstico de desempenho" — mostra ao usuário, num estudo REAL, se o tempo do
+# processamento vai em REDE (chunks lentos batendo deadline) ou no ENDGAME (crawl final com poucas
+# conclusões por chunk). Thread-safe (processar_chunk_rotas roda na thread principal E no job-runner de
+# fundo), NÃO usa session_state (indisponível no worker), auto-reseta a cada NOVO run (gap > 120s desde o
+# último chunk) e é limitado em tamanho. Puro diagnóstico — nunca altera o roteamento.
+# ==============================================================================
+_PERF_CHUNKS: list = []
+_PERF_CHUNKS_LOCK = threading.Lock()
+_PERF_CHUNKS_MAX = 5000
+_PERF_CHUNKS_GAP_NOVO_RUN_S = 120.0
+
+
+def _perf_chunk_registrar(n_rotas, concluidas, adiadas, dt_s, deadline_s, timeout_hit):
+    """Registra as métricas de UM chunk. Auto-reseta quando começa um novo run (gap grande). Defensivo."""
+    try:
+        _agora = time.time()
+        with _PERF_CHUNKS_LOCK:
+            if _PERF_CHUNKS and (_agora - _PERF_CHUNKS[-1]["ts"]) > _PERF_CHUNKS_GAP_NOVO_RUN_S:
+                _PERF_CHUNKS.clear()   # novo estudo → começa a medição do zero
+            _PERF_CHUNKS.append({
+                "ts": _agora, "n": int(n_rotas or 0), "ok": int(concluidas or 0),
+                "adiadas": int(adiadas or 0), "dt": float(dt_s or 0.0),
+                "deadline": float(deadline_s or 0.0), "timeout": bool(timeout_hit),
+            })
+            if len(_PERF_CHUNKS) > _PERF_CHUNKS_MAX:
+                del _PERF_CHUNKS[:len(_PERF_CHUNKS) - _PERF_CHUNKS_MAX]
+    except Exception:
+        pass
+
+
+def _perf_chunks_resumo(registros=None):
+    """[CHUNK-PERF · DIAGNÓSTICO] Agrega os chunks do run atual num veredito ACIONÁVEL. PURA/testável:
+    aceita `registros` (lista de dicts) para teste; senão lê o acumulador. Retorna {} se não houver dados.
+    Distingue REDE (rotas/s baixa + muitos chunks batendo o deadline) de ENDGAME (crawl final: o último
+    terço dos chunks conclui uma fração bem menor que o começo)."""
+    try:
+        _regs = list(registros) if registros is not None else None
+        if _regs is None:
+            with _PERF_CHUNKS_LOCK:
+                _regs = list(_PERF_CHUNKS)
+        if not _regs:
+            return {}
+        _n_chunks = len(_regs)
+        _rotas = sum(r["n"] for r in _regs)
+        _ok = sum(r["ok"] for r in _regs)
+        _adi = sum(r["adiadas"] for r in _regs)
+        _tempo = sum(r["dt"] for r in _regs)
+        _dl = sum(1 for r in _regs if r.get("timeout"))
+        _rps = (_ok / _tempo) if _tempo > 0 else 0.0
+        _pct_adi = (100.0 * _adi / _rotas) if _rotas > 0 else 0.0
+        _pct_dl = (100.0 * _dl / _n_chunks) if _n_chunks > 0 else 0.0
+        # ENDGAME: compara a taxa de conclusão do 1º terço com a do último terço dos chunks.
+        _endgame = False
+        if _n_chunks >= 6:
+            _t = max(1, _n_chunks // 3)
+            _ini = _regs[:_t]; _fim = _regs[-_t:]
+            _cr_ini = sum(r["ok"] for r in _ini) / max(1, sum(r["n"] for r in _ini))
+            _cr_fim = sum(r["ok"] for r in _fim) / max(1, sum(r["n"] for r in _fim))
+            _endgame = (_cr_ini - _cr_fim) >= 0.30   # a conclusão despencou no fim → crawl de endgame
+        if _rotas == 0:
+            _veredito = "sem dados"
+        elif _endgame:
+            _veredito = ("endgame — as últimas rotas (raras/difíceis) estão custando desproporcionalmente; "
+                         "o gargalo é a cauda de re-roteamento/fallback, não o volume.")
+        elif _pct_dl >= 30.0 or _rps < 2.0:
+            _veredito = ("rede/motor — muitos chunks batem o deadline e a taxa (rotas/s) está baixa; o tempo "
+                         "vai em espera de rede. Roteador dedicado / mais concorrência ajudariam.")
+        else:
+            _veredito = "saudável — a taxa de conclusão está boa e poucos chunks batem o deadline."
+        return {
+            "n_chunks": _n_chunks, "rotas_medidas": _rotas, "concluidas": _ok, "adiadas": _adi,
+            "tempo_roteamento_s": round(_tempo, 1), "rotas_por_s": round(_rps, 2),
+            "pct_adiadas": round(_pct_adi, 1), "chunks_no_deadline": _dl,
+            "pct_chunks_deadline": round(_pct_dl, 1), "endgame": _endgame, "veredito": _veredito,
+        }
+    except Exception:
+        return {}
+
+
 def _saude_motores_fator():
     """[DEADLINE-ADAPTATIVO - 401ª geração] Fator de saúde dos motores de rota (1.0 saudável → 0.4 muito
     degradado), lido do disjuntor do motor primário (Google). Usado para ENCURTAR o deadline do chunk
@@ -42915,6 +43020,8 @@ def processar_chunk_rotas(tarefas_chunk, runner_up_map=None):
     else:
         logger.info("[CHUNK-PERF] Chunk de %d rota(s): %d concluída(s) em %.1fs (%.1f rotas/s; deadline "
                     "%.0fs não atingido).", _n_fut, _concluidos, _dt_chunk, _taxa, _deadline)
+    # [CHUNK-PERF · DIAGNÓSTICO] Acumula as MESMAS métricas do log para o painel de desempenho na tela.
+    _perf_chunk_registrar(_n_fut, _concluidos, _pend, _dt_chunk, _deadline, _timeout_hit)
     return resultados
 
 
