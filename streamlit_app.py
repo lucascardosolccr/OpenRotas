@@ -197,6 +197,79 @@ except Exception:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("MotorGeodesicoCorp")
 
+# ==============================================================================
+# [FASE-PERF · DIAGNÓSTICO - 419ª geração] Cronômetro das FASES DE FINALIZAÇÃO (montagem do
+# DataFrame, enriquecimento geoespacial, comparação com o estudo de referência, geração da
+# planilha). O painel "Diagnóstico de desempenho" já mostrava onde o tempo do ROTEAMENTO ia
+# (rede × endgame); mas um estudo pode estar lento na FINALIZAÇÃO — não na rede. Este acumulador
+# mede cada fase para que o painel aponte o gargalo REAL mesmo quando ele não é roteamento.
+#
+# Contrato idêntico ao acumulador de chunks: thread-safe (a finalização pode rodar em thread de
+# fundo), SEM session_state (indisponível no worker), auto-reset a cada novo run (gap > 120s desde
+# a última fase medida) e limitado em tamanho. É PURO DIAGNÓSTICO — o decorator NUNCA altera o
+# retorno da função medida nem engole sua exceção; só mede o tempo de parede. Definido AQUI (cedo)
+# porque decora funções declaradas mais abaixo (o resumo para o painel vive junto do de chunks).
+# ==============================================================================
+_PERF_FASES: dict = {}
+_PERF_FASES_LOCK = threading.Lock()
+_PERF_FASES_ULTIMO_TS = [0.0]
+_PERF_FASES_GAP_NOVO_RUN_S = 120.0
+
+
+def _perf_fase_registrar(nome, dt_s, n_linhas=None):
+    """Acumula o tempo de parede de UMA execução de uma fase de finalização. Auto-reseta quando
+    começa um novo run (gap grande desde a última fase). Defensivo — nunca levanta."""
+    try:
+        _agora = time.time()
+        with _PERF_FASES_LOCK:
+            if _PERF_FASES and (_agora - _PERF_FASES_ULTIMO_TS[0]) > _PERF_FASES_GAP_NOVO_RUN_S:
+                _PERF_FASES.clear()            # novo estudo → começa a medição do zero
+            _PERF_FASES_ULTIMO_TS[0] = _agora
+            _slot = _PERF_FASES.get(nome)
+            if _slot is None:
+                _slot = {"dt": 0.0, "n": 0, "linhas": 0}
+                _PERF_FASES[nome] = _slot
+            _slot["dt"] += float(dt_s or 0.0)
+            _slot["n"] += 1
+            if n_linhas:
+                _slot["linhas"] = max(_slot["linhas"], int(n_linhas))
+            if len(_PERF_FASES) > 64:          # salvaguarda de tamanho (jamais deve crescer tanto)
+                _PERF_FASES.clear()
+    except Exception:
+        pass
+
+
+def _perf_fase_timer(nome):
+    """Decorator que mede o tempo de parede de CADA chamada da função e o acumula sob `nome` no
+    diagnóstico de fases. Transparente: devolve exatamente o que a função devolve e propaga qualquer
+    exceção (a medição fica no finally). Se o retorno for um DataFrame (ou uma tupla que começa com
+    um), registra também a contagem de linhas — para a taxa 'linhas/s' do painel."""
+    def _deco(_fn):
+        def _wrap(*a, **k):
+            _t0 = time.time()
+            _res = None
+            try:
+                _res = _fn(*a, **k)
+                return _res
+            finally:
+                try:
+                    _n = None
+                    _alvo = _res[0] if isinstance(_res, tuple) and _res else _res
+                    if hasattr(_alvo, "__len__") and hasattr(_alvo, "columns"):
+                        _n = len(_alvo)
+                    _perf_fase_registrar(nome, time.time() - _t0, _n)
+                except Exception:
+                    pass
+        try:
+            _wrap.__name__ = getattr(_fn, "__name__", "wrapped")
+            _wrap.__doc__ = _fn.__doc__
+            _wrap.__wrapped__ = _fn
+        except Exception:
+            pass
+        return _wrap
+    return _deco
+
+
 # [M21] Log estruturado: adiciona campos extras a cada evento de relevância
 # [AUDITORIA-184] Função morta '_log_api' aposentada (nome ocorria 1× no arquivo — sem qualquer referência). Recuperável no histórico de versões.
 
@@ -12813,28 +12886,72 @@ def _obs_painel_rotas_fragment():
         if _err > 0:
             st.caption("⚠️ %s rota(s) em erro após o sweep — recebem fallback geodésico na finalização "
                        "(rastreável nesta tabela)." % _fmt(_err))
-        # [CHUNK-PERF · DIAGNÓSTICO] Onde o tempo do processamento está indo? (rede × endgame)
+        # [CHUNK-PERF · DIAGNÓSTICO] Onde o tempo do processamento está indo? (rede × endgame × finalização)
         try:
             _pf = _perf_chunks_resumo()
-            if _pf and _pf.get("rotas_medidas"):
+            # [FASE-PERF · DIAGNÓSTICO - 419ª] Fases de FINALIZAÇÃO (montagem/enriquecimento/comparação/
+            # planilha) — para o painel apontar o gargalo REAL mesmo quando ele não está na rede.
+            _pff = _perf_fases_resumo(tempo_roteamento_s=(_pf or {}).get("tempo_roteamento_s"))
+            _tem_rot = bool(_pf and _pf.get("rotas_medidas"))
+            _tem_fase = bool(_pff and _pff.get("itens"))
+            if _tem_rot or _tem_fase:
                 with st.expander("🔧 Diagnóstico de desempenho do processamento", expanded=False):
-                    _p1, _p2, _p3, _p4 = st.columns(4)
-                    _p1.metric("Taxa", f"{_pf['rotas_por_s']:.1f} rotas/s",
-                               help="Rotas concluídas por segundo de roteamento (mede a vazão real).")
-                    _p2.metric("Chunks no deadline", f"{_pf['chunks_no_deadline']}/{_pf['n_chunks']}",
-                               help="Chunks que estouraram o orçamento de tempo. Muitos = rede/motor lento.")
-                    _p3.metric("Adiadas", f"{_pf['pct_adiadas']:.0f}%",
-                               help="% das rotas que não concluíram no chunk e caíram no fallback/sweep.")
-                    _p4.metric("Tempo em roteamento", f"{_pf['tempo_roteamento_s']:.0f}s",
-                               help="Soma do tempo de parede gasto nos chunks de roteamento.")
-                    _cor = ("🔴" if _pf["veredito"].startswith(("rede", "endgame")) else "🟢")
-                    st.caption(f"{_cor} **Leitura:** {_pf['veredito']}")
-                    if _pf["veredito"].startswith("rede"):
-                        st.caption("💡 Um roteador OSRM/Valhalla dedicado (sem rate-limit) ou mais concorrência "
-                                   "atacariam diretamente esse gargalo. Os dados já em cache não repetem a rede.")
-                    elif _pf["endgame"]:
-                        st.caption("💡 A cauda de rotas difíceis domina o tempo — o sweep de recuperação e os "
-                                   "fallbacks já cobrem essas rotas; ampliar candidatos raramente compensa aqui.")
+                    if _tem_rot:
+                        st.markdown("**🌐 Roteamento (rede)**")
+                        _p1, _p2, _p3, _p4 = st.columns(4)
+                        _p1.metric("Taxa", f"{_pf['rotas_por_s']:.1f} rotas/s",
+                                   help="Rotas concluídas por segundo de roteamento (mede a vazão real).")
+                        _p2.metric("Chunks no deadline", f"{_pf['chunks_no_deadline']}/{_pf['n_chunks']}",
+                                   help="Chunks que estouraram o orçamento de tempo. Muitos = rede/motor lento.")
+                        _p3.metric("Adiadas", f"{_pf['pct_adiadas']:.0f}%",
+                                   help="% das rotas que não concluíram no chunk e caíram no fallback/sweep.")
+                        _p4.metric("Tempo em roteamento", f"{_pf['tempo_roteamento_s']:.0f}s",
+                                   help="Soma do tempo de parede gasto nos chunks de roteamento.")
+                        _cor = ("🔴" if _pf["veredito"].startswith(("rede", "endgame")) else "🟢")
+                        st.caption(f"{_cor} **Leitura:** {_pf['veredito']}")
+                        if _pf["veredito"].startswith("rede"):
+                            st.caption("💡 Um roteador OSRM/Valhalla dedicado (sem rate-limit) ou mais concorrência "
+                                       "atacariam diretamente esse gargalo. Os dados já em cache não repetem a rede.")
+                        elif _pf["endgame"]:
+                            st.caption("💡 A cauda de rotas difíceis domina o tempo — o sweep de recuperação e os "
+                                       "fallbacks já cobrem essas rotas; ampliar candidatos raramente compensa aqui.")
+                    if _tem_fase:
+                        if _tem_rot:
+                            st.divider()
+                        st.markdown("**🧩 Finalização (pós-roteamento)**")
+                        _fc1, _fc2 = st.columns(2)
+                        _fc1.metric("Tempo em finalização", f"{_pff['total_s']:.0f}s",
+                                    help="Soma do tempo de parede das fases após o roteamento (montagem do "
+                                         "resultado, enriquecimento geoespacial, comparação, planilha).")
+                        _fc2.metric("Fase mais cara", _pff["campea"]["rotulo"],
+                                    delta=f"{_pff['campea']['dt_s']:.0f}s",
+                                    delta_color="off",
+                                    help="A fase de finalização que mais consumiu tempo neste estudo.")
+                        # tabela compacta por fase (tempo e nº de execuções)
+                        try:
+                            _df_fase = pd.DataFrame([
+                                {"Fase": _it["rotulo"], "Tempo (s)": _it["dt_s"], "Execuções": _it["n"]}
+                                for _it in _pff["itens"]])
+                            st.dataframe(_df_fase, hide_index=True, use_container_width=True)
+                        except Exception:
+                            pass
+                        _corf = ("🔴" if _pff.get("finaliza_domina") else "🟢")
+                        st.caption(f"{_corf} **Leitura:** {_pff['veredito']}")
+                        if _pff.get("finaliza_domina"):
+                            _campea_chave = _pff["campea"]["chave"]
+                            _dica = {
+                                "enriquecimento_geo": "O enriquecimento geoespacial (rios/pontes/travessias por "
+                                    "rota) domina — considere processá-lo só sob demanda ou reduzir o volume de "
+                                    "camadas ativas para estudos muito grandes.",
+                                "montagem_dataframe": "A montagem do resultado domina — normalmente indica um "
+                                    "volume de linhas muito alto; a otimização de dtypes já reduz a memória.",
+                                "comparacao_referencia": "A comparação com a referência domina — verifique se a "
+                                    "planilha de referência não está muito maior que o necessário.",
+                                "planilha_excel": "A geração da planilha domina — ela já é cacheada por conteúdo; "
+                                    "reaproveite o mesmo estudo em vez de reprocessar.",
+                            }.get(_campea_chave)
+                            if _dica:
+                                st.caption(f"💡 {_dica}")
         except Exception:
             pass
     except Exception:
@@ -17574,6 +17691,7 @@ def _integridade_geografica(dist_viaria_km, dist_reta_km, nivel_origem="", nivel
     return {"indice": idx, "ok": len(problemas) == 0, "problemas": problemas}
 
 
+@_perf_fase_timer("planilha_excel")
 @st.cache_data(show_spinner=False)
 def _montar_planilha_lote_xlsx(df_final):
     """[XLSX-RICO - 184ª geração] Monta o workbook do Lote com MÚLTIPLAS abas estruturadas, em vez de uma aba
@@ -19403,6 +19521,7 @@ _GEO_INTEL_COLUNAS = ("Rios Cruzados", "Bacia Hidrografica", "Pontes no Cruzamen
 _GEO_INTEL_LIMIAR_AUTOMATICO = 200  # nº de PARES origem/destino únicos; acima disso, sob demanda
 
 
+@_perf_fase_timer("enriquecimento_geo")
 def _enriquecer_geo_inteligencia_df(df, forcar=False, limiar_automatico=_GEO_INTEL_LIMIAR_AUTOMATICO):
     """Roda `route_context.analisar_rota` para cada par origem/destino ÚNICO de
     `df` e anexa colunas-resumo aditivas (`_GEO_INTEL_COLUNAS`). Automático até
@@ -23113,6 +23232,7 @@ def _diagnosticar_resgate_derrota(dist_app, vr_app, dist_ref, vr_ref,
             % (_rr, _da))
 
 
+@_perf_fase_timer("comparacao_referencia")
 def _comparar_alocacoes(linhas, parse_tempo=None, limiar_empate_km=1.0, limiar_rel_empate=0.0):
     """[COMPARADOR - 138ª geração] Compara, linha a linha, a alocação da APLICAÇÃO contra a da REFERÊNCIA e
     produz as colunas de decisão: mesmo destino?, diferença absoluta e percentual, economia de km, economia
@@ -42885,6 +43005,80 @@ def _perf_chunks_resumo(registros=None):
         return {}
 
 
+# [FASE-PERF · DIAGNÓSTICO - 419ª geração] Rótulos amigáveis das fases medidas (a chave interna é
+# estável para código; o rótulo é o que o painel exibe). Ordem = ordem lógica da finalização.
+_PERF_FASES_ROTULOS = [
+    ("montagem_dataframe", "Montagem do resultado"),
+    ("enriquecimento_geo", "Enriquecimento geoespacial"),
+    ("comparacao_referencia", "Comparação com a referência"),
+    ("planilha_excel", "Geração da planilha"),
+]
+
+
+def _perf_fases_resumo(fases=None, tempo_roteamento_s=None):
+    """[FASE-PERF · DIAGNÓSTICO] Agrega as fases de FINALIZAÇÃO num quadro acionável. PURA/testável:
+    aceita `fases` (dict como o acumulador) e o tempo de roteamento (para o veredito de dominância);
+    senão lê o acumulador e o resumo de chunks. Retorna {} se não houver fase medida.
+
+    O veredito compara o tempo TOTAL de finalização com o de roteamento: se a finalização domina o
+    tempo do estudo, o gargalo NÃO é a rede — é a montagem/enriquecimento/comparação/planilha, e o
+    painel passa a apontar a fase campeã em vez de sugerir mais concorrência de rede."""
+    try:
+        if fases is None:
+            with _PERF_FASES_LOCK:
+                _f = {_k: dict(_v) for _k, _v in _PERF_FASES.items()}
+        else:
+            _f = {_k: dict(_v) for _k, _v in fases.items()}
+        if not _f:
+            return {}
+        _itens = []
+        _total = 0.0
+        _linhas = 0
+        for _chave, _rot in _PERF_FASES_ROTULOS:
+            _s = _f.get(_chave)
+            if _s and _s.get("dt", 0.0) > 0.0:
+                _dt = float(_s["dt"])
+                _total += _dt
+                _linhas = max(_linhas, int(_s.get("linhas", 0) or 0))
+                _itens.append({"chave": _chave, "rotulo": _rot, "dt_s": round(_dt, 2),
+                               "n": int(_s.get("n", 0) or 0), "linhas": int(_s.get("linhas", 0) or 0)})
+        # fases medidas que não estão no mapa de rótulos (defensivo — mostra mesmo assim)
+        for _chave, _s in _f.items():
+            if _chave not in dict(_PERF_FASES_ROTULOS) and _s and _s.get("dt", 0.0) > 0.0:
+                _dt = float(_s["dt"]); _total += _dt
+                _itens.append({"chave": _chave, "rotulo": _chave, "dt_s": round(_dt, 2),
+                               "n": int(_s.get("n", 0) or 0), "linhas": int(_s.get("linhas", 0) or 0)})
+        if not _itens or _total <= 0.0:
+            return {}
+        _itens.sort(key=lambda x: -x["dt_s"])
+        _campea = _itens[0]
+        # tempo de roteamento para comparar dominância (arg de teste ou resumo dos chunks)
+        _t_rot = tempo_roteamento_s
+        if _t_rot is None:
+            try:
+                _t_rot = float((_perf_chunks_resumo() or {}).get("tempo_roteamento_s") or 0.0)
+            except Exception:
+                _t_rot = 0.0
+        _t_rot = float(_t_rot or 0.0)
+        _pct_da_campea = (100.0 * _campea["dt_s"] / _total) if _total else 0.0
+        _finaliza_domina = (_t_rot > 0.0 and _total >= 1.5 * _t_rot)
+        if _finaliza_domina:
+            _veredito = (f"finalização domina — {_total:.0f}s em pós-processamento vs {_t_rot:.0f}s de "
+                         f"roteamento. O gargalo é a fase '{_campea['rotulo']}' "
+                         f"({_campea['dt_s']:.0f}s, {_pct_da_campea:.0f}% da finalização), não a rede.")
+        elif _t_rot > 0.0:
+            _veredito = (f"roteamento domina — {_t_rot:.0f}s de rede vs {_total:.0f}s de finalização; "
+                         "o gargalo está no roteamento (ver leitura acima).")
+        else:
+            _veredito = (f"finalização: {_total:.0f}s, com '{_campea['rotulo']}' à frente "
+                         f"({_campea['dt_s']:.0f}s, {_pct_da_campea:.0f}%).")
+        return {"itens": _itens, "total_s": round(_total, 1), "linhas": _linhas,
+                "tempo_roteamento_s": round(_t_rot, 1), "campea": _campea,
+                "finaliza_domina": _finaliza_domina, "veredito": _veredito}
+    except Exception:
+        return {}
+
+
 def _saude_motores_fator():
     """[DEADLINE-ADAPTATIVO - 401ª geração] Fator de saúde dos motores de rota (1.0 saudável → 0.4 muito
     degradado), lido do disjuntor do motor primário (Google). Usado para ENCURTAR o deadline do chunk
@@ -43502,6 +43696,7 @@ def _auditar_completude_rotas(df, previstas=None):
     return _out
 
 
+@_perf_fase_timer("montagem_dataframe")
 def _montar_dataframe_final(df, resultados_unicos, runner_up_map=None, hub_qual_map=None):
     """[FIX-LOTE] Monta o DataFrame final a partir do dict acumulado de resultados.
     Extraído de rodar_pipeline_lote para ser reutilizado pelo motor em chunks após
