@@ -16025,29 +16025,47 @@ def _analise_prevoo_lote_cached(file_id, df):
 
 
 
-# Construção ultra veloz O(1) de Dicionário por UF
-IBGE_MUNICIPIOS_POR_UF = {}
-for mun, lista_itens in IBGE_MUNICIPIOS.items():
-    for item in lista_itens:
-        uf = item["uf"]
-        if uf not in IBGE_MUNICIPIOS_POR_UF:
-            IBGE_MUNICIPIOS_POR_UF[uf] = {}
-        if mun not in IBGE_MUNICIPIOS_POR_UF[uf]:
-            IBGE_MUNICIPIOS_POR_UF[uf][mun] = []
-        IBGE_MUNICIPIOS_POR_UF[uf][mun].append(item)
+# Construção O(1) de Dicionário por UF
+# [PERF-INDICE-UF - 419ª geração] Antes este laço reconstruía o índice aninhado (~5.571 municípios) no NÍVEL
+# DE MÓDULO — logo, a CADA rerun do Streamlit (dezenas por estudo). Agora roda 1× por processo via
+# @st.cache_resource (mesma referência, sem rebuild). Uso é SOMENTE LEITURA (consultas `in`/lookup).
+@st.cache_resource(show_spinner=False)
+def _construir_ibge_municipios_por_uf():
+    _idx = {}
+    for mun, lista_itens in IBGE_MUNICIPIOS.items():
+        for item in lista_itens:
+            uf = item["uf"]
+            if uf not in _idx:
+                _idx[uf] = {}
+            if mun not in _idx[uf]:
+                _idx[uf][mun] = []
+            _idx[uf][mun].append(item)
+    return _idx
 
-@st.cache_data
-def inicializar_listas_fuzzy(ibge_mun, ibge_dist):
+IBGE_MUNICIPIOS_POR_UF = _construir_ibge_municipios_por_uf()
+
+@st.cache_resource(show_spinner=False)
+def inicializar_listas_fuzzy(ibge_mun=None, ibge_dist=None):
+    """[PERF-FUZZY - 419ª geração] Lista de contexto para o casamento fuzzy (nome+UF de municípios e
+    distritos). Era @st.cache_data recebendo os DOIS dicionários nacionais como ARGUMENTOS — e, como este
+    módulo é reexecutado a cada rerun do Streamlit, a cada rerun o cache_data (a) RE-HASHAVA o dict aninhado
+    de ~5.571 municípios para montar a chave e (b) COPIAVA a lista retornada. Medido: ~338 ms POR RERUN —
+    dezenas de vezes por estudo, puro desperdício no caminho quente. Agora é @st.cache_resource SEM argumentos
+    (lê os globais já prontos): roda o corpo 1× por processo, devolve SEMPRE a mesma referência, sem hash e sem
+    cópia. Uso é SOMENTE LEITURA (rapidfuzz.process.extract/extractOne não mutam). Devolve uma TUPLA como guarda
+    contra mutação acidental do objeto agora compartilhado."""
+    _mun = ibge_mun if ibge_mun is not None else IBGE_MUNICIPIOS
+    _dist = ibge_dist if ibge_dist is not None else IBGE_DISTRITOS
     lista_fuzzy = []
-    for k, v_list in ibge_mun.items(): 
-        for v in v_list: 
+    for k, v_list in _mun.items():
+        for v in v_list:
             lista_fuzzy.append(f"{k} {v['uf']}")
-    for k, v_list in ibge_dist.items(): 
-        for v in v_list: 
+    for k, v_list in _dist.items():
+        for v in v_list:
             lista_fuzzy.append(f"{k} {v['uf']}")
-    return list(set(lista_fuzzy))
+    return tuple(set(lista_fuzzy))
 
-LISTA_CONTEXTO_FUZZY = inicializar_listas_fuzzy(IBGE_MUNICIPIOS, IBGE_DISTRITOS)
+LISTA_CONTEXTO_FUZZY = inicializar_listas_fuzzy()
 
 POI_KEYWORDS = [
     "AEROPORTO", "HOSPITAL", "UNIVERSIDADE", "FACULDADE", "ESCOLA", "SHOPPING", 
