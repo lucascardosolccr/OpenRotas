@@ -61,6 +61,17 @@ def test_probe_falha_reabre_e_proximo_ciclo_testa_de_novo():
     assert m._motor_pode_chamar("T_REOPEN", agora=_t2 + 0.1) is False
 
 
+def test_propagacao_matriz_abre_disjuntor_osrm_para_roteamento():
+    # [CB-PROPAGACAO] A matriz, ao provar o OSRM público fora, sinaliza 3 falhas ao disjuntor 'OSRM'
+    # (mesmo gesto do código de abort). A fase de roteamento seguinte já encontra o disjuntor aberto e
+    # pula o OSRM na hora — sem 32 workers reaprendendo a queda.
+    _reset("OSRM")
+    for _ in range(3):
+        m._motor_registrar("OSRM", False, agora=5000.0)
+    assert m._motor_pode_chamar("OSRM", agora=5001.0) is False   # roteamento pula o OSRM imediatamente
+    _reset("OSRM")   # não deixa estado vazando para outros testes
+
+
 def test_probe_ttl_expira_se_resultado_nunca_registrar():
     _reset("T_TTL")
     for _ in range(3):

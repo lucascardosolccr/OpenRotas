@@ -34127,6 +34127,17 @@ def _descobrir_vencedores_por_matriz(dest_coords, hubs_validos, topk_map_complet
                                    "lote (%d origens, 0 sucesso) — matriz abortada. Ranking por linha reta "
                                    "(offline) + roteamento por Google/GraphHopper assumem. Alocação segue.",
                                    _tot_lote)
+                    # [CB-PROPAGACAO - 419ª geração] A matriz acabou de PROVAR (25 origens, 0 sucesso) que o
+                    # OSRM público está fora. Sem isto, a fase de ROTEAMENTO por par começava com o disjuntor
+                    # do OSRM fechado e reaprendia a mesma queda do zero — 32 workers pagando o timeout de novo,
+                    # cada um, até acumular 3 falhas. Propagamos o veredito abrindo já o disjuntor 'OSRM': o
+                    # roteamento pula o OSRM na hora (Google/fallback assumem) e o meio-aberto o reativa sozinho
+                    # após o cooldown se o servidor voltar. Mesma host do /route, então o sinal é válido.
+                    try:
+                        for _ in range(3):   # limiar do disjuntor de motores → abre
+                            _motor_registrar('OSRM', False)
+                    except Exception:
+                        pass
                     break
                 if _matriz_estourou_tempo:
                     logger.warning("[MATRIZ-ORCAMENTO] Orçamento de tempo da matriz (%ds) estourado com %d/%d "
