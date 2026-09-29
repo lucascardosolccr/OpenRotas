@@ -39653,6 +39653,18 @@ def executar_pipeline_unificado(origem_cru, destino_cru, runner_up_info=None, mo
         dist_via_oficial = res.distancia if isinstance(res, RotaPipeline) else res[0]
         if lat_o != 0.0 and r_lat != 0.0:
             dist_v_real, _ = calcular_distancia_linha_reta(lat_o, lon_o, r_lat, r_lon, contexto="Runner-Up Validation")
+            # [PERF-PARALELO-CONC - 419ª geração] O OSRM do concorrente (2º colocado) rodava DEPOIS do Google
+            # do concorrente, em série — somando latência a cada rota com runner-up. Como ele depende só das
+            # coordenadas (já conhecidas), submetemo-lo AGORA ao pool (mesmo padrão PERF-PARALELO da rota
+            # principal): roda EM PARALELO com o Google abaixo e é coletado adiante. Respeita o disjuntor do
+            # OSRM (o caminho inline antigo não respeitava — martelava o OSRM caído). Mesmos VALORES, só o TEMPO
+            # muda; falha/timeout → None (divergência ausente, sem quebrar). Cache-hit resolve instantâneo.
+            _fut_osrm_conc = None
+            if _motor_pode_chamar('OSRM'):
+                try:
+                    _fut_osrm_conc = EXECUTOR_APIS.submit(API_OSRM_Routing, lat_o, lon_o, r_lat, r_lon)
+                except Exception:
+                    _fut_osrm_conc = None
             res_g_runner = extrair_dados_reais_google(origem_cru, r_nome, lat_o, lon_o, r_lat, r_lon, dist_v_real, usar_coordenadas=True)
             if not res_g_runner:
                 res_g_runner = extrair_dados_reais_google(origem_cru, r_nome, lat_o, lon_o, r_lat, r_lon, dist_v_real, usar_coordenadas=False)
@@ -39672,7 +39684,18 @@ def executar_pipeline_unificado(origem_cru, destino_cru, runner_up_info=None, mo
                 # (_metricas_divergencia, sempre 0-100%). Isolado em try/except (falha do OSRM → sem
                 # divergência, sem quebrar o batch).
                 try:
-                    _res_osrm_conc = API_OSRM_Routing(lat_o, lon_o, r_lat, r_lon)
+                    # [PERF-PARALELO-CONC] coleta o OSRM do concorrente submetido acima (rodou em paralelo com
+                    # o Google). Fallback serial só se o submit ao pool falhou (e o disjuntor permitir).
+                    if _fut_osrm_conc is not None:
+                        try:
+                            _res_osrm_conc = _fut_osrm_conc.result()
+                        except Exception:
+                            _res_osrm_conc = None
+                    elif _motor_pode_chamar('OSRM'):
+                        _res_osrm_conc = API_OSRM_Routing(lat_o, lon_o, r_lat, r_lon)
+                    else:
+                        _res_osrm_conc = None
+                    _motor_registrar('OSRM', _motor_sucesso_rota(_res_osrm_conc))
                     if _res_osrm_conc:
                         _osrm_km_conc = round(float(_res_osrm_conc[0]), 2)
                         _div_conc = _metricas_divergencia(dist_conc, _osrm_km_conc)
