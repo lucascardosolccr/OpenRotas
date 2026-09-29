@@ -13299,6 +13299,18 @@ _adapter_osrm_ff = HTTPAdapter(max_retries=_retry_osrm_ff, pool_connections=32, 
 session_osrm_publico.mount("https://", _adapter_osrm_ff)
 session_osrm_publico.mount("http://", _adapter_osrm_ff)
 
+# [HOTFIX-FOSSGIS-RETRY - 419ª geração] Sessão FAIL-FAST dedicada ao FOSSGIS (routing.openstreetmap.de),
+# irmã da de OSRM público acima. PROBLEMA: as chamadas GET do FOSSGIS (motor de rota API_OSRM_FOSSGIS_Routing
+# e o fallback /table da matriz) usavam a sessão GERAL, cujo Retry(total=5, backoff=0.5) faz um RETRY-STORM
+# num servidor que já é THROTTLED a ≤1 req/s: sob falha/timeout, uma única chamada podia custar ~40-47s
+# (5 tentativas × timeout + backoff) — parte dos ~35s/chunk quando o motor fluvial engaja. Como o FOSSGIS é
+# motor de CONSENSO/RESGATE (tem disjuntor + o OSRM primário/Google assumem), falhar RÁPIDO é estritamente
+# melhor sob falha e IDÊNTICO sob sucesso (sucesso nunca faz retry). Mesma política do OSRM público (total=1).
+session_fossgis_ff = requests.Session()
+_adapter_fossgis_ff = HTTPAdapter(max_retries=_retry_osrm_ff, pool_connections=32, pool_maxsize=32)
+session_fossgis_ff.mount("https://", _adapter_fossgis_ff)
+session_fossgis_ff.mount("http://", _adapter_fossgis_ff)
+
 # [HOTFIX-TLS-OSRM - 219ª geração] Fallback TLS para servidores com certificado inválido/expirado (caso do
 # OSRM público em set/2026: cert vencido derruba a handshake SSL e anula TODO o roteamento). A política:
 # tenta a chamada com verificação SSL NORMAL; se o certificado do host for recusado (requests.exceptions.
@@ -34290,7 +34302,9 @@ def API_OSRM_Table(lat_o, lon_o, destinos_coords, _timeout=8, _bloco=90):
 
                     def _call_fossgis_table():
                         _throttle_osrm2()  # ≤1 req/s (política FOSSGIS)
-                        return _get_tls_fallback(session, _url_fs, headers=headers, timeout=8).json()
+                        # [HOTFIX-FOSSGIS-RETRY] fail-fast (total=1) em vez da sessão geral (total=5): sob falha
+                        # do FOSSGIS público, degrada rápido para o parcial em vez de retry-storm × cada bloco.
+                        return _get_tls_fallback(session_fossgis_ff, _url_fs, headers=headers, timeout=8).json()
 
                     try:
                         _r_fs = FILA_OSRM2.submit(_call_fossgis_table).result()
@@ -35153,7 +35167,8 @@ def API_OSRM_FOSSGIS_Routing(lat_o, lon_o, lat_d, lon_d):
             _url = (f"https://routing.openstreetmap.de/routed-car/route/v1/driving/"
                     f"{lon_o},{lat_o};{lon_d},{lat_d}?overview=full&geometries=polyline&steps=true&alternatives=3")
             _hdrs = {"User-Agent": "MotorLogisticoExames/1.0 (roteamento institucional; contato via app)"}
-            return _get_tls_fallback(session, _url, headers=_hdrs, timeout=8).json()
+            # [HOTFIX-FOSSGIS-RETRY] sessão fail-fast (total=1) em vez da geral (total=5) — sem retry-storm.
+            return _get_tls_fallback(session_fossgis_ff, _url, headers=_hdrs, timeout=8).json()
         _r = FILA_OSRM2.submit(_call_fossgis).result()
         _rotas = _r.get("routes") if isinstance(_r, dict) else None
         if _rotas:
