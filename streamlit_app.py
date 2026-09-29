@@ -36950,8 +36950,12 @@ def _circuit_breaker_google(estado, sucesso, agora, _limiar_falhas=5, _cooldown_
 # byte-a-byte: sem falhas em série, nada é pulado).
 # ==============================================================================
 _LOCK_MOTOR_CB = threading.Lock()
-_MOTOR_CB_ESTADO = {}   # nome_motor -> {status, falhas_seguidas, aberto_ate}
+_MOTOR_CB_ESTADO = {}   # nome_motor -> {status, falhas_seguidas, aberto_ate, _probe_ate}
 _MOTOR_CB_SKIPS = {}    # nome_motor -> nº de chamadas puladas (telemetria/observabilidade)
+# [SINGLE-FLIGHT HALF-OPEN - 419ª geração] Janela máxima (s) que uma chamada de TESTE (meio-aberto) fica
+# "em andamento" antes de o teste ser considerado perdido e o próximo ciclo poder testar de novo. Deve ser
+# MAIOR que o pior timeout de um motor (OSRM/Valhalla ~9s) para nunca cortar um teste legítimo em curso.
+_MOTOR_PROBE_TTL_S = 15.0
 
 
 def _motor_sucesso_rota(res):
@@ -36970,6 +36974,19 @@ def _motor_pode_chamar(nome, agora=None):
         with _LOCK_MOTOR_CB:
             _e = _MOTOR_CB_ESTADO.get(nome) or {"status": "fechado", "falhas_seguidas": 0, "aberto_ate": 0.0}
             _e, _pode = _circuit_breaker_google(_e, None, _now)
+            # [SINGLE-FLIGHT HALF-OPEN - 419ª geração] No estado de recuperação (meio_aberto) o breaker libera
+            # UMA chamada de teste — mas com 32 workers concorrentes TODOS recebiam "pode=True" e batiam juntos
+            # no motor caído, cada um pagando o timeout inteiro (a "manada" que os logs mostram: OSRM/Valhalla
+            # reabrindo em série). Aqui reservamos o teste para UM único chamador por ciclo; os demais pulam na
+            # hora e caem nos motores que funcionam + fallback. Transparente quando o motor está são (fechado
+            # libera todos; aberto pula todos) — só afeta a janela de recuperação. A reserva expira sozinha após
+            # _MOTOR_PROBE_TTL_S (defensivo: se o teste nunca registrar resultado, o próximo ciclo testa de novo).
+            if _pode and _e.get("status") == "meio_aberto":
+                _probe_ate = float(_e.get("_probe_ate", 0.0) or 0.0)
+                if _probe_ate > _now:
+                    _pode = False                          # já há um teste em andamento neste ciclo → pula
+                else:
+                    _e["_probe_ate"] = _now + _MOTOR_PROBE_TTL_S   # este chamador leva o teste
             _MOTOR_CB_ESTADO[nome] = _e
             return bool(_pode)
     except Exception:
@@ -36989,6 +37006,7 @@ def _motor_registrar(nome, sucesso, agora=None):
             # perder qualidade (os demais motores + fallback + sweep de recuperação cobrem; e o meio-aberto o
             # reativa sozinho após o cooldown). O disjuntor do Google (limiar 5) permanece intocado.
             _e, _ = _circuit_breaker_google(_e, bool(sucesso), _now, _limiar_falhas=3)
+            _e["_probe_ate"] = 0.0   # [SINGLE-FLIGHT] o teste resolveu → libera o próximo ciclo a testar
             _MOTOR_CB_ESTADO[nome] = _e
             _depois = _e.get("status", "fechado")
         if _antes != _depois:
