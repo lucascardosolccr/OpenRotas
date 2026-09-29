@@ -15341,14 +15341,10 @@ def carregar_dados_ibge():
     lista_completa = list(base_mun.keys()) + list(base_dist.keys())
     return base_mun, base_est, base_dist, lista_completa
 
-IBGE_MUNICIPIOS, IBGE_ESTADOS, IBGE_DISTRITOS, LISTA_TOPONIMOS = carregar_dados_ibge()
-# [IBGE-EMBUTIDA - 83ª geração / itens #1/#6/#8] GARANTIA DEFINITIVA DE COMPLETUDE: mescla a base
-# nacional EMBUTIDA (offline) sobre o que quer que tenha carregado (pickle/API/GitHub) — preenchendo
-# QUALQUER município ausente. Roda no import, DEPOIS de carregar_dados_ibge, então é imune ao
-# curto-circuito do pickle, à falha da API do IBGE e à indisponibilidade do GitHub. Corrige de vez o
-# 'Cód IBGE: —' / 'não identificado na base IBGE' e a cobertura nacional de Municípios Próximos.
-IBGE_MUNICIPIOS = _mesclar_base_embutida(IBGE_MUNICIPIOS)
-LISTA_TOPONIMOS = list(IBGE_MUNICIPIOS.keys()) + list(IBGE_DISTRITOS.keys())
+# [PERF-BASE-IBGE - 419ª geração] A carga da base + mescla embutida + correções + sede oficial + validação +
+# auditoria foram CONSOLIDADAS em _preparar_base_ibge() (cacheada, roda 1× por processo) — ver o fim deste
+# bloco. Antes rodavam soltas aqui no nível de módulo e o Streamlit as repetia a CADA rerun (104× num estudo
+# real, nos logs). As funções e tabelas curadas abaixo continuam definidas aqui; só a EXECUÇÃO foi movida.
 
 # [IBGE-COORD-FIX - 184ª geração] CORREÇÃO DE COORDENADAS ERRADAS NA FONTE.
 # A base viva (kelvins/municipios-brasileiros) traz o CÓDIGO IBGE correto mas, para alguns municípios, uma
@@ -15409,7 +15405,7 @@ def _aplicar_correcoes_coordenada(base):
         return base
 
 
-IBGE_MUNICIPIOS = _aplicar_correcoes_coordenada(IBGE_MUNICIPIOS)
+# [PERF-BASE-IBGE] execução movida para _preparar_base_ibge() (cacheada, 1×/processo).
 
 # [BASE-OFICIAL - 184ª geração] CONSUMIDOR DA BASE OFICIAL DO IBGE (Fase 1 offline).
 # A fonte MAIS autoritativa da coordenada é a SEDE OFICIAL do IBGE (a cidade — alvo correto de rota; o
@@ -15549,7 +15545,7 @@ def _aplicar_sedes_oficiais(base):
         return base
 
 
-IBGE_MUNICIPIOS = _aplicar_sedes_oficiais(IBGE_MUNICIPIOS)
+# [PERF-BASE-IBGE] execução movida para _preparar_base_ibge() (cacheada, 1×/processo).
 
 # [V445 · CORRECAO POS-SEDE OFICIAL] Correções VERIFICADAS que têm precedência sobre o CSV oficial, para os
 # casos em que o próprio CSV traz a sede errada DENTRO do município certo (a validação por geometria não
@@ -15585,7 +15581,7 @@ def _aplicar_correcoes_pos_sede(base):
         logger.error("[BASE-OFICIAL] Falha em _aplicar_correcoes_pos_sede (isolada) — base intacta.", exc_info=True)
         return base
 
-IBGE_MUNICIPIOS = _aplicar_correcoes_pos_sede(IBGE_MUNICIPIOS)
+# [PERF-BASE-IBGE] execução movida para _preparar_base_ibge() (cacheada, 1×/processo).
 
 # [IBGE-GEO-VALIDACAO - 184ª geracao] REDE SISTEMICA CONTRA COORDENADAS ERRADAS.
 # A unica autoridade INDEPENDENTE das bases de lat/lon (que clonam os mesmos erros entre si) e a GEOMETRIA
@@ -15734,19 +15730,23 @@ def _validar_coordenada_no_municipio(lat, lon, codigo_ibge, tolerancia_km=None):
                 "limiar_km": None, "motivo": "erro na validação — não avaliado (fail-open)"}
 
 
-IBGE_MUNICIPIOS = _validar_coordenadas_por_geometria(IBGE_MUNICIPIOS)
+# [PERF-BASE-IBGE] execução movida para _preparar_base_ibge() (cacheada, 1×/processo).
 
 
-def _auditar_saude_coordenadas():
+def _auditar_saude_coordenadas(base=None, codigos_sede=None):
     """[SAUDE-COORD - 184ª geração] MONITORAMENTO CONTÍNUO da base de coordenadas. Ao final da carga (após
     correção curada + SEDE OFICIAL + validação por geometria), verifica o estado FINAL contra a geometria
     oficial e registra UM resumo nos logs — para que qualquer regressão futura de fonte/código seja VISÍVEL
     em produção (detecção precoce), em vez de silenciosa. Read-only, defensivo, roda 1× no import. NÃO flagra
     como 'fora' os códigos com SEDE OFICIAL (são autoritativos e propositalmente confiados acima da malha,
-    que é mais antiga)."""
+    que é mais antiga).
+    [PERF-BASE-IBGE - 419ª geração] Aceita `base`/`codigos_sede` explícitos para ser chamada de dentro da
+    preparação cacheada (roda 1× por processo). Sem argumentos, recai nos globais — compatível com o uso legado."""
+    _base = base if base is not None else IBGE_MUNICIPIOS
+    _sede = codigos_sede if codigos_sede is not None else _CODIGOS_SEDE_OFICIAL
     try:
         _total = _com_geo = _sem_coord = _fora = 0
-        for _nome, _itens in IBGE_MUNICIPIOS.items():
+        for _nome, _itens in _base.items():
             for _it in _itens:
                 _cod = str(_it.get("codigo_ibge") or "").strip()
                 if len(_cod) != 7 or not _cod.isdigit():
@@ -15757,7 +15757,7 @@ def _auditar_saude_coordenadas():
                 if not (_lat and _lon):
                     _sem_coord += 1
                     continue
-                if _cod in _CODIGOS_SEDE_OFICIAL:
+                if _cod in _sede:
                     _com_geo += 1   # confiado: sede oficial do IBGE
                     continue
                 _v = _validar_coordenada_no_municipio(_lat, _lon, _cod)
@@ -15767,7 +15767,7 @@ def _auditar_saude_coordenadas():
                         _fora += 1
         logger.warning("[SAUDE-COORD] estado final: %d municípios | %d validáveis por geometria | %d SEM "
                        "coordenada | %d fora do polígono (não-oficiais) | %d com sede oficial.",
-                       _total, _com_geo, _sem_coord, _fora, len(_CODIGOS_SEDE_OFICIAL))
+                       _total, _com_geo, _sem_coord, _fora, len(_sede))
         if _sem_coord or _fora:
             logger.warning("[SAUDE-COORD] ⚠️ ATENÇÃO: %d sem coordenada e %d fora do polígono após correções — "
                            "investigar (possível regressão de fonte/código).", _sem_coord, _fora)
@@ -15777,7 +15777,42 @@ def _auditar_saude_coordenadas():
         pass
 
 
-_auditar_saude_coordenadas()
+@st.cache_resource(show_spinner=False)
+def _preparar_base_ibge():
+    """[PERF-BASE-IBGE - 419ª geração] Executa TODA a preparação da base nacional do IBGE UMA ÚNICA vez por
+    processo: carga (API/pickle/GitHub) + mescla da base embutida + correções curadas de coordenada + SEDE
+    OFICIAL + correções pós-sede + validação por geometria + auditoria de saúde. Devolve o resultado PRONTO
+    (dicts de municípios/estados/distritos, a lista de topônimos e o conjunto de códigos com sede oficial).
+
+    POR QUE (causa-raiz achada nos logs de produção): TODOS esses passos rodavam soltos no NÍVEL DE MÓDULO.
+    Como o Streamlit RE-EXECUTA o script inteiro a cada rerun (todo clique e todo chunk da alocação), a
+    preparação — incluindo DUAS varreduras de geometria sobre ~5.591 municípios (validação + auditoria) —
+    se repetia a cada rerun. Medido num único estudo real: 104× (416 correções logadas, 104 auditorias),
+    puro desperdício de CPU somado a cada rerun.
+
+    @st.cache_resource devolve SEMPRE a MESMA referência (sem cópia) e roda o corpo só na 1ª chamada; a base
+    é READ-ONLY após preparada. As etapas são idempotentes (só sobrescrevem coordenadas pelos MESMOS valores
+    oficiais), então o resultado é byte-idêntico ao da preparação inline anterior — só deixa de repetir."""
+    _mun, _est, _dist, _lista = carregar_dados_ibge()
+    # [IBGE-EMBUTIDA] garante completude nacional; imune a falha de API/GitHub/pickle.
+    _mun = _mesclar_base_embutida(_mun)
+    # [IBGE-COORD-FIX] corrige coordenadas comprovadamente erradas na fonte (tabela curada).
+    _mun = _aplicar_correcoes_coordenada(_mun)
+    # [BASE-OFICIAL] precedência da SEDE OFICIAL do IBGE (Fase 1 offline) — popula _CODIGOS_SEDE_OFICIAL.
+    _mun = _aplicar_sedes_oficiais(_mun)
+    _mun = _aplicar_correcoes_pos_sede(_mun)
+    # [SAUDE-COORD] validação por geometria oficial (corrige o que restou fora do polígono).
+    _mun = _validar_coordenadas_por_geometria(_mun)
+    _lista = list(_mun.keys()) + list(_dist.keys())
+    _sede = set(_CODIGOS_SEDE_OFICIAL)   # _aplicar_sedes_oficiais populou o global; captura p/ restaurar no rerun
+    _auditar_saude_coordenadas(_mun, _sede)   # 1 resumo nos logs (agora 1×, não 104×)
+    return _mun, _est, _dist, _lista, _sede
+
+
+# [PERF-BASE-IBGE - 419ª geração] Monta a base UMA vez e restaura os globais a cada rerun a partir do
+# resultado cacheado (atribuição barata — sem reprocessar nem re-logar). O Streamlit reseta estes globais ao
+# re-executar o módulo; esta linha os repõe já prontos.
+IBGE_MUNICIPIOS, IBGE_ESTADOS, IBGE_DISTRITOS, LISTA_TOPONIMOS, _CODIGOS_SEDE_OFICIAL = _preparar_base_ibge()
 
 
 # ==============================================================================
