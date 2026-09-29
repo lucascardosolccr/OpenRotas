@@ -40384,17 +40384,20 @@ def calcular_matriz_competitiva_vetorizada(dest_coords, hubs_validos, dest_cod=N
                     _k = _geo_mem_escala_k(_geo_mem_carregar(), o_nome, _k, _ADAP_TOPK_TETO)
                 except Exception:
                     pass
-            topk_map[o_nome] = [
-                (round(float(dists[int(ordem[j])]), 3), hub_nomes[int(ordem[j])])
-                for j in range(_k)
-            ]
+            # [PERF-CANDIDATOS - 419ª geração] Extração VETORIZADA das listas ordenadas por linha reta.
+            # ANTES: list-comp com int()/float()/round() POR ELEMENTO — O(origens×polos) conversões Python, o
+            # gargalo do preparo de candidatos (medido ~1,1 s no nacional, dominado por estas duas listas).
+            # AGORA: ordena as distâncias uma vez (np.round + .tolist em bloco) e os índices (.tolist), e monta
+            # as MESMAS tuplas (dist_reta, nome) com zip. Saída byte-idêntica (mesmos valores, mesma ordem, mesmo
+            # arredondamento round-half-to-even); só o custo cai (~4×). topk_map é a fatia dos _k primeiros.
+            _idx_ord = ordem.tolist()
+            _dist_ord = np.round(dists[ordem], 3).tolist()
+            _pares_ord = list(zip(_dist_ord, [hub_nomes[k] for k in _idx_ord]))
+            topk_map[o_nome] = _pares_ord[:_k]
             # [GARANTIA-OTIMA - 184ª geração] lista COMPLETA de TODOS os polos ordenados por linha reta —
             # base para a prova de otimalidade (branch-and-bound): permite descobrir, depois do roteamento
             # do top-K, quais polos fora dele ainda poderiam vencer (reta < melhor viária) e roteá-los.
-            topk_map_completo[o_nome] = [
-                (round(float(dists[int(ordem[j])]), 3), hub_nomes[int(ordem[j])])
-                for j in range(n_hubs)
-            ]
+            topk_map_completo[o_nome] = _pares_ord
 
     return dest_to_hub, dest_to_linha_reta, dest_to_status_lr, runner_up_map, topk_map, topk_map_completo
 
