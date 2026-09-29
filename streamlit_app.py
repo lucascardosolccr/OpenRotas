@@ -35134,6 +35134,19 @@ def API_OSRM_FOSSGIS_Routing(lat_o, lon_o, lat_d, lon_d):
     if lat_o == 0.0 or lat_d == 0.0:
         return None
     start_t = time.time()
+    # [PERF-FOSSGIS-CACHE - 419ª geração] Cache em disco por COORDENADA (~1 m), igual ao OSRM primário. O
+    # FOSSGIS é THROTTLED a ≤1 req/s (fair-use) e é o motor que mais custa no lote fluvial (auto-engaja na zona
+    # de suspeita, muitas origens/destinos repetidos + sweep de recuperação re-roteia os mesmos pares). Como é
+    # determinístico para as mesmas coordenadas, cachear devolve o MESMO resultado sem repetir a chamada lenta —
+    # ganho direto de vazão SEM perder qualidade e RESPEITANDO a política (menos requisições ao servidor público).
+    _ck_foss = None
+    try:
+        _ck_foss = "fossgisroute:%.5f,%.5f>%.5f,%.5f" % (lat_o, lon_o, lat_d, lon_d)
+        _hit_foss = cache_rotas.get(_ck_foss)
+        if _hit_foss is not None:
+            return tuple(_hit_foss) if isinstance(_hit_foss, list) else _hit_foss
+    except Exception:
+        _ck_foss = None
     try:
         def _call_fossgis():
             _throttle_osrm2()  # garante ≤1 req/s (política FOSSGIS)
@@ -35184,8 +35197,14 @@ def API_OSRM_FOSSGIS_Routing(lat_o, lon_o, lat_d, lon_d):
             except Exception:
                 _vias_u = None
             registrar_telemetria("OSRM_FOSSGIS", True, time.time() - start_t)
-            return (_dist_km, _tempo_min, _balsa, _n_alt, _geo_poly, _snap,
-                    _trav_u, _vias_u)  # idx 6 travessias, idx 7 vias [OSRM-VIAS]
+            _res_foss = (_dist_km, _tempo_min, _balsa, _n_alt, _geo_poly, _snap,
+                         _trav_u, _vias_u)  # idx 6 travessias, idx 7 vias [OSRM-VIAS]
+            try:
+                if _ck_foss is not None:
+                    cache_rotas.set(_ck_foss, _res_foss, expire=2592000)   # [PERF-FOSSGIS-CACHE] 30 dias
+            except Exception:
+                pass
+            return _res_foss
     except Exception:
         pass
     registrar_telemetria("OSRM_FOSSGIS", False, time.time() - start_t)
@@ -35236,6 +35255,21 @@ def API_Valhalla_Routing(lat_o, lon_o, lat_d, lon_d):
     if lat_o == 0.0 or lat_d == 0.0:
         return None
     start_t = time.time()
+    # [PERF-VALHALLA-CACHE - 419ª geração] Cache em disco por COORDENADA (~1 m), igual ao OSRM primário e ao
+    # FOSSGIS. A instância PÚBLICA do Valhalla é THROTTLED a ≤1 req/s (fair-use) e auto-engaja na zona de
+    # divergência/suspeita — muitos pares repetidos no lote + sweep de recuperação. Determinístico para as
+    # mesmas coordenadas, então cachear devolve o MESMO resultado sem repetir a chamada lenta. A CHAVE inclui a
+    # preferência de menor-distância (_ROTA_MENOR_DISTANCIA liga `shortest`), pois muda a rota devolvida — assim
+    # nunca serve uma rota "mais rápida" onde se pediu a "mais curta" (ou vice-versa). Quality-neutral.
+    _ck_vlh = None
+    try:
+        _ck_vlh = "valhallaroute:%d:%.5f,%.5f>%.5f,%.5f" % (
+            1 if _ROTA_MENOR_DISTANCIA else 0, lat_o, lon_o, lat_d, lon_d)
+        _hit_vlh = cache_rotas.get(_ck_vlh)
+        if _hit_vlh is not None:
+            return tuple(_hit_vlh) if isinstance(_hit_vlh, list) else _hit_vlh
+    except Exception:
+        _ck_vlh = None
     try:
         def _http_valhalla():
             _payload = {
@@ -35290,7 +35324,13 @@ def API_Valhalla_Routing(lat_o, lon_o, lat_d, lon_d):
         except Exception:
             _geo5 = ""
         registrar_telemetria("VALHALLA", True, time.time() - start_t)
-        return (_km, _tmin, _balsa, 1, _geo5, None)
+        _res_vlh = (_km, _tmin, _balsa, 1, _geo5, None)
+        try:
+            if _ck_vlh is not None:
+                cache_rotas.set(_ck_vlh, _res_vlh, expire=2592000)   # [PERF-VALHALLA-CACHE] 30 dias
+        except Exception:
+            pass
+        return _res_vlh
     except Exception:
         pass
     registrar_telemetria("VALHALLA", False, time.time() - start_t)
