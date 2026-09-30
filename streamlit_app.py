@@ -51951,253 +51951,297 @@ if _secao == _SECOES[1]:   # tab_processamento
                                  linhas=(len(_df_forcado_lote) if _df_forcado_lote is not None else 0))
                         st.rerun()
 
-                    # [RECUPERACAO-FINAL - 334a geração] ÚLTIMA CHANCE no Lote (§1/§2/§3): mesma máquina da
-                    # Alocação (processar_chunk_rotas, bounded, defensivo, piso no-op, pula erros permanentes).
+                    # [BLINDAGEM-FINALIZACAO-FATAL - 420ª geração] Rede de segurança DEFINITIVA da finalização do LOTE:
+                    # qualquer exceção não tratada abaixo rodava na thread principal do Streamlit e derrubava o app
+                    # ('Oh no.') durante o processamento. Aqui ela vira a MESMA entrega degradada do watchdog + rerun
+                    # limpo. Exceções de controle de fluxo do Streamlit (rerun/stop) são RE-LEVANTADAS. Aditivo.
                     try:
-                        _oo_rl = _df_base['Origem'].astype(str).str.strip()
-                        _dd_rl = _df_base['Destino'].astype(str).str.strip()
-                        _falt_l = []
-                        for _org_rl, _dst_rl in zip(_oo_rl, _dd_rl):
-                            _rrl = _resultados.get((_org_rl, _dst_rl))
-                            if (not _rrl) or (len(_rrl) < 1) or (_rrl[0] is None):
-                                _motl = ""
-                                try:
-                                    _motl = str(_rrl[5]) if (_rrl and len(_rrl) > 5 and _rrl[5]) else ""
-                                except Exception:
-                                    _motl = ""
-                                if _motl and _classificar_erro_rota(_motl) == "permanente":
-                                    continue
-                                _falt_l.append((_org_rl, _dst_rl))
-                        _falt_l = list(dict.fromkeys(_falt_l))
-                        if _falt_l and len(_falt_l) <= _RECUP_FINAL_MAX_PARES:
-                            _pend_l = list(_falt_l); _rec_ok_l = 0; _tent_l = 0
-                            _sweep_t0_l = time.time()   # [SWEEP-ORCAMENTO - 401ª geração] teto de tempo total
-                            while _pend_l and _tent_l < _RECUP_FINAL_TENTATIVAS:
-                                if (time.time() - _sweep_t0_l) >= _RECUP_FINAL_BUDGET_S:
-                                    logger.warning("[RECUPERACAO-FINAL/lote] Orçamento de %.0fs atingido; %d "
-                                                   "par(es) seguem para registro/fallback.", _RECUP_FINAL_BUDGET_S, len(_pend_l))
-                                    break
-                                _tent_l += 1
-                                if _tent_l > 1:
-                                    time.sleep(_RECUP_FINAL_BACKOFF_S * (_tent_l - 1))
-                                with st.spinner("🔁 Recuperação final do lote (tentativa %d/%d): %d rota(s)…"
-                                                % (_tent_l, _RECUP_FINAL_TENTATIVAS, len(_pend_l))):
-                                    _res_rec_l = processar_chunk_rotas(_pend_l, runner_up_map=_runner_map) or {}
-                                _resta_l = []
-                                for _pp_l in _pend_l:
-                                    _vr_l = _res_rec_l.get(_pp_l)
-                                    if _vr_l and _vr_l[0] is not None:
-                                        _resultados[_pp_l] = _vr_l; _rec_ok_l += 1
-                                    else:
-                                        _resta_l.append(_pp_l)
-                                _pend_l = _resta_l
-                            st.session_state['lote_resultados'] = _resultados
-                            st.session_state['lote_recuperadas'] = int(st.session_state.get('lote_recuperadas', 0) or 0) + _rec_ok_l
-                            logger.warning("[RECUPERACAO-FINAL/lote] %d/%d rota(s) recuperada(s) em até %d "
-                                           "tentativa(s); %d permanece(m).", _rec_ok_l, len(_falt_l),
-                                           _RECUP_FINAL_TENTATIVAS, len(_pend_l))
-                    except Exception:
-                        logger.error("[RECUPERACAO-FINAL/lote] Falha na recuperação final do lote (isolada).", exc_info=True)
-                    df_final = None
-                    _t_lote_montagem = time.time()
-                    with _perfil_fase("Montagem do DataFrame (Lote)"):
-                        df_final = _montar_dataframe_final(_df_base, _resultados, runner_up_map=_runner_map,
-                                                           hub_qual_map=st.session_state.get('alo_hub_qual_map'))
-                    # [COMPLETUDE-ROTAS - 334a geração] Prestação de contas do Lote (mesma auditoria da Alocação).
-                    try:
-                        _comp_lote = _auditar_completude_rotas(
-                            df_final, previstas=(len(_df_base) if _df_base is not None else None))
-                        st.session_state['lote_completude'] = _comp_lote
-                        logger.warning("[COMPLETUDE-ROTAS/lote] %s", _comp_lote.get("veredito", ""))
-                    except Exception:
-                        logger.error("[COMPLETUDE-ROTAS/lote] Falha ao auditar completude do lote (isolada).", exc_info=True)
-                    # [FINALIZACAO-ROBUSTA - 267ª geração] DF-SEGURO: a montagem base produziu um DataFrame
-                    # completo e entregável. Guardamos uma REFERÊNCIA (custo zero) antes do enriquecimento; se um
-                    # passo abaixo for interrompido, o watchdog entrega este DF. Os enriquecedores reatribuem
-                    # df_final a novos objetos, então a referência permanece intacta. Liberada no commit de sucesso.
-                    try:
-                        st.session_state['lote_df_seguro'] = df_final
-                    except Exception:
-                        pass
-                    _obs_fin("montar_df_base", _t_lote_montagem,
-                             linhas=(len(df_final) if df_final is not None else 0))
-                    # [HOMONIMO - 126ª geração] Pós-passo ADITIVO: auditoria de desambiguação de homônimos
-                    # (contexto da planilha + validação espacial). Defensivo; nunca quebra o lote.
-                    df_final = _crono_fin("enriq_homonimos", _enriquecer_desambiguacao_homonimos, df_final)
-                    # [INTEGRIDADE - 133ª geração] Pós-passo ADITIVO: Índice de Integridade Geográfica + alerta por rota.
-                    df_final = _crono_fin("enriq_integridade", _enriquecer_integridade_geografica, df_final)
-                    # [IBGE-ROTULO - 146ª geração] Rótulos legíveis + retroalimentação Município/UF.
-                    df_final = _crono_fin("enriq_rotulos_ibge", _enriquecer_rotulos_ibge, df_final)
-                    # [HUMANIZAR - 173ª geração] O CÓDIGO IBGE SAI da coluna Origem/Destino; o NOME entra.
-                    # O código NÃO se perde: vai para a coluna própria. Ninguém analisa uma planilha com
-                    # '1100023' na coluna Origem — código é identificador de MÁQUINA, nome é de GENTE.
-                    # ═══════════════════════════════════════════════════════════════════════════════
-                    # [PORTÃO - 176ª geração] A GARANTIA: nenhum ZERO IMPOSSÍVEL sai daqui.
-                    #
-                    # Consertar MAIS caminhos não é garantia — na 168ª eu declarei resolvido um bug que
-                    # ainda estava lá, porque consertei o caminho ERRADO. A resposta certa é um PORTÃO
-                    # que NENHUMA linha atravessa sem ser examinada — venha ela de onde vier, inclusive
-                    # de caminhos que ainda não existem.
-                    #
-                    # A LEI FÍSICA: dois municípios DIFERENTES não podem estar a 0,0 km. É geometria.
-                    # (E zero com origem == destino é VÁLIDO: prova na própria cidade. Confundir os dois
-                    #  foi o pecado original — usar zero como SENTINELA num campo onde ele é legítimo.)
-                    # ═══════════════════════════════════════════════════════════════════════════════
-                    df_final, _rel_portao = _crono_fin("portao_distancias", _portao_final_distancias, df_final)
-                    st.session_state['portao_relatorio'] = _rel_portao
-                    df_final = _crono_fin("humanizar_ids", _humanizar_identificadores, df_final)
-                    
-                    # Recalcula Linha Reta vetorizada (Haversine IUGG)
-                    lat_o = np.radians(df_final['Lat Origem'].astype(float).values)
-                    lon_o = np.radians(df_final['Lon Origem'].astype(float).values)
-                    lat_d = np.radians(df_final['Lat Destino'].astype(float).values)
-                    lon_d = np.radians(df_final['Lon Destino'].astype(float).values)
-                    dlat = lat_d - lat_o; dlon = lon_d - lon_o
-                    a = np.sin(dlat / 2.0)**2 + np.cos(lat_o) * np.cos(lat_d) * np.sin(dlon / 2.0)**2
-                    c = 2 * np.arcsin(np.sqrt(a))
-                    distancias_vetorizadas = 6371.0088 * c
-                    mask_validas = (df_final['Lat Origem'] != 0.0) & (df_final['Lat Destino'] != 0.0)
-                    df_final.loc[mask_validas, 'Linha Reta'] = np.round(distancias_vetorizadas[mask_validas], 2)
-                    _set_col_seguro(df_final, mask_validas, 'Status Linha Reta', "Calculada via Haversine Vetorizado")
-                    
-                    tempo_lote_segundos = round(time.time() - _start_clock, 2)
-                    cache_historico_lotes.set(f"lote_{_start_clock}", {
-                        "Data/Hora": time.strftime("%Y-%m-%d %H:%M:%S"),
-                        "Operador": _operador.strip() if _operador.strip() else "Operador Padrão",
-                        "Linhas Validadas": _total,
-                        "Tempo Gasto (s)": tempo_lote_segundos,
-                        "Tempo Médio/Rota (s)": round(tempo_lote_segundos / max(1, _total), 2)
-                    }, expire=None)
-                    # [DELTA-LOTE · M5] "O que mudou vs execução anterior": persistimos um sumário LEVE por rota
-                    # (origem|destino → km/UF) numa chave rotativa (lote_delta_ultimo) e calculamos o diff contra
-                    # a execução precedente AQUI (na conclusão), guardando o delta pré-computado na sessão para o
-                    # painel (sem recomputar por rerun). Aditivo: jamais altera df_processado/decisões; limitado a
-                    # estudos ≤ 20k rotas para não inflar o shelf; sem histórico → painel mostra "primeira execução".
-                    try:
-                        _resumo_rotas = {}
-                        if df_final is not None and 0 < len(df_final) <= 20000:
-                            _cm_d5 = {str(c).strip().lower(): c for c in df_final.columns}
-                            _cO5 = _cm_d5.get("origem") or _cm_d5.get("municipio origem") or _cm_d5.get("município origem")
-                            _cD5 = _cm_d5.get("destino") or _cm_d5.get("municipio destino") or _cm_d5.get(
-                                "município destino") or _cm_d5.get("municipio de destino")
-                            _cU5 = _cm_d5.get("uf") or _cm_d5.get("uf origem")
-                            _cK5 = _cm_d5.get("distância (km)") or _cm_d5.get("distancia")
-                            if _cO5 and _cD5 and _cK5:
-                                for _r5 in df_final[[_cO5, _cD5, (_cU5 or _cO5), _cK5]].itertuples(index=False):
-                                    try:
-                                        _kmv = _num_seguro(_r5[3])
-                                        _resumo_rotas[f"{str(_r5[0]).strip()}|{str(_r5[1]).strip()}"] = {
-                                            "dist": round(float(_kmv or 0.0), 2),
-                                            "uf": str(_r5[2] or "").strip(),
-                                            "dest": str(_r5[1]).strip()}
-                                    except Exception:
-                                        continue
-                        _delta_lote = {"comparavel": False}
-                        _ant_resumo = cache_historico_lotes.get("lote_delta_ultimo") or {}
-                        if _resumo_rotas and _ant_resumo and isinstance(_ant_resumo, dict):
-                            _chaves_ant, _chaves_nov = set(_ant_resumo), set(_resumo_rotas)
-                            _novas, _removidas, _mudaram, _top = [], [], [], []
-                            _tot_ant = sum(float(_ant_resumo[k].get("dist", 0.0) or 0.0) for k in _chaves_ant)
-                            _tot_nov = sum(float(_resumo_rotas[k].get("dist", 0.0) or 0.0) for k in _chaves_nov)
-                            for _k in sorted(_chaves_nov - _chaves_ant):
-                                _novas.append(_k)
-                            for _k in sorted(_chaves_ant - _chaves_nov):
-                                _removidas.append(_k)
-                            for _k in sorted(_chaves_ant & _chaves_nov):
-                                _a = _ant_resumo[_k]; _n = _resumo_rotas[_k]
-                                if (abs(float(_n.get("dist", 0.0) or 0.0) - float(_a.get("dist", 0.0) or 0.0)) > 0.05
-                                        or str(_n.get("dest")) != str(_a.get("dest"))):
-                                    _mudaram.append(_k)
-                                    _top.append((_k,
-                                                 float(_n.get("dist", 0.0) or 0.0) - float(_a.get("dist", 0.0) or 0.0),
-                                                 str(_n.get("uf", ""))))
-                            _top.sort(key=lambda x: abs(x[1]), reverse=True)
-                            _delta_lote = {
-                                "comparavel": True,
-                                "novas": len(_novas), "removidas": len(_removidas), "mudaram": len(_mudaram),
-                                "total_km_ant": round(_tot_ant, 1), "total_km_nov": round(_tot_nov, 1),
-                                "delta_km": round(_tot_nov - _tot_ant, 1),
-                                "economia_vs_ant_km": round(_tot_ant - _tot_nov, 1),
-                                "top": _top[:10],
-                                "n": len(_chaves_nov)}
+                        # [RECUPERACAO-FINAL - 334a geração] ÚLTIMA CHANCE no Lote (§1/§2/§3): mesma máquina da
+                        # Alocação (processar_chunk_rotas, bounded, defensivo, piso no-op, pula erros permanentes).
                         try:
-                            cache_historico_lotes.set("lote_delta_ultimo", _resumo_rotas, expire=None)
+                            _oo_rl = _df_base['Origem'].astype(str).str.strip()
+                            _dd_rl = _df_base['Destino'].astype(str).str.strip()
+                            _falt_l = []
+                            for _org_rl, _dst_rl in zip(_oo_rl, _dd_rl):
+                                _rrl = _resultados.get((_org_rl, _dst_rl))
+                                if (not _rrl) or (len(_rrl) < 1) or (_rrl[0] is None):
+                                    _motl = ""
+                                    try:
+                                        _motl = str(_rrl[5]) if (_rrl and len(_rrl) > 5 and _rrl[5]) else ""
+                                    except Exception:
+                                        _motl = ""
+                                    if _motl and _classificar_erro_rota(_motl) == "permanente":
+                                        continue
+                                    _falt_l.append((_org_rl, _dst_rl))
+                            _falt_l = list(dict.fromkeys(_falt_l))
+                            if _falt_l and len(_falt_l) <= _RECUP_FINAL_MAX_PARES:
+                                _pend_l = list(_falt_l); _rec_ok_l = 0; _tent_l = 0
+                                _sweep_t0_l = time.time()   # [SWEEP-ORCAMENTO - 401ª geração] teto de tempo total
+                                while _pend_l and _tent_l < _RECUP_FINAL_TENTATIVAS:
+                                    if (time.time() - _sweep_t0_l) >= _RECUP_FINAL_BUDGET_S:
+                                        logger.warning("[RECUPERACAO-FINAL/lote] Orçamento de %.0fs atingido; %d "
+                                                       "par(es) seguem para registro/fallback.", _RECUP_FINAL_BUDGET_S, len(_pend_l))
+                                        break
+                                    _tent_l += 1
+                                    if _tent_l > 1:
+                                        time.sleep(_RECUP_FINAL_BACKOFF_S * (_tent_l - 1))
+                                    with st.spinner("🔁 Recuperação final do lote (tentativa %d/%d): %d rota(s)…"
+                                                    % (_tent_l, _RECUP_FINAL_TENTATIVAS, len(_pend_l))):
+                                        _res_rec_l = processar_chunk_rotas(_pend_l, runner_up_map=_runner_map) or {}
+                                    _resta_l = []
+                                    for _pp_l in _pend_l:
+                                        _vr_l = _res_rec_l.get(_pp_l)
+                                        if _vr_l and _vr_l[0] is not None:
+                                            _resultados[_pp_l] = _vr_l; _rec_ok_l += 1
+                                        else:
+                                            _resta_l.append(_pp_l)
+                                    _pend_l = _resta_l
+                                st.session_state['lote_resultados'] = _resultados
+                                st.session_state['lote_recuperadas'] = int(st.session_state.get('lote_recuperadas', 0) or 0) + _rec_ok_l
+                                logger.warning("[RECUPERACAO-FINAL/lote] %d/%d rota(s) recuperada(s) em até %d "
+                                               "tentativa(s); %d permanece(m).", _rec_ok_l, len(_falt_l),
+                                               _RECUP_FINAL_TENTATIVAS, len(_pend_l))
                         except Exception:
-                            logger.error("[DELTA-LOTE] Falha ao persistir sumário derivado.", exc_info=True)
-                        st.session_state['lote_delta'] = _delta_lote
-                    except Exception:
-                        st.session_state['lote_delta'] = {"comparavel": False}
+                            logger.error("[RECUPERACAO-FINAL/lote] Falha na recuperação final do lote (isolada).", exc_info=True)
+                        df_final = None
+                        _t_lote_montagem = time.time()
+                        with _perfil_fase("Montagem do DataFrame (Lote)"):
+                            df_final = _montar_dataframe_final(_df_base, _resultados, runner_up_map=_runner_map,
+                                                               hub_qual_map=st.session_state.get('alo_hub_qual_map'))
+                        # [COMPLETUDE-ROTAS - 334a geração] Prestação de contas do Lote (mesma auditoria da Alocação).
+                        try:
+                            _comp_lote = _auditar_completude_rotas(
+                                df_final, previstas=(len(_df_base) if _df_base is not None else None))
+                            st.session_state['lote_completude'] = _comp_lote
+                            logger.warning("[COMPLETUDE-ROTAS/lote] %s", _comp_lote.get("veredito", ""))
+                        except Exception:
+                            logger.error("[COMPLETUDE-ROTAS/lote] Falha ao auditar completude do lote (isolada).", exc_info=True)
+                        # [FINALIZACAO-ROBUSTA - 267ª geração] DF-SEGURO: a montagem base produziu um DataFrame
+                        # completo e entregável. Guardamos uma REFERÊNCIA (custo zero) antes do enriquecimento; se um
+                        # passo abaixo for interrompido, o watchdog entrega este DF. Os enriquecedores reatribuem
+                        # df_final a novos objetos, então a referência permanece intacta. Liberada no commit de sucesso.
+                        try:
+                            st.session_state['lote_df_seguro'] = df_final
+                        except Exception:
+                            pass
+                        _obs_fin("montar_df_base", _t_lote_montagem,
+                                 linhas=(len(df_final) if df_final is not None else 0))
+                        # [HOMONIMO - 126ª geração] Pós-passo ADITIVO: auditoria de desambiguação de homônimos
+                        # (contexto da planilha + validação espacial). Defensivo; nunca quebra o lote.
+                        df_final = _crono_fin("enriq_homonimos", _enriquecer_desambiguacao_homonimos, df_final)
+                        # [INTEGRIDADE - 133ª geração] Pós-passo ADITIVO: Índice de Integridade Geográfica + alerta por rota.
+                        df_final = _crono_fin("enriq_integridade", _enriquecer_integridade_geografica, df_final)
+                        # [IBGE-ROTULO - 146ª geração] Rótulos legíveis + retroalimentação Município/UF.
+                        df_final = _crono_fin("enriq_rotulos_ibge", _enriquecer_rotulos_ibge, df_final)
+                        # [HUMANIZAR - 173ª geração] O CÓDIGO IBGE SAI da coluna Origem/Destino; o NOME entra.
+                        # O código NÃO se perde: vai para a coluna própria. Ninguém analisa uma planilha com
+                        # '1100023' na coluna Origem — código é identificador de MÁQUINA, nome é de GENTE.
+                        # ═══════════════════════════════════════════════════════════════════════════════
+                        # [PORTÃO - 176ª geração] A GARANTIA: nenhum ZERO IMPOSSÍVEL sai daqui.
+                        #
+                        # Consertar MAIS caminhos não é garantia — na 168ª eu declarei resolvido um bug que
+                        # ainda estava lá, porque consertei o caminho ERRADO. A resposta certa é um PORTÃO
+                        # que NENHUMA linha atravessa sem ser examinada — venha ela de onde vier, inclusive
+                        # de caminhos que ainda não existem.
+                        #
+                        # A LEI FÍSICA: dois municípios DIFERENTES não podem estar a 0,0 km. É geometria.
+                        # (E zero com origem == destino é VÁLIDO: prova na própria cidade. Confundir os dois
+                        #  foi o pecado original — usar zero como SENTINELA num campo onde ele é legítimo.)
+                        # ═══════════════════════════════════════════════════════════════════════════════
+                        df_final, _rel_portao = _crono_fin("portao_distancias", _portao_final_distancias, df_final)
+                        st.session_state['portao_relatorio'] = _rel_portao
+                        df_final = _crono_fin("humanizar_ids", _humanizar_identificadores, df_final)
                     
-                    ordem_finais = list(_df_base.columns)
-                    for col in NOVAS_COLUNAS_PADRAO:
-                        if col not in ordem_finais:
+                        # Recalcula Linha Reta vetorizada (Haversine IUGG)
+                        lat_o = np.radians(df_final['Lat Origem'].astype(float).values)
+                        lon_o = np.radians(df_final['Lon Origem'].astype(float).values)
+                        lat_d = np.radians(df_final['Lat Destino'].astype(float).values)
+                        lon_d = np.radians(df_final['Lon Destino'].astype(float).values)
+                        dlat = lat_d - lat_o; dlon = lon_d - lon_o
+                        a = np.sin(dlat / 2.0)**2 + np.cos(lat_o) * np.cos(lat_d) * np.sin(dlon / 2.0)**2
+                        c = 2 * np.arcsin(np.sqrt(a))
+                        distancias_vetorizadas = 6371.0088 * c
+                        mask_validas = (df_final['Lat Origem'] != 0.0) & (df_final['Lat Destino'] != 0.0)
+                        df_final.loc[mask_validas, 'Linha Reta'] = np.round(distancias_vetorizadas[mask_validas], 2)
+                        _set_col_seguro(df_final, mask_validas, 'Status Linha Reta', "Calculada via Haversine Vetorizado")
+                    
+                        tempo_lote_segundos = round(time.time() - _start_clock, 2)
+                        cache_historico_lotes.set(f"lote_{_start_clock}", {
+                            "Data/Hora": time.strftime("%Y-%m-%d %H:%M:%S"),
+                            "Operador": _operador.strip() if _operador.strip() else "Operador Padrão",
+                            "Linhas Validadas": _total,
+                            "Tempo Gasto (s)": tempo_lote_segundos,
+                            "Tempo Médio/Rota (s)": round(tempo_lote_segundos / max(1, _total), 2)
+                        }, expire=None)
+                        # [DELTA-LOTE · M5] "O que mudou vs execução anterior": persistimos um sumário LEVE por rota
+                        # (origem|destino → km/UF) numa chave rotativa (lote_delta_ultimo) e calculamos o diff contra
+                        # a execução precedente AQUI (na conclusão), guardando o delta pré-computado na sessão para o
+                        # painel (sem recomputar por rerun). Aditivo: jamais altera df_processado/decisões; limitado a
+                        # estudos ≤ 20k rotas para não inflar o shelf; sem histórico → painel mostra "primeira execução".
+                        try:
+                            _resumo_rotas = {}
+                            if df_final is not None and 0 < len(df_final) <= 20000:
+                                _cm_d5 = {str(c).strip().lower(): c for c in df_final.columns}
+                                _cO5 = _cm_d5.get("origem") or _cm_d5.get("municipio origem") or _cm_d5.get("município origem")
+                                _cD5 = _cm_d5.get("destino") or _cm_d5.get("municipio destino") or _cm_d5.get(
+                                    "município destino") or _cm_d5.get("municipio de destino")
+                                _cU5 = _cm_d5.get("uf") or _cm_d5.get("uf origem")
+                                _cK5 = _cm_d5.get("distância (km)") or _cm_d5.get("distancia")
+                                if _cO5 and _cD5 and _cK5:
+                                    for _r5 in df_final[[_cO5, _cD5, (_cU5 or _cO5), _cK5]].itertuples(index=False):
+                                        try:
+                                            _kmv = _num_seguro(_r5[3])
+                                            _resumo_rotas[f"{str(_r5[0]).strip()}|{str(_r5[1]).strip()}"] = {
+                                                "dist": round(float(_kmv or 0.0), 2),
+                                                "uf": str(_r5[2] or "").strip(),
+                                                "dest": str(_r5[1]).strip()}
+                                        except Exception:
+                                            continue
+                            _delta_lote = {"comparavel": False}
+                            _ant_resumo = cache_historico_lotes.get("lote_delta_ultimo") or {}
+                            if _resumo_rotas and _ant_resumo and isinstance(_ant_resumo, dict):
+                                _chaves_ant, _chaves_nov = set(_ant_resumo), set(_resumo_rotas)
+                                _novas, _removidas, _mudaram, _top = [], [], [], []
+                                _tot_ant = sum(float(_ant_resumo[k].get("dist", 0.0) or 0.0) for k in _chaves_ant)
+                                _tot_nov = sum(float(_resumo_rotas[k].get("dist", 0.0) or 0.0) for k in _chaves_nov)
+                                for _k in sorted(_chaves_nov - _chaves_ant):
+                                    _novas.append(_k)
+                                for _k in sorted(_chaves_ant - _chaves_nov):
+                                    _removidas.append(_k)
+                                for _k in sorted(_chaves_ant & _chaves_nov):
+                                    _a = _ant_resumo[_k]; _n = _resumo_rotas[_k]
+                                    if (abs(float(_n.get("dist", 0.0) or 0.0) - float(_a.get("dist", 0.0) or 0.0)) > 0.05
+                                            or str(_n.get("dest")) != str(_a.get("dest"))):
+                                        _mudaram.append(_k)
+                                        _top.append((_k,
+                                                     float(_n.get("dist", 0.0) or 0.0) - float(_a.get("dist", 0.0) or 0.0),
+                                                     str(_n.get("uf", ""))))
+                                _top.sort(key=lambda x: abs(x[1]), reverse=True)
+                                _delta_lote = {
+                                    "comparavel": True,
+                                    "novas": len(_novas), "removidas": len(_removidas), "mudaram": len(_mudaram),
+                                    "total_km_ant": round(_tot_ant, 1), "total_km_nov": round(_tot_nov, 1),
+                                    "delta_km": round(_tot_nov - _tot_ant, 1),
+                                    "economia_vs_ant_km": round(_tot_ant - _tot_nov, 1),
+                                    "top": _top[:10],
+                                    "n": len(_chaves_nov)}
+                            try:
+                                cache_historico_lotes.set("lote_delta_ultimo", _resumo_rotas, expire=None)
+                            except Exception:
+                                logger.error("[DELTA-LOTE] Falha ao persistir sumário derivado.", exc_info=True)
+                            st.session_state['lote_delta'] = _delta_lote
+                        except Exception:
+                            st.session_state['lote_delta'] = {"comparavel": False}
+                    
+                        ordem_finais = list(_df_base.columns)
+                        for col in NOVAS_COLUNAS_PADRAO:
+                            if col not in ordem_finais:
+                                ordem_finais.append(col)
+                        # [FIX - 114ª geração] REDE DE SEGURANÇA: preserva QUALQUER coluna já presente no
+                        # resultado que não esteja na ordem (Cod IBGE Origem/Destino, UF Origem/Destino,
+                        # Modo/Acesso, etc.) — nada mais é descartado no reindex.
+                        for col in df_final.columns:
+                            # [FIX-COLUNAS-FANTASMA - 117ª geração] rede final: nunca readmitir colunas-artefato
+                            # (_N posicional ou 'Unnamed:'), caso surjam por qualquer outro caminho de leitura.
+                            if col in ordem_finais:
+                                continue
+                            _cs = str(col)
+                            if re.fullmatch(r'_\d+', _cs) or _cs.startswith('Unnamed:'):
+                                continue
                             ordem_finais.append(col)
-                    # [FIX - 114ª geração] REDE DE SEGURANÇA: preserva QUALQUER coluna já presente no
-                    # resultado que não esteja na ordem (Cod IBGE Origem/Destino, UF Origem/Destino,
-                    # Modo/Acesso, etc.) — nada mais é descartado no reindex.
-                    for col in df_final.columns:
-                        # [FIX-COLUNAS-FANTASMA - 117ª geração] rede final: nunca readmitir colunas-artefato
-                        # (_N posicional ou 'Unnamed:'), caso surjam por qualquer outro caminho de leitura.
-                        if col in ordem_finais:
-                            continue
-                        _cs = str(col)
-                        if re.fullmatch(r'_\d+', _cs) or _cs.startswith('Unnamed:'):
-                            continue
-                        ordem_finais.append(col)
-                    df_final = df_final.reindex(columns=ordem_finais)
+                        df_final = df_final.reindex(columns=ordem_finais)
                     
-                    # [FINALIZACAO-ROBUSTA - 267ª geração] COMMIT dos RESULTADOS primeiro — antes de qualquer
-                    # geração de arquivo — espelhando a blindagem da Alocação (261ª/266ª). Os resultados nunca se
-                    # perdem; a planilha (.xlsx) passa a ser gerada de forma DESACOPLADA (FASE 3b), eliminando o
-                    # risco de OOM/timeout na finalização travar a entrega. A finalização vai DIRETO à exibição.
-                    st.session_state['df_processado'] = df_final
-                    # [GEO-INTEL-ANTECIPADO - fix integração] Mesmo raciocínio da Alocação: enriquece
-                    # geograficamente (rios, bacia, pontes, travessias, rodovias, ferrovias, anomalias)
-                    # ANTES da FASE 3b (que roda numa passada DESACOPLADA via st.rerun() logo abaixo e
-                    # relê `df_processado` do zero) montar a planilha do lote — senão a planilha nunca
-                    # carregava essas colunas. Chamada idempotente (fingerprint) — não reprocessa à toa.
-                    try:
-                        _df_geo0_lote, _geo_rel0_lote = _enriquecer_geo_inteligencia_df(df_final)
-                        if _geo_rel0_lote.get('executado'):
-                            df_final = _df_geo0_lote
-                            st.session_state['df_processado'] = df_final
-                    except Exception:
-                        logger.debug("[GEO-INTEL-ANTECIPADO] Enriquecimento pré-planilha (lote) falhou (aditivo).", exc_info=True)
-                    st.session_state['lote_tempo_total'] = tempo_lote_segundos
-                    _exibir_auditoria_coordenadas(df_final)  # [Melhoria4-EXCEL 453ª · M1] aviso não-bloqueante
-                    st.session_state['lote_preaquecido_final'] = _preaq
-                    st.session_state['lote_resultado_pronto'] = True
-                    _ckpt_apagar('estudo_lote')  # [CHECKPOINT-DISCO - 269ª] estudo concluído: remove o checkpoint
-                    try:
-                        st.session_state['lote_resumo_final'] = _resumo_finalizacao(df_final)
-                    except Exception:
-                        st.session_state['lote_resumo_final'] = {}
-                    st.session_state.pop('lote_finalizacao_degradada', None)
-                    _obs_fin("finalizacao_total", _t_lote_fin0, linhas=len(df_final), tentativas=_lote_fin_tent)
-                    # Limpa o estado de processamento (libera RAM dos checkpoints) + marcadores desta finalização.
-                    # Mantém df_processado (a FASE 3b usa só ele para montar o .xlsx).
-                    for _k in ['lote_endpoints', 'lote_preaq_idx', 'lote_tarefas', 'lote_resultados',
-                               'lote_chunk_idx', 'lote_df_base', 'lote_start_clock', 'lote_total',
-                               'lote_operador', 'lote_preaquecido', 'lote_runner_map', 'lote_eta_ultimo',
-                               'lote_taxa_ema', 'lote_df_seguro', 'lote_fin_tentativas']:
-                        st.session_state.pop(_k, None)
-                    # [PLANILHA-HIBRIDA - 267ª geração] Estudo PEQUENO (≤ _LIMITE_PLANILHA_AUTO linhas) → gera a
-                    # planilha automaticamente (FASE 3b na próxima passada), conveniência sem clique. GRANDE/
-                    # nacional → sob demanda, mantendo a finalização instantânea e à prova de OOM. Defensivo: sem
-                    # tamanho → sob demanda (caminho seguro).
-                    try:
-                        _n_lote_hib = len(df_final) if df_final is not None else 0
-                    except Exception:
-                        _n_lote_hib = 0
-                    if 0 < _n_lote_hib <= _LIMITE_PLANILHA_AUTO:
-                        st.session_state['lote_planilha_auto'] = True
-                        st.session_state['lote_em_andamento'] = True
-                        st.session_state['lote_fase'] = 'gerar_planilha'
-                    else:
-                        st.session_state.pop('lote_planilha_auto', None)
-                        st.session_state.pop('lote_em_andamento', None)
-                        st.session_state.pop('lote_fase', None)
-                    st.rerun()
+                        # [FINALIZACAO-ROBUSTA - 267ª geração] COMMIT dos RESULTADOS primeiro — antes de qualquer
+                        # geração de arquivo — espelhando a blindagem da Alocação (261ª/266ª). Os resultados nunca se
+                        # perdem; a planilha (.xlsx) passa a ser gerada de forma DESACOPLADA (FASE 3b), eliminando o
+                        # risco de OOM/timeout na finalização travar a entrega. A finalização vai DIRETO à exibição.
+                        st.session_state['df_processado'] = df_final
+                        # [GEO-INTEL-ANTECIPADO - fix integração] Mesmo raciocínio da Alocação: enriquece
+                        # geograficamente (rios, bacia, pontes, travessias, rodovias, ferrovias, anomalias)
+                        # ANTES da FASE 3b (que roda numa passada DESACOPLADA via st.rerun() logo abaixo e
+                        # relê `df_processado` do zero) montar a planilha do lote — senão a planilha nunca
+                        # carregava essas colunas. Chamada idempotente (fingerprint) — não reprocessa à toa.
+                        try:
+                            _df_geo0_lote, _geo_rel0_lote = _enriquecer_geo_inteligencia_df(df_final)
+                            if _geo_rel0_lote.get('executado'):
+                                df_final = _df_geo0_lote
+                                st.session_state['df_processado'] = df_final
+                        except Exception:
+                            logger.debug("[GEO-INTEL-ANTECIPADO] Enriquecimento pré-planilha (lote) falhou (aditivo).", exc_info=True)
+                        st.session_state['lote_tempo_total'] = tempo_lote_segundos
+                        _exibir_auditoria_coordenadas(df_final)  # [Melhoria4-EXCEL 453ª · M1] aviso não-bloqueante
+                        st.session_state['lote_preaquecido_final'] = _preaq
+                        st.session_state['lote_resultado_pronto'] = True
+                        _ckpt_apagar('estudo_lote')  # [CHECKPOINT-DISCO - 269ª] estudo concluído: remove o checkpoint
+                        try:
+                            st.session_state['lote_resumo_final'] = _resumo_finalizacao(df_final)
+                        except Exception:
+                            st.session_state['lote_resumo_final'] = {}
+                        st.session_state.pop('lote_finalizacao_degradada', None)
+                        _obs_fin("finalizacao_total", _t_lote_fin0, linhas=len(df_final), tentativas=_lote_fin_tent)
+                        # Limpa o estado de processamento (libera RAM dos checkpoints) + marcadores desta finalização.
+                        # Mantém df_processado (a FASE 3b usa só ele para montar o .xlsx).
+                        for _k in ['lote_endpoints', 'lote_preaq_idx', 'lote_tarefas', 'lote_resultados',
+                                   'lote_chunk_idx', 'lote_df_base', 'lote_start_clock', 'lote_total',
+                                   'lote_operador', 'lote_preaquecido', 'lote_runner_map', 'lote_eta_ultimo',
+                                   'lote_taxa_ema', 'lote_df_seguro', 'lote_fin_tentativas']:
+                            st.session_state.pop(_k, None)
+                        # [PLANILHA-HIBRIDA - 267ª geração] Estudo PEQUENO (≤ _LIMITE_PLANILHA_AUTO linhas) → gera a
+                        # planilha automaticamente (FASE 3b na próxima passada), conveniência sem clique. GRANDE/
+                        # nacional → sob demanda, mantendo a finalização instantânea e à prova de OOM. Defensivo: sem
+                        # tamanho → sob demanda (caminho seguro).
+                        try:
+                            _n_lote_hib = len(df_final) if df_final is not None else 0
+                        except Exception:
+                            _n_lote_hib = 0
+                        if 0 < _n_lote_hib <= _LIMITE_PLANILHA_AUTO:
+                            st.session_state['lote_planilha_auto'] = True
+                            st.session_state['lote_em_andamento'] = True
+                            st.session_state['lote_fase'] = 'gerar_planilha'
+                        else:
+                            st.session_state.pop('lote_planilha_auto', None)
+                            st.session_state.pop('lote_em_andamento', None)
+                            st.session_state.pop('lote_fase', None)
+                        st.rerun()
+                    except Exception as _e_lote_fin_fatal:
+                        if type(_e_lote_fin_fatal).__name__ in ('RerunException', 'RerunData', 'StopException'):
+                            raise
+                        logger.error('[BLINDAGEM-FINALIZACAO-FATAL/lote] Exceção não tratada na finalização do lote — '
+                                     'entregando resultados seguros (degradado) em vez de derrubar o app.', exc_info=True)
+                        try:
+                            _df_forcado_lote = st.session_state.get('lote_df_seguro')
+                            if _df_forcado_lote is None:
+                                try:
+                                    _df_forcado_lote = _montar_dataframe_final(
+                                        _df_base, _resultados, runner_up_map=_runner_map,
+                                        hub_qual_map=st.session_state.get('alo_hub_qual_map'))
+                                except Exception:
+                                    _df_forcado_lote = pd.DataFrame()
+                            if _df_forcado_lote is not None:
+                                st.session_state['df_processado'] = _df_forcado_lote
+                            try:
+                                st.session_state['lote_tempo_total'] = round(time.time() - _start_clock, 2)
+                            except Exception:
+                                pass
+                            st.session_state['lote_resultado_pronto'] = True
+                            st.session_state['lote_finalizacao_degradada'] = True
+                            try:
+                                _ckpt_apagar('estudo_lote')
+                            except Exception:
+                                pass
+                            try:
+                                st.session_state['lote_resumo_final'] = _resumo_finalizacao(_df_forcado_lote)
+                            except Exception:
+                                st.session_state['lote_resumo_final'] = {}
+                            for _kwdl in ['lote_em_andamento', 'lote_fase', 'lote_endpoints', 'lote_preaq_idx',
+                                          'lote_tarefas', 'lote_resultados', 'lote_chunk_idx', 'lote_df_base',
+                                          'lote_start_clock', 'lote_total', 'lote_operador', 'lote_preaquecido',
+                                          'lote_runner_map', 'lote_eta_ultimo', 'lote_taxa_ema', 'lote_df_seguro',
+                                          'lote_fin_tentativas', 'lote_planilha_auto']:
+                                st.session_state.pop(_kwdl, None)
+                        except Exception:
+                            logger.error('[BLINDAGEM-FINALIZACAO-FATAL/lote] Falha ao montar a entrega degradada.', exc_info=True)
+                        st.rerun()
 
             # ---- FASE 3b: GERAÇÃO DA PLANILHA DO LOTE (desacoplada; roda no auto p/ estudos pequenos ou no
             # clique para grandes). A falha aqui NUNCA impede os resultados nem o relatório HTML. ----
@@ -54398,1022 +54442,1065 @@ if _secao == _SECOES[2]:   # tab_alocacao
                              linhas=(len(_df_forcado) if _df_forcado is not None else 0))
                     st.rerun()
 
-                # [HUB-MCDA - 130ª geração] Modo multicritério (opt-in): reelege o hub de cada cliente por
-                # CUSTO LOGÍSTICO EFETIVO usando os top-K JÁ roteados, e reatribui o Destino ANTES da montagem.
-                # Default (toggle off) intacto. Defensivo: em erro mantém a atribuição por linha reta.
-                if st.session_state.get('alo_multicriterio'):
-                    try:
-                        _topk_mc = st.session_state.get('alo_topk_map', {})
-                        # [RETRY-VIARIA - 184ª geração] SEGUNDA CHANCE (uma vez por estudo, ≤40 pares): se a
-                        # rota de um candidato PRÓXIMO falhou (fallback) e o melhor real está muito mais longe
-                        # (reta×1.5 < melhor viária real), re-roteia esses pares agora, sincronamente — falhas
-                        # transientes de API custavam ~150 km ao candidato (padrão Candeias→Porto Velho). Só
-                        # aceita o retry se vier ROTA REAL; senão mantém o que havia (zero regressão).
-                        if not st.session_state.get('alo_retry_viaria_feito'):
-                            st.session_state['alo_retry_viaria_feito'] = True
-                            _pares_rt = _pares_retry_viaria(_topk_mc, _resultados)
-                            if _pares_rt:
-                                with st.spinner(f"🛟 Segunda chance: re-roteando {len(_pares_rt)} candidato(s) "
-                                                f"próximos cuja rota falhou..."):
-                                    try:
-                                        _res_rt = processar_chunk_rotas(
-                                            _pares_rt, runner_up_map=st.session_state.get('alo_runner_map'))
-                                        _aceitos = 0
-                                        for _kr, _vr in (_res_rt or {}).items():
-                                            _fr = str(_vr[5]).lower() if (_vr and len(_vr) > 5) else "geodés"
-                                            if _vr and _vr[0] and "geodés" not in _fr and "falha" not in _fr:
-                                                _resultados[_kr] = _vr
-                                                _aceitos += 1
-                                        if _aceitos:
+                # [BLINDAGEM-FINALIZACAO-FATAL - 420ª geração] Rede de segurança DEFINITIVA da finalização: qualquer
+                # exceção não tratada nos enriquecedores/reindex/haversine abaixo rodava na THREAD PRINCIPAL do
+                # Streamlit e derrubava o app inteiro (página 'Oh no.') DURANTE O PROCESSAMENTO. Agora ela é capturada
+                # aqui e convertida na MESMA ENTREGA DEGRADADA do watchdog (DF-seguro já commitado) + rerun limpo — o
+                # estudo conclui com os resultados essenciais em vez de quebrar. Exceções de controle de fluxo do
+                # Streamlit (rerun/stop) são RE-LEVANTADAS para não engolir a navegação. Puramente aditivo.
+                try:
+                    # [HUB-MCDA - 130ª geração] Modo multicritério (opt-in): reelege o hub de cada cliente por
+                    # CUSTO LOGÍSTICO EFETIVO usando os top-K JÁ roteados, e reatribui o Destino ANTES da montagem.
+                    # Default (toggle off) intacto. Defensivo: em erro mantém a atribuição por linha reta.
+                    if st.session_state.get('alo_multicriterio'):
+                        try:
+                            _topk_mc = st.session_state.get('alo_topk_map', {})
+                            # [RETRY-VIARIA - 184ª geração] SEGUNDA CHANCE (uma vez por estudo, ≤40 pares): se a
+                            # rota de um candidato PRÓXIMO falhou (fallback) e o melhor real está muito mais longe
+                            # (reta×1.5 < melhor viária real), re-roteia esses pares agora, sincronamente — falhas
+                            # transientes de API custavam ~150 km ao candidato (padrão Candeias→Porto Velho). Só
+                            # aceita o retry se vier ROTA REAL; senão mantém o que havia (zero regressão).
+                            if not st.session_state.get('alo_retry_viaria_feito'):
+                                st.session_state['alo_retry_viaria_feito'] = True
+                                _pares_rt = _pares_retry_viaria(_topk_mc, _resultados)
+                                if _pares_rt:
+                                    with st.spinner(f"🛟 Segunda chance: re-roteando {len(_pares_rt)} candidato(s) "
+                                                    f"próximos cuja rota falhou..."):
+                                        try:
+                                            _res_rt = processar_chunk_rotas(
+                                                _pares_rt, runner_up_map=st.session_state.get('alo_runner_map'))
+                                            _aceitos = 0
+                                            for _kr, _vr in (_res_rt or {}).items():
+                                                _fr = str(_vr[5]).lower() if (_vr and len(_vr) > 5) else "geodés"
+                                                if _vr and _vr[0] and "geodés" not in _fr and "falha" not in _fr:
+                                                    _resultados[_kr] = _vr
+                                                    _aceitos += 1
+                                            if _aceitos:
+                                                st.session_state['alo_resultados'] = _resultados
+                                                logger.warning("[RETRY-VIARIA] %d rota(s) recuperadas na segunda "
+                                                               "chance (candidato próximo sem rota).", _aceitos)
+                                        except Exception as _e_rt:
+                                            logger.error(f"[RETRY-VIARIA] Falha na segunda chance: {_e_rt}")
+                                # [MOTOR-VALIDACAO - 184ª geração] Segunda camada: reataca o polo MAIS PRÓXIMO por
+                                # reta quando o vencedor atual destoa do piso físico (padrão Candeias→Porto Velho).
+                                # Precisa de uma reatribuição prévia p/ saber o vencedor corrente.
+                                try:
+                                    _nd_prov, _ = _reatribuir_hubs_multicriterio(_topk_mc, _resultados)
+                                    _pares_rv = _pares_revalidar_mais_proximo(_topk_mc, _resultados, _nd_prov)
+                                    if _pares_rv:
+                                        with st.spinner(f"🔬 Validação inteligente: reavaliando o polo mais próximo "
+                                                        f"de {len(_pares_rv)} município(s)..."):
+                                            _res_rv = processar_chunk_rotas(
+                                                _pares_rv, runner_up_map=st.session_state.get('alo_runner_map'))
+                                            _acc2 = 0
+                                            for _kr, _vr in (_res_rv or {}).items():
+                                                _fr = str(_vr[5]).lower() if (_vr and len(_vr) > 5) else "geodés"
+                                                if _vr and _vr[0] and "geodés" not in _fr and "falha" not in _fr:
+                                                    _resultados[_kr] = _vr
+                                                    _acc2 += 1
+                                            if _acc2:
+                                                st.session_state['alo_resultados'] = _resultados
+                                                logger.warning("[MOTOR-VALIDACAO] %d polo(s) mais próximos "
+                                                               "recuperados na revalidação.", _acc2)
+                                except Exception as _e_rv:
+                                    logger.error(f"[MOTOR-VALIDACAO] Falha na revalidação: {_e_rv}")
+                                # [GARANTIA-OTIMA - 184ª geração] PROVA de otimalidade: laço branch-and-bound que
+                                # roteia TODO polo (mesmo fora do top-K) cuja linha reta ainda seja menor que a
+                                # melhor viária encontrada — pois só esses poderiam vencer. Converge quando nenhum
+                                # polo não-roteado tem reta < melhor viária: aí o vencedor está PROVADO ótimo.
+                                try:
+                                    _topk_full = st.session_state.get('alo_topk_completo') or {}
+                                    if _topk_full:
+                                        _iter_prova = 0
+                                        _total_prova = 0
+                                        while _iter_prova < 20:
+                                            _pares_ot = _pares_garantia_otimalidade(_topk_full, _resultados)
+                                            if not _pares_ot:
+                                                break  # prova fechada: nenhum polo fora pode ter viária menor
+                                            _iter_prova += 1
+                                            with st.spinner(f"🎯 Prova de otimalidade (rodada {_iter_prova}): "
+                                                            f"roteando {len(_pares_ot)} polo(s) que ainda poderiam "
+                                                            f"vencer..."):
+                                                _res_ot = processar_chunk_rotas(
+                                                    _pares_ot, runner_up_map=st.session_state.get('alo_runner_map'))
+                                                _acc_ot = 0
+                                                for _ko, _vo in (_res_ot or {}).items():
+                                                    _fo = str(_vo[5]).lower() if (_vo and len(_vo) > 5) else "geodés"
+                                                    # aceita QUALQUER retorno (real ou fallback) para não repetir o
+                                                    # mesmo par ao infinito; só rotas reais mudam o teto da prova.
+                                                    if _vo and _vo[0]:
+                                                        _resultados[_ko] = _vo
+                                                        if "geodés" not in _fo and "falha" not in _fo:
+                                                            _acc_ot += 1
+                                                    else:
+                                                        # marca como tentado com fallback geodésico p/ convergir
+                                                        _resultados.setdefault(_ko, _vo)
+                                                _total_prova += _acc_ot
+                                            # se a rodada não trouxe nenhuma rota real nova, não há como melhorar
+                                            if _acc_ot == 0:
+                                                break
+                                        if _total_prova:
                                             st.session_state['alo_resultados'] = _resultados
-                                            logger.warning("[RETRY-VIARIA] %d rota(s) recuperadas na segunda "
-                                                           "chance (candidato próximo sem rota).", _aceitos)
-                                    except Exception as _e_rt:
-                                        logger.error(f"[RETRY-VIARIA] Falha na segunda chance: {_e_rt}")
-                            # [MOTOR-VALIDACAO - 184ª geração] Segunda camada: reataca o polo MAIS PRÓXIMO por
-                            # reta quando o vencedor atual destoa do piso físico (padrão Candeias→Porto Velho).
-                            # Precisa de uma reatribuição prévia p/ saber o vencedor corrente.
-                            try:
-                                _nd_prov, _ = _reatribuir_hubs_multicriterio(_topk_mc, _resultados)
-                                _pares_rv = _pares_revalidar_mais_proximo(_topk_mc, _resultados, _nd_prov)
-                                if _pares_rv:
-                                    with st.spinner(f"🔬 Validação inteligente: reavaliando o polo mais próximo "
-                                                    f"de {len(_pares_rv)} município(s)..."):
-                                        _res_rv = processar_chunk_rotas(
-                                            _pares_rv, runner_up_map=st.session_state.get('alo_runner_map'))
-                                        _acc2 = 0
-                                        for _kr, _vr in (_res_rv or {}).items():
-                                            _fr = str(_vr[5]).lower() if (_vr and len(_vr) > 5) else "geodés"
-                                            if _vr and _vr[0] and "geodés" not in _fr and "falha" not in _fr:
-                                                _resultados[_kr] = _vr
-                                                _acc2 += 1
-                                        if _acc2:
-                                            st.session_state['alo_resultados'] = _resultados
-                                            logger.warning("[MOTOR-VALIDACAO] %d polo(s) mais próximos "
-                                                           "recuperados na revalidação.", _acc2)
-                            except Exception as _e_rv:
-                                logger.error(f"[MOTOR-VALIDACAO] Falha na revalidação: {_e_rv}")
-                            # [GARANTIA-OTIMA - 184ª geração] PROVA de otimalidade: laço branch-and-bound que
-                            # roteia TODO polo (mesmo fora do top-K) cuja linha reta ainda seja menor que a
-                            # melhor viária encontrada — pois só esses poderiam vencer. Converge quando nenhum
-                            # polo não-roteado tem reta < melhor viária: aí o vencedor está PROVADO ótimo.
-                            try:
-                                _topk_full = st.session_state.get('alo_topk_completo') or {}
-                                if _topk_full:
-                                    _iter_prova = 0
-                                    _total_prova = 0
-                                    while _iter_prova < 20:
-                                        _pares_ot = _pares_garantia_otimalidade(_topk_full, _resultados)
-                                        if not _pares_ot:
-                                            break  # prova fechada: nenhum polo fora pode ter viária menor
-                                        _iter_prova += 1
-                                        with st.spinner(f"🎯 Prova de otimalidade (rodada {_iter_prova}): "
-                                                        f"roteando {len(_pares_ot)} polo(s) que ainda poderiam "
-                                                        f"vencer..."):
-                                            _res_ot = processar_chunk_rotas(
-                                                _pares_ot, runner_up_map=st.session_state.get('alo_runner_map'))
-                                            _acc_ot = 0
-                                            for _ko, _vo in (_res_ot or {}).items():
-                                                _fo = str(_vo[5]).lower() if (_vo and len(_vo) > 5) else "geodés"
-                                                # aceita QUALQUER retorno (real ou fallback) para não repetir o
-                                                # mesmo par ao infinito; só rotas reais mudam o teto da prova.
-                                                if _vo and _vo[0]:
-                                                    _resultados[_ko] = _vo
-                                                    if "geodés" not in _fo and "falha" not in _fo:
-                                                        _acc_ot += 1
-                                                else:
-                                                    # marca como tentado com fallback geodésico p/ convergir
-                                                    _resultados.setdefault(_ko, _vo)
-                                            _total_prova += _acc_ot
-                                        # se a rodada não trouxe nenhuma rota real nova, não há como melhorar
-                                        if _acc_ot == 0:
-                                            break
-                                    if _total_prova:
-                                        st.session_state['alo_resultados'] = _resultados
-                                        logger.warning("[GARANTIA-OTIMA] Prova de otimalidade: %d polo(s) fora "
-                                                       "do top-K roteados e incorporados (%d rodada(s)).",
-                                                       _total_prova, _iter_prova)
-                                    st.session_state['alo_prova_otimalidade'] = {
-                                        "rodadas": _iter_prova, "polos_extras_reais": _total_prova,
-                                        "fechada": True}
-                            except Exception as _e_ot:
-                                logger.error(f"[GARANTIA-OTIMA] Falha no laço de otimalidade: {_e_ot}")
-                            # [MATRIZ-VIARIA - 184ª geração] FASE 2 (decisão de qualidade GOOGLE-PRIORITÁRIA):
-                            # o shortlist da matriz (melhores candidatos OSRM) é re-roteado com o GOOGLE
-                            # prioritário (processar_chunk_rotas já usa Google→OSRM fallback). A decisão final
-                            # de menor viária sai, assim, do motor de MAIOR qualidade — não do OSRM da matriz.
-                            try:
-                                _sl = st.session_state.get('alo_shortlist_matriz') or {}
-                                _pares_sl = []
-                                for _org, _cands in _sl.items():
-                                    for (_hub, _d) in _cands:
-                                        if not (_resultados.get((_org, _hub)) or {}):
-                                            _pares_sl.append((_org, _hub))
-                                        else:
-                                            _rr = _resultados.get((_org, _hub))
-                                            _ff = str(_rr[5]).lower() if (_rr and len(_rr) > 5) else ""
-                                            # se o que temos é OSRM/fallback, vale reconfirmar no Google
-                                            if "google" not in _ff:
+                                            logger.warning("[GARANTIA-OTIMA] Prova de otimalidade: %d polo(s) fora "
+                                                           "do top-K roteados e incorporados (%d rodada(s)).",
+                                                           _total_prova, _iter_prova)
+                                        st.session_state['alo_prova_otimalidade'] = {
+                                            "rodadas": _iter_prova, "polos_extras_reais": _total_prova,
+                                            "fechada": True}
+                                except Exception as _e_ot:
+                                    logger.error(f"[GARANTIA-OTIMA] Falha no laço de otimalidade: {_e_ot}")
+                                # [MATRIZ-VIARIA - 184ª geração] FASE 2 (decisão de qualidade GOOGLE-PRIORITÁRIA):
+                                # o shortlist da matriz (melhores candidatos OSRM) é re-roteado com o GOOGLE
+                                # prioritário (processar_chunk_rotas já usa Google→OSRM fallback). A decisão final
+                                # de menor viária sai, assim, do motor de MAIOR qualidade — não do OSRM da matriz.
+                                try:
+                                    _sl = st.session_state.get('alo_shortlist_matriz') or {}
+                                    _pares_sl = []
+                                    for _org, _cands in _sl.items():
+                                        for (_hub, _d) in _cands:
+                                            if not (_resultados.get((_org, _hub)) or {}):
                                                 _pares_sl.append((_org, _hub))
-                                if _pares_sl:
-                                    with st.spinner(f"🛰️ Decisão de qualidade (Google prioritário): "
-                                                    f"roteando {len(_pares_sl)} candidato(s) do shortlist..."):
-                                        _res_sl = processar_chunk_rotas(
-                                            _pares_sl, runner_up_map=st.session_state.get('alo_runner_map'))
-                                        _acc_sl = 0
-                                        for _ks, _vs in (_res_sl or {}).items():
-                                            if _vs and _vs[0]:
-                                                # aceita o resultado (Google prioritário quando disponível)
-                                                _resultados[_ks] = _vs
-                                                _acc_sl += 1
-                                        if _acc_sl:
+                                            else:
+                                                _rr = _resultados.get((_org, _hub))
+                                                _ff = str(_rr[5]).lower() if (_rr and len(_rr) > 5) else ""
+                                                # se o que temos é OSRM/fallback, vale reconfirmar no Google
+                                                if "google" not in _ff:
+                                                    _pares_sl.append((_org, _hub))
+                                    if _pares_sl:
+                                        with st.spinner(f"🛰️ Decisão de qualidade (Google prioritário): "
+                                                        f"roteando {len(_pares_sl)} candidato(s) do shortlist..."):
+                                            _res_sl = processar_chunk_rotas(
+                                                _pares_sl, runner_up_map=st.session_state.get('alo_runner_map'))
+                                            _acc_sl = 0
+                                            for _ks, _vs in (_res_sl or {}).items():
+                                                if _vs and _vs[0]:
+                                                    # aceita o resultado (Google prioritário quando disponível)
+                                                    _resultados[_ks] = _vs
+                                                    _acc_sl += 1
+                                            if _acc_sl:
+                                                st.session_state['alo_resultados'] = _resultados
+                                                logger.warning("[MATRIZ-VIARIA] Fase 2: %d candidato(s) do "
+                                                               "shortlist roteados com Google prioritário.", _acc_sl)
+                                except Exception as _e_sl:
+                                    logger.error(f"[MATRIZ-VIARIA] Falha na fase 2 (Google): {_e_sl}")
+                            # [HUB-PARAMS - 131ª geração] Usa a calibração do usuário (congelada no clique);
+                            # se ausente, reconstrói dos widgets; se tudo faltar, cai nos padrões validados.
+                            _params_mc = st.session_state.get('alo_params_custo') or _montar_params_custo(
+                                st.session_state.get('alo_vel_ref'), st.session_state.get('alo_balsa_km'),
+                                st.session_state.get('alo_limiar_sin'), st.session_state.get('alo_peso_sin'))
+                            # [MATRIZ-VIARIA - 184ª geração] CORREÇÃO DE GARGALO: funde o shortlist da matriz ao
+                            # topk_mc ANTES da reatribuição, para que o vencedor revelado pela matriz (que pode
+                            # estar fora do top-K de linha reta) seja CONSIDERADO na decisão final — senão ele
+                            # seria descartado e o ganho da matriz se perderia na geografia adversa.
+                            try:
+                                _topk_reatrib = _fundir_shortlist_no_topk(
+                                    _topk_mc, st.session_state.get('alo_shortlist_matriz'),
+                                    st.session_state.get('alo_dist_matriz'))
+                                # [V446 · UNIVERSO-FECHADO — MISSÃO] Depois de fundir shortlist+dist_matriz, funde
+                                # TODOS os pares com rota JÁ MEDIDA em _resultados (inclui os extras da prova de
+                                # otimalidade, que o top-K/shortlist não cobrem). É a correção da causa-raiz das
+                                # derrotas rodoviárias do estudo-piloto: Rio Branco/Osório/Ijuí/Nova Andradina/
+                                # Araçuaí/Marabá ficavam MEDIDOS mas FORA do universo final de reatribuição.
+                                _topk_reatrib = _fundir_resultados_no_topk(_topk_reatrib, _resultados)
+                            except Exception as _e_fus:
+                                logger.error(f"[MATRIZ-VIARIA] Falha ao fundir shortlist: {_e_fus}")
+                                _topk_reatrib = _topk_mc
+                            # [FERRY-CANDIDATO - 423ª geração] AMPLIA hall de candidatos + roteamento: antes da
+                            # reeleição, mede no 2º motor (FOSSGIS, usa ferry) os pares do universo reatribuível
+                            # com travessia de água PLÁUSIL (balsa manifesta OU geodésia cruzando rio no grafo
+                            # hidrográfico). Isso deixa a CLASSIFICAÇÃO ver a distância ferry-honesta do candidato
+                            # (ex.: Curralinho→Breves ~89 km por rio vs CAMETA 109,6 km por rodovia), não só a rota
+                            # do vencedor (padrão RIO-BRANCO/UNIVERSO-FECHADO, agora com ferry). O passe é
+                            # CONSERVADOR (adota só rota real ESTRITAMENTE menor) e GASTA de verdade o orçamento
+                            # de cruce (fair-use do FOSSGIS ≤1 req/s) — o decisório posterior segue por design.
+                            try:
+                                _coords_fr = {}
+                                if _df_pares is not None and {"Lat Origem", "Lon Origem",
+                                                              "Lat Destino", "Lon Destino"}.issubset(
+                                        _df_pares.columns):
+                                    _por_origem_fr = {}
+                                    for _ixr, _rowr in _df_pares.iterrows():
+                                        _por_origem_fr[str(_rowr.get("Origem", "")).strip()] = _rowr
+                                    for _prc in _topk_reatrib:
+                                        for _prt in (_topk_reatrib[_prc] or []):
+                                            try:
+                                                _hub_pr = _prt[1]
+                                                _rowp = _por_origem_fr.get(str(_prc).strip())
+                                                if _rowp is not None:
+                                                    _lafr = pd.to_numeric(_rowp.get("Lat Origem"), errors="coerce")
+                                                    _lofr = pd.to_numeric(_rowp.get("Lon Origem"), errors="coerce")
+                                                    _ldfr = pd.to_numeric(_rowp.get("Lat Destino"), errors="coerce")
+                                                    _lndfr = pd.to_numeric(_rowp.get("Lon Destino"), errors="coerce")
+                                                    if all(pd.notna(_x) and _x for _x in (_lafr, _lofr, _ldfr, _lndfr)):
+                                                        _coords_fr.setdefault((_prc, _hub_pr),
+                                                                              (float(_lafr), float(_lofr),
+                                                                               float(_ldfr), float(_lndfr)))
+                                            except Exception:
+                                                continue
+                                _g_fr = _grafo_fluvial_memoizado()
+                                _pares_fc = _pares_fossgis_fluviais_candidatos(_topk_reatrib, _resultados,
+                                                                               _coords_fr, g=_g_fr)
+                                _reserva_fc = []
+                                with _resgate_ferry_lock:
+                                    for _pfc in _pares_fc:
+                                        if _resgate_ferry_contador[0] >= _RESGATE_FERRY_BUDGET:
+                                            break
+                                        _resgate_ferry_contador[0] += 1
+                                        _reserva_fc.append(_pfc)
+                                if _reserva_fc:
+                                    _resgate_fossgis_forca[0] += len(_reserva_fc)
+                                    with st.spinner(f"⛴️ Ferry no hall: medindo {len(_reserva_fc)} candidato(s) "
+                                                    f"de travessia de água plausível no 2º motor..."):
+                                        _res_fc = processar_chunk_rotas(
+                                            _reserva_fc, runner_up_map=st.session_state.get('alo_runner_map'))
+                                    _acc_fc = 0
+                                    for _kfc, _vfc in (_res_fc or {}).items():
+                                        _ffc = str(_vfc[5]).lower() if (_vfc and len(_vfc) > 5) else "geodés"
+                                        if _vfc and _vfc[0] and "geodés" not in _ffc and "falha" not in _ffc:
+                                            _nov_fc = float(_vfc[0])
+                                            _ant_fc = (_resultados.get(_kfc) or [None])[0]
+                                            if (_ant_fc is None) or (_nov_fc < float(_ant_fc)):
+                                                _resultados[_kfc] = _vfc
+                                                _acc_fc += 1
+                                        if _acc_fc:
+                                            try:
+                                                _topk_reatrib = _fundir_resultados_no_topk(_topk_reatrib, _resultados)
+                                            except Exception:
+                                                pass
                                             st.session_state['alo_resultados'] = _resultados
-                                            logger.warning("[MATRIZ-VIARIA] Fase 2: %d candidato(s) do "
-                                                           "shortlist roteados com Google prioritário.", _acc_sl)
-                            except Exception as _e_sl:
-                                logger.error(f"[MATRIZ-VIARIA] Falha na fase 2 (Google): {_e_sl}")
-                        # [HUB-PARAMS - 131ª geração] Usa a calibração do usuário (congelada no clique);
-                        # se ausente, reconstrói dos widgets; se tudo faltar, cai nos padrões validados.
-                        _params_mc = st.session_state.get('alo_params_custo') or _montar_params_custo(
-                            st.session_state.get('alo_vel_ref'), st.session_state.get('alo_balsa_km'),
-                            st.session_state.get('alo_limiar_sin'), st.session_state.get('alo_peso_sin'))
-                        # [MATRIZ-VIARIA - 184ª geração] CORREÇÃO DE GARGALO: funde o shortlist da matriz ao
-                        # topk_mc ANTES da reatribuição, para que o vencedor revelado pela matriz (que pode
-                        # estar fora do top-K de linha reta) seja CONSIDERADO na decisão final — senão ele
-                        # seria descartado e o ganho da matriz se perderia na geografia adversa.
-                        try:
-                            _topk_reatrib = _fundir_shortlist_no_topk(
-                                _topk_mc, st.session_state.get('alo_shortlist_matriz'),
-                                st.session_state.get('alo_dist_matriz'))
-                            # [V446 · UNIVERSO-FECHADO — MISSÃO] Depois de fundir shortlist+dist_matriz, funde
-                            # TODOS os pares com rota JÁ MEDIDA em _resultados (inclui os extras da prova de
-                            # otimalidade, que o top-K/shortlist não cobrem). É a correção da causa-raiz das
-                            # derrotas rodoviárias do estudo-piloto: Rio Branco/Osório/Ijuí/Nova Andradina/
-                            # Araçuaí/Marabá ficavam MEDIDOS mas FORA do universo final de reatribuição.
-                            _topk_reatrib = _fundir_resultados_no_topk(_topk_reatrib, _resultados)
-                        except Exception as _e_fus:
-                            logger.error(f"[MATRIZ-VIARIA] Falha ao fundir shortlist: {_e_fus}")
-                            _topk_reatrib = _topk_mc
-                        # [FERRY-CANDIDATO - 423ª geração] AMPLIA hall de candidatos + roteamento: antes da
-                        # reeleição, mede no 2º motor (FOSSGIS, usa ferry) os pares do universo reatribuível
-                        # com travessia de água PLÁUSIL (balsa manifesta OU geodésia cruzando rio no grafo
-                        # hidrográfico). Isso deixa a CLASSIFICAÇÃO ver a distância ferry-honesta do candidato
-                        # (ex.: Curralinho→Breves ~89 km por rio vs CAMETA 109,6 km por rodovia), não só a rota
-                        # do vencedor (padrão RIO-BRANCO/UNIVERSO-FECHADO, agora com ferry). O passe é
-                        # CONSERVADOR (adota só rota real ESTRITAMENTE menor) e GASTA de verdade o orçamento
-                        # de cruce (fair-use do FOSSGIS ≤1 req/s) — o decisório posterior segue por design.
-                        try:
-                            _coords_fr = {}
-                            if _df_pares is not None and {"Lat Origem", "Lon Origem",
-                                                          "Lat Destino", "Lon Destino"}.issubset(
-                                    _df_pares.columns):
-                                _por_origem_fr = {}
-                                for _ixr, _rowr in _df_pares.iterrows():
-                                    _por_origem_fr[str(_rowr.get("Origem", "")).strip()] = _rowr
-                                for _prc in _topk_reatrib:
-                                    for _prt in (_topk_reatrib[_prc] or []):
-                                        try:
-                                            _hub_pr = _prt[1]
-                                            _rowp = _por_origem_fr.get(str(_prc).strip())
-                                            if _rowp is not None:
-                                                _lafr = pd.to_numeric(_rowp.get("Lat Origem"), errors="coerce")
-                                                _lofr = pd.to_numeric(_rowp.get("Lon Origem"), errors="coerce")
-                                                _ldfr = pd.to_numeric(_rowp.get("Lat Destino"), errors="coerce")
-                                                _lndfr = pd.to_numeric(_rowp.get("Lon Destino"), errors="coerce")
-                                                if all(pd.notna(_x) and _x for _x in (_lafr, _lofr, _ldfr, _lndfr)):
-                                                    _coords_fr.setdefault((_prc, _hub_pr),
-                                                                          (float(_lafr), float(_lofr),
-                                                                           float(_ldfr), float(_lndfr)))
-                                        except Exception:
-                                            continue
-                            _g_fr = _grafo_fluvial_memoizado()
-                            _pares_fc = _pares_fossgis_fluviais_candidatos(_topk_reatrib, _resultados,
-                                                                           _coords_fr, g=_g_fr)
-                            _reserva_fc = []
-                            with _resgate_ferry_lock:
-                                for _pfc in _pares_fc:
-                                    if _resgate_ferry_contador[0] >= _RESGATE_FERRY_BUDGET:
-                                        break
-                                    _resgate_ferry_contador[0] += 1
-                                    _reserva_fc.append(_pfc)
-                            if _reserva_fc:
-                                _resgate_fossgis_forca[0] += len(_reserva_fc)
-                                with st.spinner(f"⛴️ Ferry no hall: medindo {len(_reserva_fc)} candidato(s) "
-                                                f"de travessia de água plausível no 2º motor..."):
-                                    _res_fc = processar_chunk_rotas(
-                                        _reserva_fc, runner_up_map=st.session_state.get('alo_runner_map'))
-                                _acc_fc = 0
-                                for _kfc, _vfc in (_res_fc or {}).items():
-                                    _ffc = str(_vfc[5]).lower() if (_vfc and len(_vfc) > 5) else "geodés"
-                                    if _vfc and _vfc[0] and "geodés" not in _ffc and "falha" not in _ffc:
-                                        _nov_fc = float(_vfc[0])
-                                        _ant_fc = (_resultados.get(_kfc) or [None])[0]
-                                        if (_ant_fc is None) or (_nov_fc < float(_ant_fc)):
-                                            _resultados[_kfc] = _vfc
-                                            _acc_fc += 1
-                                    if _acc_fc:
+                                            logger.warning("[FERRY-CANDIDATO] %d par(es) fluvial(ais) reclassificado(s) "
+                                                           "pela medição ferry do 2º motor no hall.", _acc_fc)
+                                # [FLUVIAL-ROTA-DIRETA - 426ª geração] Quando o FOSSGIS (2º motor) NÃO entregou uma
+                                # rota real para o par de travessia de água pláusil (sem ferry no seu grafo — ex.:
+                                # barreira lagunar/estuarina de SC), tenta a rota FLUVIAL REAL do grafo hidrográfico
+                                # nacional (Dijkstra, adota só ESTRITAMENTE menor, fail-open). Maximiza a malha
+                                # aquaviária sem custo de rede.
+                                try:
+                                    _res_fd = _fluvial_para_resgate(
+                                        _pares_fc, _resultados, _coords_fr, g=_grafo_fluvial_memoizado())
+                                    if _res_fd:
+                                        _nd_fd = 0
+                                        for _kfd, _vfd in (_res_fd or {}).items():
+                                            _ant_fd = (_resultados.get(_kfd) or [None])[0]
+                                            if (_ant_fd is None) or (_vfd[0] < float(_ant_fd)):
+                                                _resultados[_kfd] = _vfd
+                                                _nd_fd += 1
+                                        if _nd_fd:
+                                            try:
+                                                _topk_reatrib = _fundir_resultados_no_topk(_topk_reatrib, _resultados)
+                                            except Exception:
+                                                pass
+                                            st.session_state['alo_resultados'] = _resultados
+                                            logger.warning("[FLUVIAL-ROTA-DIRETA] %d par(es) reclassificado(s) pela "
+                                                           "rota fluvial REAL do grafo hidrográfico.", _nd_fd)
+                                except Exception as _e_fd:
+                                    logger.error(f"[FLUVIAL-ROTA-DIRETA] Falha na rota fluvial direta: {_e_fd}")
+                            except Exception as _e_fc:
+                                logger.error(f"[FERRY-CANDIDATO] Falha no ampliamento do hall com ferry: {_e_fc}")
+                            # [FLUVIAL-SWEEP-OTIMIZADO - 434ª] VARREDURA FLUVIAL INTELIGENTE COM MULTI-HOP E RAIO ADAPTATIVO
+                            # Raio base 300km (era 200km), adaptativo por densidade hidrográfica.
+                            # USA rota MULTI-HOP nativa - permite transbordos em confluências.
+                            # Prioriza hubs: mesma componente conexa > confluência viável > menor reta.
+                            # Filtro: geodésia cruza água + mesma componente OU confluência viável.
+                            # Budget: max_pares total; prioriza origens com excesso pequeno (< 10km).
+                            # Cache agressivo de componentes/confluências.
+                            try:
+                                _res_fs = _fluvial_sweep_otimizado(
+                                    _resultados, _coords_fr, _grafo_fluvial_memoizado(), topk_map=_topk_reatrib,
+                                    max_pares=300, max_reta_km=300.0)
+                                if _res_fs:
+                                    _nd_fs = 0
+                                    for _kfs, _vfs in (_res_fs or {}).items():
+                                        _ant_fs = (_resultados.get(_kfs) or [None])[0]
+                                        if (_ant_fs is None) or (_vfs[0] < float(_ant_fs)):
+                                            _resultados[_kfs] = _vfs
+                                            _nd_fs += 1
+                                    if _nd_fs:
                                         try:
                                             _topk_reatrib = _fundir_resultados_no_topk(_topk_reatrib, _resultados)
                                         except Exception:
                                             pass
                                         st.session_state['alo_resultados'] = _resultados
-                                        logger.warning("[FERRY-CANDIDATO] %d par(es) fluvial(ais) reclassificado(s) "
-                                                       "pela medição ferry do 2º motor no hall.", _acc_fc)
-                            # [FLUVIAL-ROTA-DIRETA - 426ª geração] Quando o FOSSGIS (2º motor) NÃO entregou uma
-                            # rota real para o par de travessia de água pláusil (sem ferry no seu grafo — ex.:
-                            # barreira lagunar/estuarina de SC), tenta a rota FLUVIAL REAL do grafo hidrográfico
-                            # nacional (Dijkstra, adota só ESTRITAMENTE menor, fail-open). Maximiza a malha
-                            # aquaviária sem custo de rede.
-                            try:
-                                _res_fd = _fluvial_para_resgate(
-                                    _pares_fc, _resultados, _coords_fr, g=_grafo_fluvial_memoizado())
-                                if _res_fd:
-                                    _nd_fd = 0
-                                    for _kfd, _vfd in (_res_fd or {}).items():
-                                        _ant_fd = (_resultados.get(_kfd) or [None])[0]
-                                        if (_ant_fd is None) or (_vfd[0] < float(_ant_fd)):
-                                            _resultados[_kfd] = _vfd
-                                            _nd_fd += 1
-                                    if _nd_fd:
+                                        logger.warning("[FLUVIAL-SWEEP-OTIMIZADO] %d par(es) reclassificado(s) pela "
+                                                       "varredura fluvial inteligente multi-hop.", _nd_fs)
+                            except Exception as _e_fs:
+                                logger.error(f"[FLUVIAL-SWEEP-OTIMIZADO] Falha na varredura fluvial inteligente: {_e_fs}")
+                            _novo_dest_mc, _mcda_mc = _reatribuir_hubs_multicriterio(
+                                _topk_reatrib, _resultados, params=_params_mc,
+                                dist_matriz=st.session_state.get('alo_dist_matriz'),
+                                segundo_motor_router=(API_Valhalla_Routing if _valhalla_ativo() else None))
+                            if _novo_dest_mc:
+                                # [MELHORIA4-451 · M5 · QUALIDADE-MATRIZ] Vencedores que só existem na MATRIZ
+                                # (flag osrm_matriz) têm distância de tabela — sem rota de qualidade 'km oficial'.
+                                # A confirmação re-roteia esses pares em rota REAL (runner Google-prioritário) e,
+                                # se a rota real é MENOR que o km de tabela, adota-a: a distância honesta do
+                                # vencedor (hoje o placar do comparador usava o km de tabela, inflando |Δkm| e
+                                # virando derrota por medição). Read-only quanto à DECISÃO: nunca substitui o polo;
+                                # falha → segue idêntico (zero regressão).
+                                try:
+                                    _pares_qm = _pares_vencedor_matriz_para_qualidade(_novo_dest_mc, _resultados)
+                                    if _pares_qm:
+                                        with st.spinner(f"🎚️ Confirmando qualidade: re-roteando {len(_pares_qm)} "
+                                                        f"vencedor(es) medido(s) só pela matriz..."):
+                                            _res_qm = processar_chunk_rotas(
+                                                _pares_qm, runner_up_map=st.session_state.get('alo_runner_map'))
+                                        _acc_qm = 0
+                                        for _kq, _vq in (_res_qm or {}).items():
+                                            _fq = str(_vq[5]).lower() if (_vq and len(_vq) > 5) else "geodés"
+                                            if _vq and _vq[0] and "geodés" not in _fq and "falha" not in _fq:
+                                                _novo_qm = float(_vq[0])
+                                                # adota quando o par AINDA não tem rota de qualidade (era só tabela)
+                                                # ou quando a rota real vem MENOR que o que já havia (nunca regride)
+                                                _ant_qm = _resultados.get(_kq)
+                                                _deve_adotar = False
+                                                if _ant_qm is None or not isinstance(_ant_qm, (tuple, list)) or not _ant_qm[0]:
+                                                    _deve_adotar = True
+                                                elif float(_novo_qm) < float(_ant_qm[0]):
+                                                    _deve_adotar = True
+                                                if _deve_adotar:
+                                                    _resultados[_kq] = _vq
+                                                    _acc_qm += 1
+                                        if _acc_qm:
+                                            st.session_state['alo_resultados'] = _resultados
+                                            logger.warning("[QUALIDADE-MATRIZ] %d vencedor(es) matrix-only "
+                                                           "confirmado(s) em rota real.", _acc_qm)
+                                            # re-troca os pares novos e reavalia o vencedor (distância honesta)
+                                            try:
+                                                _novo_dest_mc, _mcda_mc = _reatribuir_hubs_multicriterio(
+                                                    _topk_reatrib, _resultados, params=_params_mc,
+                                                    dist_matriz=st.session_state.get('alo_dist_matriz'),
+                                                    segundo_motor_router=(API_Valhalla_Routing if _valhalla_ativo() else None))
+                                            except Exception:
+                                                pass
+                                except Exception as _e_qm:
+                                    logger.error(f"[QUALIDADE-MATRIZ] Falha na confirmação: {_e_qm}")
+                                # [RESGATE-FERRIES - 421ª geração] Depois da reatribuição, vencedores com V/R alto
+                                # (viária dispare do próprio piso geométrico) podem esconder travessia fluvial que o
+                                # OSRM rodoviário ignora (Muana→Abaetetuba: OSRM 53,0 vs FOSSGIS 1,59 km — MESMO par,
+                                # MESMAS coordenadas; a referência media 1,8 km via ferry). Re-roteia esses pares
+                                # forçando o 2º motor (FOSSGIS) no consenso e adota a MENOR distância honesta. Teto
+                                # próprio por sessão; falha → segue idêntico (nunca regride).
+                                try:
+                                    _pares_fr = _pares_resgatar_ferry_decisao(_topk_reatrib, _resultados, _novo_dest_mc)
+                                    if _pares_fr:
                                         try:
-                                            _topk_reatrib = _fundir_resultados_no_topk(_topk_reatrib, _resultados)
-                                        except Exception:
-                                            pass
-                                        st.session_state['alo_resultados'] = _resultados
-                                        logger.warning("[FLUVIAL-ROTA-DIRETA] %d par(es) reclassificado(s) pela "
-                                                       "rota fluvial REAL do grafo hidrográfico.", _nd_fd)
-                            except Exception as _e_fd:
-                                logger.error(f"[FLUVIAL-ROTA-DIRETA] Falha na rota fluvial direta: {_e_fd}")
-                        except Exception as _e_fc:
-                            logger.error(f"[FERRY-CANDIDATO] Falha no ampliamento do hall com ferry: {_e_fc}")
-                        # [FLUVIAL-SWEEP-OTIMIZADO - 434ª] VARREDURA FLUVIAL INTELIGENTE COM MULTI-HOP E RAIO ADAPTATIVO
-                        # Raio base 300km (era 200km), adaptativo por densidade hidrográfica.
-                        # USA rota MULTI-HOP nativa - permite transbordos em confluências.
-                        # Prioriza hubs: mesma componente conexa > confluência viável > menor reta.
-                        # Filtro: geodésia cruza água + mesma componente OU confluência viável.
-                        # Budget: max_pares total; prioriza origens com excesso pequeno (< 10km).
-                        # Cache agressivo de componentes/confluências.
-                        try:
-                            _res_fs = _fluvial_sweep_otimizado(
-                                _resultados, _coords_fr, _grafo_fluvial_memoizado(), topk_map=_topk_reatrib,
-                                max_pares=300, max_reta_km=300.0)
-                            if _res_fs:
-                                _nd_fs = 0
-                                for _kfs, _vfs in (_res_fs or {}).items():
-                                    _ant_fs = (_resultados.get(_kfs) or [None])[0]
-                                    if (_ant_fs is None) or (_vfs[0] < float(_ant_fs)):
-                                        _resultados[_kfs] = _vfs
-                                        _nd_fs += 1
-                                if _nd_fs:
-                                    try:
-                                        _topk_reatrib = _fundir_resultados_no_topk(_topk_reatrib, _resultados)
-                                    except Exception:
-                                        pass
-                                    st.session_state['alo_resultados'] = _resultados
-                                    logger.warning("[FLUVIAL-SWEEP-OTIMIZADO] %d par(es) reclassificado(s) pela "
-                                                   "varredura fluvial inteligente multi-hop.", _nd_fs)
-                        except Exception as _e_fs:
-                            logger.error(f"[FLUVIAL-SWEEP-OTIMIZADO] Falha na varredura fluvial inteligente: {_e_fs}")
-                        _novo_dest_mc, _mcda_mc = _reatribuir_hubs_multicriterio(
-                            _topk_reatrib, _resultados, params=_params_mc,
-                            dist_matriz=st.session_state.get('alo_dist_matriz'),
-                            segundo_motor_router=(API_Valhalla_Routing if _valhalla_ativo() else None))
-                        if _novo_dest_mc:
-                            # [MELHORIA4-451 · M5 · QUALIDADE-MATRIZ] Vencedores que só existem na MATRIZ
-                            # (flag osrm_matriz) têm distância de tabela — sem rota de qualidade 'km oficial'.
-                            # A confirmação re-roteia esses pares em rota REAL (runner Google-prioritário) e,
-                            # se a rota real é MENOR que o km de tabela, adota-a: a distância honesta do
-                            # vencedor (hoje o placar do comparador usava o km de tabela, inflando |Δkm| e
-                            # virando derrota por medição). Read-only quanto à DECISÃO: nunca substitui o polo;
-                            # falha → segue idêntico (zero regressão).
-                            try:
-                                _pares_qm = _pares_vencedor_matriz_para_qualidade(_novo_dest_mc, _resultados)
-                                if _pares_qm:
-                                    with st.spinner(f"🎚️ Confirmando qualidade: re-roteando {len(_pares_qm)} "
-                                                    f"vencedor(es) medido(s) só pela matriz..."):
-                                        _res_qm = processar_chunk_rotas(
-                                            _pares_qm, runner_up_map=st.session_state.get('alo_runner_map'))
-                                    _acc_qm = 0
-                                    for _kq, _vq in (_res_qm or {}).items():
-                                        _fq = str(_vq[5]).lower() if (_vq and len(_vq) > 5) else "geodés"
-                                        if _vq and _vq[0] and "geodés" not in _fq and "falha" not in _fq:
-                                            _novo_qm = float(_vq[0])
-                                            # adota quando o par AINDA não tem rota de qualidade (era só tabela)
-                                            # ou quando a rota real vem MENOR que o que já havia (nunca regride)
-                                            _ant_qm = _resultados.get(_kq)
-                                            _deve_adotar = False
-                                            if _ant_qm is None or not isinstance(_ant_qm, (tuple, list)) or not _ant_qm[0]:
-                                                _deve_adotar = True
-                                            elif float(_novo_qm) < float(_ant_qm[0]):
-                                                _deve_adotar = True
-                                            if _deve_adotar:
-                                                _resultados[_kq] = _vq
-                                                _acc_qm += 1
-                                    if _acc_qm:
-                                        st.session_state['alo_resultados'] = _resultados
-                                        logger.warning("[QUALIDADE-MATRIZ] %d vencedor(es) matrix-only "
-                                                       "confirmado(s) em rota real.", _acc_qm)
-                                        # re-troca os pares novos e reavalia o vencedor (distância honesta)
-                                        try:
-                                            _novo_dest_mc, _mcda_mc = _reatribuir_hubs_multicriterio(
-                                                _topk_reatrib, _resultados, params=_params_mc,
-                                                dist_matriz=st.session_state.get('alo_dist_matriz'),
-                                                segundo_motor_router=(API_Valhalla_Routing if _valhalla_ativo() else None))
-                                        except Exception:
-                                            pass
-                            except Exception as _e_qm:
-                                logger.error(f"[QUALIDADE-MATRIZ] Falha na confirmação: {_e_qm}")
-                            # [RESGATE-FERRIES - 421ª geração] Depois da reatribuição, vencedores com V/R alto
-                            # (viária dispare do próprio piso geométrico) podem esconder travessia fluvial que o
-                            # OSRM rodoviário ignora (Muana→Abaetetuba: OSRM 53,0 vs FOSSGIS 1,59 km — MESMO par,
-                            # MESMAS coordenadas; a referência media 1,8 km via ferry). Re-roteia esses pares
-                            # forçando o 2º motor (FOSSGIS) no consenso e adota a MENOR distância honesta. Teto
-                            # próprio por sessão; falha → segue idêntico (nunca regride).
-                            try:
-                                _pares_fr = _pares_resgatar_ferry_decisao(_topk_reatrib, _resultados, _novo_dest_mc)
-                                if _pares_fr:
-                                    try:
-                                        # [FLUVIAL-PLAUS - 422ª geração] o budget do 2º motor é FINITO (300/
-                                        # sessão): o resgate só força o FOSSGIS em pares com travessia de água
-                                        # PLÁUSIL — balsa já manifesta no resultado OU geodésia cruzando rio no
-                                        # grafo hidrográfico. Fail-open em TUDO (sem grafo/coords/exceção → o par
-                                        # segue) → a cobertura da 421ª nunca é cortada, só o desperdício. O mapa
-                                        # _coords_fr já veio do passe FERRY-CANDIDATO (definido antes da 1ª
-                                        # reatribuição, mesmo escopo); se não existir → {} → filtro abre (sem
-                                        # coordenadas presume plausível e mantém o par).
-                                        _cfr = {}
-                                        try:
-                                            _cfr = _coords_fr or {}
-                                        except Exception:
+                                            # [FLUVIAL-PLAUS - 422ª geração] o budget do 2º motor é FINITO (300/
+                                            # sessão): o resgate só força o FOSSGIS em pares com travessia de água
+                                            # PLÁUSIL — balsa já manifesta no resultado OU geodésia cruzando rio no
+                                            # grafo hidrográfico. Fail-open em TUDO (sem grafo/coords/exceção → o par
+                                            # segue) → a cobertura da 421ª nunca é cortada, só o desperdício. O mapa
+                                            # _coords_fr já veio do passe FERRY-CANDIDATO (definido antes da 1ª
+                                            # reatribuição, mesmo escopo); se não existir → {} → filtro abre (sem
+                                            # coordenadas presume plausível e mantém o par).
                                             _cfr = {}
-                                        _pares_fr = _filtrar_pares_resgate_fluvial(
-                                            _pares_fr, _resultados, _cfr, g=_grafo_fluvial_memoizado())
-                                    except Exception as _e_pl:
-                                        logger.error("[FLUVIAL-PLAUS] Filtro fluvial do resgate falhou "
-                                                     "(segue sem filtro): %s", _e_pl)
-                                if _pares_fr:
-                                    _resgate_fossgis_forca[0] += len(_pares_fr)
-                                    with st.spinner(f"⛴️ Resgate de travessia fluvial: re-roteando no 2º motor "
-                                                    f"{len(_pares_fr)} vencedor(es) suspeito(s)..."):
-                                        _res_fr = processar_chunk_rotas(
-                                            _pares_fr, runner_up_map=st.session_state.get('alo_runner_map'))
-                                    _acc_fr = 0
-                                    for _kf, _vf in (_res_fr or {}).items():
-                                        _ff = str(_vf[5]).lower() if (_vf and len(_vf) > 5) else "geodés"
-                                        if _vf and _vf[0] and "geodés" not in _ff and "falha" not in _ff:
-                                            _novo_fr = float(_vf[0])
-                                            _antvr = (_resultados.get(_kf) or [None])[0]
-                                            if (_antvr is None) or (_novo_fr < float(_antvr)):
-                                                _resultados[_kf] = _vf
-                                                _acc_fr += 1
-                                    if _acc_fr:
-                                        st.session_state['alo_resultados'] = _resultados
-                                        logger.warning("[RESGATE-FERRIES] %d vencedor(es) melhorado(s) pelo 2º "
-                                                       "motor (travessia fluvial).", _acc_fr)
-                            except Exception as _e_fr:
-                                logger.error(f"[RESGATE-FERRIES] Falha no resgate decisório: {_e_fr}")
-                            _oo = _df_pares['Origem'].astype(str).str.strip()
-                            _df_pares['Destino'] = _oo.map(_novo_dest_mc).fillna(_df_pares['Destino'])
-                            st.session_state['alo_mcda'] = _mcda_mc
-                            # [DIVERGENCIA-MOTOR - 184ª geração] Compara o vencedor da matriz OSRM com a
-                            # decisão final (Google-prioritária): divergências marcam municípios sensíveis
-                            # ao motor — sinal de auditoria, sem alterar a decisão final.
-                            try:
-                                _dm_aud = st.session_state.get('alo_dist_matriz') or {}
-                                if _dm_aud:
-                                    _div = _auditar_divergencia_motores(_dm_aud, _novo_dest_mc)
-                                    st.session_state['alo_divergencia_motor'] = _div
-                                    if _div.get("divergencias"):
-                                        logger.warning("[DIVERGENCIA-MOTOR] %d/%d município(s) (%.1f%%) com "
-                                                       "vencedor sensível ao motor (matriz OSRM ≠ decisão "
-                                                       "Google).", _div["divergencias"], _div["total_avaliado"],
-                                                       _div["taxa_divergencia_pct"])
-                            except Exception as _e_dv:
-                                logger.error(f"[DIVERGENCIA-MOTOR] {_e_dv}")
-                    except Exception as _e_mcf:
-                        logger.error(f"[HUB-MCDA] Falha na reatribuição multicritério: {_e_mcf}")
-                df_final_alo = None
-                _t_montagem = time.time()
-                # [RECUPERACAO-FINAL - 333a geração] ÚLTIMA CHANCE (§1/§2/§3): re-roteia UMA vez os pares cujo
-                # destino escolhido ainda não tem rota real — ANTES de a montagem marcá-los 'Erro Crítico'.
-                # Reusa processar_chunk_rotas (já timeout-safe; mesmo padrão da fase 2), bounded e defensivo: se
-                # a rede não responder, devolve vazio e a montagem segue IDÊNTICA (piso = no-op, nunca regride).
-                # O cache evita recomputar o que já existe; o classificador pula erros PERMANENTES (não ajuda
-                # re-tentar). Falhas TRANSITÓRIAS (motor não respondeu) deixam de virar definitivas.
-                try:
-                    _oo_r = _df_pares['Origem'].astype(str).str.strip()
-                    _dd_r = _df_pares['Destino'].astype(str).str.strip()
-                    _falt = []
-                    for _org_r, _dst_r in zip(_oo_r, _dd_r):
-                        _rr = _resultados.get((_org_r, _dst_r))
-                        if (not _rr) or (len(_rr) < 1) or (_rr[0] is None):
-                            _motivo = ""
-                            try:
-                                _motivo = str(_rr[5]) if (_rr and len(_rr) > 5 and _rr[5]) else ""
-                            except Exception:
+                                            try:
+                                                _cfr = _coords_fr or {}
+                                            except Exception:
+                                                _cfr = {}
+                                            _pares_fr = _filtrar_pares_resgate_fluvial(
+                                                _pares_fr, _resultados, _cfr, g=_grafo_fluvial_memoizado())
+                                        except Exception as _e_pl:
+                                            logger.error("[FLUVIAL-PLAUS] Filtro fluvial do resgate falhou "
+                                                         "(segue sem filtro): %s", _e_pl)
+                                    if _pares_fr:
+                                        _resgate_fossgis_forca[0] += len(_pares_fr)
+                                        with st.spinner(f"⛴️ Resgate de travessia fluvial: re-roteando no 2º motor "
+                                                        f"{len(_pares_fr)} vencedor(es) suspeito(s)..."):
+                                            _res_fr = processar_chunk_rotas(
+                                                _pares_fr, runner_up_map=st.session_state.get('alo_runner_map'))
+                                        _acc_fr = 0
+                                        for _kf, _vf in (_res_fr or {}).items():
+                                            _ff = str(_vf[5]).lower() if (_vf and len(_vf) > 5) else "geodés"
+                                            if _vf and _vf[0] and "geodés" not in _ff and "falha" not in _ff:
+                                                _novo_fr = float(_vf[0])
+                                                _antvr = (_resultados.get(_kf) or [None])[0]
+                                                if (_antvr is None) or (_novo_fr < float(_antvr)):
+                                                    _resultados[_kf] = _vf
+                                                    _acc_fr += 1
+                                        if _acc_fr:
+                                            st.session_state['alo_resultados'] = _resultados
+                                            logger.warning("[RESGATE-FERRIES] %d vencedor(es) melhorado(s) pelo 2º "
+                                                           "motor (travessia fluvial).", _acc_fr)
+                                except Exception as _e_fr:
+                                    logger.error(f"[RESGATE-FERRIES] Falha no resgate decisório: {_e_fr}")
+                                _oo = _df_pares['Origem'].astype(str).str.strip()
+                                _df_pares['Destino'] = _oo.map(_novo_dest_mc).fillna(_df_pares['Destino'])
+                                st.session_state['alo_mcda'] = _mcda_mc
+                                # [DIVERGENCIA-MOTOR - 184ª geração] Compara o vencedor da matriz OSRM com a
+                                # decisão final (Google-prioritária): divergências marcam municípios sensíveis
+                                # ao motor — sinal de auditoria, sem alterar a decisão final.
+                                try:
+                                    _dm_aud = st.session_state.get('alo_dist_matriz') or {}
+                                    if _dm_aud:
+                                        _div = _auditar_divergencia_motores(_dm_aud, _novo_dest_mc)
+                                        st.session_state['alo_divergencia_motor'] = _div
+                                        if _div.get("divergencias"):
+                                            logger.warning("[DIVERGENCIA-MOTOR] %d/%d município(s) (%.1f%%) com "
+                                                           "vencedor sensível ao motor (matriz OSRM ≠ decisão "
+                                                           "Google).", _div["divergencias"], _div["total_avaliado"],
+                                                           _div["taxa_divergencia_pct"])
+                                except Exception as _e_dv:
+                                    logger.error(f"[DIVERGENCIA-MOTOR] {_e_dv}")
+                        except Exception as _e_mcf:
+                            logger.error(f"[HUB-MCDA] Falha na reatribuição multicritério: {_e_mcf}")
+                    df_final_alo = None
+                    _t_montagem = time.time()
+                    # [RECUPERACAO-FINAL - 333a geração] ÚLTIMA CHANCE (§1/§2/§3): re-roteia UMA vez os pares cujo
+                    # destino escolhido ainda não tem rota real — ANTES de a montagem marcá-los 'Erro Crítico'.
+                    # Reusa processar_chunk_rotas (já timeout-safe; mesmo padrão da fase 2), bounded e defensivo: se
+                    # a rede não responder, devolve vazio e a montagem segue IDÊNTICA (piso = no-op, nunca regride).
+                    # O cache evita recomputar o que já existe; o classificador pula erros PERMANENTES (não ajuda
+                    # re-tentar). Falhas TRANSITÓRIAS (motor não respondeu) deixam de virar definitivas.
+                    try:
+                        _oo_r = _df_pares['Origem'].astype(str).str.strip()
+                        _dd_r = _df_pares['Destino'].astype(str).str.strip()
+                        _falt = []
+                        for _org_r, _dst_r in zip(_oo_r, _dd_r):
+                            _rr = _resultados.get((_org_r, _dst_r))
+                            if (not _rr) or (len(_rr) < 1) or (_rr[0] is None):
                                 _motivo = ""
-                            if _motivo and _classificar_erro_rota(_motivo) == "permanente":
-                                continue  # erro permanente conhecido — retry não ajuda (§2)
-                            _falt.append((_org_r, _dst_r))
-                    _falt = list(dict.fromkeys(_falt))
-                    if _falt and len(_falt) <= _RECUP_FINAL_MAX_PARES:
-                        _pend = list(_falt); _rec_ok = 0; _tent = 0
-                        # [SWEEP-ORCAMENTO - 401ª geração] Teto de TEMPO total do sweep: sob motores fora do
-                        # ar, 3 tentativas × deadline de chunk dominavam a finalização (montar_df_base ~137s).
-                        # Atingido o orçamento, para de retentar — os pendentes seguem ao registro/fallback
-                        # (idêntico ao que já teriam após esgotar as tentativas). Só limita o tempo.
-                        _sweep_t0 = time.time()
-                        while _pend and _tent < _RECUP_FINAL_TENTATIVAS:
-                            if (time.time() - _sweep_t0) >= _RECUP_FINAL_BUDGET_S:
-                                logger.warning("[RECUPERACAO-FINAL/alo] Orçamento de %.0fs atingido; %d "
-                                               "par(es) seguem para registro/fallback.", _RECUP_FINAL_BUDGET_S, len(_pend))
-                                break
-                            _tent += 1
-                            if _tent > 1:
-                                time.sleep(_RECUP_FINAL_BACKOFF_S * (_tent - 1))  # backoff linear entre tentativas
-                            with st.spinner("🔁 Recuperação final (tentativa %d/%d): re-roteando %d rota(s)…"
-                                            % (_tent, _RECUP_FINAL_TENTATIVAS, len(_pend))):
-                                _res_rec = processar_chunk_rotas(_pend, runner_up_map=_runner) or {}
-                            _resta = []
-                            for _pp in _pend:
-                                _vr = _res_rec.get(_pp)
-                                if _vr and _vr[0] is not None:
-                                    _resultados[_pp] = _vr; _rec_ok += 1
-                                else:
-                                    _resta.append(_pp)
-                            _pend = _resta  # só os que ainda faltam vão para a próxima tentativa
-                        st.session_state['alo_resultados'] = _resultados
-                        st.session_state['alo_recuperadas'] = int(st.session_state.get('alo_recuperadas', 0) or 0) + _rec_ok
-                        # [OBS - 403a geração] Desfecho do sweep: pares de _falt agora recuperados → 'recuperada';
-                        # os que seguem sem rota → 'erro'. Registro em lote (defensivo).
-                        try:
-                            _obs_js = st.session_state.get('alo_job_id')
-                            if _obs_js:
-                                _rec_map = {_pf: _resultados.get(_pf) for _pf in _falt}
-                                _obs_registrar_lote(_obs_js, _obs_itens_de_resultados(
-                                    _rec_map, status_ok='recuperada', tentativas=_RECUP_FINAL_TENTATIVAS))
-                        except Exception:
-                            pass
-                        logger.warning("[RECUPERACAO-FINAL/alo] %d/%d rota(s) recuperada(s) em até %d tentativa(s); "
-                                       "%d permanece(m) para registro explícito (sem poda silenciosa).",
-                                       _rec_ok, len(_falt), _RECUP_FINAL_TENTATIVAS, len(_pend))
-                    elif _falt:
-                        logger.warning("[RECUPERACAO-FINAL/alo] %d par(es) pendente(s) acima do teto (%d) — seguem "
-                                       "para registro explícito na montagem.", len(_falt), _RECUP_FINAL_MAX_PARES)
-                except Exception:
-                    logger.error("[RECUPERACAO-FINAL/alo] Falha na recuperação final (isolada) — segue para a "
-                                 "montagem normalmente.", exc_info=True)
-                # [V434 · FALLBACK-GARANTIDO/alo] Nenhuma rota fica como FALHA em branco. Toda pendência
-                # remanescente (straggler de deadline, par acima do teto de sweep, ou qualquer None) recebe
-                # um fallback GEODÉSICO rotulado ("Estimado (geodésico)") ANTES da montagem — resultado exato,
-                # oficial e offline (Karney/WGS-84), jamais disfarçado de viária. Barato (só computa para os
-                # poucos None), NUNCA sobrescreve um resultado real → zero regressão. Fecha o pedido das 6 rotas.
-                try:
-                    _o_fb = _df_pares["Origem"].astype(str).str.strip()
-                    _d_fb = _df_pares["Destino"].astype(str).str.strip()
-                    _n_fb_gar = 0
-                    _SENT_FB = ("FALHA_GEO_ORIGEM", "NENHUM_HUB_VALIDO", "FALHA_GEO_DESTINO")
-                    for _of_fb, _df_fb in zip(_o_fb, _d_fb):
-                        if (not _of_fb) or (not _df_fb) or _of_fb.lower() == "nan" or _df_fb.lower() == "nan":
-                            continue
-                        if _of_fb in _SENT_FB or _df_fb in _SENT_FB:
-                            continue
-                        _rv_fb = _resultados.get((_of_fb, _df_fb))
-                        if (not _rv_fb) or (len(_rv_fb) < 1) or (_rv_fb[0] is None):
+                                try:
+                                    _motivo = str(_rr[5]) if (_rr and len(_rr) > 5 and _rr[5]) else ""
+                                except Exception:
+                                    _motivo = ""
+                                if _motivo and _classificar_erro_rota(_motivo) == "permanente":
+                                    continue  # erro permanente conhecido — retry não ajuda (§2)
+                                _falt.append((_org_r, _dst_r))
+                        _falt = list(dict.fromkeys(_falt))
+                        if _falt and len(_falt) <= _RECUP_FINAL_MAX_PARES:
+                            _pend = list(_falt); _rec_ok = 0; _tent = 0
+                            # [SWEEP-ORCAMENTO - 401ª geração] Teto de TEMPO total do sweep: sob motores fora do
+                            # ar, 3 tentativas × deadline de chunk dominavam a finalização (montar_df_base ~137s).
+                            # Atingido o orçamento, para de retentar — os pendentes seguem ao registro/fallback
+                            # (idêntico ao que já teriam após esgotar as tentativas). Só limita o tempo.
+                            _sweep_t0 = time.time()
+                            while _pend and _tent < _RECUP_FINAL_TENTATIVAS:
+                                if (time.time() - _sweep_t0) >= _RECUP_FINAL_BUDGET_S:
+                                    logger.warning("[RECUPERACAO-FINAL/alo] Orçamento de %.0fs atingido; %d "
+                                                   "par(es) seguem para registro/fallback.", _RECUP_FINAL_BUDGET_S, len(_pend))
+                                    break
+                                _tent += 1
+                                if _tent > 1:
+                                    time.sleep(_RECUP_FINAL_BACKOFF_S * (_tent - 1))  # backoff linear entre tentativas
+                                with st.spinner("🔁 Recuperação final (tentativa %d/%d): re-roteando %d rota(s)…"
+                                                % (_tent, _RECUP_FINAL_TENTATIVAS, len(_pend))):
+                                    _res_rec = processar_chunk_rotas(_pend, runner_up_map=_runner) or {}
+                                _resta = []
+                                for _pp in _pend:
+                                    _vr = _res_rec.get(_pp)
+                                    if _vr and _vr[0] is not None:
+                                        _resultados[_pp] = _vr; _rec_ok += 1
+                                    else:
+                                        _resta.append(_pp)
+                                _pend = _resta  # só os que ainda faltam vão para a próxima tentativa
+                            st.session_state['alo_resultados'] = _resultados
+                            st.session_state['alo_recuperadas'] = int(st.session_state.get('alo_recuperadas', 0) or 0) + _rec_ok
+                            # [OBS - 403a geração] Desfecho do sweep: pares de _falt agora recuperados → 'recuperada';
+                            # os que seguem sem rota → 'erro'. Registro em lote (defensivo).
                             try:
-                                _resultados[(_of_fb, _df_fb)] = _fallback_geodesico_garantido(
-                                    _of_fb, _df_fb, "deadline/straggler — fallback geodésico garantido")
-                                _n_fb_gar += 1
+                                _obs_js = st.session_state.get('alo_job_id')
+                                if _obs_js:
+                                    _rec_map = {_pf: _resultados.get(_pf) for _pf in _falt}
+                                    _obs_registrar_lote(_obs_js, _obs_itens_de_resultados(
+                                        _rec_map, status_ok='recuperada', tentativas=_RECUP_FINAL_TENTATIVAS))
                             except Exception:
                                 pass
-                    if _n_fb_gar:
-                        st.session_state["alo_resultados"] = _resultados
-                        logger.warning("[FALLBACK-GARANTIDO/alo] %d rota(s) remanescente(s) receberam fallback "
-                                       "geodésico rotulado — nunca ficam como falha em branco.", _n_fb_gar)
-                except Exception:
-                    logger.error("[FALLBACK-GARANTIDO/alo] Falha (isolada) — segue para a montagem.", exc_info=True)
-                # [R5-VALIDACAO - 407a geração] Snapshot compacto (km+motor por par) para a verificação de
-                # equivalência clássico × background. Tag pelo modo do estudo. Aditivo/defensivo.
-                try:
-                    _snap_key = "alo_snap_background" if st.session_state.get("alo_modo_background") else "alo_snap_classico"
-                    st.session_state[_snap_key] = _alo_snapshot_compacto(_resultados)
-                    st.session_state[_snap_key + "_meta"] = {"n": len(_resultados or {}), "ts": time.time()}
-                except Exception:
-                    pass
-                with _perfil_fase("Montagem do DataFrame (Alocação)"):
-                    # [V363 · BLINDAGEM-MONTAGEM] A montagem base NUNCA pode deixar df_final_alo None/indefinido:
-                    # se ela falhar por qualquer motivo, a consolidação seguinte quebraria e o auto-avanço
-                    # entraria em loop de rerun (travamento perto de 100%). Em falha, recai no DF-seguro anterior
-                    # ou num DataFrame vazio válido — o fluxo SEMPRE alcança um estado terminal. Sucesso = idêntico.
-                    try:
-                        df_final_alo = _montar_dataframe_final(_df_pares, _resultados, runner_up_map=_runner)
+                            logger.warning("[RECUPERACAO-FINAL/alo] %d/%d rota(s) recuperada(s) em até %d tentativa(s); "
+                                           "%d permanece(m) para registro explícito (sem poda silenciosa).",
+                                           _rec_ok, len(_falt), _RECUP_FINAL_TENTATIVAS, len(_pend))
+                        elif _falt:
+                            logger.warning("[RECUPERACAO-FINAL/alo] %d par(es) pendente(s) acima do teto (%d) — seguem "
+                                           "para registro explícito na montagem.", len(_falt), _RECUP_FINAL_MAX_PARES)
                     except Exception:
-                        logger.error("[BLINDAGEM-MONTAGEM/alo] Falha na montagem base — recaindo no DF-seguro/vazio "
-                                     "para não travar o auto-avanço.", exc_info=True)
-                        df_final_alo = st.session_state.get('alo_df_seguro')
-                        if df_final_alo is None:
-                            df_final_alo = pd.DataFrame()
-                # [COMPLETUDE-ROTAS - 332a geração] Prestação de contas (observabilidade §8/§11/§12): a equação
-                # previstas = reais + estimadas + não-roteadas é computada AQUI (na montagem, onde o sourcing de
-                # cada rota já está definido) e guardada para exibição. LOG explícito — jamais poda silenciosa.
-                try:
-                    _comp_alo = _auditar_completude_rotas(
-                        df_final_alo, previstas=(len(_df_pares) if _df_pares is not None else None))
-                    st.session_state['alo_completude'] = _comp_alo
-                    logger.warning("[COMPLETUDE-ROTAS/alo] %s", _comp_alo.get("veredito", ""))
-                except Exception:
-                    logger.error("[COMPLETUDE-ROTAS/alo] Falha ao auditar completude (isolada).", exc_info=True)
-                # [FINALIZACAO-ROBUSTA - 266ª geração] DF-SEGURO: a montagem base produziu um DataFrame COMPLETO
-                # e entregável (todas as colunas essenciais: distâncias, rotas, IBGE, concorrente). Guardamos uma
-                # REFERÊNCIA a ele agora — antes de qualquer enriquecimento analítico opcional. As funções de
-                # enriquecimento abaixo REATRIBUEM df_final_alo a novos objetos (retornam cópias), então esta
-                # referência permanece intacta como fallback. Se um passo de enriquecimento for interrompido
-                # (timeout/memória), o watchdog entrega este DF — resultados essenciais preservados, zero trava.
-                # Custo: zero (referência, sem cópia). É liberado no commit de sucesso.
-                try:
-                    st.session_state['alo_df_seguro'] = df_final_alo
-                except Exception:
-                    pass
-                _obs_fin("montar_df_base", _t_montagem,
-                         linhas=(len(df_final_alo) if df_final_alo is not None else 0))
-                # [RESGATE-CIRCUIDADE - 238ª] Refinamento pós-alocação (Etapa C): quando o destino escolhido
-                # exibe a assinatura de risco (V/R alta / balsa / acesso fluvial), roteia os candidatos mais
-                # diretos do topk_map pelo motor autoritativo e adota o melhor PARA O CANDIDATO. Monotônico
-                # (só troca se for melhor), limitado (só na assinatura), reversível (flag). Falha → df intacto.
-                if _RESGATE_CIRCUIDADE_ATIVO:
-                    # [V437] aplica a preferência do usuário (menor viária pura) ao critério de troca do resgate.
+                        logger.error("[RECUPERACAO-FINAL/alo] Falha na recuperação final (isolada) — segue para a "
+                                     "montagem normalmente.", exc_info=True)
+                    # [V434 · FALLBACK-GARANTIDO/alo] Nenhuma rota fica como FALHA em branco. Toda pendência
+                    # remanescente (straggler de deadline, par acima do teto de sweep, ou qualquer None) recebe
+                    # um fallback GEODÉSICO rotulado ("Estimado (geodésico)") ANTES da montagem — resultado exato,
+                    # oficial e offline (Karney/WGS-84), jamais disfarçado de viária. Barato (só computa para os
+                    # poucos None), NUNCA sobrescreve um resultado real → zero regressão. Fecha o pedido das 6 rotas.
                     try:
-                        globals()['_PRIORIDADE_MENOR_VIARIA'] = bool(st.session_state.get('alo_prioridade_menor_viaria'))
+                        _o_fb = _df_pares["Origem"].astype(str).str.strip()
+                        _d_fb = _df_pares["Destino"].astype(str).str.strip()
+                        _n_fb_gar = 0
+                        _SENT_FB = ("FALHA_GEO_ORIGEM", "NENHUM_HUB_VALIDO", "FALHA_GEO_DESTINO")
+                        for _of_fb, _df_fb in zip(_o_fb, _d_fb):
+                            if (not _of_fb) or (not _df_fb) or _of_fb.lower() == "nan" or _df_fb.lower() == "nan":
+                                continue
+                            if _of_fb in _SENT_FB or _df_fb in _SENT_FB:
+                                continue
+                            _rv_fb = _resultados.get((_of_fb, _df_fb))
+                            if (not _rv_fb) or (len(_rv_fb) < 1) or (_rv_fb[0] is None):
+                                try:
+                                    _resultados[(_of_fb, _df_fb)] = _fallback_geodesico_garantido(
+                                        _of_fb, _df_fb, "deadline/straggler — fallback geodésico garantido")
+                                    _n_fb_gar += 1
+                                except Exception:
+                                    pass
+                        if _n_fb_gar:
+                            st.session_state["alo_resultados"] = _resultados
+                            logger.warning("[FALLBACK-GARANTIDO/alo] %d rota(s) remanescente(s) receberam fallback "
+                                           "geodésico rotulado — nunca ficam como falha em branco.", _n_fb_gar)
+                    except Exception:
+                        logger.error("[FALLBACK-GARANTIDO/alo] Falha (isolada) — segue para a montagem.", exc_info=True)
+                    # [R5-VALIDACAO - 407a geração] Snapshot compacto (km+motor por par) para a verificação de
+                    # equivalência clássico × background. Tag pelo modo do estudo. Aditivo/defensivo.
+                    try:
+                        _snap_key = "alo_snap_background" if st.session_state.get("alo_modo_background") else "alo_snap_classico"
+                        st.session_state[_snap_key] = _alo_snapshot_compacto(_resultados)
+                        st.session_state[_snap_key + "_meta"] = {"n": len(_resultados or {}), "ts": time.time()}
                     except Exception:
                         pass
-                    try:
-                        with _perfil_fase("Refinamento por resgate (circuidade)"):
-                            df_final_alo, _regs_resgate = _refinar_por_resgate_circuidade(
-                                df_final_alo, st.session_state.get('alo_topk_map') or {},
-                                topk_completo=st.session_state.get('alo_topk_completo') or {},
-                                topk_ibge=st.session_state.get('alo_topk_completo_ibge') or {},
-                                viaria_estrita=bool(st.session_state.get('alo_multicriterio')))
-                            st.session_state['alo_resgate'] = _agregar_resgates(_regs_resgate)
-                    except Exception as _e_resg:
-                        logger.error(f"[RESGATE-CIRCUIDADE] refinamento abortado (df preservado): {_e_resg}")
-                # [FECHAMENTO-OTIMALIDADE - 446ª / Rodada 2] Passe FINAL, à prova de bypass: roda sobre o df já
-                # montado (viárias reais) e, para toda origem cujo destino ainda tenha fronteira admissível
-                # aberta (existe polo com reta < viária atual), roteia essa fronteira e adota o melhor por
-                # _avaliar_troca (monotônico). Casa a origem por Código IBGE→nome/UF — imune ao mismatch de
-                # chave que fazia o resgate anterior rodar sem efeito e sem log. AUDITÁVEL (loga fronteira,
-                # roteados, trocas). Reversível (flag). Qualquer erro preserva o df.
-                if _FECHAMENTO_OTIMALIDADE_ATIVO:
-                    try:
-                        globals()['_PRIORIDADE_MENOR_VIARIA'] = bool(st.session_state.get('alo_prioridade_menor_viaria'))
-                    except Exception:
-                        pass
-                    try:
-                        with _perfil_fase("Fechamento de otimalidade (final)"):
-                            df_final_alo, _resumo_fecho = _fechar_otimalidade_final(
-                                df_final_alo, st.session_state.get('alo_topk_completo') or {},
-                                hubs_validos=st.session_state.get('alo_hubs_validos'),
-                                topk_ibge=st.session_state.get('alo_topk_completo_ibge') or {})
-                            st.session_state['alo_fechamento_otimalidade'] = _resumo_fecho
-                    except Exception as _e_fecho:
-                        logger.error(f"[FECHAMENTO-OTIMALIDADE] passe abortado (df preservado): {_e_fecho}")
-                # [VIÁRIA-PADRÃO - 184ª geração] No modo VIÁRIA, alinha o CONCORRENTE ao 2º MENOR VIÁRIA
-                # (o runner_up_map traz o 2º em linha reta). Aditivo/defensivo; usa o pipeline já roteado do
-                # 2º colocado e recalcula os índices da disputa. No modo linha reta este passo não roda.
-                if st.session_state.get('alo_multicriterio'):
-                    try:
-                        df_final_alo = _alinhar_concorrente_por_viaria(
-                            df_final_alo, st.session_state.get('alo_mcda') or {}, _resultados)
-                    except Exception as _e_alc:
-                        logger.error(f"[VIÁRIA-PADRÃO] Falha ao alinhar concorrente por viária: {_e_alc}")
-                    # [SSOT-DECISAO - 184ª geração] CORREÇÃO AUTORITATIVA FINAL: garante vencedor = MENOR viária
-                    # real. Roda com as viárias REAIS já populadas (após o alinhamento do concorrente) e ANTES da
-                    # validação — se sobrou algum caso com vencedor de viária maior que o 2º, ele é TROCADO aqui,
-                    # e a validação seguinte confirma que não resta inconsistência (deve zerar os alertas).
-                    # [SEGUNDA-PASSADA-GOOGLE - 184ª geração] Antes de eleger o vencedor final, dá ao Google
-                    # uma nova chance nos pares que caíram só no OSRM/fallback (o rate-limit do Google pode já
-                    # ter resetado). Recupera participação do Google de forma segura (respeita o disjuntor,
-                    # não martela). Opt-in via toggle; roda com teto para não reintroduzir lentidão.
-                    # [SEGUNDA-PASSADA-GOOGLE] Só vale a pena se o Google participou de forma relevante no
-                    # estudo. Se o Google está bloqueado (participação ~nula), reprocessar centenas de pares
-                    # nele só desperdiça tempo esperando timeouts — cada tentativa falha. Medimos a
-                    # participação AQUI (antes da segunda passada) para decidir com precisão; abaixo de um
-                    # piso, pulamos a fase inteira (o disjuntor também barra as chamadas, mas evitar a
-                    # varredura poupa tempo).
-                    try:
-                        _part_previa = _diagnosticar_participacao_motores(df_final_alo) or {}
-                    except Exception:
-                        _part_previa = {}
-                    _google_vivo = (_part_previa.get('pct_google', 0) >= 3) if _part_previa else _google_pode_chamar()
-                    # [FINALIZACAO-ROBUSTA - 266ª geração] ONE-SHOT: a 2ª passada do Google reprocessa até 400
-                    # pares por REDE. Se a finalização for interrompida durante ela e reentrada, reexecutá-la
-                    # custaria outros 400 timeouts — um dos caminhos que alimentavam o "trava em 100%". Marcamos
-                    # feito ANTES de rodar (como o retry-viária já faz), então cada estudo a executa no máximo
-                    # uma vez; reentradas pulam direto para o enriquecimento, convergindo rápido. Zero regressão
-                    # no caminho feliz (roda exatamente uma vez, como antes).
-                    if (st.session_state.get('alo_segunda_passada_google', True) and _google_vivo
-                            and not st.session_state.get('alo_2pass_google_feito')):
-                        st.session_state['alo_2pass_google_feito'] = True
-                        _t_2pass = time.time()
+                    with _perfil_fase("Montagem do DataFrame (Alocação)"):
+                        # [V363 · BLINDAGEM-MONTAGEM] A montagem base NUNCA pode deixar df_final_alo None/indefinido:
+                        # se ela falhar por qualquer motivo, a consolidação seguinte quebraria e o auto-avanço
+                        # entraria em loop de rerun (travamento perto de 100%). Em falha, recai no DF-seguro anterior
+                        # ou num DataFrame vazio válido — o fluxo SEMPRE alcança um estado terminal. Sucesso = idêntico.
                         try:
-                            _teto_2pass = 400  # limite de reprocessamentos para controlar tempo/rede
-                            df_final_alo, _n_rec_g = _segunda_passada_google(df_final_alo, _max_pares=_teto_2pass)
-                            if _n_rec_g:
-                                st.session_state['alo_recuperados_google'] = _n_rec_g
-                            _obs_fin("segunda_passada_google", _t_2pass,
-                                     recuperadas=st.session_state.get('alo_recuperados_google', 0))
-                        except Exception as _e_2p:
-                            logger.error(f"[SEGUNDA-PASSADA-GOOGLE] {_e_2p}")
-                    _inv_antes_viaria = _verificar_invariante_viaria(df_final_alo)
-                    # [V423] Antes de fixar o vencedor por menor viária, corrige as rotas rodoviárias FANTASMA
-                    # (barreira hídrica → distância fluvial realista). Assim o SSOT compara distâncias REAIS.
-                    df_final_alo = _corrigir_rota_fantasma_fluvial(df_final_alo)
-                    # [V446 · BALSA BANDADA] Mapa {origem: balsa_do_concorrente} vindo da MESMA decisão
-                    # (_reatribuir_hubs_multicriterio → ranking[1]) para a correção autoritativa não coroar a
-                    # travessia que a política §6/§7 demoveu (Taquari/Triunfo revertidos pela troca automática).
+                            df_final_alo = _montar_dataframe_final(_df_pares, _resultados, runner_up_map=_runner)
+                        except Exception:
+                            logger.error("[BLINDAGEM-MONTAGEM/alo] Falha na montagem base — recaindo no DF-seguro/vazio "
+                                         "para não travar o auto-avanço.", exc_info=True)
+                            df_final_alo = st.session_state.get('alo_df_seguro')
+                            if df_final_alo is None:
+                                df_final_alo = pd.DataFrame()
+                    # [COMPLETUDE-ROTAS - 332a geração] Prestação de contas (observabilidade §8/§11/§12): a equação
+                    # previstas = reais + estimadas + não-roteadas é computada AQUI (na montagem, onde o sourcing de
+                    # cada rota já está definido) e guardada para exibição. LOG explícito — jamais poda silenciosa.
                     try:
-                        _balsa_conc_map = {}
-                        for _cli_mc, _r_mc in (_mcda_mc or {}).items():
-                            _rk_mc = (_r_mc or {}).get("ranking") or []
-                            if len(_rk_mc) >= 2:
-                                _balsa_conc_map[str(_cli_mc).strip()] = bool(_rk_mc[1].get("balsa"))
+                        _comp_alo = _auditar_completude_rotas(
+                            df_final_alo, previstas=(len(_df_pares) if _df_pares is not None else None))
+                        st.session_state['alo_completude'] = _comp_alo
+                        logger.warning("[COMPLETUDE-ROTAS/alo] %s", _comp_alo.get("veredito", ""))
                     except Exception:
-                        _balsa_conc_map = None
-                    df_final_alo = _forcar_menor_viaria_vencedor(df_final_alo, balsa_concorrente_map=_balsa_conc_map)
-                    # [V439 · DECISAO-TRACE — Item 28] Instrumentação observacional da decisão final.
-                    df_final_alo = _registrar_decisao_trace_alo(df_final_alo)
-                    st.session_state['alo_correcoes_viaria'] = int(_inv_antes_viaria.get('violacoes', 0))
-                    # [COERENCIA-VIARIA - 184ª geração] Validação automática: detecta/sinaliza rotas com viária do
-                    # vencedor MAIOR que a do concorrente (acesso fluvial / rota recuperada) — adiciona coluna de
-                    # alerta na planilha e registra em log. Não troca o vencedor (risco de capacidade/consistência);
-                    # o painel de auditoria já sinaliza cada caso e nomeia o hub de menor viária.
-                    df_final_alo = _validar_coerencia_viaria(df_final_alo)
-                    # [V316 · Melhoria 3, fatia 2] Faz aflorar a ALTERNATIVA POR BALSA capturada pelo resgate
-                    # (colunas na planilha + resumo p/ o alerta visual). Roda APÓS a correção autoritativa para
-                    # a economia ser calculada contra o vencedor terrestre FINAL. Guardado contra escopo.
+                        logger.error("[COMPLETUDE-ROTAS/alo] Falha ao auditar completude (isolada).", exc_info=True)
+                    # [FINALIZACAO-ROBUSTA - 266ª geração] DF-SEGURO: a montagem base produziu um DataFrame COMPLETO
+                    # e entregável (todas as colunas essenciais: distâncias, rotas, IBGE, concorrente). Guardamos uma
+                    # REFERÊNCIA a ele agora — antes de qualquer enriquecimento analítico opcional. As funções de
+                    # enriquecimento abaixo REATRIBUEM df_final_alo a novos objetos (retornam cópias), então esta
+                    # referência permanece intacta como fallback. Se um passo de enriquecimento for interrompido
+                    # (timeout/memória), o watchdog entrega este DF — resultados essenciais preservados, zero trava.
+                    # Custo: zero (referência, sem cópia). É liberado no commit de sucesso.
                     try:
-                        df_final_alo, _resumo_balsa = _v316_aplicar_colunas_balsa(df_final_alo, _regs_resgate)
-                        st.session_state['alo_balsa_resumo'] = _resumo_balsa
-                    except NameError:
+                        st.session_state['alo_df_seguro'] = df_final_alo
+                    except Exception:
                         pass
-                    except Exception as _e_balsa:
-                        logger.error(f"[V316-BALSA] colunas de alternativa por balsa: {_e_balsa}")
-                # [HOMONIMO - 126ª geração] Pós-passo ADITIVO: auditoria de desambiguação de homônimos.
-                df_final_alo = _crono_fin("enriq_homonimos", _enriquecer_desambiguacao_homonimos, df_final_alo)
-                # [INTEGRIDADE - 133ª geração] Pós-passo ADITIVO: Índice de Integridade Geográfica + alerta por rota.
-                df_final_alo = _crono_fin("enriq_integridade", _enriquecer_integridade_geografica, df_final_alo)
-                # [IBGE-ROTULO - 146ª geração] Rótulos legíveis + retroalimentação Município/UF.
-                df_final_alo = _crono_fin("enriq_rotulos_ibge", _enriquecer_rotulos_ibge, df_final_alo)
-                # [NOME-CONCORRENTE - 184ª geração] Passe FINAL: 'Concorrente Analisado' e 'Municipio Destino'
-                # SEMPRE pelo NOME do município (nunca o código IBGE), em TODAS as linhas e em qualquer modo —
-                # aplicado antes de montar o export e a tela, para cobrir inclusive as linhas que o alinhamento
-                # por viária não tocou (ranking <2) e o modo linha reta.
-                # [CONCORRENTE-SEMPRE - 184ª geração] Garante concorrente em TODA linha (2º polo do topk) antes
-                # da resolução de nomes, para que o preenchido também vire nome de município legível.
-                df_final_alo = _garantir_concorrente_sempre(
-                    df_final_alo, st.session_state.get('alo_topk_map'), _resultados)
-                df_final_alo = _resolver_nomes_finais(df_final_alo)
-                # [XAI-ROTA - 184ª geração] Classificação da rota (🟢/🟡/🟠) + método EXPLÍCITO
-                # (✅ viária real / 📏 linha reta) + MOTIVO anexado às justificativas — em tela e planilha.
-                df_final_alo = _crono_fin("enriq_classificacao_rotas", _enriquecer_classificacao_rotas, df_final_alo)
-                # [MOTOR-TEMPO - 184ª geração] Garante Tempo em toda linha com distância viária (nunca N/A).
-                df_final_alo = _garantir_tempo_estimado(df_final_alo)
-                # [CONSISTENCIA-FISICA - 184ª geração] Sinaliza incoerências físicas (viária<reta, velocidade).
-                df_final_alo = _validar_consistencia_fisica(df_final_alo)
-                # [COERENCIA-TD - 184ª geração] Sentinela: tempo e distância do MESMO motor vencedor (checa
-                # velocidade implícita plausível; velocidade absurda = fontes dessincronizadas).
-                df_final_alo = _validar_coerencia_tempo_distancia(df_final_alo)
-                # [REGIAO-ADAPTATIVA - 184ª geração] Inteligência adaptativa: classifica a confiabilidade do
-                # roteamento por região (Amazônia/ilhas/balsa têm malha mais fraca) — transparência sobre
-                # onde confiar mais ou menos, sem alterar nenhuma decisão.
-                df_final_alo = _aplicar_confiabilidade_regional(df_final_alo)
-                # [PARTICIPACAO-MOTOR - 184ª geração] Diagnostica quanto o Google participou de fato — dá
-                # visibilidade à queixa "o Google parou de participar" com veredito acionável.
-                try:
-                    _part_mot = _diagnosticar_participacao_motores(df_final_alo)
-                    if _part_mot:
-                        st.session_state['alo_participacao_motor'] = _part_mot
-                except Exception as _e_pm:
-                    logger.error(f"[PARTICIPACAO-MOTOR] {_e_pm}")
-                # [APRENDIZADO - 184ª geração] Audita padrões de subotimalidade e registra em tela + telemetria.
-                try:
-                    _padroes = _auditar_padroes_derrota(df_final_alo)
-                    if _padroes:
-                        st.session_state['alo_padroes_derrota'] = _padroes
-                        _n_fant = sum(1 for _p in _padroes if _p['padrao'] == 'desvio_fantasma')
-                        _n_dist = sum(1 for _p in _padroes if _p['padrao'] == 'polo_mais_distante')
-                        logger.warning("[APRENDIZADO] %d padrão(ões) de atenção detectados (%d desvio fantasma, "
-                                       "%d polo mais distante).", len(_padroes), _n_fant, _n_dist)
-                except Exception as _e_ap:
-                    logger.error(f"[APRENDIZADO] {_e_ap}")
-                # [DIAGNOSTICO-POLO - 184ª geração] Sinaliza vencedores suspeitosamente distantes (sinuosidade
-                # > 3): indício de polo melhor ausente da lista ou mal roteado — dá visibilidade ao gargalo
-                # das derrotas para o operador investigar o universo de destinos.
-                try:
-                    _polos_susp = _diagnosticar_polo_suspeito(df_final_alo)
-                    if _polos_susp:
-                        st.session_state['alo_polos_suspeitos'] = _polos_susp
-                        logger.warning("[DIAGNOSTICO-POLO] %d município(s) com vencedor suspeito (rota muito "
-                                       "sinuosa) — possível polo melhor ausente/mal roteado.", len(_polos_susp))
-                except Exception as _e_dp:
-                    logger.error(f"[DIAGNOSTICO-POLO] {_e_dp}")
-                # [SSOT-DECISAO - 184ª geração] Verificação FINAL do invariante da menor viária (prova ao usuário).
-                st.session_state['alo_invariante_viaria'] = _verificar_invariante_viaria(df_final_alo)
-                # [HUMANIZAR - 173ª geração] O CÓDIGO IBGE SAI da coluna Origem/Destino; o NOME entra.
-                # O código NÃO se perde: vai para a coluna própria. Ninguém analisa uma planilha com
-                # '1100023' na coluna Origem — código é identificador de MÁQUINA, nome é de GENTE.
-                # ═══════════════════════════════════════════════════════════════════════════════
-                # [PORTÃO - 176ª geração] A GARANTIA: nenhum ZERO IMPOSSÍVEL sai daqui.
-                #
-                # Consertar MAIS caminhos não é garantia — na 168ª eu declarei resolvido um bug que
-                # ainda estava lá, porque consertei o caminho ERRADO. A resposta certa é um PORTÃO
-                # que NENHUMA linha atravessa sem ser examinada — venha ela de onde vier, inclusive
-                # de caminhos que ainda não existem.
-                #
-                # A LEI FÍSICA: dois municípios DIFERENTES não podem estar a 0,0 km. É geometria.
-                # (E zero com origem == destino é VÁLIDO: prova na própria cidade. Confundir os dois
-                #  foi o pecado original — usar zero como SENTINELA num campo onde ele é legítimo.)
-                # ═══════════════════════════════════════════════════════════════════════════════
-                df_final_alo, _rel_portao = _crono_fin("portao_distancias", _portao_final_distancias, df_final_alo)
-                st.session_state['portao_relatorio'] = _rel_portao
-                df_final_alo = _crono_fin("humanizar_ids", _humanizar_identificadores, df_final_alo)
-                # [HUB-MCDA - 130ª geração] Colunas da decisão multicritério (quando o modo está ativo): IGQ,
-                # custo efetivo do vencedor e do 2º, diferença % e justificativa XAI — por cliente (Origem).
-                # O tempo/balsa/modo/sinuosidade do vencedor já saem nas colunas de rota padrão do hub eleito.
-                _mcda_map = st.session_state.get('alo_mcda') or {}
-                if _mcda_map:
+                    _obs_fin("montar_df_base", _t_montagem,
+                             linhas=(len(df_final_alo) if df_final_alo is not None else 0))
+                    # [RESGATE-CIRCUIDADE - 238ª] Refinamento pós-alocação (Etapa C): quando o destino escolhido
+                    # exibe a assinatura de risco (V/R alta / balsa / acesso fluvial), roteia os candidatos mais
+                    # diretos do topk_map pelo motor autoritativo e adota o melhor PARA O CANDIDATO. Monotônico
+                    # (só troca se for melhor), limitado (só na assinatura), reversível (flag). Falha → df intacto.
+                    if _RESGATE_CIRCUIDADE_ATIVO:
+                        # [V437] aplica a preferência do usuário (menor viária pura) ao critério de troca do resgate.
+                        try:
+                            globals()['_PRIORIDADE_MENOR_VIARIA'] = bool(st.session_state.get('alo_prioridade_menor_viaria'))
+                        except Exception:
+                            pass
+                        try:
+                            with _perfil_fase("Refinamento por resgate (circuidade)"):
+                                df_final_alo, _regs_resgate = _refinar_por_resgate_circuidade(
+                                    df_final_alo, st.session_state.get('alo_topk_map') or {},
+                                    topk_completo=st.session_state.get('alo_topk_completo') or {},
+                                    topk_ibge=st.session_state.get('alo_topk_completo_ibge') or {},
+                                    viaria_estrita=bool(st.session_state.get('alo_multicriterio')))
+                                st.session_state['alo_resgate'] = _agregar_resgates(_regs_resgate)
+                        except Exception as _e_resg:
+                            logger.error(f"[RESGATE-CIRCUIDADE] refinamento abortado (df preservado): {_e_resg}")
+                    # [FECHAMENTO-OTIMALIDADE - 446ª / Rodada 2] Passe FINAL, à prova de bypass: roda sobre o df já
+                    # montado (viárias reais) e, para toda origem cujo destino ainda tenha fronteira admissível
+                    # aberta (existe polo com reta < viária atual), roteia essa fronteira e adota o melhor por
+                    # _avaliar_troca (monotônico). Casa a origem por Código IBGE→nome/UF — imune ao mismatch de
+                    # chave que fazia o resgate anterior rodar sem efeito e sem log. AUDITÁVEL (loga fronteira,
+                    # roteados, trocas). Reversível (flag). Qualquer erro preserva o df.
+                    if _FECHAMENTO_OTIMALIDADE_ATIVO:
+                        try:
+                            globals()['_PRIORIDADE_MENOR_VIARIA'] = bool(st.session_state.get('alo_prioridade_menor_viaria'))
+                        except Exception:
+                            pass
+                        try:
+                            with _perfil_fase("Fechamento de otimalidade (final)"):
+                                df_final_alo, _resumo_fecho = _fechar_otimalidade_final(
+                                    df_final_alo, st.session_state.get('alo_topk_completo') or {},
+                                    hubs_validos=st.session_state.get('alo_hubs_validos'),
+                                    topk_ibge=st.session_state.get('alo_topk_completo_ibge') or {})
+                                st.session_state['alo_fechamento_otimalidade'] = _resumo_fecho
+                        except Exception as _e_fecho:
+                            logger.error(f"[FECHAMENTO-OTIMALIDADE] passe abortado (df preservado): {_e_fecho}")
+                    # [VIÁRIA-PADRÃO - 184ª geração] No modo VIÁRIA, alinha o CONCORRENTE ao 2º MENOR VIÁRIA
+                    # (o runner_up_map traz o 2º em linha reta). Aditivo/defensivo; usa o pipeline já roteado do
+                    # 2º colocado e recalcula os índices da disputa. No modo linha reta este passo não roda.
+                    if st.session_state.get('alo_multicriterio'):
+                        try:
+                            df_final_alo = _alinhar_concorrente_por_viaria(
+                                df_final_alo, st.session_state.get('alo_mcda') or {}, _resultados)
+                        except Exception as _e_alc:
+                            logger.error(f"[VIÁRIA-PADRÃO] Falha ao alinhar concorrente por viária: {_e_alc}")
+                        # [SSOT-DECISAO - 184ª geração] CORREÇÃO AUTORITATIVA FINAL: garante vencedor = MENOR viária
+                        # real. Roda com as viárias REAIS já populadas (após o alinhamento do concorrente) e ANTES da
+                        # validação — se sobrou algum caso com vencedor de viária maior que o 2º, ele é TROCADO aqui,
+                        # e a validação seguinte confirma que não resta inconsistência (deve zerar os alertas).
+                        # [SEGUNDA-PASSADA-GOOGLE - 184ª geração] Antes de eleger o vencedor final, dá ao Google
+                        # uma nova chance nos pares que caíram só no OSRM/fallback (o rate-limit do Google pode já
+                        # ter resetado). Recupera participação do Google de forma segura (respeita o disjuntor,
+                        # não martela). Opt-in via toggle; roda com teto para não reintroduzir lentidão.
+                        # [SEGUNDA-PASSADA-GOOGLE] Só vale a pena se o Google participou de forma relevante no
+                        # estudo. Se o Google está bloqueado (participação ~nula), reprocessar centenas de pares
+                        # nele só desperdiça tempo esperando timeouts — cada tentativa falha. Medimos a
+                        # participação AQUI (antes da segunda passada) para decidir com precisão; abaixo de um
+                        # piso, pulamos a fase inteira (o disjuntor também barra as chamadas, mas evitar a
+                        # varredura poupa tempo).
+                        try:
+                            _part_previa = _diagnosticar_participacao_motores(df_final_alo) or {}
+                        except Exception:
+                            _part_previa = {}
+                        _google_vivo = (_part_previa.get('pct_google', 0) >= 3) if _part_previa else _google_pode_chamar()
+                        # [FINALIZACAO-ROBUSTA - 266ª geração] ONE-SHOT: a 2ª passada do Google reprocessa até 400
+                        # pares por REDE. Se a finalização for interrompida durante ela e reentrada, reexecutá-la
+                        # custaria outros 400 timeouts — um dos caminhos que alimentavam o "trava em 100%". Marcamos
+                        # feito ANTES de rodar (como o retry-viária já faz), então cada estudo a executa no máximo
+                        # uma vez; reentradas pulam direto para o enriquecimento, convergindo rápido. Zero regressão
+                        # no caminho feliz (roda exatamente uma vez, como antes).
+                        if (st.session_state.get('alo_segunda_passada_google', True) and _google_vivo
+                                and not st.session_state.get('alo_2pass_google_feito')):
+                            st.session_state['alo_2pass_google_feito'] = True
+                            _t_2pass = time.time()
+                            try:
+                                _teto_2pass = 400  # limite de reprocessamentos para controlar tempo/rede
+                                df_final_alo, _n_rec_g = _segunda_passada_google(df_final_alo, _max_pares=_teto_2pass)
+                                if _n_rec_g:
+                                    st.session_state['alo_recuperados_google'] = _n_rec_g
+                                _obs_fin("segunda_passada_google", _t_2pass,
+                                         recuperadas=st.session_state.get('alo_recuperados_google', 0))
+                            except Exception as _e_2p:
+                                logger.error(f"[SEGUNDA-PASSADA-GOOGLE] {_e_2p}")
+                        _inv_antes_viaria = _verificar_invariante_viaria(df_final_alo)
+                        # [V423] Antes de fixar o vencedor por menor viária, corrige as rotas rodoviárias FANTASMA
+                        # (barreira hídrica → distância fluvial realista). Assim o SSOT compara distâncias REAIS.
+                        df_final_alo = _corrigir_rota_fantasma_fluvial(df_final_alo)
+                        # [V446 · BALSA BANDADA] Mapa {origem: balsa_do_concorrente} vindo da MESMA decisão
+                        # (_reatribuir_hubs_multicriterio → ranking[1]) para a correção autoritativa não coroar a
+                        # travessia que a política §6/§7 demoveu (Taquari/Triunfo revertidos pela troca automática).
+                        try:
+                            _balsa_conc_map = {}
+                            for _cli_mc, _r_mc in (_mcda_mc or {}).items():
+                                _rk_mc = (_r_mc or {}).get("ranking") or []
+                                if len(_rk_mc) >= 2:
+                                    _balsa_conc_map[str(_cli_mc).strip()] = bool(_rk_mc[1].get("balsa"))
+                        except Exception:
+                            _balsa_conc_map = None
+                        df_final_alo = _forcar_menor_viaria_vencedor(df_final_alo, balsa_concorrente_map=_balsa_conc_map)
+                        # [V439 · DECISAO-TRACE — Item 28] Instrumentação observacional da decisão final.
+                        df_final_alo = _registrar_decisao_trace_alo(df_final_alo)
+                        st.session_state['alo_correcoes_viaria'] = int(_inv_antes_viaria.get('violacoes', 0))
+                        # [COERENCIA-VIARIA - 184ª geração] Validação automática: detecta/sinaliza rotas com viária do
+                        # vencedor MAIOR que a do concorrente (acesso fluvial / rota recuperada) — adiciona coluna de
+                        # alerta na planilha e registra em log. Não troca o vencedor (risco de capacidade/consistência);
+                        # o painel de auditoria já sinaliza cada caso e nomeia o hub de menor viária.
+                        df_final_alo = _validar_coerencia_viaria(df_final_alo)
+                        # [V316 · Melhoria 3, fatia 2] Faz aflorar a ALTERNATIVA POR BALSA capturada pelo resgate
+                        # (colunas na planilha + resumo p/ o alerta visual). Roda APÓS a correção autoritativa para
+                        # a economia ser calculada contra o vencedor terrestre FINAL. Guardado contra escopo.
+                        try:
+                            df_final_alo, _resumo_balsa = _v316_aplicar_colunas_balsa(df_final_alo, _regs_resgate)
+                            st.session_state['alo_balsa_resumo'] = _resumo_balsa
+                        except NameError:
+                            pass
+                        except Exception as _e_balsa:
+                            logger.error(f"[V316-BALSA] colunas de alternativa por balsa: {_e_balsa}")
+                    # [HOMONIMO - 126ª geração] Pós-passo ADITIVO: auditoria de desambiguação de homônimos.
+                    df_final_alo = _crono_fin("enriq_homonimos", _enriquecer_desambiguacao_homonimos, df_final_alo)
+                    # [INTEGRIDADE - 133ª geração] Pós-passo ADITIVO: Índice de Integridade Geográfica + alerta por rota.
+                    df_final_alo = _crono_fin("enriq_integridade", _enriquecer_integridade_geografica, df_final_alo)
+                    # [IBGE-ROTULO - 146ª geração] Rótulos legíveis + retroalimentação Município/UF.
+                    df_final_alo = _crono_fin("enriq_rotulos_ibge", _enriquecer_rotulos_ibge, df_final_alo)
+                    # [NOME-CONCORRENTE - 184ª geração] Passe FINAL: 'Concorrente Analisado' e 'Municipio Destino'
+                    # SEMPRE pelo NOME do município (nunca o código IBGE), em TODAS as linhas e em qualquer modo —
+                    # aplicado antes de montar o export e a tela, para cobrir inclusive as linhas que o alinhamento
+                    # por viária não tocou (ranking <2) e o modo linha reta.
+                    # [CONCORRENTE-SEMPRE - 184ª geração] Garante concorrente em TODA linha (2º polo do topk) antes
+                    # da resolução de nomes, para que o preenchido também vire nome de município legível.
+                    df_final_alo = _garantir_concorrente_sempre(
+                        df_final_alo, st.session_state.get('alo_topk_map'), _resultados)
+                    df_final_alo = _resolver_nomes_finais(df_final_alo)
+                    # [XAI-ROTA - 184ª geração] Classificação da rota (🟢/🟡/🟠) + método EXPLÍCITO
+                    # (✅ viária real / 📏 linha reta) + MOTIVO anexado às justificativas — em tela e planilha.
+                    df_final_alo = _crono_fin("enriq_classificacao_rotas", _enriquecer_classificacao_rotas, df_final_alo)
+                    # [MOTOR-TEMPO - 184ª geração] Garante Tempo em toda linha com distância viária (nunca N/A).
+                    df_final_alo = _garantir_tempo_estimado(df_final_alo)
+                    # [CONSISTENCIA-FISICA - 184ª geração] Sinaliza incoerências físicas (viária<reta, velocidade).
+                    df_final_alo = _validar_consistencia_fisica(df_final_alo)
+                    # [COERENCIA-TD - 184ª geração] Sentinela: tempo e distância do MESMO motor vencedor (checa
+                    # velocidade implícita plausível; velocidade absurda = fontes dessincronizadas).
+                    df_final_alo = _validar_coerencia_tempo_distancia(df_final_alo)
+                    # [REGIAO-ADAPTATIVA - 184ª geração] Inteligência adaptativa: classifica a confiabilidade do
+                    # roteamento por região (Amazônia/ilhas/balsa têm malha mais fraca) — transparência sobre
+                    # onde confiar mais ou menos, sem alterar nenhuma decisão.
+                    df_final_alo = _aplicar_confiabilidade_regional(df_final_alo)
+                    # [PARTICIPACAO-MOTOR - 184ª geração] Diagnostica quanto o Google participou de fato — dá
+                    # visibilidade à queixa "o Google parou de participar" com veredito acionável.
                     try:
-                        _oc_mc = df_final_alo['Origem'].astype(str).str.strip()
-                        _campo = lambda k: _oc_mc.map(lambda o: (_mcda_map.get(o) or {}).get(k))
-                        df_final_alo['IGQ Hub'] = _campo('igq_vencedor')
-                        df_final_alo['Custo Efetivo Hub (km-eq)'] = _campo('custo_vencedor')
-                        df_final_alo['Hub 2o (Custo)'] = _campo('runner_up')
-                        df_final_alo['Custo Efetivo 2o (km-eq)'] = _campo('custo_runner_up')
-                        _vc = pd.to_numeric(_campo('custo_vencedor'), errors='coerce')
-                        _rc = pd.to_numeric(_campo('custo_runner_up'), errors='coerce')
-                        df_final_alo['Diferenca Custo p/ 2o (%)'] = (((_rc - _vc) / _vc) * 100).round(1)
-                        df_final_alo['Justificativa Hub (XAI)'] = _oc_mc.map(
-                            lambda o: _justificar_escolha_hub(_mcda_map[o]) if o in _mcda_map else "")
+                        _part_mot = _diagnosticar_participacao_motores(df_final_alo)
+                        if _part_mot:
+                            st.session_state['alo_participacao_motor'] = _part_mot
+                    except Exception as _e_pm:
+                        logger.error(f"[PARTICIPACAO-MOTOR] {_e_pm}")
+                    # [APRENDIZADO - 184ª geração] Audita padrões de subotimalidade e registra em tela + telemetria.
+                    try:
+                        _padroes = _auditar_padroes_derrota(df_final_alo)
+                        if _padroes:
+                            st.session_state['alo_padroes_derrota'] = _padroes
+                            _n_fant = sum(1 for _p in _padroes if _p['padrao'] == 'desvio_fantasma')
+                            _n_dist = sum(1 for _p in _padroes if _p['padrao'] == 'polo_mais_distante')
+                            logger.warning("[APRENDIZADO] %d padrão(ões) de atenção detectados (%d desvio fantasma, "
+                                           "%d polo mais distante).", len(_padroes), _n_fant, _n_dist)
+                    except Exception as _e_ap:
+                        logger.error(f"[APRENDIZADO] {_e_ap}")
+                    # [DIAGNOSTICO-POLO - 184ª geração] Sinaliza vencedores suspeitosamente distantes (sinuosidade
+                    # > 3): indício de polo melhor ausente da lista ou mal roteado — dá visibilidade ao gargalo
+                    # das derrotas para o operador investigar o universo de destinos.
+                    try:
+                        _polos_susp = _diagnosticar_polo_suspeito(df_final_alo)
+                        if _polos_susp:
+                            st.session_state['alo_polos_suspeitos'] = _polos_susp
+                            logger.warning("[DIAGNOSTICO-POLO] %d município(s) com vencedor suspeito (rota muito "
+                                           "sinuosa) — possível polo melhor ausente/mal roteado.", len(_polos_susp))
+                    except Exception as _e_dp:
+                        logger.error(f"[DIAGNOSTICO-POLO] {_e_dp}")
+                    # [SSOT-DECISAO - 184ª geração] Verificação FINAL do invariante da menor viária (prova ao usuário).
+                    st.session_state['alo_invariante_viaria'] = _verificar_invariante_viaria(df_final_alo)
+                    # [HUMANIZAR - 173ª geração] O CÓDIGO IBGE SAI da coluna Origem/Destino; o NOME entra.
+                    # O código NÃO se perde: vai para a coluna própria. Ninguém analisa uma planilha com
+                    # '1100023' na coluna Origem — código é identificador de MÁQUINA, nome é de GENTE.
+                    # ═══════════════════════════════════════════════════════════════════════════════
+                    # [PORTÃO - 176ª geração] A GARANTIA: nenhum ZERO IMPOSSÍVEL sai daqui.
+                    #
+                    # Consertar MAIS caminhos não é garantia — na 168ª eu declarei resolvido um bug que
+                    # ainda estava lá, porque consertei o caminho ERRADO. A resposta certa é um PORTÃO
+                    # que NENHUMA linha atravessa sem ser examinada — venha ela de onde vier, inclusive
+                    # de caminhos que ainda não existem.
+                    #
+                    # A LEI FÍSICA: dois municípios DIFERENTES não podem estar a 0,0 km. É geometria.
+                    # (E zero com origem == destino é VÁLIDO: prova na própria cidade. Confundir os dois
+                    #  foi o pecado original — usar zero como SENTINELA num campo onde ele é legítimo.)
+                    # ═══════════════════════════════════════════════════════════════════════════════
+                    df_final_alo, _rel_portao = _crono_fin("portao_distancias", _portao_final_distancias, df_final_alo)
+                    st.session_state['portao_relatorio'] = _rel_portao
+                    df_final_alo = _crono_fin("humanizar_ids", _humanizar_identificadores, df_final_alo)
+                    # [HUB-MCDA - 130ª geração] Colunas da decisão multicritério (quando o modo está ativo): IGQ,
+                    # custo efetivo do vencedor e do 2º, diferença % e justificativa XAI — por cliente (Origem).
+                    # O tempo/balsa/modo/sinuosidade do vencedor já saem nas colunas de rota padrão do hub eleito.
+                    _mcda_map = st.session_state.get('alo_mcda') or {}
+                    if _mcda_map:
+                        try:
+                            _oc_mc = df_final_alo['Origem'].astype(str).str.strip()
+                            _campo = lambda k: _oc_mc.map(lambda o: (_mcda_map.get(o) or {}).get(k))
+                            df_final_alo['IGQ Hub'] = _campo('igq_vencedor')
+                            df_final_alo['Custo Efetivo Hub (km-eq)'] = _campo('custo_vencedor')
+                            df_final_alo['Hub 2o (Custo)'] = _campo('runner_up')
+                            df_final_alo['Custo Efetivo 2o (km-eq)'] = _campo('custo_runner_up')
+                            _vc = pd.to_numeric(_campo('custo_vencedor'), errors='coerce')
+                            _rc = pd.to_numeric(_campo('custo_runner_up'), errors='coerce')
+                            df_final_alo['Diferenca Custo p/ 2o (%)'] = (((_rc - _vc) / _vc) * 100).round(1)
+                            df_final_alo['Justificativa Hub (XAI)'] = _oc_mc.map(
+                                lambda o: _justificar_escolha_hub(_mcda_map[o]) if o in _mcda_map else "")
 
-                        # [XAI-RANKING - 167ª geração] O RANKING COMPLETO — 1º, 2º e 3º, com TUDO.
-                        # A app JÁ ROTEAVA os top-K polos (chamadas de API JÁ PAGAS) e calculava, para cada
-                        # um: distância viária, linha reta, tempo, balsa, custo efetivo, IGQ e posição.
-                        # E aí DESCARTAVA quase tudo, exportando só o nome e o custo do 2º. A BALSA do 2º?
-                        # Jogada fora. A SINUOSIDADE? Jogada fora. O 3º colocado INTEIRO? Jogado fora.
-                        # Dado que custou dinheiro e latência para obter, destruído na saída.
-                        _pcusto = st.session_state.get('alo_params_custo')
-                        _rank_map = {_o: _preservar_ranking_polos(_m, top=3, params=_pcusto)
-                                     for _o, _m in _mcda_map.items()}
+                            # [XAI-RANKING - 167ª geração] O RANKING COMPLETO — 1º, 2º e 3º, com TUDO.
+                            # A app JÁ ROTEAVA os top-K polos (chamadas de API JÁ PAGAS) e calculava, para cada
+                            # um: distância viária, linha reta, tempo, balsa, custo efetivo, IGQ e posição.
+                            # E aí DESCARTAVA quase tudo, exportando só o nome e o custo do 2º. A BALSA do 2º?
+                            # Jogada fora. A SINUOSIDADE? Jogada fora. O 3º colocado INTEIRO? Jogado fora.
+                            # Dado que custou dinheiro e latência para obter, destruído na saída.
+                            _pcusto = st.session_state.get('alo_params_custo')
+                            _rank_map = {_o: _preservar_ranking_polos(_m, top=3, params=_pcusto)
+                                         for _o, _m in _mcda_map.items()}
 
-                        def _rk_campo(_pos, _chave):
-                            return _oc_mc.map(
-                                lambda o: next((x[_chave] for x in (_rank_map.get(o) or [])
-                                                if x["posicao"] == _pos), None))
+                            def _rk_campo(_pos, _chave):
+                                return _oc_mc.map(
+                                    lambda o: next((x[_chave] for x in (_rank_map.get(o) or [])
+                                                    if x["posicao"] == _pos), None))
 
-                        for _pos, _rot in ((1, "1º"), (2, "2º"), (3, "3º")):
-                            df_final_alo[f'{_rot} Polo'] = _rk_campo(_pos, "polo")
-                            df_final_alo[f'{_rot} Polo - Distancia Viaria (km)'] = _rk_campo(_pos, "dist_viaria_km")
-                            df_final_alo[f'{_rot} Polo - Linha Reta (km)'] = _rk_campo(_pos, "dist_reta_km")
-                            df_final_alo[f'{_rot} Polo - Tempo (min)'] = _rk_campo(_pos, "tempo_min")
-                            df_final_alo[f'{_rot} Polo - Usa Balsa'] = _rk_campo(_pos, "usa_balsa")
-                            df_final_alo[f'{_rot} Polo - Rio Travessia'] = _rk_campo(_pos, "travessias_rio")
-                            df_final_alo[f'{_rot} Polo - Sinuosidade'] = _rk_campo(_pos, "sinuosidade")
-                            df_final_alo[f'{_rot} Polo - Velocidade Media (km/h)'] = _rk_campo(
-                                _pos, "velocidade_media_kmh")
-                            df_final_alo[f'{_rot} Polo - Custo Efetivo (km-eq)'] = _rk_campo(
-                                _pos, "custo_efetivo_km_eq")
-                            df_final_alo[f'{_rot} Polo - IGQ'] = _rk_campo(_pos, "igq")
-                            df_final_alo[f'{_rot} Polo - Motivo'] = _rk_campo(_pos, "motivo")
+                            for _pos, _rot in ((1, "1º"), (2, "2º"), (3, "3º")):
+                                df_final_alo[f'{_rot} Polo'] = _rk_campo(_pos, "polo")
+                                df_final_alo[f'{_rot} Polo - Distancia Viaria (km)'] = _rk_campo(_pos, "dist_viaria_km")
+                                df_final_alo[f'{_rot} Polo - Linha Reta (km)'] = _rk_campo(_pos, "dist_reta_km")
+                                df_final_alo[f'{_rot} Polo - Tempo (min)'] = _rk_campo(_pos, "tempo_min")
+                                df_final_alo[f'{_rot} Polo - Usa Balsa'] = _rk_campo(_pos, "usa_balsa")
+                                df_final_alo[f'{_rot} Polo - Rio Travessia'] = _rk_campo(_pos, "travessias_rio")
+                                df_final_alo[f'{_rot} Polo - Sinuosidade'] = _rk_campo(_pos, "sinuosidade")
+                                df_final_alo[f'{_rot} Polo - Velocidade Media (km/h)'] = _rk_campo(
+                                    _pos, "velocidade_media_kmh")
+                                df_final_alo[f'{_rot} Polo - Custo Efetivo (km-eq)'] = _rk_campo(
+                                    _pos, "custo_efetivo_km_eq")
+                                df_final_alo[f'{_rot} Polo - IGQ'] = _rk_campo(_pos, "igq")
+                                df_final_alo[f'{_rot} Polo - Motivo'] = _rk_campo(_pos, "motivo")
 
-                        # ⚠️ A COLUNA MAIS IMPORTANTE DE TODAS: em quantos critérios o 2º era MELHOR.
-                        # Mostrar só onde o vencedor ganhou seria PROPAGANDA, não explicação. Se o 2º
-                        # colocado chegava 40 min antes, o gestor PRECISA saber — é exatamente aí que ele
-                        # pode discordar da máquina, COM RAZÃO. Um sistema de apoio à decisão que esconde os
-                        # contra-argumentos não está apoiando: está MANIPULANDO.
-                        df_final_alo['2º Polo - Era MELHOR em N criterios'] = _rk_campo(
-                            2, "melhor_que_o_vencedor_em")
+                            # ⚠️ A COLUNA MAIS IMPORTANTE DE TODAS: em quantos critérios o 2º era MELHOR.
+                            # Mostrar só onde o vencedor ganhou seria PROPAGANDA, não explicação. Se o 2º
+                            # colocado chegava 40 min antes, o gestor PRECISA saber — é exatamente aí que ele
+                            # pode discordar da máquina, COM RAZÃO. Um sistema de apoio à decisão que esconde os
+                            # contra-argumentos não está apoiando: está MANIPULANDO.
+                            df_final_alo['2º Polo - Era MELHOR em N criterios'] = _rk_campo(
+                                2, "melhor_que_o_vencedor_em")
 
-                        def _xai_dupla(_o):
-                            _r = _rank_map.get(_o) or []
-                            _m = _mcda_map.get(_o) or {}
-                            _rk = _m.get("ranking") or []
-                            if len(_rk) < 2:
-                                return ""
-                            _pq = _por_que_venceu(_rk[0], _rk[1], _pcusto)
-                            _t = [_pq["veredito"], "", "A FAVOR do vencedor:"] + _pq["a_favor"]
-                            if _pq["contra"]:
-                                _t += ["", "⚠️ ONDE O 2º COLOCADO ERA MELHOR:"] + _pq["contra"]
-                            return " | ".join(x for x in _t if x)
-                        df_final_alo['Por Que o Vencedor Venceu (criterio a criterio)'] = _oc_mc.map(_xai_dupla)
-                    except Exception as _e_mcc:
-                        logger.error(f"[HUB-MCDA] Falha ao anexar colunas multicritério: {_e_mcc}")
-                # [IBGE-EVERYWHERE - 95ª geração] Rótulo EXPLÍCITO do Hub: no fluxo de Alocação de Hubs, o
-                # "Destino" É o hub vencedor. Espelha a identidade oficial do hub (Cód IBGE / Município /
-                # UF) com nomes explícitos "Hub", sem remover as colunas existentes. Aditivo, custo zero.
-                for _de_col, _hub_col in [('Cod IBGE Destino', 'Cód IBGE Hub'),
-                                          ('Municipio Destino', 'Município Hub'), ('UF Destino', 'UF Hub')]:
-                    if _de_col in df_final_alo.columns:
-                        df_final_alo[_hub_col] = df_final_alo[_de_col]
-                # identidade oficial do CLIENTE (origem) com rótulo explícito, espelhando as existentes
-                for _oe_col, _cli_col in [('Cod IBGE Origem', 'Cód IBGE Cliente'),
-                                          ('Municipio Origem', 'Município Cliente'), ('UF Origem', 'UF Cliente')]:
-                    if _oe_col in df_final_alo.columns:
-                        df_final_alo[_cli_col] = df_final_alo[_oe_col]
+                            def _xai_dupla(_o):
+                                _r = _rank_map.get(_o) or []
+                                _m = _mcda_map.get(_o) or {}
+                                _rk = _m.get("ranking") or []
+                                if len(_rk) < 2:
+                                    return ""
+                                _pq = _por_que_venceu(_rk[0], _rk[1], _pcusto)
+                                _t = [_pq["veredito"], "", "A FAVOR do vencedor:"] + _pq["a_favor"]
+                                if _pq["contra"]:
+                                    _t += ["", "⚠️ ONDE O 2º COLOCADO ERA MELHOR:"] + _pq["contra"]
+                                return " | ".join(x for x in _t if x)
+                            df_final_alo['Por Que o Vencedor Venceu (criterio a criterio)'] = _oc_mc.map(_xai_dupla)
+                        except Exception as _e_mcc:
+                            logger.error(f"[HUB-MCDA] Falha ao anexar colunas multicritério: {_e_mcc}")
+                    # [IBGE-EVERYWHERE - 95ª geração] Rótulo EXPLÍCITO do Hub: no fluxo de Alocação de Hubs, o
+                    # "Destino" É o hub vencedor. Espelha a identidade oficial do hub (Cód IBGE / Município /
+                    # UF) com nomes explícitos "Hub", sem remover as colunas existentes. Aditivo, custo zero.
+                    for _de_col, _hub_col in [('Cod IBGE Destino', 'Cód IBGE Hub'),
+                                              ('Municipio Destino', 'Município Hub'), ('UF Destino', 'UF Hub')]:
+                        if _de_col in df_final_alo.columns:
+                            df_final_alo[_hub_col] = df_final_alo[_de_col]
+                    # identidade oficial do CLIENTE (origem) com rótulo explícito, espelhando as existentes
+                    for _oe_col, _cli_col in [('Cod IBGE Origem', 'Cód IBGE Cliente'),
+                                              ('Municipio Origem', 'Município Cliente'), ('UF Origem', 'UF Cliente')]:
+                        if _oe_col in df_final_alo.columns:
+                            df_final_alo[_cli_col] = df_final_alo[_oe_col]
                 
-                df_final_alo['Linha Reta'] = df_final_alo['Origem'].astype(str).str.strip().map(_dest_lr).fillna(df_final_alo['Linha Reta'])
-                df_final_alo['Status Linha Reta'] = df_final_alo['Origem'].astype(str).str.strip().map(_dest_st).fillna(df_final_alo['Status Linha Reta'])
+                    df_final_alo['Linha Reta'] = df_final_alo['Origem'].astype(str).str.strip().map(_dest_lr).fillna(df_final_alo['Linha Reta'])
+                    df_final_alo['Status Linha Reta'] = df_final_alo['Origem'].astype(str).str.strip().map(_dest_st).fillna(df_final_alo['Status Linha Reta'])
                 
-                lat_o_alo = np.radians(df_final_alo['Lat Origem'].astype(float).values)
-                lon_o_alo = np.radians(df_final_alo['Lon Origem'].astype(float).values)
-                lat_d_alo = np.radians(df_final_alo['Lat Destino'].astype(float).values)
-                lon_d_alo = np.radians(df_final_alo['Lon Destino'].astype(float).values)
-                dlat_alo = lat_d_alo - lat_o_alo; dlon_alo = lon_d_alo - lon_o_alo
-                a_alo = np.sin(dlat_alo / 2.0)**2 + np.cos(lat_o_alo) * np.cos(lat_d_alo) * np.sin(dlon_alo / 2.0)**2
-                c_alo = 2 * np.arcsin(np.sqrt(a_alo))
-                dist_vet_alo = 6371.0088 * c_alo
-                mask_val_alo = (df_final_alo['Lat Origem'] != 0.0) & (df_final_alo['Lat Destino'] != 0.0)
-                df_final_alo.loc[mask_val_alo, 'Linha Reta'] = np.round(dist_vet_alo[mask_val_alo], 2)
-                _set_col_seguro(df_final_alo, mask_val_alo, 'Status Linha Reta', "Calculada via Haversine Vetorizado")
+                    lat_o_alo = np.radians(df_final_alo['Lat Origem'].astype(float).values)
+                    lon_o_alo = np.radians(df_final_alo['Lon Origem'].astype(float).values)
+                    lat_d_alo = np.radians(df_final_alo['Lat Destino'].astype(float).values)
+                    lon_d_alo = np.radians(df_final_alo['Lon Destino'].astype(float).values)
+                    dlat_alo = lat_d_alo - lat_o_alo; dlon_alo = lon_d_alo - lon_o_alo
+                    a_alo = np.sin(dlat_alo / 2.0)**2 + np.cos(lat_o_alo) * np.cos(lat_d_alo) * np.sin(dlon_alo / 2.0)**2
+                    c_alo = 2 * np.arcsin(np.sqrt(a_alo))
+                    dist_vet_alo = 6371.0088 * c_alo
+                    mask_val_alo = (df_final_alo['Lat Origem'] != 0.0) & (df_final_alo['Lat Destino'] != 0.0)
+                    df_final_alo.loc[mask_val_alo, 'Linha Reta'] = np.round(dist_vet_alo[mask_val_alo], 2)
+                    _set_col_seguro(df_final_alo, mask_val_alo, 'Status Linha Reta', "Calculada via Haversine Vetorizado")
                 
-                tempo_alo_segundos = round(time.time() - _start, 2)
-                cache_historico_lotes.set(f"alocacao_{_start}", {
-                    "Data/Hora": time.strftime("%Y-%m-%d %H:%M:%S"), "Operador": "Motor de Alocação (Hubs)",
-                    "Linhas Validadas": len(df_final_alo), "Tempo Gasto (s)": tempo_alo_segundos,
-                    "Tempo Médio/Rota (s)": round(tempo_alo_segundos / max(1, _total), 2)
-                }, expire=None)
+                    tempo_alo_segundos = round(time.time() - _start, 2)
+                    cache_historico_lotes.set(f"alocacao_{_start}", {
+                        "Data/Hora": time.strftime("%Y-%m-%d %H:%M:%S"), "Operador": "Motor de Alocação (Hubs)",
+                        "Linhas Validadas": len(df_final_alo), "Tempo Gasto (s)": tempo_alo_segundos,
+                        "Tempo Médio/Rota (s)": round(tempo_alo_segundos / max(1, _total), 2)
+                    }, expire=None)
                 
-                ordem_finais_alo = list(_df_dest_cols)
-                for c in ['Origem', 'Destino'] + _novas_colunas:
-                    if c not in ordem_finais_alo:
+                    ordem_finais_alo = list(_df_dest_cols)
+                    for c in ['Origem', 'Destino'] + _novas_colunas:
+                        if c not in ordem_finais_alo:
+                            ordem_finais_alo.append(c)
+                    # [FIX - 114ª geração] REDE DE SEGURANÇA: preserva colunas extras já presentes (aliases
+                    # Cliente/Hub, Cod IBGE Origem/Destino, UF Origem/Destino, Modo/Acesso...) — nada é descartado.
+                    for c in df_final_alo.columns:
+                        # [FIX-COLUNAS-FANTASMA - 117ª geração] rede final: não readmitir colunas-artefato.
+                        if c in ordem_finais_alo:
+                            continue
+                        _cs = str(c)
+                        if re.fullmatch(r'_\d+', _cs) or _cs.startswith('Unnamed:'):
+                            continue
                         ordem_finais_alo.append(c)
-                # [FIX - 114ª geração] REDE DE SEGURANÇA: preserva colunas extras já presentes (aliases
-                # Cliente/Hub, Cod IBGE Origem/Destino, UF Origem/Destino, Modo/Acesso...) — nada é descartado.
-                for c in df_final_alo.columns:
-                    # [FIX-COLUNAS-FANTASMA - 117ª geração] rede final: não readmitir colunas-artefato.
-                    if c in ordem_finais_alo:
-                        continue
-                    _cs = str(c)
-                    if re.fullmatch(r'_\d+', _cs) or _cs.startswith('Unnamed:'):
-                        continue
-                    ordem_finais_alo.append(c)
-                df_final_alo = df_final_alo.reindex(columns=ordem_finais_alo)
+                    df_final_alo = df_final_alo.reindex(columns=ordem_finais_alo)
 
-                # [V369 · Aprimoramento3] GRAVA A DISTÂNCIA FLUVIAL na planilha para municípios ribeirinhos:
-                # roteia (na hora, na hidrografia IBGE) a origem fluvial até o hub mais próximo por água e anexa
-                # as colunas "Fluvial (km)" e "Rios (hidrovia)". Inserido APÓS o reindex (as colunas sobrevivem à
-                # lista branca) e ANTES do commit (entram na planilha). NO-OP TOTAL se o grafo fluvial não estiver
-                # disponível → zero regressão. Aditivo: não toca em nenhuma coluna existente nem na decisão (a
-                # menor viária segue sendo o vencedor); apenas informa a alternativa fluvial real, rotulada.
-                try:
-                    if _fluvial_grafo_disponivel() and df_final_alo is not None and len(df_final_alo):
-                        _cmf = {str(c).strip().lower(): c for c in df_final_alo.columns}
-                        _co_f = _cmf.get('origem'); _clat_f = _cmf.get('lat origem'); _clon_f = _cmf.get('lon origem')
-                        _cst_f = _cmf.get('status da rota'); _cft_f = _cmf.get('fonte da rota')
-                        _topk_gf = st.session_state.get('alo_topk_completo') or {}
-                        if _co_f and _clat_f and _clon_f:
-                            _col_fkm = []; _col_frios = []; _col_fhub = []; _cache_fr = {}
-                            for _rec in df_final_alo.to_dict('records'):
-                                _blob = (str(_rec.get(_cst_f, '')) + ' ' + str(_rec.get(_cft_f, ''))).lower()
-                                if not ('fluvial' in _blob or 'isolado' in _blob or '🛶' in _blob):
-                                    _col_fkm.append(''); _col_frios.append(''); _col_fhub.append(''); continue
-                                _org = _rec.get(_co_f)
-                                if _org in _cache_fr:
-                                    _col_fkm.append(_cache_fr[_org][0]); _col_frios.append(_cache_fr[_org][1])
-                                    _col_fhub.append(_cache_fr[_org][2]); continue
-                                _la = _num(_rec.get(_clat_f)); _lo = _num(_rec.get(_clon_f))
-                                _cands = _topk_gf.get(_org) or _topk_gf.get(str(_org).strip()) or []
-                                _rf = None
-                                if _la and _lo and _cands:
-                                    _rf = _apr3_melhor_fluvial(_la, _lo, _cands, uf_hint="")
-                                _v_km = (_rf['km'] if _rf else ''); _v_ri = (' → '.join(_rf['rios']) if _rf else '')
-                                _v_hub = (_rf.get('hub', '') if _rf else '')
-                                _cache_fr[_org] = (_v_km, _v_ri, _v_hub)
-                                _col_fkm.append(_v_km); _col_frios.append(_v_ri); _col_fhub.append(_v_hub)
-                            if any(_x != '' for _x in _col_fkm):
-                                df_final_alo['Hub fluvial'] = _col_fhub
-                                df_final_alo['Fluvial (km)'] = _col_fkm
-                                df_final_alo['Rios (hidrovia)'] = _col_frios
-                                logger.info("[V369-FLUVIAL-SPREAD] distância fluvial gravada na planilha.")
-                except Exception as _e_fspread:
-                    logger.error(f"[V369-FLUVIAL-SPREAD] gravação fluvial na planilha falhou: {_e_fspread}")
+                    # [V369 · Aprimoramento3] GRAVA A DISTÂNCIA FLUVIAL na planilha para municípios ribeirinhos:
+                    # roteia (na hora, na hidrografia IBGE) a origem fluvial até o hub mais próximo por água e anexa
+                    # as colunas "Fluvial (km)" e "Rios (hidrovia)". Inserido APÓS o reindex (as colunas sobrevivem à
+                    # lista branca) e ANTES do commit (entram na planilha). NO-OP TOTAL se o grafo fluvial não estiver
+                    # disponível → zero regressão. Aditivo: não toca em nenhuma coluna existente nem na decisão (a
+                    # menor viária segue sendo o vencedor); apenas informa a alternativa fluvial real, rotulada.
+                    try:
+                        if _fluvial_grafo_disponivel() and df_final_alo is not None and len(df_final_alo):
+                            _cmf = {str(c).strip().lower(): c for c in df_final_alo.columns}
+                            _co_f = _cmf.get('origem'); _clat_f = _cmf.get('lat origem'); _clon_f = _cmf.get('lon origem')
+                            _cst_f = _cmf.get('status da rota'); _cft_f = _cmf.get('fonte da rota')
+                            _topk_gf = st.session_state.get('alo_topk_completo') or {}
+                            if _co_f and _clat_f and _clon_f:
+                                _col_fkm = []; _col_frios = []; _col_fhub = []; _cache_fr = {}
+                                for _rec in df_final_alo.to_dict('records'):
+                                    _blob = (str(_rec.get(_cst_f, '')) + ' ' + str(_rec.get(_cft_f, ''))).lower()
+                                    if not ('fluvial' in _blob or 'isolado' in _blob or '🛶' in _blob):
+                                        _col_fkm.append(''); _col_frios.append(''); _col_fhub.append(''); continue
+                                    _org = _rec.get(_co_f)
+                                    if _org in _cache_fr:
+                                        _col_fkm.append(_cache_fr[_org][0]); _col_frios.append(_cache_fr[_org][1])
+                                        _col_fhub.append(_cache_fr[_org][2]); continue
+                                    _la = _num(_rec.get(_clat_f)); _lo = _num(_rec.get(_clon_f))
+                                    _cands = _topk_gf.get(_org) or _topk_gf.get(str(_org).strip()) or []
+                                    _rf = None
+                                    if _la and _lo and _cands:
+                                        _rf = _apr3_melhor_fluvial(_la, _lo, _cands, uf_hint="")
+                                    _v_km = (_rf['km'] if _rf else ''); _v_ri = (' → '.join(_rf['rios']) if _rf else '')
+                                    _v_hub = (_rf.get('hub', '') if _rf else '')
+                                    _cache_fr[_org] = (_v_km, _v_ri, _v_hub)
+                                    _col_fkm.append(_v_km); _col_frios.append(_v_ri); _col_fhub.append(_v_hub)
+                                if any(_x != '' for _x in _col_fkm):
+                                    df_final_alo['Hub fluvial'] = _col_fhub
+                                    df_final_alo['Fluvial (km)'] = _col_fkm
+                                    df_final_alo['Rios (hidrovia)'] = _col_frios
+                                    logger.info("[V369-FLUVIAL-SPREAD] distância fluvial gravada na planilha.")
+                    except Exception as _e_fspread:
+                        logger.error(f"[V369-FLUVIAL-SPREAD] gravação fluvial na planilha falhou: {_e_fspread}")
 
-                # [V373 · M3] FLAG DE DECISÃO SENSÍVEL: quando o vencedor supera o 2º colocado por muito pouco,
-                # a decisão é FRÁGIL (uma pequena mudança de dado a inverteria). A margem já é calculada; aqui
-                # apenas a EXPOMOS como coluna auditável + um flag, SEM alterar a escolha (a menor viária continua
-                # vencendo). Inserido após o reindex (sobrevive à lista branca) e antes do commit. Aditivo.
-                try:
-                    if df_final_alo is not None and len(df_final_alo):
-                        _cmg = {str(c).strip().lower(): c for c in df_final_alo.columns}
-                        _c_dv = (_cmg.get('distância do candidato ao local de prova (km)') or _cmg.get('distancia')
-                                 or _cmg.get('distância (km)'))
-                        _c_d2 = (_cmg.get('distância à alternativa de aplicação (km)')
-                                 or _cmg.get('distancia concorrente'))
-                        if _c_dv and _c_d2:
-                            _mg, _fl = [], []
-                            for _rec in df_final_alo.to_dict('records'):
-                                _dv = _num(_rec.get(_c_dv)); _d2 = _num(_rec.get(_c_d2))
-                                if _dv is None or _d2 is None or _d2 <= 0 or _dv <= 0:
-                                    _mg.append(''); _fl.append(''); continue
-                                _delta = round(abs(_d2 - _dv), 1)
-                                # sensível: 2º está a < 5 km OU < 10% da distância do vencedor
-                                _sens = (_delta < 5.0) or (_delta < 0.10 * _dv)
-                                _mg.append(_delta); _fl.append('🟡 sensível' if _sens else '')
-                            if any(_x != '' for _x in _mg):
-                                df_final_alo['Margem 1º–2º (km)'] = _mg
-                                df_final_alo['Decisão sensível'] = _fl
-                                logger.info("[V373-M3] flag de decisão sensível gravado na planilha.")
-                except Exception as _e_m3:
-                    logger.error(f"[V373-M3] flag de decisão sensível falhou: {_e_m3}")
+                    # [V373 · M3] FLAG DE DECISÃO SENSÍVEL: quando o vencedor supera o 2º colocado por muito pouco,
+                    # a decisão é FRÁGIL (uma pequena mudança de dado a inverteria). A margem já é calculada; aqui
+                    # apenas a EXPOMOS como coluna auditável + um flag, SEM alterar a escolha (a menor viária continua
+                    # vencendo). Inserido após o reindex (sobrevive à lista branca) e antes do commit. Aditivo.
+                    try:
+                        if df_final_alo is not None and len(df_final_alo):
+                            _cmg = {str(c).strip().lower(): c for c in df_final_alo.columns}
+                            _c_dv = (_cmg.get('distância do candidato ao local de prova (km)') or _cmg.get('distancia')
+                                     or _cmg.get('distância (km)'))
+                            _c_d2 = (_cmg.get('distância à alternativa de aplicação (km)')
+                                     or _cmg.get('distancia concorrente'))
+                            if _c_dv and _c_d2:
+                                _mg, _fl = [], []
+                                for _rec in df_final_alo.to_dict('records'):
+                                    _dv = _num(_rec.get(_c_dv)); _d2 = _num(_rec.get(_c_d2))
+                                    if _dv is None or _d2 is None or _d2 <= 0 or _dv <= 0:
+                                        _mg.append(''); _fl.append(''); continue
+                                    _delta = round(abs(_d2 - _dv), 1)
+                                    # sensível: 2º está a < 5 km OU < 10% da distância do vencedor
+                                    _sens = (_delta < 5.0) or (_delta < 0.10 * _dv)
+                                    _mg.append(_delta); _fl.append('🟡 sensível' if _sens else '')
+                                if any(_x != '' for _x in _mg):
+                                    df_final_alo['Margem 1º–2º (km)'] = _mg
+                                    df_final_alo['Decisão sensível'] = _fl
+                                    logger.info("[V373-M3] flag de decisão sensível gravado na planilha.")
+                    except Exception as _e_m3:
+                        logger.error(f"[V373-M3] flag de decisão sensível falhou: {_e_m3}")
 
-                # [FINALIZACAO-DESACOPLADA - 260ª/261ª geração] O DF final está pronto e enriquecido. COMMIT dos
-                # RESULTADOS agora — antes de qualquer geração de arquivo — para que nunca se percam. A geração da
-                # planilha é 100% SOB DEMANDA (FASE 3b, só no clique), o que elimina de vez o risco de OOM na
-                # finalização: a construção pesada do .xlsx nunca roda automaticamente.
-                st.session_state['df_processado'] = df_final_alo
-                # [GEO-INTEL-ANTECIPADO - fix integração] Enriquece geograficamente (rios, bacia,
-                # pontes, travessias, rodovias, ferrovias, anomalias) ANTES da FASE 3b montar a
-                # planilha/HTML — não depois. A FASE 3b roda numa passada DESACOPLADA (st.rerun()
-                # logo abaixo) e relê `df_processado` do zero; se o enriquecimento só acontecesse no
-                # painel mais abaixo (como antes), a planilha e o HTML exportados nunca carregavam
-                # essas colunas, porque eram montados numa passada anterior a esse painel. Mesma
-                # chamada (idempotente por fingerprint) que já roda mais abaixo — chamar aqui também
-                # não reprocessa duas vezes, só garante que o resultado já exista a tempo.
-                try:
-                    _df_geo0, _geo_rel0 = _enriquecer_geo_inteligencia_df(df_final_alo)
-                    if _geo_rel0.get('executado'):
-                        df_final_alo = _df_geo0
-                        st.session_state['df_processado'] = df_final_alo
-                except Exception:
-                    logger.debug("[GEO-INTEL-ANTECIPADO] Enriquecimento pré-planilha falhou (aditivo).", exc_info=True)
-                st.session_state['alo_tempo_total'] = tempo_alo_segundos
-                st.session_state['alo_linhas'] = len(df_final_alo)
-                _exibir_auditoria_coordenadas(df_final_alo)  # [Melhoria4-EXCEL 453ª · M1] aviso não-bloqueante
-                try:  # [Melhoria4-EXCEL 453ª · M2] registra os vencedores provados como seed da próxima execução
-                    _mapa_venc = {}
-                    _mapa_uf = {}
-                    if "Origem" in df_final_alo.columns and "Destino" in df_final_alo.columns:
-                        for _, _r in df_final_alo.head(3000).iterrows():
-                            _o = str(_r.get("Origem", "")).strip()
-                            _d = str(_r.get("Destino", "")).strip()
-                            if _o and _d:
-                                _mapa_venc[_o] = _d
-                                _u = str(_r.get("UF", "")).strip()
-                                if _u:
-                                    _mapa_uf[_o] = _u
-                    if _mapa_venc:
-                        _geo_mem_registrar_vencedores(_mapa_venc, _mapa_uf)
-                except Exception:
-                    logger.debug("[GEO-MEM-SEED] Registro de vencedores isolado falhou (aditivo).", exc_info=True)
-                # [DUPLO-CENARIO - 217ª geração] Pré-computa a comparação Oficial × Puramente Viário UMA vez
-                # (topk+resultados ainda disponíveis) para o relatório HTML e a planilha usarem. Defensivo.
-                try:
-                    _topk_fin = st.session_state.get('alo_topk_map', {}) or {}
-                    _res_fin = st.session_state.get('alo_resultados', {}) or {}
-                    if _topk_fin and _res_fin:
-                        st.session_state['alo_comparacao_estrategias'] = _comparar_estrategias_alocacao(
-                            _topk_fin, _res_fin, st.session_state.get('alo_params_custo'))
-                except Exception:
-                    logger.error("[DUPLO-CENARIO] Falha ao pré-computar a comparação de estratégias", exc_info=True)
-                # [FINALIZACAO-ROBUSTA - 266ª geração] Encerramento LIMPO com sucesso: computa o resumo executivo
-                # do encerramento (para a tela de conclusão) e loga a observabilidade final. Como chegamos aqui
-                # por caminho feliz, garante que nenhum marcador de modo-degradado fique pendurado.
-                try:
-                    st.session_state['alo_resumo_final'] = _resumo_finalizacao(df_final_alo)
-                except Exception:
-                    st.session_state['alo_resumo_final'] = {}
-                st.session_state.pop('alo_finalizacao_degradada', None)
-                _obs_fin("finalizacao_total", _t_fin0, linhas=len(df_final_alo), tentativas=_fin_tent)
-                # libera já o que a FASE 3b NÃO usa (ela usa df_processado + topk/resultados/params/mcda).
-                # Inclui os marcadores desta rodada de finalização (watchdog/one-shots/DF-seguro), que já
-                # cumpriram seu papel — assim um novo estudo começa do zero.
-                for _k in ['alo_df_pares', 'alo_start_clock', 'alo_dest_linha_reta', 'alo_dest_status_lr',
-                           'alo_df_dest_cols', 'alo_novas_colunas', 'alo_dests_unicos', 'alo_hubs_validos',
-                           'alo_dest_col_name', 'alo_df_dest', 'alo_dest_geo_acc', 'alo_dest_geo_idx',
-                           'alo_df_seguro', 'alo_fin_tentativas', 'alo_2pass_google_feito']:
-                    st.session_state.pop(_k, None)
-                # [PLANILHA-LAZY - 261ª geração] Blindagem definitiva contra OOM: a finalização NUNCA constrói a
-                # planilha. Vamos DIRETO à exibição; a planilha pesada (.xlsx) só é montada sob demanda, no clique
-                # (como o relatório HTML já é). topk/resultados/params/mcda ficam em sessão para a geração sob
-                # demanda — memória modesta (dict de rotas), muito menor que o pico de construção do .xlsx.
-                st.session_state['alo_resultado_pronto'] = True
-                _ckpt_apagar('estudo_alocacao')  # [CHECKPOINT-DISCO - 269ª] estudo concluído: remove o checkpoint
-                # [PLANILHA-HIBRIDA - 263ª geração] Estudo PEQUENO (≤ _LIMITE_PLANILHA_AUTO municípios): gera a
-                # planilha automaticamente (dispara a FASE 3b já na próxima passada) — conveniência sem clique, pois
-                # o pico de memória do .xlsx é seguro nesse tamanho. Estudo GRANDE/nacional: mantém 100% sob demanda
-                # (blindagem anti-OOM da 261ª intacta). Defensivo: sem tamanho → sob demanda (caminho seguro).
-                _df_proc_hib = st.session_state.get('df_processado')
-                try:
-                    _n_alo_hib = len(_df_proc_hib) if _df_proc_hib is not None else 0
-                except Exception:
-                    _n_alo_hib = 0
-                if 0 < _n_alo_hib <= _LIMITE_PLANILHA_AUTO:
-                    st.session_state['alo_planilha_auto'] = True     # origem automática (para o texto de exibição)
-                    st.session_state['alo_em_andamento'] = True
-                    st.session_state['alo_fase'] = 'gerar_planilha'  # pequeno → auto-gera (FASE 3b na próxima passada)
-                else:
-                    st.session_state.pop('alo_planilha_auto', None)
-                    st.session_state['alo_fase'] = 'concluido'       # grande → sob demanda (blindagem 261ª)
-                    st.session_state.pop('alo_em_andamento', None)
-                st.rerun()
+                    # [FINALIZACAO-DESACOPLADA - 260ª/261ª geração] O DF final está pronto e enriquecido. COMMIT dos
+                    # RESULTADOS agora — antes de qualquer geração de arquivo — para que nunca se percam. A geração da
+                    # planilha é 100% SOB DEMANDA (FASE 3b, só no clique), o que elimina de vez o risco de OOM na
+                    # finalização: a construção pesada do .xlsx nunca roda automaticamente.
+                    st.session_state['df_processado'] = df_final_alo
+                    # [GEO-INTEL-ANTECIPADO - fix integração] Enriquece geograficamente (rios, bacia,
+                    # pontes, travessias, rodovias, ferrovias, anomalias) ANTES da FASE 3b montar a
+                    # planilha/HTML — não depois. A FASE 3b roda numa passada DESACOPLADA (st.rerun()
+                    # logo abaixo) e relê `df_processado` do zero; se o enriquecimento só acontecesse no
+                    # painel mais abaixo (como antes), a planilha e o HTML exportados nunca carregavam
+                    # essas colunas, porque eram montados numa passada anterior a esse painel. Mesma
+                    # chamada (idempotente por fingerprint) que já roda mais abaixo — chamar aqui também
+                    # não reprocessa duas vezes, só garante que o resultado já exista a tempo.
+                    try:
+                        _df_geo0, _geo_rel0 = _enriquecer_geo_inteligencia_df(df_final_alo)
+                        if _geo_rel0.get('executado'):
+                            df_final_alo = _df_geo0
+                            st.session_state['df_processado'] = df_final_alo
+                    except Exception:
+                        logger.debug("[GEO-INTEL-ANTECIPADO] Enriquecimento pré-planilha falhou (aditivo).", exc_info=True)
+                    st.session_state['alo_tempo_total'] = tempo_alo_segundos
+                    st.session_state['alo_linhas'] = len(df_final_alo)
+                    _exibir_auditoria_coordenadas(df_final_alo)  # [Melhoria4-EXCEL 453ª · M1] aviso não-bloqueante
+                    try:  # [Melhoria4-EXCEL 453ª · M2] registra os vencedores provados como seed da próxima execução
+                        _mapa_venc = {}
+                        _mapa_uf = {}
+                        if "Origem" in df_final_alo.columns and "Destino" in df_final_alo.columns:
+                            for _, _r in df_final_alo.head(3000).iterrows():
+                                _o = str(_r.get("Origem", "")).strip()
+                                _d = str(_r.get("Destino", "")).strip()
+                                if _o and _d:
+                                    _mapa_venc[_o] = _d
+                                    _u = str(_r.get("UF", "")).strip()
+                                    if _u:
+                                        _mapa_uf[_o] = _u
+                        if _mapa_venc:
+                            _geo_mem_registrar_vencedores(_mapa_venc, _mapa_uf)
+                    except Exception:
+                        logger.debug("[GEO-MEM-SEED] Registro de vencedores isolado falhou (aditivo).", exc_info=True)
+                    # [DUPLO-CENARIO - 217ª geração] Pré-computa a comparação Oficial × Puramente Viário UMA vez
+                    # (topk+resultados ainda disponíveis) para o relatório HTML e a planilha usarem. Defensivo.
+                    try:
+                        _topk_fin = st.session_state.get('alo_topk_map', {}) or {}
+                        _res_fin = st.session_state.get('alo_resultados', {}) or {}
+                        if _topk_fin and _res_fin:
+                            st.session_state['alo_comparacao_estrategias'] = _comparar_estrategias_alocacao(
+                                _topk_fin, _res_fin, st.session_state.get('alo_params_custo'))
+                    except Exception:
+                        logger.error("[DUPLO-CENARIO] Falha ao pré-computar a comparação de estratégias", exc_info=True)
+                    # [FINALIZACAO-ROBUSTA - 266ª geração] Encerramento LIMPO com sucesso: computa o resumo executivo
+                    # do encerramento (para a tela de conclusão) e loga a observabilidade final. Como chegamos aqui
+                    # por caminho feliz, garante que nenhum marcador de modo-degradado fique pendurado.
+                    try:
+                        st.session_state['alo_resumo_final'] = _resumo_finalizacao(df_final_alo)
+                    except Exception:
+                        st.session_state['alo_resumo_final'] = {}
+                    st.session_state.pop('alo_finalizacao_degradada', None)
+                    _obs_fin("finalizacao_total", _t_fin0, linhas=len(df_final_alo), tentativas=_fin_tent)
+                    # libera já o que a FASE 3b NÃO usa (ela usa df_processado + topk/resultados/params/mcda).
+                    # Inclui os marcadores desta rodada de finalização (watchdog/one-shots/DF-seguro), que já
+                    # cumpriram seu papel — assim um novo estudo começa do zero.
+                    for _k in ['alo_df_pares', 'alo_start_clock', 'alo_dest_linha_reta', 'alo_dest_status_lr',
+                               'alo_df_dest_cols', 'alo_novas_colunas', 'alo_dests_unicos', 'alo_hubs_validos',
+                               'alo_dest_col_name', 'alo_df_dest', 'alo_dest_geo_acc', 'alo_dest_geo_idx',
+                               'alo_df_seguro', 'alo_fin_tentativas', 'alo_2pass_google_feito']:
+                        st.session_state.pop(_k, None)
+                    # [PLANILHA-LAZY - 261ª geração] Blindagem definitiva contra OOM: a finalização NUNCA constrói a
+                    # planilha. Vamos DIRETO à exibição; a planilha pesada (.xlsx) só é montada sob demanda, no clique
+                    # (como o relatório HTML já é). topk/resultados/params/mcda ficam em sessão para a geração sob
+                    # demanda — memória modesta (dict de rotas), muito menor que o pico de construção do .xlsx.
+                    st.session_state['alo_resultado_pronto'] = True
+                    _ckpt_apagar('estudo_alocacao')  # [CHECKPOINT-DISCO - 269ª] estudo concluído: remove o checkpoint
+                    # [PLANILHA-HIBRIDA - 263ª geração] Estudo PEQUENO (≤ _LIMITE_PLANILHA_AUTO municípios): gera a
+                    # planilha automaticamente (dispara a FASE 3b já na próxima passada) — conveniência sem clique, pois
+                    # o pico de memória do .xlsx é seguro nesse tamanho. Estudo GRANDE/nacional: mantém 100% sob demanda
+                    # (blindagem anti-OOM da 261ª intacta). Defensivo: sem tamanho → sob demanda (caminho seguro).
+                    _df_proc_hib = st.session_state.get('df_processado')
+                    try:
+                        _n_alo_hib = len(_df_proc_hib) if _df_proc_hib is not None else 0
+                    except Exception:
+                        _n_alo_hib = 0
+                    if 0 < _n_alo_hib <= _LIMITE_PLANILHA_AUTO:
+                        st.session_state['alo_planilha_auto'] = True     # origem automática (para o texto de exibição)
+                        st.session_state['alo_em_andamento'] = True
+                        st.session_state['alo_fase'] = 'gerar_planilha'  # pequeno → auto-gera (FASE 3b na próxima passada)
+                    else:
+                        st.session_state.pop('alo_planilha_auto', None)
+                        st.session_state['alo_fase'] = 'concluido'       # grande → sob demanda (blindagem 261ª)
+                        st.session_state.pop('alo_em_andamento', None)
+                    st.rerun()
+                except Exception as _e_fin_fatal:
+                    # não engolir os controles de fluxo do Streamlit (st.rerun()/st.stop() sinalizam por exceção)
+                    if type(_e_fin_fatal).__name__ in ('RerunException', 'RerunData', 'StopException'):
+                        raise
+                    logger.error('[BLINDAGEM-FINALIZACAO-FATAL] Exceção não tratada na finalização da alocação — '
+                                 'entregando resultados seguros (degradado) em vez de derrubar o app.', exc_info=True)
+                    try:
+                        _df_forcado = st.session_state.get('alo_df_seguro')
+                        if _df_forcado is None:
+                            try:
+                                _df_forcado = _montar_dataframe_final(_df_pares, _resultados, runner_up_map=_runner)
+                            except Exception:
+                                _df_forcado = pd.DataFrame()
+                        if _df_forcado is not None:
+                            st.session_state['df_processado'] = _df_forcado
+                            try:
+                                st.session_state['alo_linhas'] = int(len(_df_forcado))
+                            except Exception:
+                                pass
+                        try:
+                            st.session_state['alo_tempo_total'] = round(time.time() - _start, 2)
+                        except Exception:
+                            pass
+                        st.session_state['alo_resultado_pronto'] = True
+                        st.session_state['alo_finalizacao_degradada'] = True
+                        try:
+                            _ckpt_apagar('estudo_alocacao')
+                        except Exception:
+                            pass
+                        for _kwd in ['alo_em_andamento', 'alo_tarefas', 'alo_chunk_idx', 'alo_planilha_auto',
+                                     'alo_df_seguro', 'alo_fin_tentativas']:
+                            st.session_state.pop(_kwd, None)
+                        st.session_state['alo_fase'] = 'concluido'
+                    except Exception:
+                        logger.error('[BLINDAGEM-FINALIZACAO-FATAL] Falha ao montar a entrega degradada.', exc_info=True)
+                    st.rerun()
 
         # ---- FASE 3b: GERAÇÃO DA PLANILHA SOB DEMANDA (só roda quando o usuário pede o arquivo; nunca automático) ----
         if st.session_state.get('alo_em_andamento', False) and st.session_state.get('alo_fase') == 'gerar_planilha':
