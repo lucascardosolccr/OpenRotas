@@ -9319,11 +9319,11 @@ COLUNAS_NUMERICAS_PADRAO = [
 NOVAS_COLUNAS_ALOCACAO = NOVAS_COLUNAS_PADRAO + [
     'Cód IBGE Cliente', 'Município Cliente', 'UF Cliente',
     'Cód IBGE Hub', 'Município Hub', 'UF Hub',
-    'Concorrente Analisado', 'Distancia Concorrente', 'Fonte Distancia Concorrente', 'Linha Reta Concorrente',
+    'Concorrente Analisado', 'Distancia Concorrente', 'Linha Reta Concorrente',
     'Lat Concorrente', 'Lon Concorrente', 'Tempo Concorrente', 'Velocidade Media Concorrente',
     'Cod IBGE Concorrente', 'UF Concorrente', 'Municipio Concorrente',
     'OSRM km Concorrente', 'Divergencia Motores Concorrente (km)',
-    'Divergencia Motores Concorrente (%)', 'Classe Divergencia Concorrente', 'Motor Vencedor Concorrente',
+    'Divergencia Motores Concorrente (%)', 'Motor Vencedor Concorrente',
     'Fonte Geo Concorrente', 'Score Geo Concorrente', 'Confianca Geo Concorrente', 'Snap Concorrente (m)',
     'Link Rota Concorrente', 'Justificativa de Alocacao',
     'Indice Competitividade', 'Indice Robustez', 'Motivo Resumido Perda'
@@ -44328,9 +44328,6 @@ def _montar_dataframe_final(df, resultados_unicos, runner_up_map=None, hub_qual_
                     linha_dict['OSRM km Concorrente'] = _ac.get('osrm_km', 0.0)
                     linha_dict['Divergencia Motores Concorrente (km)'] = _ac.get('divergencia_km', 0.0)
                     linha_dict['Divergencia Motores Concorrente (%)'] = _ac.get('divergencia_pct', 0.0)
-                    # [CONC-DIVERG-CLASSE - 420ª geração] TORNA VISÍVEL a classificação legível da divergência
-                    # Google×OSRM do 2º colocado (baixa/moderada/alta) — era CALCULADA (39795) mas nunca aparecia.
-                    linha_dict['Classe Divergencia Concorrente'] = _ac.get('divergencia_classe', 'N/A')
                     linha_dict['Motor Vencedor Concorrente'] = _ac.get('motor_vencedor', 'N/A')
                     # [CONC-QUALIDADE - 80ª geração] qualidade da geocodificação do hub concorrente
                     # (do hub_qual_map, por nome — 0 chamadas extras) + snap (da rota OSRM).
@@ -44339,19 +44336,6 @@ def _montar_dataframe_final(df, resultados_unicos, runner_up_map=None, hub_qual_
                     linha_dict['Score Geo Concorrente'] = _hq.get('score', 0.0)
                     linha_dict['Confianca Geo Concorrente'] = _hq.get('conf', 'N/A')
                     linha_dict['Snap Concorrente (m)'] = _ac.get('snap_m') if _ac.get('snap_m') is not None else 0.0
-                    # [CONC-FONTE-DIST - 420ª geração] TORNA VISÍVEL a FONTE da distância do 2º colocado — antes o
-                    # campo 'fonte_2o' (marcado quando o Google do concorrente cai em FAST-FAIL e o OSRM real assume)
-                    # era CALCULADO mas nunca aparecia na planilha. Agora há uma coluna explícita: Google Maps
-                    # (respondeu), OSRM real (Google indisponível no fast-fail) ou estimativa geodésica (nem OSRM).
-                    if _ac.get('fonte_2o'):
-                        _fonte_dist_conc = _ac['fonte_2o']
-                    elif _ac.get('tempo') not in (None, 'N/A'):
-                        _fonte_dist_conc = "Google Maps"
-                    elif (linha_dict.get('Distancia Concorrente', 0.0) or 0.0) > 0:
-                        _fonte_dist_conc = "Estimativa geodésica (fator de desvio)"
-                    else:
-                        _fonte_dist_conc = "N/A"
-                    linha_dict['Fonte Distancia Concorrente'] = _fonte_dist_conc
                     # [DISPUTA-INDICES - 75ª geração] Índices da disputa na PLANILHA (derivados dos
                     # valores já gravados — custo zero, sem rede). Competitividade (quão acirrada),
                     # robustez (quão folgada a escolha) e o motivo resumido da perda do concorrente.
