@@ -37154,7 +37154,11 @@ def _headers_google_rotativo(_tentativa):
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
 
 
-def extrair_dados_reais_google(origem_texto, destino_texto, lat_o, lon_o, lat_d, lon_d, dist_linha_reta, usar_coordenadas=True, link_maps_pronto=None, link_embed_pronto=None):
+def extrair_dados_reais_google(origem_texto, destino_texto, lat_o, lon_o, lat_d, lon_d, dist_linha_reta, usar_coordenadas=True, link_maps_pronto=None, link_embed_pronto=None, _fast_fail=False):
+    # [PERF-CONC-FASTGOOGLE - 419ª geração] `_fast_fail`: força a política RÁPIDA do Google (timeout 4s, 1
+    # tentativa) NESTA chamada, sem depender da saúde do disjuntor. Usado SÓ para trabalho SECUNDÁRIO (a
+    # validação do 2º colocado/concorrente), NUNCA para o vencedor — a decisão da menor rota segue com o
+    # Google paciente completo. Um cache-hit continua instantâneo (a checagem de cache vem antes disto).
     cache_key = f"GOOG_{CACHE_VERSION}_{origem_texto}|{destino_texto}|{usar_coordenadas}"
     if cache_key in cache_google: 
         _cached = cache_google[cache_key]
@@ -37204,6 +37208,10 @@ def extrair_dados_reais_google(origem_texto, destino_texto, lat_o, lon_o, lat_d,
     # política é decidida pela SAÚDE do Google (disjuntor), sem depender de toggle. Paciência quando o Google
     # responde; fast-fail quando falha (sem lentidão). O toggle vira override opcional. Uma decisão por chamada.
     _pol_g = _google_politica_adaptativa()
+    if _fast_fail:
+        # [PERF-CONC-FASTGOOGLE] trabalho secundário: 4s / 1 tentativa, sem priming — não segura a rota.
+        _pol_g = {"timeout": 4, "tentativas": 1, "primar": False,
+                  "ignora_disjuntor": _pol_g.get("ignora_disjuntor", False), "motivo": "fast-fail (2º colocado)"}
     if not _pol_g["ignora_disjuntor"] and not _google_pode_chamar():
         return None
 
@@ -39698,9 +39706,15 @@ def executar_pipeline_unificado(origem_cru, destino_cru, runner_up_info=None, mo
                     _fut_osrm_conc = EXECUTOR_APIS.submit(API_OSRM_Routing, lat_o, lon_o, r_lat, r_lon)
                 except Exception:
                     _fut_osrm_conc = None
-            res_g_runner = extrair_dados_reais_google(origem_cru, r_nome, lat_o, lon_o, r_lat, r_lon, dist_v_real, usar_coordenadas=True)
+            # [PERF-CONC-FASTGOOGLE - 419ª geração] O 2º colocado (concorrente) é ANÁLISE, não decisão — o
+            # vencedor já foi definido. Sem chave da API do Google, o scraper é PACIENTE (8s×3) e, num IP de
+            # datacenter, some segundos POR ROTA só para o 2º lugar. Aqui o Google do concorrente passa a
+            # FAST-FAIL (4s, 1 tentativa): se responder rápido, usa o Google (consistente com o vencedor); se
+            # não, cai no OSRM REAL do concorrente (já calculado em paralelo, viária de verdade — mais preciso
+            # que a antiga estimativa por fator). O vencedor NÃO é tocado (segue com Google paciente completo).
+            res_g_runner = extrair_dados_reais_google(origem_cru, r_nome, lat_o, lon_o, r_lat, r_lon, dist_v_real, usar_coordenadas=True, _fast_fail=True)
             if not res_g_runner:
-                res_g_runner = extrair_dados_reais_google(origem_cru, r_nome, lat_o, lon_o, r_lat, r_lon, dist_v_real, usar_coordenadas=False)
+                res_g_runner = extrair_dados_reais_google(origem_cru, r_nome, lat_o, lon_o, r_lat, r_lon, dist_v_real, usar_coordenadas=False, _fast_fail=True)
             if res_g_runner:
                 dist_conc = _route_val(res_g_runner, 0, default=0.0)
                 link_conc = _route_val(res_g_runner, 2, default="N/A")
@@ -39746,11 +39760,31 @@ def executar_pipeline_unificado(origem_cru, destino_cru, runner_up_info=None, mo
                 except Exception as _e_osrm_conc:
                     logger.error(f"[CONC-OSRM] Falha ao rotear concorrente no OSRM: {_e_osrm_conc}")
             else:
-                dist_conc = round(dist_v_real * obter_fator_desvio_rodoviario(dist_v_real), 2)
+                # [PERF-CONC-FASTGOOGLE - 419ª geração] Google do concorrente não respondeu no fast-fail.
+                # Em vez da antiga estimativa por fator (reta × desvio), usa o OSRM REAL do concorrente (que já
+                # rodou em paralelo) — viária de verdade, mais precisa. Só cai na estimativa se nem o OSRM veio.
+                _res_osrm_conc = None
+                try:
+                    if _fut_osrm_conc is not None:
+                        _res_osrm_conc = _fut_osrm_conc.result()
+                    _motor_registrar('OSRM', _motor_sucesso_rota(_res_osrm_conc))
+                except Exception:
+                    _res_osrm_conc = None
                 o_param = requests.utils.quote(origem_cru)
                 d_param = requests.utils.quote(r_nome)
                 link_conc = f"https://www.google.com/maps/dir/?api=1&origin={o_param}&destination={d_param}&travelmode=driving"
-                _audit_conc = {'tempo': "N/A", 'velocidade_media': 0.0, 'lat': r_lat, 'lon': r_lon}
+                if _res_osrm_conc and _motor_sucesso_rota(_res_osrm_conc):
+                    dist_conc = round(float(_res_osrm_conc[0]), 2)
+                    _tempo_conc_o = _res_osrm_conc[1] if len(_res_osrm_conc) > 1 else "N/A"
+                    _snap_c = _res_osrm_conc[5].get('dest_snap_dist_m') if (len(_res_osrm_conc) > 5 and isinstance(_res_osrm_conc[5], dict)) else None
+                    _audit_conc = {'tempo': (f"{int(_tempo_conc_o)} min" if isinstance(_tempo_conc_o, (int, float)) else "N/A"),
+                                   'velocidade_media': _velocidade_media_kmh(dist_conc, _tempo_conc_o),
+                                   'lat': r_lat, 'lon': r_lon, 'osrm_km': dist_conc, 'motor_vencedor': "OSRM",
+                                   'snap_m': round(float(_snap_c), 1) if _snap_c is not None else None,
+                                   'fonte_2o': "OSRM (Google indisponível no fast-fail)"}
+                else:
+                    dist_conc = round(dist_v_real * obter_fator_desvio_rodoviario(dist_v_real), 2)
+                    _audit_conc = {'tempo': "N/A", 'velocidade_media': 0.0, 'lat': r_lat, 'lon': r_lon}
             concorrente = r_nome
             
         if dist_conc > 0.0:
