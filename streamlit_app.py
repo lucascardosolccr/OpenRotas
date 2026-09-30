@@ -13449,9 +13449,24 @@ def _obter_fila_nominatim():
 def _obter_executor_apis():
     return ThreadPoolExecutor(max_workers=min(24, _CPU_COUNT * 3), thread_name_prefix="geoapi")
 
+# [PERF-CONSENSO-PARALELO - 420ª geração] Pool DEDICADO para lançar o Valhalla (motor keyless de consenso) EM
+# PARALELO com o FOSSGIS no caminho do vencedor. Motivo: os dois motores keyless de consenso têm FILAS DE
+# THROTTLE INDEPENDENTES (FILA_OSRM2 e FILA_VALHALLA, ≤1 req/s cada) e disparam JUNTOS exatamente nas rotas
+# mais lentas (zona de balsa/divergência) — mas rodavam EM SÉRIE, somando as duas esperas por rota. Sobrepô-los
+# corta ~1 espera de throttle nessas rotas. Por que um pool PRÓPRIO (e não o EXECUTOR_APIS): o Valhalla bloqueia
+# na sua própria fila serial; se ocupasse workers do EXECUTOR_APIS (que o OSRM primário e a geocodificação
+# usam), poderia, num lote 100% zona-de-suspeita, contendê-los e REGREDIR o caminho comum. Isolado aqui, é
+# IMPOSSÍVEL saturar o caminho quente. Threads ficam só BLOQUEADAS na fila (custo desprezível). NÃO pode ser a
+# própria FILA_VALHALLA: API_Valhalla_Routing já submete a ela e daria deadlock (worker esperando a si mesmo).
+# NÃO-REGRESSÃO: mesmos VALORES (o motor retorna idêntico), só o TEMPO muda; se o submit falhar, cai no inline.
+@st.cache_resource(show_spinner=False)
+def _obter_executor_consenso():
+    return ThreadPoolExecutor(max_workers=8, thread_name_prefix="consenso")
+
 EXECUTOR_GLOBAL = _obter_executor_global()
 FILA_NOMINATIM = _obter_fila_nominatim()
 EXECUTOR_APIS = _obter_executor_apis()
+EXECUTOR_CONSENSO = _obter_executor_consenso()
 
 # [OSRM-CONSENSO - 192ª geração] Fila serial + throttle do SEGUNDO backend OSRM (FOSSGIS,
 # routing.openstreetmap.de). É um deployment OSRM INDEPENDENTE do router.project-osrm.org (Mapbox): outro
@@ -38978,10 +38993,49 @@ def calcular_pipeline_logistico(origem, destino, perfil_rota="shortest"):
         except Exception:
             _dados_gh_str = ""
         _res_ors = _chamar_motor_cb('ORS', API_ORS_Routing, lat_o, lon_o, lat_d, lon_d) if ORS_API_KEY else None
+        # [PERF-CONSENSO-PARALELO - 420ª geração] LANÇA o Valhalla AGORA (antes do FOSSGIS abaixo), no pool
+        # dedicado EXECUTOR_CONSENSO, para que ele rode EM PARALELO com o FOSSGIS. Os dois têm filas de throttle
+        # INDEPENDENTES (≤1 req/s cada) e disparam JUNTOS na zona de suspeita — antes rodavam em série, somando as
+        # esperas. A DECISÃO de engajar (gate) é avaliada aqui, na thread da rota (lê _valhalla_ativo etc., como
+        # antes); só a EXECUÇÃO da chamada vai para o pool. Mesmos VALORES, só o TEMPO muda; submit falho → inline
+        # (coleta abaixo). O gate usa res_google/res_osrm, ambos já prontos neste ponto.
+        _fut_valhalla = None
+        _valhalla_engaja = False
+        try:
+            _v_gkm = None
+            _v_okm = None
+            _v_balsa = False
+            try:
+                if res_google and res_google[0]:
+                    _v_gkm = float(res_google[0])
+            except Exception:
+                _v_gkm = None
+            try:
+                if res_osrm and res_osrm[0]:
+                    _v_okm = float(res_osrm[0])
+            except Exception:
+                _v_okm = None
+            try:
+                _v_balsa = bool(res_osrm and len(res_osrm) > 2 and str(res_osrm[2]).upper().startswith("S"))
+            except Exception:
+                _v_balsa = False
+            if (_valhalla_ativo()
+                    or _valhalla_deve_auto_engajar(_v_gkm, _v_okm)
+                    or _valhalla_deve_investigar(_v_okm, dist_linha_reta, _v_balsa)):
+                _valhalla_engaja = True
+        except Exception:
+            _valhalla_engaja = False
+        if _valhalla_engaja:
+            try:
+                _fut_valhalla = EXECUTOR_CONSENSO.submit(
+                    _chamar_motor_cb, 'Valhalla', API_Valhalla_Routing, lat_o, lon_o, lat_d, lon_d)
+            except Exception:
+                _fut_valhalla = None
         # [OSRM-CONSENSO - 192ª geração] 2º backend OSRM (FOSSGIS) — SEM chave — como fonte de consenso.
         # OPT-IN (st.session_state['usar_osrm2']) porque a política do FOSSGIS proíbe uso pesado: no lote
         # nacional, só deve rodar quando o usuário conscientemente liga. Self-gated: desligado → None → o
         # contendor é exatamente o OSRM primário (não-regressão). Rate-limit ≤1 req/s é interno à função.
+        # [PERF-CONSENSO-PARALELO - 420ª] O FOSSGIS roda INLINE aqui e SOBREPÕE ao Valhalla já em voo acima.
         _res_osrm2 = None
         try:
             # [RESGATE-FERRIES - 421ª geração] Auto-engaja o FOSSGIS (2º OSRM, keyless, usa ferry) na ZONA DE
@@ -39011,33 +39065,17 @@ def calcular_pipeline_logistico(origem, destino, perfil_rota="shortest"):
         # [VALHALLA - 262ª geração] 3º motor keyless de consenso (Valhalla, dados OSM). OPT-IN pelo mesmo
         # motivo do OSRM_FOSSGIS (fair-use da instância pública / throttle serial). Desligado → None → contendor
         # idêntico ao atual (não-regressão). Com VALHALLA_URL apontando p/ instância própria, roda sem throttle.
+        # [PERF-CONSENSO-PARALELO - 420ª] COLETA o Valhalla lançado ACIMA (rodou em paralelo com o FOSSGIS). O
+        # gate/decisão foi avaliado lá; aqui só se recolhe o resultado. Fallback inline (mesmos VALORES) se o
+        # submit ao pool tiver falhado — garante que o Valhalla nunca seja pulado por indisponibilidade do pool.
         _res_valhalla = None
         try:
-            # [VALHALLA-DIVERG - P1/§7] Além do gate existente (_valhalla_ativo), engaja AUTOMATICAMENTE no
-            # regime de divergência Google×OSRM (teto por processo p/ fair-use). [P7/§7] idem para a ZONA DE
-            # SUSPEITA (V/R alto ou balsa indireta). Usa o OSRM PRIMÁRIO (res_osrm ainda não foi trocado pelo
-            # contendor aqui, nesta linha). ADDITIVO: desligado e sem divergência/suspeita → None → contendor
-            # idêntico (não-regressão). O Valhalla só entra no consenso; nunca decide por si.
-            _v_gkm = None
-            _v_okm = None
-            _v_balsa = False
-            try:
-                if res_google and res_google[0]:
-                    _v_gkm = float(res_google[0])
-            except Exception:
-                _v_gkm = None
-            try:
-                if res_osrm and res_osrm[0]:
-                    _v_okm = float(res_osrm[0])
-            except Exception:
-                _v_okm = None
-            try:
-                _v_balsa = bool(res_osrm and len(res_osrm) > 2 and str(res_osrm[2]).upper().startswith("S"))
-            except Exception:
-                _v_balsa = False
-            if (_valhalla_ativo()
-                    or _valhalla_deve_auto_engajar(_v_gkm, _v_okm)
-                    or _valhalla_deve_investigar(_v_okm, dist_linha_reta, _v_balsa)):
+            if _fut_valhalla is not None:
+                try:
+                    _res_valhalla = _fut_valhalla.result()
+                except Exception:
+                    _res_valhalla = None
+            elif _valhalla_engaja:
                 _res_valhalla = _chamar_motor_cb('Valhalla', API_Valhalla_Routing, lat_o, lon_o, lat_d, lon_d)
         except Exception:
             _res_valhalla = None
