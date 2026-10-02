@@ -35341,7 +35341,12 @@ def API_Valhalla_Routing(lat_o, lon_o, lat_d, lon_d):
             # [VALHALLA-POST - 400ª geração] Valhalla 3.x (público FOSSGIS e instância própria) espera o JSON do
             # corpo da requisição; o formato antigo (GET ?json=) passou a retornar 400 (error_code 100). POST
             # direto com Content-Type application/json restaura o consenso do segundo motor em ambas as vias.
-            return session.post(f"{VALHALLA_URL}/route", data=json.dumps(_payload),
+            # [HOTFIX-VALHALLA-RETRY - 456ª geração] sessão FAIL-FAST (session_fossgis_ff): o Valhalla público é
+            # infra FOSSGIS (valhalla1.openstreetmap.de), throttled ≤1 req/s e motor de CONSENSO (disjuntor +
+            # OSRM/Google assumem). Na sessão geral, Retry(total=5, backoff=0.5) fazia retry-storm (~15s de
+            # backoff) dentro da fila serial do Valhalla, atrasando TODA a fila. Fail-fast: idêntico sob sucesso,
+            # rápido sob falha. Instância própria (self-host) é rápida → fail-fast não a prejudica.
+            return session_fossgis_ff.post(f"{VALHALLA_URL}/route", data=json.dumps(_payload),
                                 headers=_hdrs, timeout=(3.05, 10)).json()
         if _valhalla_instancia_propria():
             _j = _http_valhalla()          # instância PRÓPRIA: direto, em paralelo, SEM throttle (como o OSRM)
@@ -35413,7 +35418,12 @@ def API_Valhalla_Multimodal_Routing(lat_o, lon_o, lat_d, lon_d):
             _hdrs = {"Content-Type": "application/json",
                      "User-Agent": "MotorLogisticoExames/1.0 (roteamento institucional; contato via app)",
                      "X-Client-Id": "motor-logistico-exames"}
-            return session.post(f"{VALHALLA_URL}/route", data=json.dumps(_payload),
+            # [HOTFIX-VALHALLA-RETRY - 456ª geração] sessão FAIL-FAST (session_fossgis_ff): o Valhalla público é
+            # infra FOSSGIS (valhalla1.openstreetmap.de), throttled ≤1 req/s e motor de CONSENSO (disjuntor +
+            # OSRM/Google assumem). Na sessão geral, Retry(total=5, backoff=0.5) fazia retry-storm (~15s de
+            # backoff) dentro da fila serial do Valhalla, atrasando TODA a fila. Fail-fast: idêntico sob sucesso,
+            # rápido sob falha. Instância própria (self-host) é rápida → fail-fast não a prejudica.
+            return session_fossgis_ff.post(f"{VALHALLA_URL}/route", data=json.dumps(_payload),
                                 headers=_hdrs, timeout=(3.05, 10)).json()
         if _valhalla_instancia_propria():
             _j = _http_valhalla_mm()

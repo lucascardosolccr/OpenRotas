@@ -30,8 +30,8 @@ def test_valhalla_cache_hit_nao_chama_rede(monkeypatch):
     _payload = (222.2, 180, "Sim", 1, "geo5", None)
     m.cache_rotas.set(_key, _payload, expire=60)
     try:
-        # o Valhalla usa session.post; se for chamado, quebra — cache hit retorna antes
-        monkeypatch.setattr(m.session, "post", _boom)
+        # o Valhalla usa session_fossgis_ff.post; se for chamado, quebra — cache hit retorna antes
+        monkeypatch.setattr(m.session_fossgis_ff, "post", _boom)
         res = m.API_Valhalla_Routing(*_o)
         assert res == _payload
     finally:
@@ -49,7 +49,7 @@ def test_valhalla_chave_separa_por_preferencia_de_menor_distancia(monkeypatch):
     m.cache_rotas.set(_key_short, _payload_short, expire=60)
     m.cache_rotas.delete(_key_fast)
     try:
-        monkeypatch.setattr(m.session, "post", _boom)
+        monkeypatch.setattr(m.session_fossgis_ff, "post", _boom)
         if m._ROTA_MENOR_DISTANCIA:
             assert m.API_Valhalla_Routing(*_o) == _payload_short
     finally:
