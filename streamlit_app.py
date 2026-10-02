@@ -13311,6 +13311,23 @@ _adapter_fossgis_ff = HTTPAdapter(max_retries=_retry_osrm_ff, pool_connections=3
 session_fossgis_ff.mount("https://", _adapter_fossgis_ff)
 session_fossgis_ff.mount("http://", _adapter_fossgis_ff)
 
+# [HOTFIX-GOOGLE-RETRY - 455ª geração] Sessão FAIL-FAST dedicada ao SCRAPER do Google (irmã das de OSRM/FOSSGIS
+# acima). PROBLEMA (confirmado no log de produção LOGTEMPO, ~38s/rota): o scraper usava a sessão GERAL, cujo
+# Retry(total=5, backoff=0.5) faz um RETRY-STORM dentro de UMA chamada quando o Google devolve 429/5xx ou dá
+# timeout num IP de datacenter — ~15s de backoff (0.5+1+2+4+8) por session.get, e isso AINDA é repetido pelo
+# laço manual de 3 tentativas (rotação de User-Agent) → dezenas de segundos por rota só em espera morta.
+# O laço manual (com UA DIFERENTE a cada tentativa) já é a estratégia de retry CORRETA contra bloqueio por
+# assinatura de navegador; o retry cego do urllib3 (MESMO UA + backoff) não recupera bloqueio e só soma espera.
+# Esta sessão não faz retry no urllib3 (total=0): cada session.get tenta UMA vez e devolve/levanta na hora; o
+# laço manual decide as tentativas. NÃO-REGRESSÃO: sob SUCESSO é idêntico (sucesso nunca dispara retry); sob
+# FALHA, as 3 tentativas com UA rotativo continuam acontecendo (participação do Google preservada), só sem o
+# backoff morto do urllib3 empilhado. Mesmo pool keep-alive (32) das demais.
+_retry_google_ff = Retry(total=0, backoff_factor=0, respect_retry_after_header=False)
+session_google_ff = requests.Session()
+_adapter_google_ff = HTTPAdapter(max_retries=_retry_google_ff, pool_connections=32, pool_maxsize=32)
+session_google_ff.mount("https://", _adapter_google_ff)
+session_google_ff.mount("http://", _adapter_google_ff)
+
 # [HOTFIX-TLS-OSRM - 219ª geração] Fallback TLS para servidores com certificado inválido/expirado (caso do
 # OSRM público em set/2026: cert vencido derruba a handshake SSL e anula TODO o roteamento). A política:
 # tenta a chamada com verificação SSL NORMAL; se o certificado do host for recusado (requests.exceptions.
@@ -13402,9 +13419,11 @@ def _primar_sessao_google():
                            "image/webp,*/*;q=0.8"),
                 "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
             }
-            # visita leve: o Google grava cookies de consentimento/sessão na 'session' compartilhada
+            # visita leve: o Google grava cookies de consentimento/sessão na MESMA sessão que o scraper usa
+            # (session_google_ff), para que o cookie de consentimento seja de fato aproveitado nas chamadas de
+            # rota — antes o priming gravava na sessão geral e o cookie não acompanhava o scraper.
             try:
-                session.get("https://www.google.com/", headers=_hdrs, timeout=6)
+                session_google_ff.get("https://www.google.com/", headers=_hdrs, timeout=6)
             except Exception:
                 pass
             # DECISÃO HONESTA: NÃO forjamos um token de consentimento fixo (foi exatamente um token fixo
@@ -37270,7 +37289,7 @@ def extrair_dados_reais_google(origem_texto, destino_texto, lat_o, lon_o, lat_d,
         for _tent in range(_MAX_TENT_G):
             _headers_tent = _headers_google_rotativo(_tent)
             try:
-                resposta = session.get(url_api, headers=_headers_tent, timeout=_TIMEOUT_G)
+                resposta = session_google_ff.get(url_api, headers=_headers_tent, timeout=_TIMEOUT_G)
                 texto_resposta = resposta.text.replace('\u202f', ' ').replace('\u200b', '')
                 if len(texto_resposta) >= 500:
                     break  # resposta válida obtida

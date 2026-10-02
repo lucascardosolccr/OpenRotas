@@ -29,7 +29,7 @@ def test_timeout_marca_parse_fail_false(monkeypatch):
     class _SessTimeout:
         def get(self, *a, **k):
             raise TimeoutError("simulação de timeout de rede")
-    monkeypatch.setattr(m, "session", _SessTimeout())
+    monkeypatch.setattr(m, "session_google_ff", _SessTimeout())
 
     _limpar_cache("OrigTO", "DestTO", True)
     _fi = {}
@@ -48,7 +48,7 @@ def test_resposta_sem_rota_marca_parse_fail_true(monkeypatch):
     class _SessSemRota:
         def get(self, *a, **k):
             return _RespFake("z" * 800)   # grande, mas sem nenhum padrão de distância/tempo
-    monkeypatch.setattr(m, "session", _SessSemRota())
+    monkeypatch.setattr(m, "session_google_ff", _SessSemRota())
 
     _limpar_cache("OrigPF", "DestPF", True)
     _fi = {}
