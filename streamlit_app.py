@@ -35145,7 +35145,11 @@ def API_ORS_Routing(lat_o, lon_o, lat_d, lon_d):
         _ors_pref = "&preference=shortest" if _ROTA_MENOR_DISTANCIA else ""   # [V438] menor distância (opt-in)
         _url = (f"https://api.openrouteservice.org/v2/directions/driving-car"
                 f"?start={lon_o},{lat_o}&end={lon_d},{lat_d}{_ors_pref}")
-        _r = session.get(_url, headers={"Authorization": ORS_API_KEY}, timeout=8).json()
+        # [HOTFIX-ORS-RETRY - 456ª geração] sessão FAIL-FAST (session_osrm_publico, como GraphHopper): ORS é
+        # motor de CONSENSO keyed (disjuntor + OSRM/Google assumem). Na sessão geral, Retry(total=5) faria
+        # retry-storm (~15s) sob 429/5xx. Latente hoje (self-gated em ORS_API_KEY), mas fecha o padrão: NENHUM
+        # motor de rota faz mais retry-storm. Sucesso idêntico; falha rápida.
+        _r = session_osrm_publico.get(_url, headers={"Authorization": ORS_API_KEY}, timeout=8).json()
         _feats = _r.get("features") if isinstance(_r, dict) else None
         if _feats:
             _props = (_feats[0].get("properties", {}) or {})
