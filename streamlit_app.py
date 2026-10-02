@@ -46008,8 +46008,21 @@ with st.sidebar:
             + _sb_html.escape(_sb_email) + "</div></div></div>",
             unsafe_allow_html=True)
         # [COMPARTILHAR - 448ª] badge de estudos recebidos ainda não vistos no botão Perfil.
+        # [AUTH-RACE-FIX - 457ª geração] DURANTE O PROCESSAMENTO ATIVO não consultamos o badge pela rede: ele
+        # chama _cliente_do_usuario → set_session, que dispara uma renovação do refresh token do Supabase SEM
+        # persistir o token ROTACIONADO de volta. O Supabase rotaciona (invalida) o refresh token a cada
+        # renovação; com esse renovador concorrendo com a revalidação periódica (que persiste), um deles acaba
+        # usando um token já rotacionado → refresh_token 400 → 403 → LOGOUT no meio de estudos longos (visto em
+        # produção: openrotas2.md, refresh 200,200→400,400→logout). Durante o estudo, servimos o valor JÁ
+        # cacheado (zero chamada de rede, zero renovação concorrente); o badge volta a atualizar assim que o
+        # estudo termina. Fora do processamento, comportamento 100% idêntico ao anterior. Zero perda de função.
         try:
-            _badge_rec = session_manager.badge_estudos_recebidos()
+            _proc_ativo_badge = bool(st.session_state.get('lote_em_andamento')
+                                     or st.session_state.get('alo_em_andamento'))
+            if _proc_ativo_badge:
+                _badge_rec = int(st.session_state.get("_badge_recebidos", 0) or 0)
+            else:
+                _badge_rec = session_manager.badge_estudos_recebidos()
         except Exception:
             _badge_rec = 0
         _lbl_perfil = f"Perfil 📥 {_badge_rec}" if _badge_rec > 0 else "Perfil"
