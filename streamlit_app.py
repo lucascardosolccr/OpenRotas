@@ -37154,7 +37154,13 @@ def _headers_google_rotativo(_tentativa):
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
 
 
-def extrair_dados_reais_google(origem_texto, destino_texto, lat_o, lon_o, lat_d, lon_d, dist_linha_reta, usar_coordenadas=True, link_maps_pronto=None, link_embed_pronto=None, _fast_fail=False):
+def extrair_dados_reais_google(origem_texto, destino_texto, lat_o, lon_o, lat_d, lon_d, dist_linha_reta, usar_coordenadas=True, link_maps_pronto=None, link_embed_pronto=None, _fast_fail=False, _falha_info=None):
+    # [PERF-FALHA-INFO - 455ª geração] `_falha_info` (dict opcional): quando a chamada FALHA, o motivo é
+    # reportado aqui para o chamador decidir se vale a pena um 2º modo. Chave 'parse_fail': True SOMENTE quando
+    # o Google DEVOLVEU uma resposta real (≥500 chars) mas não foi possível extrair a rota (coordenada resolveu
+    # para um ponto que o Google não roteia) — ÚNICO caso em que tentar pelo NOME (modo-texto) pode ajudar.
+    # False (default) quando houve timeout/resposta vazia/bloqueio: o modo-texto, no MESMO IP e instante, também
+    # falharia — então o chamador o PULA e cai direto no OSRM, sem perder nenhum acerto do Google (era impossível).
     # [PERF-CONC-FASTGOOGLE - 419ª geração] `_fast_fail`: força a política RÁPIDA do Google (timeout 4s, 1
     # tentativa) NESTA chamada, sem depender da saúde do disjuntor. Usado SÓ para trabalho SECUNDÁRIO (a
     # validação do 2º colocado/concorrente), NUNCA para o vencedor — a decisão da menor rota segue com o
@@ -37324,6 +37330,10 @@ def extrair_dados_reais_google(origem_texto, destino_texto, lat_o, lon_o, lat_d,
                     km_puro, dist_linha_reta, km_puro / dist_linha_reta,
                     extra={"fonte": "GOOGLE_MAPS", "sucesso": False, "latencia_ms": 0, "query": f"{origem_texto}|{destino_texto}"}
                 )
+                # [PERF-FALHA-INFO] houve resposta real do Google, mas o valor foi descartado por sanidade →
+                # o modo-texto (nome) pode devolver um valor são: sinaliza que vale tentar.
+                if _falha_info is not None:
+                    _falha_info['parse_fail'] = True
                 return None
                 
             # [GOOGLE-MULTIROTA - 186ª geração] MENOR ROTA VIÁRIA a partir do que o Google JÁ devolveu.
@@ -37364,9 +37374,16 @@ def extrair_dados_reais_google(origem_texto, destino_texto, lat_o, lon_o, lat_d,
                     pass
             _google_registrar_resultado(True)  # [CIRCUIT-BREAKER] sucesso → mantém/fecha o disjuntor
             return res
-    except Exception: 
+    except Exception:
         pass
     _google_registrar_resultado(False)  # [CIRCUIT-BREAKER] falha → conta para eventual abertura do disjuntor
+    # [PERF-FALHA-INFO - 455ª geração] só vale tentar o 2º modo (texto) se o Google DEU uma resposta real
+    # (≥500 chars) e só o PARSE falhou; timeout/vazio (resposta None ou <500) → modo-texto também falharia.
+    if _falha_info is not None:
+        try:
+            _falha_info['parse_fail'] = bool(texto_resposta and len(texto_resposta) >= 500)
+        except Exception:
+            _falha_info['parse_fail'] = False
     return None
 
 @_lru_cache(maxsize=32)
@@ -38917,8 +38934,16 @@ def calcular_pipeline_logistico(origem, destino, perfil_rota="shortest"):
             res_google = None
     else:
         # sem chave oficial: caminho histórico — scraper (coords e, se preciso, texto)
-        res_google = extrair_dados_reais_google(end_oficial_o, end_oficial_d, lat_o, lon_o, lat_d, lon_d, dist_linha_reta, usar_coordenadas=True, link_maps_pronto=link_fallback, link_embed_pronto=link_embed_fallback)
-        if not res_google:
+        # [PERF-TEXTO-CONDICIONAL - 455ª geração] O 2º modo (por NOME/texto) só vale quando o 1º modo (por
+        # coordenada) OBTEVE resposta do Google mas não conseguiu extrair a rota (coordenada caiu num ponto que o
+        # Google não roteia) — aí o nome pode resolver. Se o 1º modo deu TIMEOUT / resposta vazia (IP bloqueado),
+        # o 2º modo no MESMO IP e instante também falharia: PULAR economiza uma espera paciente inteira (~até 24s)
+        # por rota SEM perder nenhum acerto do Google (ele era impossível). Mantém 100% a participação do Google
+        # onde ela é alcançável; só corta a espera comprovadamente inútil. Quando HÁ chance (parse_fail), tenta
+        # exatamente como antes. Defensivo: qualquer imprevisto → tenta o texto (comportamento histórico).
+        _finfo_g = {}
+        res_google = extrair_dados_reais_google(end_oficial_o, end_oficial_d, lat_o, lon_o, lat_d, lon_d, dist_linha_reta, usar_coordenadas=True, link_maps_pronto=link_fallback, link_embed_pronto=link_embed_fallback, _falha_info=_finfo_g)
+        if not res_google and _finfo_g.get('parse_fail', True):
             res_google = extrair_dados_reais_google(origem_clean, destino_clean, lat_o, lon_o, lat_d, lon_d, dist_linha_reta, usar_coordenadas=False, link_maps_pronto=link_fallback, link_embed_pronto=link_embed_fallback)
     
     # [ARQ-HIBRIDO - 26ª geração] Coleta o resultado do OSRM (que rodou em paralelo com o Google acima).
@@ -39712,8 +39737,11 @@ def executar_pipeline_unificado(origem_cru, destino_cru, runner_up_info=None, mo
             # FAST-FAIL (4s, 1 tentativa): se responder rápido, usa o Google (consistente com o vencedor); se
             # não, cai no OSRM REAL do concorrente (já calculado em paralelo, viária de verdade — mais preciso
             # que a antiga estimativa por fator). O vencedor NÃO é tocado (segue com Google paciente completo).
-            res_g_runner = extrair_dados_reais_google(origem_cru, r_nome, lat_o, lon_o, r_lat, r_lon, dist_v_real, usar_coordenadas=True, _fast_fail=True)
-            if not res_g_runner:
+            # [PERF-TEXTO-CONDICIONAL - 455ª] mesmo princípio do vencedor: o 2º modo (nome) só é tentado se o 1º
+            # obteve resposta do Google e só o parse falhou; timeout/vazio → pular (modo-texto também falharia).
+            _finfo_gr = {}
+            res_g_runner = extrair_dados_reais_google(origem_cru, r_nome, lat_o, lon_o, r_lat, r_lon, dist_v_real, usar_coordenadas=True, _fast_fail=True, _falha_info=_finfo_gr)
+            if not res_g_runner and _finfo_gr.get('parse_fail', True):
                 res_g_runner = extrair_dados_reais_google(origem_cru, r_nome, lat_o, lon_o, r_lat, r_lon, dist_v_real, usar_coordenadas=False, _fast_fail=True)
             if res_g_runner:
                 dist_conc = _route_val(res_g_runner, 0, default=0.0)
