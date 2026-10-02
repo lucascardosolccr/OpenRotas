@@ -50,6 +50,33 @@ def obter_cliente():
     if not _url or not _key:
         logger.error("[AUTH] SUPABASE_URL/SUPABASE_ANON_KEY ausentes em st.secrets.")
         return None
+    # [REFRESH ÚNICO] Desliga o auto-refresh em thread de fundo do supabase-py neste cliente.
+    # Motivo: cada set_session/refresh_session dispara internamente um threading.Timer
+    # (_start_auto_refresh_token) que, perto do vencimento, RENOVA o token numa thread de
+    # fundo. Como o refresh_token do Supabase é ROTATIVO (cada renovação invalida o anterior),
+    # esse refresher de fundo rotaciona o token e grava o novo SÓ na sessão em memória do
+    # cliente — nunca de volta no st.session_state. Num estudo longo, a thread principal fica
+    # ocupada, o timer dispara, rotaciona o token e o próximo rerun apresenta o token já
+    # invalidado -> 400 Bad Request -> logout forçado no meio do processamento.
+    # A app JÁ tem seu próprio refresh, explícito e que PERSISTE os tokens novos no
+    # st.session_state (session_manager._sessao_expirada_no_servidor, a cada rerun). Desligando
+    # o auto-refresh do SDK, esse passa a ser o ÚNICO renovador — fim da corrida de rotação.
+    # persist_session=False: este singleton é @st.cache_resource (compartilhado por TODO o
+    # processo); não deve guardar a sessão de um usuário no seu storage interno — cada operação
+    # já reaplica a sessão via set_session. Zero mudança de comportamento para a app, que nunca
+    # dependeu do refresher de fundo nem do storage interno do SDK. Segurança inalterada: segue
+    # usando só a anon key e a RLS. Fallback sem opções se o ClientOptions não aceitar os campos.
+    try:
+        try:
+            # create_client (síncrono) espera SyncClientOptions; a base ClientOptions não
+            # carrega 'storage' nesta versão. Importa a síncrona e cai para a base se preciso.
+            from supabase.lib.client_options import SyncClientOptions as _ClientOptions
+        except Exception:
+            from supabase.lib.client_options import ClientOptions as _ClientOptions
+        return create_client(_url, _key, options=_ClientOptions(
+            auto_refresh_token=False, persist_session=False))
+    except Exception:
+        logger.debug("[AUTH] ClientOptions indisponível; criando cliente com padrões.", exc_info=True)
     try:
         return create_client(_url, _key)
     except Exception:
