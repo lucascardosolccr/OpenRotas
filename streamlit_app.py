@@ -961,6 +961,20 @@ def _google_politica_adaptativa():
         if _forcar:
             return {"timeout": 12, "tentativas": 3, "primar": True, "ignora_disjuntor": True,
                     "motivo": "override manual (force paciência)"}
+        # [MOTOR-PREMIUM-CONFIG - 456ª geração] Se o usuário configurou um motor viário CONFIÁVEL (chave ORS/
+        # GraphHopper, ou OSRM/GraphHopper/Valhalla self-hosted), não vale a pena PAGAR a espera paciente do
+        # scraper keyless do Google — que num IP de datacenter costuma estar bloqueado e não entrega. O scraper
+        # vira FAST-FAIL: se responder rápido, ótimo (entra como sempre); se não, o motor premium + o OSRM
+        # assumem, SEM o estudo pagar ~8-24s por rota de espera morta. É o mesmo princípio da chave oficial do
+        # Google (210ª), generalizado para QUALQUER fonte viária confiável configurada. SEM nenhum motor premium
+        # configurado → este ramo NÃO entra e o scraper segue paciente, IDÊNTICO a hoje (participação do Google
+        # 100% preservada no padrão). O override manual 'google_agressivo' acima continua tendo prioridade.
+        try:
+            if _motor_premium_configurado():
+                return {"timeout": 4, "tentativas": 1, "primar": False, "ignora_disjuntor": False,
+                        "motivo": "motor premium configurado → scraper keyless em fast-fail (fonte confiável assume)"}
+        except Exception:
+            pass
         if _saudavel:
             # paciência automática — Google está respondendo, vale investir para ele participar/vencer
             return {"timeout": 8, "tentativas": 3, "primar": True, "ignora_disjuntor": False,
@@ -13570,6 +13584,27 @@ def _valhalla_ativo():
     except Exception:
         pass
     return _ler_flag_runtime('usar_valhalla')
+
+
+def _motor_premium_configurado():
+    """[MOTOR-PREMIUM-CONFIG - 456ª geração] True quando o usuário configurou EXPLICITAMENTE um motor viário
+    CONFIÁVEL além dos públicos keyless — isto é: chave ORS, chave GraphHopper, ou um OSRM/GraphHopper/Valhalla
+    apontando para INSTÂNCIA PRÓPRIA (self-host). Serve de SINAL de opt-in: quem adicionou um motor assim
+    escolheu deliberadamente uma fonte viária melhor/mais rápida — então a app não precisa mais PAGAR a espera
+    paciente do scraper keyless do Google (que num IP de datacenter costuma estar bloqueado e não entrega).
+
+    NÃO conta os motores PÚBLICOS keyless que já rodam por padrão (OSRM router.project-osrm.org, FOSSGIS,
+    Valhalla público): sem NENHUM motor premium configurado, esta função é False e NADA muda — o scraper segue
+    paciente, idêntico a hoje (participação do Google 100% preservada no padrão). Defensiva: erro → False
+    (na dúvida, preserva o comportamento atual)."""
+    try:
+        if ORS_API_KEY or GRAPHHOPPER_API_KEY:
+            return True
+        if _osrm_instancia_propria() or _graphhopper_instancia_propria() or _valhalla_instancia_propria():
+            return True
+    except Exception:
+        pass
+    return False
 
 # [VALHALLA-DIVERG - P1/§7] REGIME DE DIVERGÊNCIA: quando Google e OSRM discordam forte, o Valhalla é engajado
 # AUTOMATICAMENTE como 3ª perna de consenso mesmo com o toggle público desligado, respeitando o fair-use da
