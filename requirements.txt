@@ -14,7 +14,13 @@ streamlit==1.46.0
 # ------------------------------------------------------------------------------------------
 pandas>=2.3.0
 numpy>=2.3.0
-pyarrow>=20.0.0            # import direto (export Parquet) + serialização de dataframes do Streamlit
+pyarrow>=20.0.0,<25        # import direto (export Parquet) + serialização de dataframes do Streamlit.
+                           # TETO <25 DE PROPÓSITO: pyarrow 25.0.1 tem segfault conhecido (apache/arrow#50471)
+                           # e o Streamlit Cloud JÁ o rejeita — a cada boot ele instalava a 25, detectava o bug
+                           # e REINSTALAVA a 24 (uninstall+reinstall redundante em TODO deploy, visível no log).
+                           # Com o teto, o uv instala a 24.x direto: cold start mais limpo/rápido, MESMO pyarrow
+                           # em runtime (a app já rodava na 24 por imposição do Streamlit) — zero mudança de
+                           # comportamento, só elimina o retrabalho de instalação no boot.
 openpyxl>=3.1.5            # INDIRETA: rede de segurança do pandas p/ .xlsx (a app usa calamine
                            #           em todas as 4 leituras; openpyxl é o fallback e pesa ~5 MB)
 xlsxwriter>=3.2.0          # INDIRETA: engine do pd.ExcelWriter (8 usos por string)
