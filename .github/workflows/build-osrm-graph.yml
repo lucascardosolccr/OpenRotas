@@ -37,6 +37,17 @@ jobs:
                       /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
           df -h /
 
+      - name: Aumentar memória virtual (swap) — evita OOM no osrm-extract
+        run: |
+          # O osrm-extract do Brasil inteiro passa dos 16 GB de RAM do runner (exit 137 = OOM).
+          # Um swapfile grande no volume maior (/mnt) dá folga; fica mais lento, mas conclui.
+          sudo swapoff -a || true
+          sudo fallocate -l 24G /mnt/swapfile
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+          echo "=== memória + swap ===" ; free -h ; df -h /mnt
+
       - name: Baixar o mapa do Brasil
         run: |
           mkdir -p data
