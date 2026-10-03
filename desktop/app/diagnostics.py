@@ -107,6 +107,21 @@ def executar(verbose: bool = True) -> int:
     except Exception:
         pass
 
+    # Perfil de execução / telemetria local (§42): o que o app andou fazendo e quão rápido.
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "telemetry"))
+        import exec_profile
+        tel = exec_profile.resumo()
+        if tel.get("total"):
+            linhas.append("")
+            linhas.append("Perfil de execução (local): %s eventos (ok=%s, erro=%s)"
+                          % (tel["total"], tel["ok"], tel["erro"]))
+            for ev, t in sorted(tel["tempos"].items(), key=lambda kv: -kv[1]["n"])[:4]:
+                linhas.append("  • %-16s %4d×  média %sms | p95 %sms"
+                              % (ev, t["n"], t["media_ms"], t["p95_ms"]))
+    except Exception:
+        pass
+
     linhas.append("")
     linhas.append("RESULTADO: %s" % ("tudo essencial OK ✓" if essenciais_ok and grav_ok
                                       else "há itens essenciais faltando ✗"))

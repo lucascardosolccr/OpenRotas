@@ -1,0 +1,14 @@
+{
+  "_comentario": "Manifesto de recursos do OpenRotas Desktop. 'versao' permite detectar atualizações (§19); 'arquivo' é o nome do asset na Release de dados; 'sha256' (quando preenchido) valida a integridade do download. O app compara este manifesto (embarcado) com o manifesto remoto da Release para saber o que atualizar.",
+  "schema": 1,
+  "data_release_tag": "dados-latest",
+  "recursos": {
+    "municipios":            { "versao": "2026.10", "obrigatorio": true,  "arquivo": "municipios.parquet",            "sha256": "" },
+    "massas_dagua":          { "versao": "2026.10", "obrigatorio": true,  "arquivo": "massas_dagua.parquet",          "sha256": "" },
+    "hidrografia_nacional":  { "versao": "2026.10", "obrigatorio": true,  "arquivo": "hidrografia_nacional.pkl.gz",   "sha256": "" },
+    "rios_nomeados":         { "versao": "2026.10", "obrigatorio": false, "arquivo": "rios_nomeados_index.parquet",   "sha256": "" },
+    "amazonia_fluvial":      { "versao": "2026.10", "obrigatorio": false, "arquivo": "amazonia_fluvial.pkl.gz",       "sha256": "" },
+    "snirh_rios":            { "versao": "2026.10", "obrigatorio": false, "arquivo": "snirh_rios.csv",                "sha256": "" },
+    "osrm_brasil":           { "versao": "2026.10", "obrigatorio": false, "arquivo": "brazil-osrm-mld.tar.gz",        "sha256": "" }
+  }
+}

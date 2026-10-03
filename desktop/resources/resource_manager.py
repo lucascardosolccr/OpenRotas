@@ -21,7 +21,10 @@ from __future__ import annotations
 
 import os
 import sys
+import json
+import hashlib
 import logging
+import tempfile
 from pathlib import Path
 
 _AQUI = Path(__file__).resolve().parent
@@ -158,6 +161,158 @@ def resumo_ambiente(osrm_cfg: dict | None = None) -> str:
     return "\n".join(linhas)
 
 
+# ============================================================================
+#  MANIFESTO — REPARO/ATUALIZAÇÃO SEM REINSTALAR (§18/§19/§45)
+# ----------------------------------------------------------------------------
+#  O manifesto EMBARCADO (resources/manifest.json) descreve a versão e o
+#  nome-de-arquivo de cada recurso. Comparando-o com o manifesto REMOTO da
+#  Release de dados, o software sabe o que mudou e baixa só isso (§19 —
+#  "atualizar só o que mudou"), gravando a cópia nova no diretório de OVERRIDE
+#  no perfil do usuário (data_local.override_dir), que VENCE o bundle read-only.
+#  Nada é reinstalado: uma base corrompida/desatualizada vira um download
+#  verificado por hash (§18 — "reparar sem reinstalar").
+# ============================================================================
+
+MANIFESTO_PATH = _AQUI / "manifest.json"
+
+
+def carregar_manifesto(caminho: Path | None = None) -> dict:
+    """Lê o manifesto embarcado (ou outro arquivo). {} em qualquer falha — nunca levanta."""
+    p = Path(caminho) if caminho else MANIFESTO_PATH
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            m = json.load(f)
+        return m if isinstance(m, dict) else {}
+    except Exception:
+        logger.warning("[RECURSOS] não foi possível ler o manifesto %s", p, exc_info=True)
+        return {}
+
+
+def _versao_maior(remota: str, local: str) -> bool:
+    """True se 'remota' > 'local' comparando campos numéricos (ex. '2026.11' > '2026.10').
+    Degrada para comparação textual se não for numérico."""
+    def _tup(v):
+        partes = str(v).replace("-", ".").split(".")
+        try:
+            return tuple(int(x) for x in partes)
+        except Exception:
+            return None
+    tr, tl = _tup(remota), _tup(local)
+    if tr is not None and tl is not None:
+        # normaliza o comprimento preenchendo com zeros à direita
+        n = max(len(tr), len(tl))
+        tr = tr + (0,) * (n - len(tr))
+        tl = tl + (0,) * (n - len(tl))
+        return tr > tl
+    return str(remota) > str(local)
+
+
+def verificar_atualizacoes(manifesto_remoto: dict, manifesto_local: dict | None = None) -> list:
+    """Compara o manifesto REMOTO com o LOCAL (embarcado) e devolve a lista do que atualizar:
+    [{chave, versao_local, versao_remota, arquivo, sha256, obrigatorio}]. Um recurso entra se a
+    versão remota for maior OU se existir remotamente e não localmente. Nunca levanta → [] em falha."""
+    try:
+        loc = manifesto_local if manifesto_local is not None else carregar_manifesto()
+        r_rec = (manifesto_remoto or {}).get("recursos", {}) or {}
+        l_rec = (loc or {}).get("recursos", {}) or {}
+        pendentes = []
+        for chave, r in r_rec.items():
+            if not isinstance(r, dict):
+                continue
+            v_rem = str(r.get("versao", ""))
+            l = l_rec.get(chave) or {}
+            v_loc = str(l.get("versao", ""))
+            if (not v_loc) or _versao_maior(v_rem, v_loc):
+                pendentes.append({
+                    "chave": chave,
+                    "versao_local": v_loc or "(ausente)",
+                    "versao_remota": v_rem,
+                    "arquivo": r.get("arquivo", ""),
+                    "sha256": r.get("sha256", ""),
+                    "obrigatorio": bool(r.get("obrigatorio", False)),
+                })
+        return pendentes
+    except Exception:
+        logger.warning("[RECURSOS] comparação de manifestos falhou.", exc_info=True)
+        return []
+
+
+def _sha256_arquivo(caminho: Path) -> str:
+    h = hashlib.sha256()
+    with open(caminho, "rb") as f:
+        for bloco in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(bloco)
+    return h.hexdigest()
+
+
+def baixar_e_verificar(url: str, destino: Path, sha256: str = "", timeout: int = 60) -> dict:
+    """Baixa `url` para `destino` de forma ATÔMICA (grava em .part e só então renomeia) e, se
+    `sha256` for informado, VALIDA a integridade — descartando o arquivo se não bater (§18/§45).
+    Devolve {ok, caminho, bytes, sha256, detalhe}. Nunca levanta."""
+    import urllib.request
+    destino = Path(destino)
+    try:
+        destino.parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    tmp = None
+    try:
+        fd, tmp_nome = tempfile.mkstemp(prefix=destino.name + ".", suffix=".part", dir=str(destino.parent))
+        os.close(fd)
+        tmp = Path(tmp_nome)
+        req = urllib.request.Request(url, headers={"User-Agent": "OpenRotas-Desktop"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp, open(tmp, "wb") as out:
+            while True:
+                bloco = resp.read(1024 * 256)
+                if not bloco:
+                    break
+                out.write(bloco)
+        digest = _sha256_arquivo(tmp)
+        if sha256 and digest.lower() != str(sha256).lower():
+            try:
+                tmp.unlink()
+            except Exception:
+                pass
+            return {"ok": False, "caminho": None, "bytes": 0, "sha256": digest,
+                    "detalhe": "hash não confere (esperado %s, obtido %s) — descartado" % (sha256[:12], digest[:12])}
+        tam = tmp.stat().st_size
+        os.replace(str(tmp), str(destino))      # troca atômica
+        return {"ok": True, "caminho": str(destino), "bytes": tam, "sha256": digest,
+                "detalhe": "verificado por sha256" if sha256 else "baixado (sem sha256 para verificar)"}
+    except Exception as e:
+        try:
+            if tmp and tmp.exists():
+                tmp.unlink()
+        except Exception:
+            pass
+        logger.warning("[RECURSOS] download de %s falhou.", url, exc_info=True)
+        return {"ok": False, "caminho": None, "bytes": 0, "sha256": "", "detalhe": "erro: %s" % e}
+
+
+def atualizar(manifesto_remoto: dict, base_url: str, apenas=None) -> list:
+    """Aplica as atualizações pendentes: baixa cada recurso mudado de `base_url`/arquivo para o
+    diretório de override no perfil do usuário e verifica por sha256. `apenas` (iterável de chaves)
+    limita o que atualizar. Devolve a lista de resultados por recurso. Não levanta."""
+    cfg, reg = _registry()
+    pendentes = verificar_atualizacoes(manifesto_remoto)
+    if apenas is not None:
+        apenas = set(apenas)
+        pendentes = [p for p in pendentes if p["chave"] in apenas]
+    resultados = []
+    for p in pendentes:
+        arq = p.get("arquivo") or ""
+        if not arq:
+            resultados.append({"chave": p["chave"], "ok": False, "detalhe": "sem nome de arquivo no manifesto"})
+            continue
+        url = base_url.rstrip("/") + "/" + arq
+        destino = reg.override_dir / arq
+        r = baixar_e_verificar(url, destino, p.get("sha256", ""))
+        reg.liberar_memoria()               # invalida cache em memória para reler a cópia nova
+        resultados.append({"chave": p["chave"], "ok": r["ok"], "arquivo": arq,
+                           "versao": p["versao_remota"], "detalhe": r["detalhe"], "caminho": r.get("caminho")})
+    return resultados
+
+
 def _cli(argv=None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
     cmd = argv[0] if argv else "status"
@@ -168,7 +323,14 @@ def _cli(argv=None) -> int:
         v = verificar()
         print("integridade OK" if v["ok"] else "problemas: %s | faltam: %s" % (v["problemas"], v["faltam_obrigatorios"]))
         return 0 if v["ok"] else 1
-    print("uso: resource_manager.py [status|verificar]")
+    if cmd == "manifesto":
+        m = carregar_manifesto()
+        rec = m.get("recursos", {})
+        print("Manifesto embarcado (schema %s, release de dados '%s'):" % (m.get("schema"), m.get("data_release_tag")))
+        for ch, r in rec.items():
+            print("  %-22s versao=%-9s %s" % (ch, r.get("versao"), "obrigatório" if r.get("obrigatorio") else "opcional"))
+        return 0
+    print("uso: resource_manager.py [status|verificar|manifesto]")
     return 2
 
 

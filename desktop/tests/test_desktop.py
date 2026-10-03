@@ -12,12 +12,14 @@ _DESKTOP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_DESKTOP, "app"))
 sys.path.insert(0, _DESKTOP)
 sys.path.insert(0, os.path.join(_DESKTOP, "data_local"))
+sys.path.insert(0, os.path.join(_DESKTOP, "telemetry"))
 
 import desktop_config as cfg          # noqa: E402
 import diagnostics                    # noqa: E402
 from engines import osrm_manager as osrm   # noqa: E402
 import local_data                     # noqa: E402
 from resources import resource_manager as rm   # noqa: E402
+import exec_profile                   # noqa: E402
 
 
 # ------------------------------- desktop_config -------------------------------
@@ -107,6 +109,17 @@ def test_offline_pronto_estrutura(reg):
 def test_osrm_brasil_e_opcional_ausente(reg):
     assert reg.existe("osrm_brasil") is False
 
+def test_override_vence_o_bundle(tmp_path):
+    # Uma cópia reparada/atualizada no diretório de override do perfil do usuário tem
+    # prioridade sobre a base embarcada read-only (§18/§19/§45).
+    r = local_data.LocalDataRegistry(cfg.app_root(), tmp_path / "data_local")
+    bundle = r.caminho("municipios")
+    assert "data_local" not in str(bundle)          # sem override → aponta para o bundle
+    ov = r.override_dir / "municipios.parquet"
+    ov.parent.mkdir(parents=True, exist_ok=True)
+    ov.write_text("reparado")
+    assert r.caminho("municipios") == ov            # com override → vence o bundle
+
 
 # ----------------------------- resource_manager ------------------------------
 def test_rm_status_lista_recursos():
@@ -133,6 +146,100 @@ def test_rm_provisionar_sem_url_e_noop():
 def test_rm_resumo_ambiente_texto():
     txt = rm.resumo_ambiente()
     assert "Recursos do software" in txt and "municipios" in txt
+
+
+# ---------------------- resource_manager: manifesto (§18/§19/§45) ------------
+def test_rm_manifesto_embarcado_valido():
+    m = rm.carregar_manifesto()
+    assert m.get("schema") == 1
+    rec = m.get("recursos", {})
+    assert "municipios" in rec and "osrm_brasil" in rec
+    assert all("versao" in r and "arquivo" in r for r in rec.values())
+
+def test_rm_versao_maior_numerica():
+    assert rm._versao_maior("2026.11", "2026.10") is True
+    assert rm._versao_maior("2026.10", "2026.10") is False
+    assert rm._versao_maior("2026.9", "2026.10") is False   # compara por campo, não texto
+
+def test_rm_verificar_atualizacoes_detecta_versao_nova():
+    local = {"recursos": {"municipios": {"versao": "2026.10", "arquivo": "municipios.parquet"}}}
+    remoto = {"recursos": {"municipios": {"versao": "2026.11", "arquivo": "municipios.parquet",
+                                          "sha256": "abc", "obrigatorio": True}}}
+    pend = rm.verificar_atualizacoes(remoto, local)
+    assert len(pend) == 1 and pend[0]["chave"] == "municipios"
+    assert pend[0]["versao_remota"] == "2026.11" and pend[0]["obrigatorio"] is True
+
+def test_rm_verificar_atualizacoes_sem_mudanca():
+    mesmo = {"recursos": {"municipios": {"versao": "2026.10", "arquivo": "municipios.parquet"}}}
+    assert rm.verificar_atualizacoes(mesmo, mesmo) == []
+
+def test_rm_baixar_e_verificar_rejeita_hash_errado(tmp_path):
+    origem = tmp_path / "origem.bin"
+    origem.write_bytes(b"conteudo-de-teste")
+    destino = tmp_path / "destino.bin"
+    r = rm.baixar_e_verificar(origem.as_uri(), destino, sha256="0" * 64)
+    assert r["ok"] is False and not destino.exists()        # hash não bate → descartado
+
+def test_rm_baixar_e_verificar_aceita_hash_certo(tmp_path):
+    import hashlib
+    dados = b"conteudo-de-teste-ok"
+    origem = tmp_path / "origem.bin"
+    origem.write_bytes(dados)
+    destino = tmp_path / "destino.bin"
+    h = hashlib.sha256(dados).hexdigest()
+    r = rm.baixar_e_verificar(origem.as_uri(), destino, sha256=h)
+    assert r["ok"] is True and destino.exists() and destino.read_bytes() == dados
+
+
+# ---------------------------- telemetry: exec_profile (§42) ------------------
+def test_telemetria_registra_e_lista(tmp_path):
+    arq = tmp_path / "t.jsonl"
+    assert exec_profile.registrar({"evento": "rota", "ms": 12.0, "ok": True}, caminho=arq) is True
+    evs = exec_profile.listar(10, caminho=arq)
+    assert len(evs) == 1 and evs[0]["evento"] == "rota"
+    assert "ts" in evs[0] and "iso" in evs[0]       # carimbo automático
+
+def test_telemetria_cronometro_mede_e_registra(tmp_path):
+    arq = tmp_path / "t.jsonl"
+    with exec_profile.cronometro("lote", caminho=arq, motor="osrm_local"):
+        pass
+    evs = exec_profile.listar(10, caminho=arq)
+    assert len(evs) == 1
+    assert evs[0]["evento"] == "lote" and evs[0]["ok"] is True
+    assert evs[0]["motor"] == "osrm_local" and isinstance(evs[0]["ms"], (int, float))
+
+def test_telemetria_cronometro_registra_erro_e_relevanta(tmp_path):
+    arq = tmp_path / "t.jsonl"
+    with pytest.raises(ValueError):
+        with exec_profile.cronometro("rota", caminho=arq):
+            raise ValueError("falhou")
+    evs = exec_profile.listar(10, caminho=arq)
+    assert len(evs) == 1 and evs[0]["ok"] is False and "ValueError" in evs[0]["erro"]
+
+def test_telemetria_resumo_agrega(tmp_path):
+    arq = tmp_path / "t.jsonl"
+    for ms in (10.0, 20.0, 30.0, 40.0):
+        exec_profile.registrar({"evento": "rota", "ms": ms, "ok": True}, caminho=arq)
+    exec_profile.registrar({"evento": "rota", "ms": 50.0, "ok": False}, caminho=arq)
+    r = exec_profile.resumo(caminho=arq)
+    assert r["total"] == 5 and r["ok"] == 4 and r["erro"] == 1
+    assert r["por_evento"]["rota"] == 5
+    t = r["tempos"]["rota"]
+    assert t["n"] == 5 and t["max_ms"] == 50.0 and 10.0 <= t["media_ms"] <= 50.0
+
+def test_telemetria_resumo_vazio(tmp_path):
+    r = exec_profile.resumo(caminho=tmp_path / "inexistente.jsonl")
+    assert r["total"] == 0 and r["por_evento"] == {} and r["tempos"] == {}
+
+def test_telemetria_limpar(tmp_path):
+    arq = tmp_path / "t.jsonl"
+    exec_profile.registrar({"evento": "x"}, caminho=arq)
+    assert arq.exists()
+    assert exec_profile.limpar(caminho=arq) is True and not arq.exists()
+
+def test_telemetria_nunca_levanta_em_caminho_invalido():
+    # diretório inexistente/sem permissão não deve propagar exceção
+    assert exec_profile.registrar({"evento": "x"}, caminho="/proc/openrotas-nao-existe/t.jsonl") is False
 
 
 # -------------------------------- diagnostics --------------------------------
