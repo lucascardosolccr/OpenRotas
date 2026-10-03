@@ -1,0 +1,92 @@
+# ============================================================================
+#  OpenRotas Desktop — build do instalador Windows na NUVEM do GitHub (grátis).
+#
+#  Roda num runner WINDOWS do GitHub Actions (sem precisar do seu PC, sem cartão),
+#  empacota o app (PyInstaller onedir), gera o instalador (Inno Setup) e publica o
+#  "OpenRotas Setup.exe" como ARTEFATO para download.
+#
+#  Como usar: GitHub → aba Actions → "build-desktop" → "Run workflow" (escolha o branch) →
+#  aguarde (~15-30 min) → baixe o artefato "OpenRotas-Setup".
+#
+#  Só mexe na edição desktop (pasta desktop/). NÃO afeta a aplicação web.
+# ============================================================================
+name: build-desktop
+
+on:
+  workflow_dispatch: {}   # botão manual (não roda sozinho a cada push)
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Instalar Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependências do desktop
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r desktop/requirements-desktop.txt
+
+      - name: Instalar Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+
+      - name: Empacotar (PyInstaller onedir)
+        id: pyinstaller
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          python -m PyInstaller packaging/launcher.spec --noconfirm `
+            --distpath build/dist --workpath build/work 2>&1 | Tee-Object -FilePath build_pyinstaller.log
+          if (-not (Test-Path "build/dist/OpenRotas/OpenRotas.exe")) {
+            Write-Error "PyInstaller não gerou OpenRotas.exe (ver build_pyinstaller.log)"
+          }
+
+      - name: Log do PyInstaller (sempre, útil se falhar)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: desktop/build_pyinstaller.log
+          if-no-files-found: ignore
+
+      - name: Pasta do programa (onedir — fallback se o Inno falhar)
+        if: always() && steps.pyinstaller.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenRotas-onedir
+          path: desktop/build/dist/OpenRotas/**
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Validar bundle (autodiagnóstico)
+        working-directory: desktop
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          & "build/dist/OpenRotas/OpenRotas.exe" --diagnostico --silencioso
+          Write-Host "diagnóstico exit code: $LASTEXITCODE"
+
+      - name: Gerar instalador (Inno Setup)
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer/openrotas.iss
+
+      - name: Publicar o instalador
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenRotas-Setup
+          path: desktop/installer/dist_installer/*.exe
+          if-no-files-found: error
+          retention-days: 30

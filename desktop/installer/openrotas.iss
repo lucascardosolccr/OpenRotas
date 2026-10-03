@@ -42,7 +42,8 @@ Name: "desktopicon"; Description: "Criar atalho na Área de Trabalho"; GroupDesc
 
 [Files]
 ; A pasta onedir inteira do PyInstaller (app + runtime Python + libs + bases embarcadas).
-Source: "build\dist\OpenRotas\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+; Caminho relativo à pasta deste .iss (desktop\installer\) → sobe um nível até desktop\build\...
+Source: "..\build\dist\OpenRotas\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 ; Exemplo de configuração (o app cria o real em %LOCALAPPDATA% no 1º uso).
 Source: "..\config\desktop.example.json"; DestDir: "{app}\config"; Flags: ignoreversion
 
