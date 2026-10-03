@@ -41,16 +41,18 @@ jobs:
           docker image prune -af || true
           echo "=== disco após limpeza ===" ; df -h / /mnt
 
-      - name: Aumentar memória virtual (swap) — evita OOM no osrm-extract
+      - name: Aumentar memória virtual (swap) — no volume RAIZ, deixando /mnt livre p/ o extract
         run: |
-          # O osrm-extract/partition do Brasil passa dos ~16 GB de RAM do runner (exit 137 = OOM).
-          # Swapfile grande no volume maior (/mnt) dá folga; fica mais lento, mas conclui.
+          # A tentativa anterior falhou no osrm-extract com EXIT CODE 6 (erro de I/O do OSRM),
+          # não 137/OOM: o swapfile de 30 GB estava em /mnt e disputava o espaço que o extract
+          # usa para os arquivos intermediários .osrm* do Brasil inteiro → disco cheio.
+          # Correção: swap fica no volume RAIZ (/), e /mnt fica INTEIRO para o processamento.
           sudo swapoff -a || true
-          sudo fallocate -l 30G /mnt/swapfile
-          sudo chmod 600 /mnt/swapfile
-          sudo mkswap /mnt/swapfile
-          sudo swapon /mnt/swapfile
-          echo "=== memória + swap ===" ; free -h ; df -h /mnt
+          sudo fallocate -l 18G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          echo "=== memória + swap ===" ; free -h ; echo "--- / ---"; df -h / ; echo "--- /mnt ---"; df -h /mnt
 
       - name: Baixar o mapa do Brasil (no disco grande /mnt)
         run: |
