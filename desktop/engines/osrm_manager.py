@@ -35,6 +35,21 @@ logger = logging.getLogger("openrotas.desktop.osrm")
 URL_PADRAO = "http://localhost:5000"
 
 
+def _telemetria(evento: str, **campos) -> None:
+    """Registra um evento no perfil de execução local (§42), se o módulo estiver disponível.
+    Import defensivo (telemetria é opcional): osrm_manager continua stdlib-only e nunca quebra
+    por causa disso."""
+    try:
+        import sys as _sys
+        _tel = str(Path(__file__).resolve().parents[1] / "telemetry")
+        if _tel not in _sys.path:
+            _sys.path.insert(0, _tel)
+        import exec_profile
+        exec_profile.registrar(dict(campos, evento=evento, tipo="osrm"))
+    except Exception:
+        pass
+
+
 @dataclass
 class ResultadoMotor:
     url: str | None            # URL a usar como OSRM_URL (None → mantém o atual/público)
@@ -113,14 +128,19 @@ def _subir_docker(cfg: dict) -> ResultadoMotor:
            "osrm-routed", "--algorithm", algoritmo, "-i", "0.0.0.0", "-p", "5000",
            "/data/%s" % graph_base]
     logger.info("[OSRM] subindo via Docker: %s", " ".join(cmd))
+    _t0 = time.perf_counter()
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception as e:
+        _telemetria("docker_start", ok=False, detalhe="popen falhou")
         return ResultadoMotor(url=None, modo="docker", ativo=False,
                               detalhe="falha ao iniciar o Docker: %s" % e)
     if _esperar_health(url, timeout_s=float(cfg.get("start_timeout_s", 90))):
+        _telemetria("docker_start", ok=True, ms=round((time.perf_counter() - _t0) * 1000.0, 1))
         return ResultadoMotor(url=url, modo="docker", ativo=True, gerenciado=True, processo=proc,
                               detalhe="OSRM local no ar (gerenciado)")
+    _telemetria("docker_start", ok=False, ms=round((time.perf_counter() - _t0) * 1000.0, 1),
+                detalhe="health-check timeout")
     # Não respondeu a tempo — encerra o que subimos e deixa cair no público.
     try:
         proc.terminate()

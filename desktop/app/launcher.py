@@ -176,7 +176,42 @@ def _verificar_atualizacoes(aplicar: bool = False) -> int:
     return 0
 
 
+_AJUDA = """OpenRotas Desktop — uso:
+  OpenRotas.exe                 abre o aplicativo (janela nativa)
+  OpenRotas.exe --diagnostico   autodiagnóstico (bases, cache, motor, offline, atualização)
+  OpenRotas.exe --recursos      status dos recursos (Gerenciador de Recursos)
+  OpenRotas.exe --atualizar     verifica atualização do app e das bases
+  OpenRotas.exe --atualizar --baixar   aplica as atualizações pendentes (baixa/verifica)
+  OpenRotas.exe --reparar       repara/atualiza tudo que puder, sem reinstalar (§18)
+  OpenRotas.exe --help          esta ajuda
+Flags auxiliares: --silencioso (diagnóstico sem imprimir)."""
+
+
+def _reparar() -> int:
+    """Reparo de um clique (§18): verifica e conserta o que der (bases/grafo) sem reinstalar."""
+    from resources import resource_manager as rm
+    conf = cfg.carregar_config_usuario() or {}
+    rel = rm.reparar_tudo(osrm_cfg=conf.get("osrm"), base_url=str(conf.get("dados_base_url", "") or ""))
+    print("OpenRotas — Reparo/Atualização")
+    print("=" * 48)
+    v = rel["verificacao"]
+    print("Integridade: %s" % ("OK" if v["ok"] else "problemas"))
+    if v["faltam_obrigatorios"]:
+        print("  faltam (obrigatórios, exigem reinstalar): %s" % ", ".join(v["faltam_obrigatorios"]))
+    for p in v["problemas"]:
+        print("  corrompido (exige reinstalar): %s" % p["chave"])
+    for b in rel["bases_atualizadas"]:
+        print("  base %s: %s (%s)" % (b["chave"], "✓" if b["ok"] else "✗", b.get("detalhe", "")))
+    if rel["grafo"] is not None:
+        print("  grafo: %s (%s)" % ("✓" if rel["grafo"]["ok"] else "✗", rel["grafo"].get("detalhe", "")))
+    print("\nResultado: %s" % ("tudo OK ✓" if rel["ok"] else "pendências acima"))
+    return 0 if rel["ok"] else 1
+
+
 def main() -> int:
+    if "--help" in sys.argv or "-h" in sys.argv:
+        print(_AJUDA)
+        return 0
     paths = cfg.ensure_user_dirs()
     _configurar_logs(paths)
 
@@ -197,6 +232,10 @@ def main() -> int:
     # Com --baixar, aplica o que puder (baixa bases pendentes e/ou o instalador do app).
     if "--atualizar" in sys.argv:
         return _verificar_atualizacoes(aplicar=("--baixar" in sys.argv))
+
+    # Modo REPARAR (§18): verifica e conserta tudo que puder (bases/grafo) sem reinstalar, e sai.
+    if "--reparar" in sys.argv:
+        return _reparar()
 
     log.info("OpenRotas Desktop iniciando. Config: %s", cfg.resumo_config())
 

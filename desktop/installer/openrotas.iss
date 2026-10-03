@@ -59,6 +59,7 @@ Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
 Name: "{group}\Diagnóstico do OpenRotas"; Filename: "{app}\{#AppExe}"; Parameters: "--diagnostico"
 Name: "{group}\Recursos do OpenRotas"; Filename: "{app}\{#AppExe}"; Parameters: "--recursos"
 Name: "{group}\Verificar atualizações"; Filename: "{app}\{#AppExe}"; Parameters: "--atualizar"
+Name: "{group}\Reparar instalação"; Filename: "{app}\{#AppExe}"; Parameters: "--reparar"
 Name: "{group}\Desinstalar {#AppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
 

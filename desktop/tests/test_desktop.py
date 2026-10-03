@@ -148,6 +148,23 @@ def test_rm_resumo_ambiente_texto():
     txt = rm.resumo_ambiente()
     assert "Recursos do software" in txt and "municipios" in txt
 
+def test_rm_reparar_tudo_sem_base_url():
+    # sem base_url e com as essenciais presentes: nada a baixar, verificação OK, ok=True
+    rel = rm.reparar_tudo(osrm_cfg={}, base_url="")
+    assert rel["verificacao"]["ok"] is True
+    assert rel["bases_atualizadas"] == [] and rel["grafo"] is None and rel["ok"] is True
+
+def test_rm_reparar_tudo_manifesto_remoto_ausente_nao_quebra(monkeypatch):
+    # manifesto remoto indisponível → {} → sem atualizações, não levanta, ok continua True
+    monkeypatch.setattr(rm, "carregar_manifesto_remoto", lambda *a, **k: {})
+    rel = rm.reparar_tudo(osrm_cfg={}, base_url="http://exemplo.invalido/x")
+    assert rel["ok"] is True and rel["bases_atualizadas"] == []
+
+def test_osrm_telemetria_nunca_quebra():
+    from engines import osrm_manager as _osrm
+    # helper defensivo: não deve levantar mesmo com campos arbitrários
+    _osrm._telemetria("teste", ok=True, ms=1.0)
+
 
 # ---------------------- resource_manager: manifesto (§18/§19/§45) ------------
 def test_rm_manifesto_embarcado_valido():
