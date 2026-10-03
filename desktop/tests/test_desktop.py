@@ -171,6 +171,30 @@ def test_launcher_tel_nunca_quebra():
     launcher._tel("teste_launcher", ok=True, ms=2.0)
 
 
+# ------------------------------- benchmark (§9/§29) --------------------------
+def test_benchmark_exporta_json(tmp_path):
+    from engines import benchmark as bm
+    resultados = [{"rotulo": "OSRM local", "taxa_sucesso_pct": 100.0, "lat_media_s": 0.03},
+                  {"rotulo": "OSRM público", "taxa_sucesso_pct": 90.0, "lat_media_s": 0.8}]
+    out = tmp_path / "bench.json"
+    assert bm.exportar_json(resultados, str(out)) is True
+    import json as _json
+    dados = _json.loads(out.read_text(encoding="utf-8"))
+    assert "gerado_em" in dados and len(dados["resultados"]) == 2
+    assert dados["resultados"][0]["rotulo"] == "OSRM local"
+
+def test_benchmark_registrar_telemetria_nunca_quebra():
+    from engines import benchmark as bm
+    # não deve levantar mesmo com resultados mínimos/estranhos
+    bm.registrar_telemetria([{"rotulo": "x", "sucessos": 1, "lat_media_s": 0.05}])
+    bm.registrar_telemetria([{}])
+
+def test_benchmark_carregar_pares_amostra():
+    from engines import benchmark as bm
+    pares = bm.carregar_pares(bm.SAMPLE)
+    assert len(pares) >= 5 and len(pares[0]) == 5   # nome + 4 coords
+
+
 # ---------------------- resource_manager: manifesto (§18/§19/§45) ------------
 def test_rm_manifesto_embarcado_valido():
     m = rm.carregar_manifesto()

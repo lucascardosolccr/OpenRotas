@@ -28,6 +28,34 @@ AQUI = os.path.dirname(os.path.abspath(__file__))
 SAMPLE = os.path.join(AQUI, "sample_pairs.csv")
 
 
+def registrar_telemetria(resultados) -> None:
+    """Grava cada resultado do benchmark no perfil de execução local (§29/§42) — assim a
+    EVIDÊNCIA do ganho (local × público) fica persistida e aparece no Diagnóstico. Import
+    defensivo; nunca levanta."""
+    try:
+        _tel = os.path.join(os.path.dirname(AQUI), "telemetry")
+        if _tel not in sys.path:
+            sys.path.insert(0, _tel)
+        import exec_profile
+        for r in resultados:
+            exec_profile.registrar(dict(r, evento="benchmark", tipo="benchmark",
+                                        ms=(r.get("lat_media_s", 0) or 0) * 1000.0,
+                                        ok=r.get("sucessos", 0) > 0))
+    except Exception:
+        pass
+
+
+def exportar_json(resultados, caminho: str) -> bool:
+    """Exporta os resultados para um JSON (arquivar/comparar ao longo do tempo). False em falha."""
+    try:
+        with open(caminho, "w", encoding="utf-8") as f:
+            json.dump({"gerado_em": time.strftime("%Y-%m-%dT%H:%M:%S"), "resultados": resultados},
+                      f, ensure_ascii=False, indent=2)
+        return True
+    except Exception:
+        return False
+
+
 def carregar_pares(caminho: str):
     pares = []
     try:
@@ -99,6 +127,7 @@ def main(argv=None):
     ap.add_argument("--rotulo", default="OSRM")
     ap.add_argument("--amostra", default=SAMPLE, help="CSV de pares O/D")
     ap.add_argument("--pausa", type=float, default=0.0, help="segundos entre chamadas (use >1 no público)")
+    ap.add_argument("--json", dest="json_out", default="", help="arquivo p/ exportar os resultados (JSON)")
     args = ap.parse_args(argv)
 
     pares = carregar_pares(args.amostra)
@@ -113,6 +142,11 @@ def main(argv=None):
         resultados.append(medir("http://localhost:5000", "OSRM local", pares, 0.0))
         resultados.append(medir("http://router.project-osrm.org", "OSRM público", pares, 1.2))
     _tabela(resultados)
+    registrar_telemetria(resultados)            # persiste a evidência (§29/§42)
+    if args.json_out:
+        ok = exportar_json(resultados, args.json_out)
+        print("\nResultados exportados para %s" % args.json_out if ok
+              else "\nFalha ao exportar JSON para %s" % args.json_out)
     return 0
 
 
