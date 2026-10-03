@@ -29,49 +29,66 @@ permissions:
 jobs:
   graph:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # O build do Brasil inteiro, apoiado em swap, é LENTO: a tentativa anterior bateu no limite
+    # de 120 min durante o osrm-extract. Damos a folga máxima do GitHub (6 h) para concluir.
+    timeout-minutes: 350
     steps:
       - name: Liberar espaço em disco (o grafo do Brasil é grande)
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
-          df -h /
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
+                      /usr/local/lib/node_modules /opt/az /usr/share/swift || true
+          docker image prune -af || true
+          echo "=== disco após limpeza ===" ; df -h / /mnt
 
       - name: Aumentar memória virtual (swap) — evita OOM no osrm-extract
         run: |
-          # O osrm-extract do Brasil inteiro passa dos 16 GB de RAM do runner (exit 137 = OOM).
-          # Um swapfile grande no volume maior (/mnt) dá folga; fica mais lento, mas conclui.
+          # O osrm-extract/partition do Brasil passa dos ~16 GB de RAM do runner (exit 137 = OOM).
+          # Swapfile grande no volume maior (/mnt) dá folga; fica mais lento, mas conclui.
           sudo swapoff -a || true
-          sudo fallocate -l 24G /mnt/swapfile
+          sudo fallocate -l 30G /mnt/swapfile
           sudo chmod 600 /mnt/swapfile
           sudo mkswap /mnt/swapfile
           sudo swapon /mnt/swapfile
           echo "=== memória + swap ===" ; free -h ; df -h /mnt
 
-      - name: Baixar o mapa do Brasil
+      - name: Baixar o mapa do Brasil (no disco grande /mnt)
         run: |
-          mkdir -p data
-          curl -L --retry 3 -o data/brazil-latest.osm.pbf "${{ github.event.inputs.pbf_url }}"
-          ls -lh data
+          # Processa em /mnt (≈80 GB livres), não em / (volume menor): evita ficar sem espaço
+          # nos arquivos intermediários .osrm* do país inteiro.
+          sudo mkdir -p /mnt/osrm && sudo chown "$USER" /mnt/osrm
+          cd /mnt/osrm
+          curl -L --retry 3 -o brazil-latest.osm.pbf "${{ github.event.inputs.pbf_url }}"
+          ls -lh ; df -h /mnt
 
-      - name: Processar OSRM (MLD) via Docker
+      # Fases separadas para pinpoint do que falhar, com disco/memória entre elas.
+      - name: OSRM extract (MLD)
         run: |
-          cd data
+          cd /mnt/osrm
           docker run --rm -t -v "$PWD:/data" osrm/osrm-backend \
             osrm-extract -p /opt/car.lua /data/brazil-latest.osm.pbf
           rm -f brazil-latest.osm.pbf          # libera ~1,5 GB antes de particionar
+          echo "=== após extract ===" ; free -h ; df -h /mnt
+
+      - name: OSRM partition (MLD)
+        run: |
+          cd /mnt/osrm
           docker run --rm -t -v "$PWD:/data" osrm/osrm-backend \
             osrm-partition /data/brazil-latest.osrm
+          echo "=== após partition ===" ; free -h ; df -h /mnt
+
+      - name: OSRM customize (MLD)
+        run: |
+          cd /mnt/osrm
           docker run --rm -t -v "$PWD:/data" osrm/osrm-backend \
             osrm-customize /data/brazil-latest.osrm
-          df -h /
+          echo "=== após customize ===" ; free -h ; df -h /mnt
 
       - name: Empacotar o grafo
         run: |
-          cd data
-          tar -czf ../brazil-osrm-mld.tar.gz brazil-latest.osrm*
-          cd ..
-          ls -lh brazil-osrm-mld.tar.gz
+          cd /mnt/osrm
+          tar -czf "$GITHUB_WORKSPACE/brazil-osrm-mld.tar.gz" brazil-latest.osrm*
+          ls -lh "$GITHUB_WORKSPACE/brazil-osrm-mld.tar.gz"
 
       - name: Publicar na Release
         uses: softprops/action-gh-release@v2
