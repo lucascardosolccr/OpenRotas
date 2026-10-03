@@ -133,6 +133,13 @@ def main() -> int:
         import diagnostics
         return diagnostics.executar(verbose=("--silencioso" not in sys.argv))
 
+    # Modo RECURSOS: lista o status dos recursos (Gerenciador de Recursos) e sai.
+    if "--recursos" in sys.argv:
+        from resources import resource_manager as rm
+        _oc = (cfg.carregar_config_usuario() or {}).get("osrm")
+        print(rm.resumo_ambiente(_oc))
+        return 0
+
     log.info("OpenRotas Desktop iniciando. Config: %s", cfg.resumo_config())
 
     # [MOTOR LOCAL - Etapa 3] Garante um OSRM local (detecta/sobe/valida) conforme a config e

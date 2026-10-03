@@ -55,6 +55,8 @@ desktop/
 │   └── sample_pairs.csv     # 10 pares O/D reais do Brasil p/ o benchmark
 ├── data_local/              # camada de DADOS LOCAIS (Etapa 4)
 │   └── local_data.py        # registro + lazy loading + índice IBGE + integridade + offline
+├── resources/               # GERENCIADOR DE RECURSOS (§3/§4/§17/§18/§19/§24)
+│   └── resource_manager.py  # status/verificar/provisionar/reparar (compõe local_data + osrm)
 ├── tests/                   # suíte da edição desktop (Etapa 6) — roda em qualquer SO
 │   └── test_desktop.py      # 16 testes: config, perfil, motor, dados, diagnóstico
 ├── config/

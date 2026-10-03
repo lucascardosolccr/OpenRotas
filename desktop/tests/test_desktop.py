@@ -17,6 +17,7 @@ import desktop_config as cfg          # noqa: E402
 import diagnostics                    # noqa: E402
 from engines import osrm_manager as osrm   # noqa: E402
 import local_data                     # noqa: E402
+from resources import resource_manager as rm   # noqa: E402
 
 
 # ------------------------------- desktop_config -------------------------------
@@ -105,6 +106,33 @@ def test_offline_pronto_estrutura(reg):
 
 def test_osrm_brasil_e_opcional_ausente(reg):
     assert reg.existe("osrm_brasil") is False
+
+
+# ----------------------------- resource_manager ------------------------------
+def test_rm_status_lista_recursos():
+    linhas = rm.status()
+    chaves = {r["chave"] for r in linhas}
+    assert {"municipios", "osrm_brasil"} <= chaves
+    mun = next(r for r in linhas if r["chave"] == "municipios")
+    assert mun["instalado"] is True and mun["estado"] == rm.OK and mun["obrigatorio"] is True
+    assert mun["modulo"]  # cada recurso sabe qual módulo o usa
+
+def test_rm_osrm_opcional_ausente():
+    g = next(r for r in rm.status() if r["chave"] == "osrm_brasil")
+    assert g["tipo"] == "provisionável" and g["obrigatorio"] is False
+    assert g["instalado"] is False and g["estado"] == rm.OPCIONAL_AUSENTE
+
+def test_rm_verificar_essenciais_ok():
+    v = rm.verificar()
+    assert v["ok"] is True and v["faltam_obrigatorios"] == []
+
+def test_rm_provisionar_sem_url_e_noop():
+    r = rm.provisionar_grafo({})
+    assert r["ok"] is False  # sem graph_url, nada a baixar
+
+def test_rm_resumo_ambiente_texto():
+    txt = rm.resumo_ambiente()
+    assert "Recursos do software" in txt and "municipios" in txt
 
 
 # -------------------------------- diagnostics --------------------------------
