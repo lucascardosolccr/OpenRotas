@@ -27,8 +27,11 @@ import socket
 import logging
 import threading
 
-# Garante que 'desktop/app' esteja no path quando rodado como script solto.
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Garante que 'desktop/app' (módulos soltos: desktop_config/diagnostics) E 'desktop/' (pacote
+# 'engines') estejam no path, tanto rodando como script solto quanto empacotado.
+_AQUI = os.path.dirname(os.path.abspath(__file__))        # .../desktop/app
+sys.path.insert(0, _AQUI)
+sys.path.insert(0, os.path.dirname(_AQUI))                # .../desktop  (para 'import engines...')
 
 import desktop_config as cfg  # noqa: E402
 
@@ -131,6 +134,24 @@ def main() -> int:
         return diagnostics.executar(verbose=("--silencioso" not in sys.argv))
 
     log.info("OpenRotas Desktop iniciando. Config: %s", cfg.resumo_config())
+
+    # [MOTOR LOCAL - Etapa 3] Garante um OSRM local (detecta/sobe/valida) conforme a config e
+    # injeta a URL dele como OSRM_URL — assim o MESMO cliente de rotas da app usa o motor local.
+    # Defensivo: qualquer falha → mantém o OSRM_URL atual/público (zero regressão).
+    motor = None
+    try:
+        import engines.osrm_manager as osrm  # desktop/engines (mesmo diretório-pai no path)
+        _conf = cfg.carregar_config_usuario()
+        motor = osrm.resolver(_conf.get("osrm"), osrm_url_legado=_conf.get("OSRM_URL", "") or "")
+        if motor.url:
+            os.environ["OSRM_URL"] = motor.url   # preparar_secrets_e_env (abaixo) grava no secrets.toml
+        log.info("[OSRM] modo=%s ativo=%s url=%s (%s)", motor.modo, motor.ativo, motor.url, motor.detalhe)
+    except Exception:
+        log.warning("[OSRM] gerenciamento do motor local falhou; usando OSRM público.", exc_info=True)
+
+    import atexit
+    if motor is not None:
+        atexit.register(lambda: __import__("engines.osrm_manager", fromlist=["encerrar"]).encerrar(motor))
 
     env = cfg.preparar_secrets_e_env(paths)
 

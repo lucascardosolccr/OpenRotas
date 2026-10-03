@@ -36,6 +36,13 @@ for _pac in _pacotes_coletar:
     except Exception:
         pass
 hiddenimports += collect_submodules("streamlit")
+# Módulos próprios do desktop (imports em nível de função / via __import__ que a análise
+# estática pode não enxergar) — congela-os explicitamente no bundle.
+hiddenimports += ["desktop_config", "diagnostics", "engines", "engines.osrm_manager"]
+# Amostra de pares O/D do benchmark, servida ao lado do pacote engines.
+_sample = os.path.join(REPO_ROOT, "desktop", "engines", "sample_pairs.csv")
+if os.path.exists(_sample):
+    datas.append((_sample, "engines"))
 
 # --- A APLICAÇÃO e as BASES embarcadas (reutiliza o app web por inteiro, §21/§34) ---
 # Mapeadas para a MESMA estrutura relativa, pois o app as acessa por caminho relativo.
@@ -55,7 +62,9 @@ block_cipher = None
 
 a = Analysis(
     [os.path.join(REPO_ROOT, "desktop", "app", "launcher.py")],
-    pathex=[os.path.join(REPO_ROOT, "desktop", "app"), REPO_ROOT],
+    # pathex inclui desktop/ (pacote 'engines') e desktop/app (módulos soltos) além da raiz.
+    pathex=[os.path.join(REPO_ROOT, "desktop"),
+            os.path.join(REPO_ROOT, "desktop", "app"), REPO_ROOT],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,

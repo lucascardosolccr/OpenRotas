@@ -4,7 +4,18 @@
   "SUPABASE_URL": "https://SEUPROJETO.supabase.co",
   "SUPABASE_ANON_KEY": "eyJhbGciOi...SUA_CHAVE_ANON_PUBLICA",
 
-  "_osrm": "Opcional. Aponte para um OSRM local (ver guias) para rotas rápidas e offline. Deixe vazio para usar o OSRM público online.",
+  "_osrm": "Motor de rotas local (Etapa 3). mode: 'off' = OSRM público online (padrão); 'external' = você já subiu um OSRM (ex.: Docker) em url; 'docker' = o app SOBE o OSRM sozinho a partir de graph_path e o encerra ao fechar. Para rotas rápidas e OFFLINE, use 'docker' ou 'external'.",
+  "osrm": {
+    "mode": "off",
+    "url": "http://localhost:5000",
+    "graph_path": "",
+    "docker_image": "osrm/osrm-backend",
+    "algorithm": "mld",
+    "port": 5000,
+    "start_timeout_s": 90
+  },
+
+  "_osrm_url_legado": "Alternativa simples ao bloco osrm: só a URL (tratada como 'external').",
   "OSRM_URL": "",
 
   "_offline": "true = modo offline (não tenta serviços online; usa só os motores locais configurados).",

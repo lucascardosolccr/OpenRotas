@@ -46,9 +46,13 @@ mais paralelismo **automaticamente**, sem mudar nada.
 ```
 desktop/
 ├── app/
-│   ├── launcher.py          # bootstrapper: sobe o Streamlit local + abre a janela nativa
+│   ├── launcher.py          # bootstrapper: motor local + sobe o Streamlit + janela nativa
 │   ├── desktop_config.py    # hardware, cache persistente, secrets/env (ativa vantagens locais)
 │   └── diagnostics.py       # autodiagnóstico de bases/cache/motor (§17/§18)
+├── engines/                 # MOTOR de rotas local (Etapa 3)
+│   ├── osrm_manager.py      # detecta/sobe/valida um OSRM local; injeta OSRM_URL
+│   ├── benchmark.py         # mede OSRM local × público (§9/§29), stdlib
+│   └── sample_pairs.csv     # 10 pares O/D reais do Brasil p/ o benchmark
 ├── config/
 │   └── desktop.example.json # modelo de config (Supabase, OSRM_URL, offline) — copie p/ o perfil
 ├── scripts/
@@ -116,9 +120,9 @@ Validação formal dessa matriz (clicar cada aba no desktop) faz parte da Etapa 
 - **Etapa 1 — Fundação (ESTA):** scaffold, launcher, config, diagnóstico, spec, instalador, matriz. ✔
 - **Etapa 2 — Build real no Windows:** rodar `build.ps1`, resolver hidden-imports/datas que faltarem
   (builds iterativos, §37), validar a janela e o 1º processamento; ícone/versão/assinatura (§38).
-- **Etapa 3 — Motor de rotas local de 1ª classe (§9/§10):** empacotar/averiguar um OSRM do Brasil
-  servido localmente (ver guias já entregues) **ou** avaliar, com *benchmark* (§9 exige benchmark,
-  não escolha automática), um roteador em processo. Meta: roteamento rápido e **offline**.
+- **Etapa 3 — Motor de rotas local de 1ª classe (§9/§10): ✔ (camada entregue)** — ver seção 8.
+  O desktop agora gerencia um OSRM local (modo `docker`/`external`) e há um harness de benchmark.
+  Pendente, no seu Windows: preparar o grafo do Brasil (guias já entregues) e rodar o benchmark.
 - **Etapa 4 — Dados completos + offline (§6/§12/§32):** avaliar grafos/mapas completos como
   componentes de 1ª classe (instalados à parte em `data_local/`, com *lazy loading* e índices —
   §16), e o modo offline fim-a-fim (fallback local quando sem internet).
@@ -135,7 +139,44 @@ Validação formal dessa matriz (clicar cada aba no desktop) faz parte da Etapa 
 
 ---
 
-## 7. Segurança (§42)
+## 8. Motor de rotas local (Etapa 3) — §9/§10
+
+### Decisão de engenharia (com benchmark, não "no chute")
+O plano (§9) pede avaliar OSMnx/NetworkX/igraph e **fazer benchmark** antes de escolher. Análise:
+
+- **Roteador em processo (NetworkX/OSMnx/igraph):** elegante, mas para a malha do **Brasil inteiro**
+  (milhões de nós/arestas) é *ordens de grandeza* mais lento e teria de reimplementar o que o OSRM
+  já faz bem — snapping de coordenadas à via, restrições de conversão, rotas alternativas. NetworkX
+  em grafo nacional é inviável; igraph/scipy melhoram, mas ainda muito abaixo do OSRM e sem a
+  qualidade de roteamento. Reimplementar OSRM mal violaria "zero perda de precisão".
+- **OSRM (C++) local:** o mesmo motor que o app já consome por HTTP. Rápido (ms/rota), correto, com
+  alternativas — e roda **offline** com o grafo do Brasil. **Escolhido.**
+
+A integração "de 1ª classe": o desktop **gerencia o ciclo de vida** do seu OSRM (sobe/valida/encerra)
+e injeta a URL — sem reescrever o cliente de rotas. Reuso do caminho de produção = zero perda.
+
+### Como ativar (no `desktop.json`)
+1. Prepare o grafo do Brasil uma vez (ver o guia **OSRM local** já entregue: `extract/partition/customize`).
+   Guarde os arquivos `brazil-latest.osrm*` em `%LOCALAPPDATA%\OpenRotas\data_local\`.
+2. No `desktop.json`, bloco `"osrm"`:
+   - `"mode": "docker"` + `"graph_path"` apontando para o `.osrm` → o app **sobe o OSRM sozinho** ao abrir
+     e o **encerra** ao fechar (precisa do Docker Desktop);
+   - ou `"mode": "external"` + `"url"` se você prefere subir o OSRM por fora.
+3. Pronto: o roteamento fica rápido e **offline**, e (pela melhoria já no código) o scraper do Google
+   sai da frente sozinho quando há motor confiável. `mode:"off"` (padrão) mantém o OSRM público online.
+
+### Benchmark (§9/§29) — comprovar o ganho com números
+```
+cd desktop\engines
+..\..\venv\Scripts\python benchmark.py                 # compara OSRM local × público
+..\..\venv\Scripts\python benchmark.py --url http://localhost:5000 --rotulo "OSRM local"
+```
+Mede latência (média/mediana/p95), vazão (rotas/s) e taxa de sucesso sobre 10 pares reais do Brasil.
+A tabela final é a evidência objetiva do benefício do motor local.
+
+---
+
+## 9. Segurança (§42)
 Segredos (Supabase) ficam **só** no perfil do usuário (`%LOCALAPPDATA%\OpenRotas\config\desktop.json`),
 nunca no git (ver `.gitignore`). O `secrets.toml` local é gerado em tempo de execução a partir dele.
 Mantém-se a regra do projeto: só a **anon key** pública no cliente; nunca a `service_role`.
