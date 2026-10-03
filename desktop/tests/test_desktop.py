@@ -165,6 +165,11 @@ def test_osrm_telemetria_nunca_quebra():
     # helper defensivo: não deve levantar mesmo com campos arbitrários
     _osrm._telemetria("teste", ok=True, ms=1.0)
 
+def test_launcher_tel_nunca_quebra():
+    import launcher
+    # helper defensivo de telemetria do launcher: não deve levantar
+    launcher._tel("teste_launcher", ok=True, ms=2.0)
+
 
 # ---------------------- resource_manager: manifesto (§18/§19/§45) ------------
 def test_rm_manifesto_embarcado_valido():

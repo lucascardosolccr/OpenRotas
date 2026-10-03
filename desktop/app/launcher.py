@@ -51,6 +51,19 @@ def _configurar_logs(paths) -> None:
 log = logging.getLogger("openrotas.desktop.launcher")
 
 
+def _tel(evento: str, **campos) -> None:
+    """Registra um evento no perfil de execução local (§42), se disponível. Import defensivo;
+    nunca quebra o launcher."""
+    try:
+        _t = os.path.join(os.path.dirname(_AQUI), "telemetry")
+        if _t not in sys.path:
+            sys.path.insert(0, _t)
+        import exec_profile
+        exec_profile.registrar(dict(campos, evento=evento, tipo="launcher"))
+    except Exception:
+        pass
+
+
 def _porta_aberta(host: str, porta: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(0.5)
@@ -237,6 +250,7 @@ def main() -> int:
     if "--reparar" in sys.argv:
         return _reparar()
 
+    _t_inicio = time.perf_counter()
     log.info("OpenRotas Desktop iniciando. Config: %s", cfg.resumo_config())
 
     # [MOTOR LOCAL - Etapa 3] Garante um OSRM local (detecta/sobe/valida) conforme a config e
@@ -309,6 +323,17 @@ def main() -> int:
 
     url = "http://%s:%s" % (host, porta)
     log.info("App no ar em %s", url)
+
+    # Perfil de execução (§42): tempo até o app ficar pronto + modo do motor. Alimenta o
+    # resumo do Diagnóstico com dados reais de uso. Best-effort, nunca quebra.
+    try:
+        _hw = cfg.detectar_hardware()
+        _tel("app_pronto", ms=round((time.perf_counter() - _t_inicio) * 1000.0, 1), ok=True,
+             motor=(motor.modo if motor is not None else "off"),
+             motor_ativo=bool(motor.ativo) if motor is not None else False,
+             perfil=_hw.get("perfil"))
+    except Exception:
+        pass
 
     if not _abrir_janela(url):
         import webbrowser
