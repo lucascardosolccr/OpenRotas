@@ -16,7 +16,7 @@ Uso:
 Saída: desktop\\build\\dist\\OpenRotas\\OpenRotas.exe (+ a pasta onedir)
 """
 import os
-from PyInstaller.utils.hooks import collect_all, collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_submodules, copy_metadata
 
 REPO_ROOT = os.path.abspath(os.path.join(os.getcwd(), ".."))  # rode de dentro de desktop/
 
@@ -25,7 +25,7 @@ _pacotes_coletar = [
     "streamlit", "altair", "pydeck", "plotly", "pandas", "numpy", "pyarrow",
     "sklearn", "scipy", "rapidfuzz", "geographiclib", "geopy", "diskcache",
     "cachetools", "unidecode", "supabase", "supabase_auth", "storage3", "postgrest",
-    "gotrue", "realtime", "kaleido", "xlsxwriter", "openpyxl", "python_calamine",
+    "realtime", "kaleido", "xlsxwriter", "openpyxl", "python_calamine",
     "streamlit_js_eval",
 ]
 datas, binaries, hiddenimports = [], [], []
@@ -36,6 +36,17 @@ for _pac in _pacotes_coletar:
     except Exception:
         pass
 hiddenimports += collect_submodules("streamlit")
+
+# [METADADOS - correção clássica Streamlit+PyInstaller] O Streamlit (e várias libs) leem a PRÓPRIA
+# versão em runtime via importlib.metadata.version(...); sem os .dist-info embutidos, o app quebra
+# ao iniciar com PackageNotFoundError. copy_metadata embute esses metadados no bundle. Defensivo.
+for _meta in ("streamlit", "altair", "pandas", "numpy", "pyarrow", "plotly", "pydeck",
+              "supabase", "supabase_auth", "scikit-learn", "scipy", "rapidfuzz",
+              "streamlit-js-eval", "diskcache", "cachetools"):
+    try:
+        datas += copy_metadata(_meta)
+    except Exception:
+        pass
 # Módulos próprios do desktop (imports em nível de função / via __import__ que a análise
 # estática pode não enxergar) — congela-os explicitamente no bundle.
 hiddenimports += ["desktop_config", "diagnostics", "engines", "engines.osrm_manager"]
