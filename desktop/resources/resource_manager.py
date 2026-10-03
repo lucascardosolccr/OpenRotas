@@ -188,6 +188,21 @@ def carregar_manifesto(caminho: Path | None = None) -> dict:
         return {}
 
 
+def carregar_manifesto_remoto(base_url: str, timeout: int = 15) -> dict:
+    """Baixa o manifest.json da Release de dados (base_url termina na pasta …/download/<tag>/).
+    {} em falha — nunca levanta. Usado para descobrir atualizações sem baixar as bases inteiras."""
+    import urllib.request
+    try:
+        url = base_url.rstrip("/") + "/manifest.json"
+        req = urllib.request.Request(url, headers={"User-Agent": "OpenRotas-Desktop"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            m = json.loads(r.read().decode("utf-8", "replace"))
+        return m if isinstance(m, dict) else {}
+    except Exception:
+        logger.info("[RECURSOS] manifesto remoto indisponível (%s).", base_url)
+        return {}
+
+
 def _versao_maior(remota: str, local: str) -> bool:
     """True se 'remota' > 'local' comparando campos numéricos (ex. '2026.11' > '2026.10').
     Degrada para comparação textual se não for numérico."""

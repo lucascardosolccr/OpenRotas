@@ -181,6 +181,17 @@ def test_rm_baixar_e_verificar_rejeita_hash_errado(tmp_path):
     r = rm.baixar_e_verificar(origem.as_uri(), destino, sha256="0" * 64)
     assert r["ok"] is False and not destino.exists()        # hash não bate → descartado
 
+def test_rm_carregar_manifesto_remoto_via_file_url(tmp_path):
+    import json as _json
+    man = {"schema": 1, "recursos": {"municipios": {"versao": "2026.11", "arquivo": "municipios.parquet"}}}
+    (tmp_path / "manifest.json").write_text(_json.dumps(man), encoding="utf-8")
+    base_url = (tmp_path).as_uri()        # file:///.../  → + /manifest.json
+    got = rm.carregar_manifesto_remoto(base_url)
+    assert got.get("schema") == 1 and "municipios" in got.get("recursos", {})
+
+def test_rm_carregar_manifesto_remoto_ausente_degrada():
+    assert rm.carregar_manifesto_remoto("http://127.0.0.1:5999/naoexiste", timeout=1) == {}
+
 def test_rm_baixar_e_verificar_aceita_hash_certo(tmp_path):
     import hashlib
     dados = b"conteudo-de-teste-ok"

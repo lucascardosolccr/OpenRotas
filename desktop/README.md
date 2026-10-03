@@ -47,20 +47,25 @@ mais paralelismo **automaticamente**, sem mudar nada.
 desktop/
 ├── app/
 │   ├── launcher.py          # bootstrapper: motor local + sobe o Streamlit + janela nativa
-│   ├── desktop_config.py    # hardware, cache persistente, secrets/env (ativa vantagens locais)
-│   └── diagnostics.py       # autodiagnóstico de bases/cache/motor (§17/§18)
+│   │                        #   flags: --diagnostico, --recursos, --atualizar [--baixar]
+│   ├── desktop_config.py    # hardware, cache persistente, secrets/env, APP_VERSION (fonte única)
+│   ├── diagnostics.py       # autodiagnóstico de bases/cache/motor + telemetria + update (§17/§18)
+│   └── app_update.py        # verifica nova versão do app via Releases do GitHub (§19)
 ├── engines/                 # MOTOR de rotas local (Etapa 3)
 │   ├── osrm_manager.py      # detecta/sobe/valida um OSRM local; injeta OSRM_URL
 │   ├── benchmark.py         # mede OSRM local × público (§9/§29), stdlib
 │   └── sample_pairs.csv     # 10 pares O/D reais do Brasil p/ o benchmark
 ├── data_local/              # camada de DADOS LOCAIS (Etapa 4)
-│   └── local_data.py        # registro + lazy loading + índice IBGE + integridade + offline
+│   └── local_data.py        # registro + lazy loading + índice IBGE + integridade + override
 ├── resources/               # GERENCIADOR DE RECURSOS (§3/§4/§17/§18/§19/§24)
-│   └── resource_manager.py  # status/verificar/provisionar/reparar (compõe local_data + osrm)
+│   ├── resource_manager.py  # status/verificar/provisionar/reparar + manifesto/atualizar
+│   └── manifest.json        # versão/arquivo/sha256 de cada recurso (fonte da verdade — §19)
+├── telemetry/               # PERFIL DE EXECUÇÃO / TELEMETRIA LOCAL (§42)
+│   └── exec_profile.py      # JSONL local: registra/cronometra/agrega (nunca sai do PC)
 ├── tests/                   # suíte da edição desktop (Etapa 6) — roda em qualquer SO
-│   └── test_desktop.py      # 16 testes: config, perfil, motor, dados, diagnóstico
+│   └── test_desktop.py      # 45 testes: config, perfil, motor, dados, recursos, update, telemetria
 ├── config/
-│   └── desktop.example.json # modelo de config (Supabase, OSRM_URL, offline) — copie p/ o perfil
+│   └── desktop.example.json # modelo de config (Supabase, OSRM, offline, dados_base_url) — copie
 ├── scripts/
 │   ├── run_dev.bat          # rodar SEM instalar (cria venv, instala, abre) — uso imediato
 │   └── diagnostico.bat      # roda o autodiagnóstico
@@ -200,3 +205,45 @@ A tabela final é a evidência objetiva do benefício do motor local.
 Segredos (Supabase) ficam **só** no perfil do usuário (`%LOCALAPPDATA%\OpenRotas\config\desktop.json`),
 nunca no git (ver `.gitignore`). O `secrets.toml` local é gerado em tempo de execução a partir dele.
 Mantém-se a regra do projeto: só a **anon key** pública no cliente; nunca a `service_role`.
+
+---
+
+## 10. Manutenção: reparar/atualizar bases e app, e telemetria (§17/§18/§19/§42)
+
+Três mecanismos tornam o software **mantível sem reinstalar** e **observável localmente**. Todos são
+offline-safe (degradam sem rede) e **nunca** derrubam o app.
+
+### 10.1 Publicar as bases como Release de dados (quem mantém o produto)
+Em **Actions → `publish-data` → Run workflow** (opcional: ajuste a versão). O workflow empacota as
+bases embarcadas (IBGE/hidrografia), calcula o **sha256** de cada arquivo e publica um `manifest.json`
+remoto + os arquivos na Release `dados-latest`. A **URL-base** para o desktop é a pasta de download
+dessa Release, ex.: `https://github.com/lucascardosolccr/OpenRotas/releases/download/dados-latest/`.
+
+### 10.2 Reparar/atualizar as bases no PC do usuário (sem reinstalar)
+1. No `desktop.json`, preencha `"dados_base_url"` com a URL-base acima.
+2. Atalho **"Verificar atualizações"** (ou `OpenRotas.exe --atualizar`): baixa o `manifest.json` remoto,
+   compara as versões e diz **o que mudou**. Com `--atualizar --baixar`, baixa só as bases pendentes,
+   **verifica o sha256** e grava a cópia nova em `%LOCALAPPDATA%\OpenRotas\bases\` — esse diretório de
+   **override vence a base embarcada** read-only. Assim uma base corrompida/desatualizada vira um
+   download verificado, **sem reinstalar o app** (§18/§19/§45).
+
+### 10.3 Auto-update do aplicativo (§19)
+- `desktop_config.APP_VERSION` é a **fonte única** da versão.
+- `build-desktop.yml` com `publicar_release=true` publica o instalador numa Release `app-latest`,
+  nomeada pela `APP_VERSION`.
+- O app (`app_update.py`, via `--atualizar` ou no Diagnóstico) consulta as Releases do GitHub
+  (API pública, **sem token, sem cartão**) e avisa se há versão nova + o link do instalador. Não troca
+  o executável em uso sozinho (arriscado): baixa o instalador verificado para o usuário rodar.
+
+### 10.4 Perfil de execução / telemetria local (§42)
+`telemetry/exec_profile.py` grava um JSONL **só no perfil do usuário** (`logs/exec_profile.jsonl`,
+com rotação por tamanho) do que o app fez e quão rápido. Uso no código:
+
+```python
+import exec_profile
+with exec_profile.cronometro("rota", motor="osrm_local"):
+    ...  # calcula a rota  → registra {evento:"rota", ms, ok, motor}
+exec_profile.resumo()   # agrega média/p95/máx por evento
+```
+
+O Diagnóstico mostra esse resumo. Nada sai do computador (§31/§42); `exec_profile.limpar()` apaga tudo.

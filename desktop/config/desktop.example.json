@@ -24,5 +24,8 @@
   "offline": false,
 
   "_local_login": "true = login LOCAL (sem internet/Supabase) — o portão de auth libera direto nesta máquina. Ligado automaticamente quando offline=true. Recursos de nuvem (estudos salvos/compartilhar) degradam graciosamente.",
-  "local_login": false
+  "local_login": false,
+
+  "_dados_base_url": "Opcional (§18/§19/§45). Pasta de download dos assets da Release de dados (gerada pelo workflow publish-data), terminando em /download/<tag>/. Ex.: https://github.com/lucascardosolccr/OpenRotas/releases/download/dados-latest/ . Habilita 'Verificar atualizações' a reparar/atualizar as bases sem reinstalar (download verificado por sha256).",
+  "dados_base_url": ""
 }

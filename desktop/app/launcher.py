@@ -123,6 +123,59 @@ def _abrir_janela(url: str) -> bool:
         return False
 
 
+def _verificar_atualizacoes(aplicar: bool = False) -> int:
+    """Central de Atualizações (§17/§19): checa a versão do APP e das BASES de dados e, se
+    `aplicar`, baixa o que estiver pendente (bases verificadas por sha256; instalador do app
+    para o usuário rodar). Tudo best-effort e offline-safe: nada aqui derruba o software."""
+    print("OpenRotas — Central de Atualizações")
+    print("=" * 48)
+    # 1) Aplicativo
+    try:
+        import app_update
+        up = app_update.verificar()
+        print("Aplicativo: instalada %s" % up["atual"])
+        if not up["disponivel"]:
+            print("  (verificação indisponível agora — offline ou sem Release publicada)")
+        elif up["ha_atualizacao"]:
+            print("  → NOVA versão %s disponível." % up["remota"])
+            if up["url_instalador"]:
+                print("    instalador: %s" % up["url_instalador"])
+                if aplicar:
+                    r = app_update.baixar_instalador(up["url_instalador"])
+                    print("    %s" % ("baixado em %s (rode-o para atualizar)" % r["caminho"]
+                                      if r["ok"] else "falha ao baixar: %s" % r["detalhe"]))
+        else:
+            print("  → você está na versão mais recente.")
+    except Exception:
+        log.warning("Checagem de atualização do app falhou.", exc_info=True)
+
+    # 2) Bases de dados (reparo/atualização sem reinstalar — §18/§19/§45)
+    try:
+        from resources import resource_manager as rm
+        conf = cfg.carregar_config_usuario() or {}
+        base_url = str(conf.get("dados_base_url", "") or "").strip()
+        print("\nBases de dados:")
+        if not base_url:
+            print("  (sem 'dados_base_url' no desktop.json — configure a pasta de download da")
+            print("   Release de dados para habilitar reparo/atualização sem reinstalar)")
+        else:
+            remoto = rm.carregar_manifesto_remoto(base_url)
+            if not remoto:
+                print("  (manifesto remoto indisponível em %s)" % base_url)
+            else:
+                pend = rm.verificar_atualizacoes(remoto)
+                if not pend:
+                    print("  → todas as bases estão atualizadas.")
+                else:
+                    print("  → %d base(s) a atualizar: %s" % (len(pend), ", ".join(p["chave"] for p in pend)))
+                    if aplicar:
+                        for res in rm.atualizar(remoto, base_url):
+                            print("    %s %s (%s)" % ("✓" if res["ok"] else "✗", res["chave"], res["detalhe"]))
+    except Exception:
+        log.warning("Checagem de atualização das bases falhou.", exc_info=True)
+    return 0
+
+
 def main() -> int:
     paths = cfg.ensure_user_dirs()
     _configurar_logs(paths)
@@ -139,6 +192,11 @@ def main() -> int:
         _oc = (cfg.carregar_config_usuario() or {}).get("osrm")
         print(rm.resumo_ambiente(_oc))
         return 0
+
+    # Modo ATUALIZAR (§17/§19): verifica atualização do APP e das BASES (sem reinstalar) e sai.
+    # Com --baixar, aplica o que puder (baixa bases pendentes e/ou o instalador do app).
+    if "--atualizar" in sys.argv:
+        return _verificar_atualizacoes(aplicar=("--baixar" in sys.argv))
 
     log.info("OpenRotas Desktop iniciando. Config: %s", cfg.resumo_config())
 
