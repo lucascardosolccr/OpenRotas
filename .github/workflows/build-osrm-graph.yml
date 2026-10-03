@@ -86,11 +86,16 @@ jobs:
             osrm-customize /data/brazil-latest.osrm
           echo "=== após customize ===" ; free -h ; df -h /mnt
 
-      - name: Empacotar o grafo
+      - name: Empacotar o grafo (no disco grande /mnt)
         run: |
+          # O grafo construído (extract+partition+customize OK) vira um tar.gz. Gravamos o
+          # tarball em /mnt — mesmo volume dos .osrm* e com espaço de sobra. A 3ª tentativa
+          # falhou AQUI (tar exit 2) por tentar escrever o tarball de vários GB em
+          # $GITHUB_WORKSPACE (volume / pequeno, ainda com o swapfile) → disco cheio.
+          sudo swapoff -a || true                 # libera o /swapfile (fases pesadas já acabaram)
           cd /mnt/osrm
-          tar -czf "$GITHUB_WORKSPACE/brazil-osrm-mld.tar.gz" brazil-latest.osrm*
-          ls -lh "$GITHUB_WORKSPACE/brazil-osrm-mld.tar.gz"
+          tar -czf /mnt/osrm/brazil-osrm-mld.tar.gz brazil-latest.osrm*
+          echo "=== pacote ===" ; ls -lh /mnt/osrm/brazil-osrm-mld.tar.gz ; df -h /mnt
 
       - name: Publicar na Release
         uses: softprops/action-gh-release@v2
@@ -98,5 +103,5 @@ jobs:
           tag_name: ${{ github.event.inputs.release_tag }}
           name: "OSRM Brasil (MLD)"
           body: "Grafo rodoviário OSRM do Brasil (algoritmo MLD) para a edição desktop do OpenRotas. Consuma via osrm.graph_url no desktop.json."
-          files: brazil-osrm-mld.tar.gz
+          files: /mnt/osrm/brazil-osrm-mld.tar.gz
           fail_on_unmatched_files: true
