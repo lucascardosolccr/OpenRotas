@@ -20,6 +20,7 @@ from engines import osrm_manager as osrm   # noqa: E402
 import local_data                     # noqa: E402
 from resources import resource_manager as rm   # noqa: E402
 import exec_profile                   # noqa: E402
+import app_update                     # noqa: E402
 
 
 # ------------------------------- desktop_config -------------------------------
@@ -243,9 +244,40 @@ def test_telemetria_nunca_levanta_em_caminho_invalido():
 
 
 # -------------------------------- diagnostics --------------------------------
-def test_diagnostico_essencial_ok(capsys):
+def test_diagnostico_essencial_ok(capsys, monkeypatch):
+    monkeypatch.setenv("OPENROTAS_NO_NET", "1")   # não bate na rede durante o teste
     rc = diagnostics.executar(verbose=True)
     out = capsys.readouterr().out
     assert rc == 0
     assert "tudo essencial OK" in out
     assert "Offline:" in out and "Perfil de desempenho:" in out
+
+
+# ----------------------------- app_update (§19) ------------------------------
+def test_update_versao_atual_casa_com_config():
+    assert app_update.versao_atual() == cfg.APP_VERSION
+
+def test_update_comparacao_de_versao():
+    assert app_update.ha_atualizacao("0.1.0", "0.2.0") is True
+    assert app_update.ha_atualizacao("0.1.0", "0.1.0") is False
+    assert app_update.ha_atualizacao("0.2.0", "0.1.9") is False   # por campo, não texto
+    assert app_update.ha_atualizacao("v0.1.0", "v0.1.1") is True   # tolera prefixo 'v'
+
+def test_update_verificar_offline_degrada(monkeypatch):
+    # consulta indisponível → não quebra, marca disponivel=False
+    monkeypatch.setattr(app_update, "consultar_release",
+                        lambda *a, **k: {"ok": False, "versao": "", "tag": "", "url_instalador": None})
+    v = app_update.verificar()
+    assert v["disponivel"] is False and v["ha_atualizacao"] is False
+    assert v["atual"] == cfg.APP_VERSION
+
+def test_update_verificar_detecta_nova(monkeypatch):
+    monkeypatch.setattr(app_update, "consultar_release",
+                        lambda *a, **k: {"ok": True, "versao": "99.0.0",
+                                         "url_instalador": "http://x/OpenRotas-Setup.exe", "tag": "app-latest"})
+    v = app_update.verificar()
+    assert v["disponivel"] is True and v["ha_atualizacao"] is True and v["remota"] == "99.0.0"
+
+def test_update_baixar_sem_url_nao_quebra():
+    r = app_update.baixar_instalador("")
+    assert r["ok"] is False

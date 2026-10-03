@@ -29,6 +29,9 @@ from pathlib import Path
 logger = logging.getLogger("openrotas.desktop.config")
 
 APP_NAME = "OpenRotas"
+# Versão da edição desktop — FONTE ÚNICA DA VERDADE (§19). O instalador (openrotas.iss) e o
+# verificador de atualizações (app_update.py) leem/casam com este valor.
+APP_VERSION = "0.1.0"
 # Porta local do servidor Streamlit embutido (alta, improvável de colidir).
 PORTA_LOCAL = int(os.environ.get("OPENROTAS_PORT", "8537"))
 

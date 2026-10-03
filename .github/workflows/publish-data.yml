@@ -1,0 +1,120 @@
+# ============================================================================
+#  OpenRotas — PUBLICAÇÃO DAS BASES como Release de dados (§18/§19/§45).
+#
+#  Empacota as bases geográficas embarcadas (IBGE/hidrografia) numa Release
+#  ("dados-latest"), calcula o sha256 de cada uma e publica junto um
+#  manifest.json com versão + nome-de-arquivo + sha256. A edição desktop baixa
+#  desses assets para REPARAR/ATUALIZAR uma base sem reinstalar o app
+#  (resource_manager.atualizar lê este manifesto remoto e verifica o hash).
+#
+#  Como usar: Actions → "publish-data" → Run workflow (opcional: mude a versão
+#  e a tag). A URL-base para o desktop é a pasta de download dos assets da
+#  Release gerada (…/releases/download/<tag>/).
+# ============================================================================
+name: publish-data
+
+on:
+  workflow_dispatch:
+    inputs:
+      versao:
+        description: "Versão dos dados (carimbada no manifesto; ex. 2026.10)"
+        default: "2026.10"
+        required: true
+      release_tag:
+        description: "Tag da Release de dados"
+        default: "dados-latest"
+        required: true
+
+permissions:
+  contents: write   # criar/atualizar a Release
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout (com as bases embarcadas)
+        uses: actions/checkout@v4
+
+      - name: Empacotar bases + gerar manifesto com sha256
+        env:
+          VERSAO: ${{ github.event.inputs.versao }}
+        run: |
+          python3 - <<'PY'
+          import os, json, hashlib, shutil, pathlib
+
+          versao = os.environ.get("VERSAO", "").strip() or "0.0"
+          raiz = pathlib.Path(".")
+          dist = raiz / "dist_dados"
+          dist.mkdir(exist_ok=True)
+
+          # Caminho no repositório de cada recurso embarcado (espelha o CATALOGO de
+          # desktop/data_local/local_data.py). O grafo OSRM NÃO entra aqui: é publicado
+          # pelo workflow build-osrm-graph (é grande e construído, não versionado).
+          CAMINHOS = {
+              "municipios":           "data/brasil/ibge/derivadas/municipios.parquet",
+              "massas_dagua":         "data/brasil/ibge/derivadas/massas_dagua.parquet",
+              "hidrografia_nacional": "hidrografia_nacional.pkl.gz",
+              "rios_nomeados":        "data/brasil/ibge/derivadas/rios_nomeados_index.parquet",
+              "amazonia_fluvial":     "amazonia_fluvial.pkl.gz",
+              "snirh_rios":           "snirh_rios.csv",
+          }
+
+          # Parte do manifesto embarcado (para herdar 'obrigatorio'/'arquivo').
+          manifesto_base = json.loads((raiz / "desktop/resources/manifest.json").read_text(encoding="utf-8"))
+          recursos_base = manifesto_base.get("recursos", {})
+
+          def sha256(p):
+              h = hashlib.sha256()
+              with open(p, "rb") as f:
+                  for b in iter(lambda: f.read(1024 * 1024), b""):
+                      h.update(b)
+              return h.hexdigest()
+
+          recursos = {}
+          for chave, rel in CAMINHOS.items():
+              src = raiz / rel
+              if not src.exists():
+                  print("AVISO: base ausente no repo, pulando:", rel)
+                  continue
+              base = recursos_base.get(chave, {})
+              arquivo = base.get("arquivo") or src.name
+              destino = dist / arquivo
+              shutil.copy2(src, destino)
+              digest = sha256(destino)
+              recursos[chave] = {
+                  "versao": versao,
+                  "obrigatorio": bool(base.get("obrigatorio", False)),
+                  "arquivo": arquivo,
+                  "sha256": digest,
+                  "bytes": destino.stat().st_size,
+              }
+              print("OK  %-22s %s  (%d bytes)" % (chave, digest[:12], recursos[chave]["bytes"]))
+
+          manifesto = {
+              "schema": 1,
+              "data_release_tag": os.environ.get("RELEASE_TAG", manifesto_base.get("data_release_tag", "dados-latest")),
+              "versao": versao,
+              "recursos": recursos,
+          }
+          (dist / "manifest.json").write_text(json.dumps(manifesto, ensure_ascii=False, indent=2), encoding="utf-8")
+          print("\nManifesto remoto gerado com %d recursos." % len(recursos))
+          PY
+          ls -lh dist_dados
+
+      - name: Publicar na Release de dados
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag }}
+          name: "Bases do OpenRotas (dados)"
+          body: >
+            Bases geográficas do OpenRotas (IBGE/hidrografia) para reparo/atualização
+            da edição desktop sem reinstalar. O manifest.json carrega versão e sha256 de
+            cada arquivo; o app baixa deste Release e valida a integridade.
+            URL-base para o desktop: a pasta …/releases/download/<tag>/ desta Release.
+          files: |
+            dist_dados/*.parquet
+            dist_dados/*.pkl.gz
+            dist_dados/*.csv
+            dist_dados/manifest.json
+          fail_on_unmatched_files: false

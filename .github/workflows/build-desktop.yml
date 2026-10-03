@@ -22,9 +22,16 @@ on:
       graph_tag:
         description: "Tag da Release com o grafo (quando embed_graph=true)"
         default: "osrm-brasil-latest"
+      publicar_release:
+        description: "Publicar o instalador numa Release (habilita o auto-update do app §19)"
+        type: boolean
+        default: false
+      app_release_tag:
+        description: "Tag da Release do app (quando publicar_release=true)"
+        default: "app-latest"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -111,3 +118,23 @@ jobs:
           path: desktop/installer/dist_installer/*.exe
           if-no-files-found: error
           retention-days: 30
+
+      - name: Ler a versão do app (fonte única = desktop_config.APP_VERSION)
+        if: ${{ github.event.inputs.publicar_release == 'true' }}
+        shell: pwsh
+        run: |
+          $v = python -c "import sys; sys.path.insert(0,'desktop/app'); import desktop_config as c; print(c.APP_VERSION)"
+          echo "APP_VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          echo "Versão do app: $v"
+
+      - name: Publicar na Release do app (habilita o auto-update §19)
+        if: ${{ github.event.inputs.publicar_release == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.app_release_tag }}
+          name: ${{ env.APP_VERSION }}
+          body: >
+            Instalador do OpenRotas Desktop (versão ${{ env.APP_VERSION }}). O app verifica esta
+            Release para avisar sobre novas versões (app_update.py). Baixe o OpenRotas Setup.exe.
+          files: desktop/installer/dist_installer/*.exe
+          fail_on_unmatched_files: true

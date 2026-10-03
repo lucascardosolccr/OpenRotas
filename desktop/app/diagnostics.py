@@ -122,6 +122,23 @@ def executar(verbose: bool = True) -> int:
     except Exception:
         pass
 
+    # Atualização do aplicativo (§19) — só no diagnóstico INTERATIVO (verbose); a execução
+    # silenciosa do instalador não deve fazer rede. OPENROTAS_NO_NET=1 desliga a checagem
+    # (usado em testes/ambientes sem rede). Best-effort: offline não atrapalha.
+    if verbose and os.environ.get("OPENROTAS_NO_NET") != "1":
+        try:
+            import app_update
+            up = app_update.verificar()
+            linhas.append("")
+            if not up["disponivel"]:
+                linhas.append("Atualização: versão instalada %s (verificação indisponível agora)" % up["atual"])
+            elif up["ha_atualizacao"]:
+                linhas.append("Atualização: NOVA versão %s disponível (instalada %s) ↑" % (up["remota"], up["atual"]))
+            else:
+                linhas.append("Atualização: na versão mais recente (%s) ✓" % up["atual"])
+        except Exception:
+            pass
+
     linhas.append("")
     linhas.append("RESULTADO: %s" % ("tudo essencial OK ✓" if essenciais_ok and grav_ok
                                       else "há itens essenciais faltando ✗"))
