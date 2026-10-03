@@ -42,9 +42,12 @@ if ($LASTEXITCODE -ne 0) { Write-Warning "[build] diagnostico apontou itens falt
 # 5) gerar o instalador (Inno Setup). Requer o ISCC.exe instalado.
 $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 if (Test-Path $iscc) {
-  Write-Host "[build] gerando instalador com Inno Setup..."
+  # Versão do instalador = desktop_config.APP_VERSION (fonte única — §19/§38).
+  $ver = & (Join-Path $VENV "python.exe") -c "import sys; sys.path.insert(0,'app'); import desktop_config as c; print(c.APP_VERSION)"
+  if (-not $ver) { $ver = "0.1.0" }
+  Write-Host "[build] gerando instalador com Inno Setup (versao $ver)..."
   Push-Location $ROOT
-  & $iscc "installer\openrotas.iss"
+  & $iscc "/DAppVersion=$ver" "installer\openrotas.iss"
   Pop-Location
   Write-Host "[build] OK -> desktop\installer\dist_installer\OpenRotas Setup.exe"
 } else {

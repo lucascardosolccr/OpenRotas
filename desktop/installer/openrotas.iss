@@ -10,7 +10,11 @@
 ; ============================================================================
 
 #define AppName "OpenRotas"
-#define AppVersion "0.1.0"
+; A versão vem de desktop_config.APP_VERSION (fonte única — §19/§38), passada por
+;   ISCC /DAppVersion=<x>  (build.ps1 e o workflow fazem isso). Fallback se não vier.
+#ifndef AppVersion
+  #define AppVersion "0.1.0"
+#endif
 #define AppPublisher "Lucas Cruz"
 #define AppExe "OpenRotas.exe"
 

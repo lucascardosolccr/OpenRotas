@@ -109,7 +109,11 @@ jobs:
         working-directory: desktop
         shell: pwsh
         run: |
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer/openrotas.iss
+          # Versão do instalador = desktop_config.APP_VERSION (fonte única — §19/§38).
+          $ver = python -c "import sys; sys.path.insert(0,'app'); import desktop_config as c; print(c.APP_VERSION)"
+          if (-not $ver) { $ver = "0.1.0" }
+          Write-Host "Instalador versao $ver"
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$ver" installer/openrotas.iss
 
       - name: Publicar o instalador
         uses: actions/upload-artifact@v4
