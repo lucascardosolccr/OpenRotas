@@ -1,0 +1,17 @@
+# OpenRotas Desktop — artefatos de build e segredos (NUNCA versionar)
+build/
+dist/
+dist_installer/
+*.exe
+*.spec.bak
+__pycache__/
+*.pyc
+
+# Config real do usuário (contém chaves). O exemplo (desktop.example.json) É versionado.
+config/desktop.json
+
+# Dados locais grandes instalados à parte (grafos/mapas) — não entram no git
+data_local/
+*.osrm
+*.osrm.*
+*.pbf

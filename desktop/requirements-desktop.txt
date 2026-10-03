@@ -1,0 +1,19 @@
+# OpenRotas Desktop — dependências da EDIÇÃO DESKTOP.
+# Inclui tudo da aplicação web (reaproveitada por inteiro) + extras só do desktop.
+# A raiz do repositório tem o requirements.txt da web; aqui referenciamos e acrescentamos.
+
+-r ../requirements.txt
+
+# --- Janela nativa (embrulha o Streamlit num app de verdade, sem barra do navegador) ---
+pywebview>=5.1          # usa o WebView2 (Edge) no Windows — leve, nativo
+
+# --- Diagnóstico de hardware (dimensionamento automático de workers/cache) ---
+psutil>=5.9
+
+# --- Empacotamento (gera o executável onedir; o instalador é feito pelo Inno Setup) ---
+pyinstaller>=6.6
+
+# NOTA: motor de rotas local (OSRM próprio) NÃO é uma dependência pip — é um servidor
+# separado (Docker) ou os arquivos .osrm consumidos via OSRM_URL. Ver desktop/README.md,
+# etapa "Motor local". Um motor 100%-Python (osmnx/networkx) é avaliado numa etapa futura
+# com benchmark antes de adotar (o pedido pede benchmark, não escolha automática).

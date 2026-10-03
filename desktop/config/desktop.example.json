@@ -1,0 +1,12 @@
+{
+  "_comentario": "Copie este arquivo para  %LOCALAPPDATA%\\OpenRotas\\config\\desktop.json  e preencha. NUNCA commite o arquivo real (contém chaves). As chaves do Supabase são as mesmas da nuvem (Project Settings -> API).",
+
+  "SUPABASE_URL": "https://SEUPROJETO.supabase.co",
+  "SUPABASE_ANON_KEY": "eyJhbGciOi...SUA_CHAVE_ANON_PUBLICA",
+
+  "_osrm": "Opcional. Aponte para um OSRM local (ver guias) para rotas rápidas e offline. Deixe vazio para usar o OSRM público online.",
+  "OSRM_URL": "",
+
+  "_offline": "true = modo offline (não tenta serviços online; usa só os motores locais configurados).",
+  "offline": false
+}

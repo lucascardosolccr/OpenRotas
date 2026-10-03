@@ -1,0 +1,53 @@
+# ============================================================================
+#  OpenRotas Desktop — build reproduzível do instalador (Windows PowerShell).
+#  Processo (§36): limpa -> valida -> empacota (PyInstaller onedir) -> gera instalador
+#  (Inno Setup) -> valida integridade. Rode da pasta  desktop\  :
+#      cd desktop
+#      powershell -ExecutionPolicy Bypass -File installer\build.ps1
+# ============================================================================
+$ErrorActionPreference = "Stop"
+$ROOT   = Split-Path -Parent $PSScriptRoot      # ...\desktop
+$REPO   = Split-Path -Parent $ROOT              # ...\OpenRotas
+$VENV   = Join-Path $REPO "venv\Scripts"
+Write-Host "[build] repo=$REPO"
+
+# 1) limpar builds anteriores
+Write-Host "[build] limpando build/ anterior..."
+Remove-Item -Recurse -Force (Join-Path $ROOT "build") -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force (Join-Path $ROOT "installer\dist_installer") -ErrorAction SilentlyContinue
+
+# 2) validar dependências
+if (-not (Test-Path (Join-Path $VENV "python.exe"))) {
+  Write-Host "[build] criando venv e instalando dependencias..."
+  & py -3.12 -m venv (Join-Path $REPO "venv")
+  & (Join-Path $VENV "python.exe") -m pip install --upgrade pip
+  & (Join-Path $VENV "python.exe") -m pip install -r (Join-Path $ROOT "requirements-desktop.txt")
+}
+
+# 3) empacotar (PyInstaller onedir) — saída em desktop\build\dist\OpenRotas\
+Write-Host "[build] empacotando com PyInstaller (onedir)..."
+Push-Location $ROOT
+& (Join-Path $VENV "pyinstaller.exe") "packaging\launcher.spec" --noconfirm `
+    --distpath "build\dist" --workpath "build\work"
+Pop-Location
+
+$exe = Join-Path $ROOT "build\dist\OpenRotas\OpenRotas.exe"
+if (-not (Test-Path $exe)) { throw "[build] FALHA: $exe nao foi gerado." }
+
+# 4) teste de integridade do bundle (roda o diagnostico do proprio exe)
+Write-Host "[build] validando integridade do bundle..."
+& $exe "--diagnostico" "--silencioso"
+if ($LASTEXITCODE -ne 0) { Write-Warning "[build] diagnostico apontou itens faltando (ver saida)." }
+
+# 5) gerar o instalador (Inno Setup). Requer o ISCC.exe instalado.
+$iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+if (Test-Path $iscc) {
+  Write-Host "[build] gerando instalador com Inno Setup..."
+  Push-Location $ROOT
+  & $iscc "installer\openrotas.iss"
+  Pop-Location
+  Write-Host "[build] OK -> desktop\installer\dist_installer\OpenRotas Setup.exe"
+} else {
+  Write-Warning "[build] Inno Setup nao encontrado. Instale em https://jrsoftware.org/isdl.php e rode de novo."
+  Write-Host    "[build] O bundle onedir ja esta pronto em: $($ROOT)\build\dist\OpenRotas\"
+}
