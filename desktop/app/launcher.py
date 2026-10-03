@@ -193,6 +193,7 @@ _AJUDA = """OpenRotas Desktop — uso:
   OpenRotas.exe                 abre o aplicativo (janela nativa)
   OpenRotas.exe --diagnostico   autodiagnóstico (bases, cache, motor, offline, atualização)
   OpenRotas.exe --recursos      status dos recursos (Gerenciador de Recursos)
+  OpenRotas.exe --recursos --html   abre a Central de Recursos (painel visual) no navegador
   OpenRotas.exe --atualizar     verifica atualização do app e das bases
   OpenRotas.exe --atualizar --baixar   aplica as atualizações pendentes (baixa/verifica)
   OpenRotas.exe --reparar       repara/atualiza tudo que puder, sem reinstalar (§18)
@@ -234,10 +235,24 @@ def main() -> int:
         import diagnostics
         return diagnostics.executar(verbose=("--silencioso" not in sys.argv))
 
-    # Modo RECURSOS: lista o status dos recursos (Gerenciador de Recursos) e sai.
+    # Modo RECURSOS: Gerenciador de Recursos. Texto no terminal; com --html gera e abre a
+    # Central de Recursos (painel visual) no navegador.
     if "--recursos" in sys.argv:
-        from resources import resource_manager as rm
         _oc = (cfg.carregar_config_usuario() or {}).get("osrm")
+        if "--html" in sys.argv:
+            from resources import painel
+            destino = paths["cache"] / "central_recursos.html"
+            gerado = painel.gerar(destino, _oc)
+            if gerado:
+                print("Central de Recursos: %s" % gerado)
+                try:
+                    import webbrowser
+                    webbrowser.open("file://" + gerado)
+                except Exception:
+                    pass
+                return 0
+            print("Falha ao gerar o painel; mostrando o resumo em texto.")
+        from resources import resource_manager as rm
         print(rm.resumo_ambiente(_oc))
         return 0
 

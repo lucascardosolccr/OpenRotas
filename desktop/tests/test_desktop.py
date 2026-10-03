@@ -19,6 +19,7 @@ import diagnostics                    # noqa: E402
 from engines import osrm_manager as osrm   # noqa: E402
 import local_data                     # noqa: E402
 from resources import resource_manager as rm   # noqa: E402
+from resources import painel                    # noqa: E402
 import exec_profile                   # noqa: E402
 import app_update                     # noqa: E402
 
@@ -147,6 +148,27 @@ def test_rm_provisionar_sem_url_e_noop():
 def test_rm_resumo_ambiente_texto():
     txt = rm.resumo_ambiente()
     assert "Recursos do software" in txt and "municipios" in txt
+
+
+# ---------------------- painel (Central de Recursos — §17/§24) ---------------
+def test_painel_html_tem_secoes_e_recursos():
+    h = painel.construir_html()
+    assert "<!doctype html>" in h and "Central de Recursos" in h
+    assert "Recursos do software" in h and "Prontidão offline" in h and "Perfil de execução" in h
+    assert "municipios" in h          # a tabela de recursos foi preenchida
+    assert "prefers-color-scheme" in h  # tema claro/escuro
+
+def test_painel_gera_arquivo(tmp_path):
+    out = tmp_path / "central.html"
+    got = painel.gerar(str(out))
+    assert got == str(out) and out.exists()
+    conteudo = out.read_text(encoding="utf-8")
+    assert conteudo.startswith("<!doctype html>") and "</html>" in conteudo
+
+def test_painel_escapa_conteudo_sem_quebrar():
+    # construir_html nunca levanta e produz HTML bem-formado mesmo sem osrm_cfg
+    h = painel.construir_html(osrm_cfg={"graph_url": "http://x/<b>"})
+    assert "<html" in h and "</html>" in h
 
 def test_rm_reparar_tudo_sem_base_url():
     # sem base_url e com as essenciais presentes: nada a baixar, verificação OK, ok=True
