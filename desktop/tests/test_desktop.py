@@ -62,6 +62,21 @@ def test_health_url_vazia_e_encerrar_noop():
     osrm.encerrar(osrm.ResultadoMotor(url=None, modo="off", ativo=False))  # não levanta
 
 
+def test_garantir_grafo_sem_url_e_noop(tmp_path):
+    # sem graph_path e sem graph_url → nada a provisionar, devolve None (cai no público)
+    assert osrm.garantir_grafo({}, tmp_path) is None
+
+def test_garantir_grafo_usa_path_existente(tmp_path):
+    g = tmp_path / "brazil-latest.osrm"
+    g.write_text("x")
+    assert osrm.garantir_grafo({"graph_path": str(g)}, tmp_path / "outro") == str(g)
+
+def test_garantir_grafo_reusa_ja_provisionado(tmp_path):
+    (tmp_path / "brazil-latest.osrm").write_text("x")  # já provisionado antes
+    got = osrm.garantir_grafo({"graph_url": "http://exemplo/inexistente.tar.gz"}, tmp_path)
+    assert got == str(tmp_path / "brazil-latest.osrm")  # não baixa; reusa
+
+
 # -------------------------------- local_data ---------------------------------
 @pytest.fixture(scope="module")
 def reg():

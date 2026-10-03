@@ -27,6 +27,7 @@ import socket
 import logging
 import subprocess
 import urllib.request
+from pathlib import Path
 from dataclasses import dataclass, field
 
 logger = logging.getLogger("openrotas.desktop.osrm")
@@ -156,6 +157,49 @@ def resolver(cfg_osrm: dict | None, osrm_url_legado: str = "") -> ResultadoMotor
         return _subir_docker(cfg)
 
     return ResultadoMotor(url=None, modo=modo, ativo=False, detalhe="modo desconhecido: %r" % modo)
+
+
+def garantir_grafo(cfg_osrm: dict | None, destino_dir) -> str | None:
+    """[GRAFO COMO PRODUTO] Garante que o grafo OSRM do Brasil exista localmente e devolve o
+    caminho do arquivo .osrm base. Ordem:
+      1. se graph_path já existe → usa;
+      2. se já foi provisionado antes em destino_dir → usa;
+      3. se há graph_url (ex.: Release do GitHub) → BAIXA o .tar.gz UMA VEZ e extrai em destino_dir.
+    É assim que o grafo "vem com o produto" sem inchar o instalador: um download único no 1º uso,
+    guardado no perfil do usuário (sobrevive a atualizações do app). Defensivo: nunca levanta —
+    em falha devolve o graph_path (possivelmente ausente) e o app cai no OSRM público.
+    Download grande é esperado (vários GB); é feito só uma vez."""
+    cfg = dict(cfg_osrm or {})
+    gp = str(cfg.get("graph_path", "")).strip()
+    if gp and os.path.exists(gp):
+        return gp
+    try:
+        destino = Path(destino_dir)
+        destino.mkdir(parents=True, exist_ok=True)
+        ja = next(destino.glob("*.osrm"), None)       # já provisionado antes?
+        if ja is not None:
+            return str(ja)
+        url = str(cfg.get("graph_url", "")).strip()
+        if not url:
+            return gp or None
+        import tarfile
+        tmp = destino / "_grafo_download.tar.gz"
+        logger.info("[OSRM] provisionando grafo (download único) de %s", url)
+        urllib.request.urlretrieve(url, tmp)
+        with tarfile.open(tmp, "r:gz") as t:
+            try:
+                t.extractall(destino, filter="data")   # py3.12+: extração segura
+            except TypeError:
+                t.extractall(destino)                  # fallback versões antigas
+        try:
+            tmp.unlink()
+        except Exception:
+            pass
+        cand = next(destino.glob("*.osrm"), None)
+        return str(cand) if cand else (gp or None)
+    except Exception:
+        logger.warning("[OSRM] falha ao provisionar o grafo.", exc_info=True)
+        return gp or None
 
 
 def encerrar(res: ResultadoMotor) -> None:

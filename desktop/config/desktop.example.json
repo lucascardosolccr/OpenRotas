@@ -9,6 +9,8 @@
     "mode": "off",
     "url": "http://localhost:5000",
     "graph_path": "",
+    "graph_url": "",
+    "_graph_url": "Opcional. URL do brazil-osrm-mld.tar.gz (ex.: Release do GitHub gerado pelo workflow build-osrm-graph). No modo 'docker', se graph_path não existir, o app baixa daqui UMA VEZ para o perfil do usuário. Precisa do Docker Desktop para servir.",
     "docker_image": "osrm/osrm-backend",
     "algorithm": "mld",
     "port": 5000,
@@ -19,5 +21,8 @@
   "OSRM_URL": "",
 
   "_offline": "true = modo offline (não tenta serviços online; usa só os motores locais configurados).",
-  "offline": false
+  "offline": false,
+
+  "_local_login": "true = login LOCAL (sem internet/Supabase) — o portão de auth libera direto nesta máquina. Ligado automaticamente quando offline=true. Recursos de nuvem (estudos salvos/compartilhar) degradam graciosamente.",
+  "local_login": false
 }

@@ -141,13 +141,19 @@ Validação formal dessa matriz (clicar cada aba no desktop) faz parte da Etapa 
   perfil, resolução do motor (fallback defensivo), dados locais e diagnóstico. O **benchmark de
   performance** (OSRM local × público, §29) está em `engines/benchmark.py`.
 
-### Decisões que precisam de você (ficam para a etapa certa, não decido sozinho)
-- **Offline incluindo login:** hoje o portão de auth exige Supabase (internet). Rodar offline-de-verdade
-  pede um *bypass* local **opt-in** (ativado só pelo sinalizador `OPENROTAS_DESKTOP`), que é uma
-  mudança sensível de segurança no código compartilhado — proponho e implemento com sua aprovação,
-  mantendo a web 100% inalterada.
-- **Tamanho do instalador:** incluir o grafo/mapas completos deixa o `.exe` com vários GB. Avaliamos
-  juntos o custo-benefício (§32) antes de embutir.
+### Decisões implementadas (ambas, opt-in, sem tocar na web)
+- **Login offline/local ✔** — `auth/session_manager`: quando a env `OPENROTAS_DESKTOP_LOCAL=1`
+  (ligada pelo launcher quando `local_login` ou `offline` na config), o portão estabelece uma sessão
+  LOCAL sem bater no Supabase. A web nunca define essa env → caminho online 100% inalterado (travado
+  por teste). Recursos de nuvem (estudos salvos/compartilhar) degradam graciosamente; o núcleo roda.
+  Sem elevação de privilégio: o token local não autoriza nada no servidor (RLS intacta).
+- **Grafo OSRM do Brasil como parte do produto ✔** — duas vias:
+  1. **Auto-provisionamento (recomendado):** `osrm.graph_url` no `desktop.json` → no 1º uso o app
+     baixa o `brazil-osrm-mld.tar.gz` UMA VEZ para o perfil do usuário e serve via Docker. Instalador
+     enxuto. O grafo é gerado de graça na nuvem pelo workflow `build-osrm-graph.yml` (Release).
+  2. **Embutido no instalador:** `build-desktop.yml` com `embed_graph=true` baixa o grafo da Release
+     e o embute no bundle (`data_local/`). Instalador "gordo" (vários GB), roteamento offline pronto.
+  Em ambos, **servir o grafo exige Docker Desktop** na máquina (osrm-routed) — honesto e documentado.
 
 ---
 

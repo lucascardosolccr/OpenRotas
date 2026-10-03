@@ -23,6 +23,7 @@ componente de cookies/armazenamento dedicado (ex.: streamlit-cookies-manager) �
 com implicações de segurança (token acessível a XSS), candidata a rodada própria com o schema/UX
 combinados."""
 import logging
+import os
 import time
 
 import streamlit as st
@@ -38,6 +39,42 @@ _SESSION_KEYS = ("auth_user_id", "auth_email", "auth_access_token", "auth_refres
 
 def esta_autenticado() -> bool:
     return bool(st.session_state.get("auth_user_id") and st.session_state.get("auth_access_token"))
+
+
+# ==============================================================================
+# [DESKTOP-LOCAL - modo offline/local] Sessão LOCAL sem servidor, exclusiva da edição desktop.
+# ------------------------------------------------------------------------------
+# OPT-IN ESTRITO por variável de ambiente: a aplicação WEB nunca define OPENROTAS_DESKTOP_LOCAL,
+# então nada abaixo altera o comportamento online (zero regressão — garantido por teste). O
+# launcher do desktop só liga isto quando o usuário escolhe modo offline/local na config.
+#
+# Racional: o desktop é single-user, na máquina do próprio usuário. Em modo offline (sem internet),
+# NÃO há como validar uma sessão no Supabase — então estabelecemos uma sessão LOCAL para liberar o
+# NÚCLEO (roteamento/estudos, que são 100% locais). Recursos que dependem da nuvem (estudos salvos
+# no servidor, compartilhamento) degradam graciosamente (as funções de auth_service são defensivas
+# e retornam vazio quando a sessão não é válida no servidor). Segurança: não há elevação de
+# privilégio — o acesso ao banco continua governado pela RLS do Supabase; um token local "LOCAL"
+# simplesmente não autoriza nada no servidor.
+# ==============================================================================
+_LOCAL_USER_ID = "local-desktop"
+
+
+def _modo_desktop_local() -> bool:
+    """True somente quando o launcher do desktop ligou o modo local/offline (env). Defensivo."""
+    try:
+        return os.environ.get("OPENROTAS_DESKTOP_LOCAL") == "1"
+    except Exception:
+        return False
+
+
+def _iniciar_sessao_local():
+    """Estabelece uma sessão LOCAL (sem servidor) para o modo desktop offline."""
+    st.session_state["auth_user_id"] = _LOCAL_USER_ID
+    st.session_state["auth_email"] = "local@desktop"
+    st.session_state["auth_access_token"] = "LOCAL"   # sentinela: não autoriza nada no servidor
+    st.session_state["auth_refresh_token"] = ""
+    st.session_state["auth_login_ts"] = time.time()
+    st.session_state["_auth_local_desktop"] = True
 
 
 def usuario_atual() -> dict | None:
@@ -987,6 +1024,20 @@ def exigir_autenticacao():
     """PORTÃO da aplicação — chamar uma única vez, logo no início do script principal.
     Bloqueia (st.stop()) enquanto não houver sessão válida; nada abaixo desta chamada
     executa para quem não estiver autenticado."""
+    # [DESKTOP-LOCAL] Modo offline/local da edição desktop (opt-in estrito via env; a web nunca
+    # define esta env → caminho web 100% inalterado). Estabelece uma sessão LOCAL e NÃO bate no
+    # Supabase (não há recheck periódico que possa derrubar a sessão offline). O perfil/estudos de
+    # nuvem degradam graciosamente; o núcleo (roteamento/estudos locais) roda normalmente.
+    if _modo_desktop_local():
+        if not esta_autenticado():
+            _iniciar_sessao_local()
+        if st.session_state.get("_mostrar_perfil"):
+            _col_esq, _col_mid, _col_dir = st.columns([1, 3, 1])
+            with _col_mid:
+                _tela_perfil()
+            st.stop()
+        return
+
     if not esta_autenticado():
         # [PERSISTÊNCIA NO NAVEGADOR] antes de exigir novo login, tenta reidratar do navegador — assim
         # um F5 / reconexão / reinício do servidor NÃO desloga. Se conseguiu ("ok"), rerun já autenticado.

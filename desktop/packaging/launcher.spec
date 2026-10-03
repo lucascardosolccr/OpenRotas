@@ -69,6 +69,15 @@ for _it in _itens:
         # destino = raiz do bundle (mantém o mesmo nome relativo)
         datas.append((_src, _it if os.path.isdir(_src) else "."))
 
+# [GRAFO EMBUTIDO - opcional] Se desktop/data_local/ tiver o grafo (brazil-latest.osrm*), ele é
+# EMBUTIDO no bundle (instalador "gordo", com roteamento offline pronto). O workflow build-desktop
+# coloca os arquivos lá quando embed_graph=true; sem eles, nada é embutido (instalador enxuto).
+_data_local = os.path.join(REPO_ROOT, "desktop", "data_local")
+if os.path.isdir(_data_local):
+    for _fn in os.listdir(_data_local):
+        if _fn.startswith("brazil-latest.osrm"):
+            datas.append((os.path.join(_data_local, _fn), "data_local"))
+
 block_cipher = None
 
 a = Analysis(

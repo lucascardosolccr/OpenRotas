@@ -1,0 +1,72 @@
+# ============================================================================
+#  OpenRotas — build do GRAFO OSRM do Brasil na nuvem (grátis, sem PC, sem cartão).
+#
+#  Roda num runner LINUX do GitHub, baixa o mapa do Brasil (Geofabrik), processa com o OSRM
+#  (extract/partition/customize MLD via Docker) e publica o "brazil-osrm-mld.tar.gz" como
+#  asset de uma Release. O desktop consome esse arquivo (config osrm.graph_url) e o serve
+#  localmente via Docker — roteamento rápido e OFFLINE.
+#
+#  Como usar: Actions → "build-osrm-graph" → Run workflow. Leva ~30-60 min (pesado).
+#  Depois, em osrm.graph_url do desktop.json, use a URL do asset da Release gerada.
+# ============================================================================
+name: build-osrm-graph
+
+on:
+  workflow_dispatch:
+    inputs:
+      pbf_url:
+        description: "URL do .osm.pbf de origem (Geofabrik)"
+        default: "https://download.geofabrik.de/south-america/brazil-latest.osm.pbf"
+        required: true
+      release_tag:
+        description: "Tag da Release onde publicar o grafo"
+        default: "osrm-brasil-latest"
+        required: true
+
+permissions:
+  contents: write   # necessário para criar/atualizar a Release
+
+jobs:
+  graph:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Liberar espaço em disco (o grafo do Brasil é grande)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          df -h /
+
+      - name: Baixar o mapa do Brasil
+        run: |
+          mkdir -p data
+          curl -L --retry 3 -o data/brazil-latest.osm.pbf "${{ github.event.inputs.pbf_url }}"
+          ls -lh data
+
+      - name: Processar OSRM (MLD) via Docker
+        run: |
+          cd data
+          docker run --rm -t -v "$PWD:/data" osrm/osrm-backend \
+            osrm-extract -p /opt/car.lua /data/brazil-latest.osm.pbf
+          rm -f brazil-latest.osm.pbf          # libera ~1,5 GB antes de particionar
+          docker run --rm -t -v "$PWD:/data" osrm/osrm-backend \
+            osrm-partition /data/brazil-latest.osrm
+          docker run --rm -t -v "$PWD:/data" osrm/osrm-backend \
+            osrm-customize /data/brazil-latest.osrm
+          df -h /
+
+      - name: Empacotar o grafo
+        run: |
+          cd data
+          tar -czf ../brazil-osrm-mld.tar.gz brazil-latest.osrm*
+          cd ..
+          ls -lh brazil-osrm-mld.tar.gz
+
+      - name: Publicar na Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag }}
+          name: "OSRM Brasil (MLD)"
+          body: "Grafo rodoviário OSRM do Brasil (algoritmo MLD) para a edição desktop do OpenRotas. Consuma via osrm.graph_url no desktop.json."
+          files: brazil-osrm-mld.tar.gz
+          fail_on_unmatched_files: true

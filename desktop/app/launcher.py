@@ -142,7 +142,26 @@ def main() -> int:
     try:
         import engines.osrm_manager as osrm  # desktop/engines (mesmo diretório-pai no path)
         _conf = cfg.carregar_config_usuario()
-        motor = osrm.resolver(_conf.get("osrm"), osrm_url_legado=_conf.get("OSRM_URL", "") or "")
+        _osrm_cfg = dict(_conf.get("osrm") or {})
+        # [GRAFO COMO PRODUTO] No modo docker, garante o grafo do Brasil localmente (usa o já
+        # instalado; senão baixa uma vez de graph_url para o perfil do usuário). Injeta o caminho
+        # resolvido em graph_path. Sem url/sem docker → no-op (cai no público). Defensivo.
+        if str(_osrm_cfg.get("mode", "")).lower() == "docker":
+            try:
+                # 1º: grafo EMBUTIDO no bundle (instalador com embed_graph) em app_root/data_local.
+                if not _osrm_cfg.get("graph_path"):
+                    _dl_app = cfg.app_root() / "data_local"
+                    _emb = next(_dl_app.glob("*.osrm"), None) if _dl_app.exists() else None
+                    if _emb is not None:
+                        _osrm_cfg["graph_path"] = str(_emb)
+                        log.info("[OSRM] grafo embutido no bundle: %s", _emb)
+                # 2º: senão, usa/baixa para o perfil do usuário (auto-provisionamento).
+                _gp = osrm.garantir_grafo(_osrm_cfg, paths["data_local"])
+                if _gp:
+                    _osrm_cfg["graph_path"] = _gp
+            except Exception:
+                log.warning("[OSRM] provisionamento do grafo falhou; seguindo.", exc_info=True)
+        motor = osrm.resolver(_osrm_cfg, osrm_url_legado=_conf.get("OSRM_URL", "") or "")
         if motor.url:
             os.environ["OSRM_URL"] = motor.url   # preparar_secrets_e_env (abaixo) grava no secrets.toml
         log.info("[OSRM] modo=%s ativo=%s url=%s (%s)", motor.modo, motor.ativo, motor.url, motor.detalhe)
@@ -152,10 +171,18 @@ def main() -> int:
     # [OFFLINE - Etapa 4] Sinaliza modo offline por ENV (desktop-only; o app não é alterado).
     # Offline real = motor local + bases embarcadas (geocodificação/hidro já são locais); o
     # scraper do Google simplesmente falha e o fluxo cai no motor local, como já trata hoje.
+    # [LOGIN LOCAL] Em modo offline OU login local explícito, liga o bypass de login do portão
+    # de auth (OPENROTAS_DESKTOP_LOCAL) — opt-in; sem internet não há como validar no Supabase.
     try:
-        if (cfg.carregar_config_usuario() or {}).get("offline"):
+        _conf_off = cfg.carregar_config_usuario() or {}
+        _offline = bool(_conf_off.get("offline"))
+        _login_local = bool(_conf_off.get("local_login")) or _offline
+        if _offline:
             os.environ["OPENROTAS_OFFLINE"] = "1"
             log.info("[OFFLINE] modo offline sinalizado (OPENROTAS_OFFLINE=1).")
+        if _login_local:
+            os.environ["OPENROTAS_DESKTOP_LOCAL"] = "1"
+            log.info("[LOGIN LOCAL] bypass de login local ligado (OPENROTAS_DESKTOP_LOCAL=1).")
     except Exception:
         pass
 
