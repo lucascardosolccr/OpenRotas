@@ -84,6 +84,29 @@ def executar(verbose: bool = True) -> int:
     grav_ok = os.access(str(paths["cache"]), os.W_OK)
     linhas.append("Cache persistente gravável: %s (%s)" % ("OK" if grav_ok else "FALHA", paths["cache"]))
 
+    # Perfil de desempenho (Etapa 5) + prontidão offline (Etapa 4).
+    try:
+        perf = cfg.perfil_desempenho(hw)
+        linhas.append("Perfil de desempenho: modo '%s', workers de rota=%s, cache sugerido=%s MB"
+                      % (perf["modo"], perf["workers_rota"], perf["cache_mb_sugerido"]))
+    except Exception:
+        pass
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data_local"))
+        import local_data
+        reg = local_data.LocalDataRegistry(cfg.app_root(), cfg.user_data_dir() / "data_local")
+        off = reg.offline_pronto()
+        linhas.append("")
+        if off["pronto"]:
+            linhas.append("Offline: PRONTO (geocodificação/hidro local + grafo rodoviário local) ✓")
+        else:
+            linhas.append("Offline: parcial — falta(m): %s" % ", ".join(off["faltam"]))
+            linhas.append("  (geocodificação/hidro local: %s · roteamento local: %s)"
+                          % ("OK" if off["geocodificacao_hidro_local"] else "não",
+                             "OK" if off["roteamento_local"] else "não"))
+    except Exception:
+        pass
+
     linhas.append("")
     linhas.append("RESULTADO: %s" % ("tudo essencial OK ✓" if essenciais_ok and grav_ok
                                       else "há itens essenciais faltando ✗"))

@@ -180,6 +180,25 @@ def preparar_secrets_e_env(paths: dict) -> dict:
     return env
 
 
+def perfil_desempenho(hw: dict | None = None) -> dict:
+    """[Etapa 5 / §24/§25] Recomenda parâmetros de desempenho a partir do hardware, SEM impor
+    complexidade ao usuário (modo automático). Nota honesta: a aplicação já dimensiona os workers
+    de rota pelos núcleos da CPU (min(32, max(8, CPU*4))) e usa disco local persistente — então,
+    rodando localmente, o paralelismo já escala sozinho. Este perfil é informativo (mostrado no
+    diagnóstico) e base para ajustes opt-in futuros, sem tocar na app web (§1)."""
+    hw = hw or detectar_hardware()
+    cpus = hw.get("cpus") or 4
+    ram = hw.get("ram_gb") or 8
+    workers = min(32, max(8, cpus * 4))                  # espelha a fórmula já usada pela app
+    cache_mb = int(min(4096, max(512, (ram or 8) * 128)))  # ~1/8 da RAM, entre 512 MB e 4 GB
+    return {
+        "modo": hw.get("perfil", "equilibrado"),
+        "workers_rota": workers,
+        "cache_mb_sugerido": cache_mb,
+        "observacao": "a app já escala workers pela CPU automaticamente ao rodar local",
+    }
+
+
 def resumo_config() -> dict:
     """Snapshot legível para log/diagnóstico de inicialização."""
     hw = detectar_hardware()

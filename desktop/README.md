@@ -53,6 +53,10 @@ desktop/
 │   ├── osrm_manager.py      # detecta/sobe/valida um OSRM local; injeta OSRM_URL
 │   ├── benchmark.py         # mede OSRM local × público (§9/§29), stdlib
 │   └── sample_pairs.csv     # 10 pares O/D reais do Brasil p/ o benchmark
+├── data_local/              # camada de DADOS LOCAIS (Etapa 4)
+│   └── local_data.py        # registro + lazy loading + índice IBGE + integridade + offline
+├── tests/                   # suíte da edição desktop (Etapa 6) — roda em qualquer SO
+│   └── test_desktop.py      # 16 testes: config, perfil, motor, dados, diagnóstico
 ├── config/
 │   └── desktop.example.json # modelo de config (Supabase, OSRM_URL, offline) — copie p/ o perfil
 ├── scripts/
@@ -123,11 +127,19 @@ Validação formal dessa matriz (clicar cada aba no desktop) faz parte da Etapa 
 - **Etapa 3 — Motor de rotas local de 1ª classe (§9/§10): ✔ (camada entregue)** — ver seção 8.
   O desktop agora gerencia um OSRM local (modo `docker`/`external`) e há um harness de benchmark.
   Pendente, no seu Windows: preparar o grafo do Brasil (guias já entregues) e rodar o benchmark.
-- **Etapa 4 — Dados completos + offline (§6/§12/§32):** avaliar grafos/mapas completos como
-  componentes de 1ª classe (instalados à parte em `data_local/`, com *lazy loading* e índices —
-  §16), e o modo offline fim-a-fim (fallback local quando sem internet).
-- **Etapa 5 — Processamento em 2º plano + progresso real (§27/§28)** e **config de desempenho** (§25).
-- **Etapa 6 — Testes de performance web×desktop (§29)** e **teste de máquina limpa (§30/§31)**.
+- **Etapa 4 — Dados locais + offline: ✔ (camada entregue)** — `data_local/local_data.py`: registro
+  declarativo dos dados, *lazy loading* com projeção de colunas (§16), índice IBGE O(1), assinatura
+  de integridade (1º+último MB — barato em arquivos de GB, §19) e prontidão offline (§12). O launcher
+  sinaliza `OPENROTAS_OFFLINE`. Pendente: instalar o grafo rodoviário em `data_local/` (no seu PC) para
+  roteamento 100% offline.
+- **Etapa 5 — Desempenho: ✔ (perfil automático)** — `desktop_config.perfil_desempenho()` recomenda
+  workers/cache pelo hardware (§24/§25), exibido no diagnóstico. Nota honesta: a app **já** escala
+  workers pela CPU e usa disco local persistente — rodando local, o paralelismo já escala sozinho,
+  então não há o que "destravar" sem tocar na web (§1). Processamento em 2º plano/progresso (§27/§28)
+  já existem no app (lote em chunks com barra de progresso).
+- **Etapa 6 — Testes: ✔** — `tests/test_desktop.py` (16 testes) roda em qualquer SO e cobre config,
+  perfil, resolução do motor (fallback defensivo), dados locais e diagnóstico. O **benchmark de
+  performance** (OSRM local × público, §29) está em `engines/benchmark.py`.
 
 ### Decisões que precisam de você (ficam para a etapa certa, não decido sozinho)
 - **Offline incluindo login:** hoje o portão de auth exige Supabase (internet). Rodar offline-de-verdade

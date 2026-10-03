@@ -149,6 +149,16 @@ def main() -> int:
     except Exception:
         log.warning("[OSRM] gerenciamento do motor local falhou; usando OSRM público.", exc_info=True)
 
+    # [OFFLINE - Etapa 4] Sinaliza modo offline por ENV (desktop-only; o app não é alterado).
+    # Offline real = motor local + bases embarcadas (geocodificação/hidro já são locais); o
+    # scraper do Google simplesmente falha e o fluxo cai no motor local, como já trata hoje.
+    try:
+        if (cfg.carregar_config_usuario() or {}).get("offline"):
+            os.environ["OPENROTAS_OFFLINE"] = "1"
+            log.info("[OFFLINE] modo offline sinalizado (OPENROTAS_OFFLINE=1).")
+    except Exception:
+        pass
+
     import atexit
     if motor is not None:
         atexit.register(lambda: __import__("engines.osrm_manager", fromlist=["encerrar"]).encerrar(motor))
