@@ -9,7 +9,7 @@
     "mode": "off",
     "url": "http://localhost:5000",
     "graph_path": "",
-    "graph_url": "",
+    "graph_url": "https://github.com/lucascardosolccr/OpenRotas/releases/download/osrm-brasil-latest/brazil-osrm-mld.tar.gz.part00",
     "_graph_url": "Opcional. URL do grafo publicado pelo workflow build-osrm-graph (Release do GitHub). Como o grafo do Brasil é grande, ele é publicado em PARTES: aponte para o asset '...brazil-osrm-mld.tar.gz.part' (o app baixa .part00, .part01, ... concatena e extrai). URL de .tar.gz único também é aceita. No modo 'docker', se graph_path não existir, o app baixa daqui UMA VEZ para o perfil do usuário. Precisa do Docker Desktop para servir.",
     "docker_image": "osrm/osrm-backend",
     "algorithm": "mld",

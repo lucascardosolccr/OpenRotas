@@ -197,8 +197,33 @@ _AJUDA = """OpenRotas Desktop — uso:
   OpenRotas.exe --atualizar     verifica atualização do app e das bases
   OpenRotas.exe --atualizar --baixar   aplica as atualizações pendentes (baixa/verifica)
   OpenRotas.exe --reparar       repara/atualiza tudo que puder, sem reinstalar (§18)
+  OpenRotas.exe --provisionar-grafo   baixa o grafo OSRM do Brasil (prepara o offline; sem Docker)
   OpenRotas.exe --help          esta ajuda
 Flags auxiliares: --silencioso (diagnóstico sem imprimir)."""
+
+
+def _provisionar_grafo(paths) -> int:
+    """Baixa/extrai o grafo OSRM do Brasil para o perfil do usuário (não precisa de Docker —
+    Docker só é necessário para SERVIR). Lê osrm.graph_url/graph_path da config."""
+    conf = cfg.carregar_config_usuario() or {}
+    oc = dict(conf.get("osrm") or {})
+    if not str(oc.get("graph_url", "")).strip() and not str(oc.get("graph_path", "")).strip():
+        print("Sem osrm.graph_url/graph_path na config. Preencha graph_url (Release do grafo) "
+              "no desktop.json e tente de novo.")
+        return 2
+    print("Provisionando o grafo OSRM do Brasil (download único, vários GB — pode demorar)...")
+    try:
+        import engines.osrm_manager as osrm
+        caminho = osrm.garantir_grafo(oc, paths["data_local"])
+    except Exception as e:
+        print("Falha ao provisionar o grafo: %s" % e)
+        return 1
+    if caminho:
+        print("Grafo pronto em: %s" % caminho)
+        print("Para SERVIR (roteamento local/offline), use osrm.mode='docker' com o Docker Desktop instalado.")
+        return 0
+    print("Não foi possível provisionar o grafo (verifique a URL/conexão).")
+    return 1
 
 
 def _reparar() -> int:
@@ -265,6 +290,12 @@ def main() -> int:
     # Modo REPARAR (§18): verifica e conserta tudo que puder (bases/grafo) sem reinstalar, e sai.
     if "--reparar" in sys.argv:
         return _reparar()
+
+    # Modo PROVISIONAR GRAFO: baixa/extrai o grafo OSRM do Brasil para o perfil do usuário
+    # (não precisa de Docker — Docker só é necessário para SERVIR). Útil para preparar o
+    # offline antes. Usa osrm.graph_url/graph_path da config.
+    if "--provisionar-grafo" in sys.argv:
+        return _provisionar_grafo(paths)
 
     _t_inicio = time.perf_counter()
     log.info("OpenRotas Desktop iniciando. Config: %s", cfg.resumo_config())

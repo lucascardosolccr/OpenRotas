@@ -39,6 +39,27 @@ def test_perfil_desempenho_dentro_dos_limites():
     assert 8 <= p["workers_rota"] <= 32
     assert 512 <= p["cache_mb_sugerido"] <= 4096
 
+def test_validar_config_service_role_e_erro():
+    av = cfg.validar_config({"local_login": True, "SUPABASE_ANON_KEY": "eyJ...service_role...x"})
+    assert any(n == "erro" and "service_role" in m for n, m in av)
+
+def test_validar_config_docker_sem_grafo_avisa():
+    av = cfg.validar_config({"local_login": True, "osrm": {"mode": "docker"}})
+    assert any(n == "aviso" and "graph_url" in m for n, m in av)
+
+def test_validar_config_supabase_ausente_sem_login_local():
+    av = cfg.validar_config({"osrm": {"mode": "off"}})
+    assert any(n == "aviso" and "SUPABASE" in m for n, m in av)
+
+def test_validar_config_login_local_sem_supabase_ok():
+    av = cfg.validar_config({"local_login": True, "osrm": {"mode": "off"}})
+    assert not any("SUPABASE" in m for _, m in av)   # login local não exige Supabase
+
+def test_validar_config_graph_url_com_mode_off_e_info():
+    av = cfg.validar_config({"local_login": True, "osrm": {"mode": "off", "graph_url": "http://x/g.part00"}})
+    assert any(n == "info" and "graph_url" in m for n, m in av)
+
+
 def test_user_data_dir_e_resumo():
     paths = cfg.ensure_user_dirs()
     assert paths["cache"].exists()

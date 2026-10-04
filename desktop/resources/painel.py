@@ -139,6 +139,24 @@ def _bloco_telemetria() -> str:
     return "".join(out)
 
 
+def _bloco_config() -> str:
+    try:
+        import desktop_config as cfg
+        avisos = cfg.validar_config()
+    except Exception:
+        return ""
+    if not avisos:
+        return '<p class="empty">Configuração sem alertas. ✓</p>'
+    classe = {"erro": "b-bad", "aviso": "b-warn", "info": ""}
+    rotulo = {"erro": "erro", "aviso": "atenção", "info": "dica"}
+    out = ['<ul style="margin:0;padding-left:18px">']
+    for nivel, msg in avisos:
+        out.append('<li><span class="badge %s">%s</span> %s</li>'
+                   % (classe.get(nivel, ""), html.escape(rotulo.get(nivel, nivel)), html.escape(msg)))
+    out.append("</ul>")
+    return "".join(out)
+
+
 def construir_html(osrm_cfg=None) -> str:
     """Monta o HTML completo do painel. Nunca levanta: cada bloco degrada sozinho."""
     quando = time.strftime("%d/%m/%Y %H:%M")
@@ -157,6 +175,7 @@ def construir_html(osrm_cfg=None) -> str:
         "<section class='card'><h2>Recursos do software</h2>", _tabela_recursos(osrm_cfg), "</section>",
         "<section class='card'><h2>Prontidão offline</h2>", _bloco_offline(), "</section>",
         "<section class='card'><h2>Perfil de execução (local)</h2>", _bloco_telemetria(), "</section>",
+        "<section class='card'><h2>Configuração</h2>", _bloco_config(), "</section>",
         "<footer>Dados locais — nada sai do seu computador.</footer>",
         "</div></body></html>",
     ]

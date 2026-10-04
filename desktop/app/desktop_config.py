@@ -202,6 +202,43 @@ def perfil_desempenho(hw: dict | None = None) -> dict:
     }
 
 
+def validar_config(conf: dict | None = None) -> list:
+    """Valida a config do usuário e devolve avisos ACIONÁVEIS (nível, mensagem) para o
+    diagnóstico/Central de Recursos. Pura: não toca em rede nem em Docker. Nunca levanta.
+    Níveis: 'erro' (impede algo importante), 'aviso' (degrada), 'info' (dica)."""
+    try:
+        conf = conf if conf is not None else carregar_config_usuario()
+    except Exception:
+        conf = {}
+    avisos = []
+    offline = bool(conf.get("offline"))
+    login_local = bool(conf.get("local_login")) or offline
+    # Supabase (login na nuvem) — só é problema se NÃO for login local/offline.
+    if not login_local:
+        if not str(conf.get("SUPABASE_URL", "")).strip() or not str(conf.get("SUPABASE_ANON_KEY", "")).strip():
+            avisos.append(("aviso", "SUPABASE_URL/SUPABASE_ANON_KEY ausentes: o login na nuvem não vai "
+                                    "funcionar. Preencha-os ou use local_login=true para login local."))
+    # Nunca a service_role no cliente (regra de segurança do projeto).
+    chave = str(conf.get("SUPABASE_ANON_KEY", ""))
+    if "service_role" in chave or "service_role" in str(conf.get("SUPABASE_SERVICE_KEY", "")):
+        avisos.append(("erro", "Detectada possível service_role key na config. Use SOMENTE a anon key "
+                               "pública no cliente (a segurança depende do RLS). Remova a service_role."))
+    # Motor de rotas local.
+    osrm = conf.get("osrm") or {}
+    modo = str(osrm.get("mode", "")).lower().strip()
+    tem_fonte_grafo = bool(str(osrm.get("graph_url", "")).strip() or str(osrm.get("graph_path", "")).strip())
+    if modo == "docker" and not tem_fonte_grafo:
+        avisos.append(("aviso", "osrm.mode='docker' sem graph_url/graph_path: nada a servir localmente; "
+                                "o app cairá no OSRM público. Aponte graph_url para o grafo (Release)."))
+    if modo in ("off", "", "none") and str(osrm.get("graph_url", "")).strip():
+        avisos.append(("info", "graph_url está preenchido mas osrm.mode='off' (usa OSRM público). "
+                               "Mude para 'docker' para servir o grafo local/offline."))
+    if offline and modo in ("off", "", "none"):
+        avisos.append(("aviso", "offline=true mas sem motor de rotas local (osrm.mode='off'): o "
+                                "roteamento não funcionará sem internet. Configure osrm.mode='docker'."))
+    return avisos
+
+
 def resumo_config() -> dict:
     """Snapshot legível para log/diagnóstico de inicialização."""
     hw = detectar_hardware()

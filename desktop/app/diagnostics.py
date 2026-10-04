@@ -139,6 +139,18 @@ def executar(verbose: bool = True) -> int:
         except Exception:
             pass
 
+    # Validação da config do usuário (§17): avisos acionáveis (Supabase, motor, offline).
+    try:
+        avisos = cfg.validar_config(conf)
+        if avisos:
+            linhas.append("")
+            linhas.append("Config:")
+            marca = {"erro": "✗", "aviso": "!", "info": "·"}
+            for nivel, msg in avisos:
+                linhas.append("  %s %s" % (marca.get(nivel, "·"), msg))
+    except Exception:
+        pass
+
     linhas.append("")
     linhas.append("RESULTADO: %s" % ("tudo essencial OK ✓" if essenciais_ok and grav_ok
                                       else "há itens essenciais faltando ✗"))
