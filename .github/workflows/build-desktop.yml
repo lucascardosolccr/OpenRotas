@@ -56,6 +56,10 @@ jobs:
         shell: pwsh
         run: choco install innosetup -y --no-progress
 
+      - name: Gerar ícone do app/instalador (§38)
+        shell: pwsh
+        run: python desktop/installer/make_icon.py desktop/installer/openrotas.ico
+
       - name: (Opcional) Embutir o grafo OSRM do Brasil
         if: ${{ github.event.inputs.embed_graph == 'true' }}
         shell: pwsh

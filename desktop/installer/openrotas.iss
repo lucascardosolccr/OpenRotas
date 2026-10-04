@@ -36,7 +36,10 @@ ArchitecturesInstallIn64BitMode=x64compatible
 OutputBaseFilename=OpenRotas Setup
 OutputDir=dist_installer
 PrivilegesRequired=lowest
-; SetupIconFile=openrotas.ico
+; Ícone do instalador (§38) — gerado por make_icon.py no build; usado só se existir.
+#if FileExists(AddBackslash(SourcePath) + "openrotas.ico")
+SetupIconFile=openrotas.ico
+#endif
 
 [Languages]
 Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"

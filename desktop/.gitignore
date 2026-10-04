@@ -10,6 +10,9 @@ __pycache__/
 # Config real do usuário (contém chaves). O exemplo (desktop.example.json) É versionado.
 config/desktop.json
 
+# Ícone gerado em tempo de build (make_icon.py) — não versionar o binário.
+installer/openrotas.ico
+
 # Dados locais grandes instalados à parte (grafos/mapas) — não entram no git.
 # O CÓDIGO-FONTE da camada data_local (local_data.py / __init__.py) É versionado;
 # só os ARTEFATOS de dados grandes dentro de data_local/ ficam de fora.

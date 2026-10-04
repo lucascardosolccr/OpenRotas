@@ -59,6 +59,7 @@ desktop/
 │   └── local_data.py        # registro + lazy loading + índice IBGE + integridade + override
 ├── resources/               # GERENCIADOR DE RECURSOS (§3/§4/§17/§18/§19/§24)
 │   ├── resource_manager.py  # status/verificar/provisionar/reparar + manifesto/atualizar
+│   ├── painel.py            # Central de Recursos: painel HTML visual (--recursos --html)
 │   └── manifest.json        # versão/arquivo/sha256 de cada recurso (fonte da verdade — §19)
 ├── telemetry/               # PERFIL DE EXECUÇÃO / TELEMETRIA LOCAL (§42)
 │   └── exec_profile.py      # JSONL local: registra/cronometra/agrega (nunca sai do PC)
@@ -130,7 +131,9 @@ Validação formal dessa matriz (clicar cada aba no desktop) faz parte da Etapa 
 
 - **Etapa 1 — Fundação (ESTA):** scaffold, launcher, config, diagnóstico, spec, instalador, matriz. ✔
 - **Etapa 2 — Build real no Windows:** rodar `build.ps1`, resolver hidden-imports/datas que faltarem
-  (builds iterativos, §37), validar a janela e o 1º processamento; ícone/versão/assinatura (§38).
+  (builds iterativos, §37), validar a janela e o 1º processamento. **Ícone e versão ✔ (§38):**
+  `installer/make_icon.py` gera o `openrotas.ico` no build (embutido no .exe e no instalador); a
+  versão vem de `APP_VERSION` (fonte única). Pendente: assinatura digital (certificado).
 - **Etapa 3 — Motor de rotas local de 1ª classe (§9/§10): ✔ (camada entregue)** — ver seção 8.
   O desktop agora gerencia um OSRM local (modo `docker`/`external`) e há um harness de benchmark.
   Pendente, no seu Windows: preparar o grafo do Brasil (guias já entregues) e rodar o benchmark.

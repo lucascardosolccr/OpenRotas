@@ -24,6 +24,10 @@ if (-not (Test-Path (Join-Path $VENV "python.exe"))) {
   & (Join-Path $VENV "python.exe") -m pip install -r (Join-Path $ROOT "requirements-desktop.txt")
 }
 
+# 2.5) gerar o ícone do app/instalador (§38) — best-effort; segue sem ele se Pillow faltar.
+Write-Host "[build] gerando icone (openrotas.ico)..."
+& (Join-Path $VENV "python.exe") (Join-Path $ROOT "installer\make_icon.py") (Join-Path $ROOT "installer\openrotas.ico")
+
 # 3) empacotar (PyInstaller onedir) — saída em desktop\build\dist\OpenRotas\
 Write-Host "[build] empacotando com PyInstaller (onedir)..."
 Push-Location $ROOT
