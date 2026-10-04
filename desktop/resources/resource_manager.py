@@ -94,8 +94,9 @@ def status(osrm_cfg: dict | None = None) -> list:
 
 
 def verificar() -> dict:
-    """Integridade dos recursos PRESENTES (hash parcial via local_data.assinatura). Também aponta
-    os obrigatórios ausentes. Devolve {ok: bool, problemas: [...], faltam_obrigatorios: [...]}."""
+    """Integridade dos recursos PRESENTES: tamanho (assinatura) + LEGIBILIDADE real (o arquivo
+    abre no formato esperado — pega corrupção que a existência não pega, §18). Também aponta os
+    obrigatórios ausentes. Devolve {ok, problemas, faltam_obrigatorios}."""
     cfg, reg = _registry()
     problemas, faltam = [], []
     import local_data
@@ -103,6 +104,8 @@ def verificar() -> dict:
         if reg.existe(d.chave):
             a = reg.assinatura(d.chave)
             if not a["existe"] or a["bytes"] <= 0:
+                problemas.append({"chave": d.chave, "motivo": CORROMPIDO})
+            elif not reg.legivel(d.chave):
                 problemas.append({"chave": d.chave, "motivo": CORROMPIDO})
         elif d.essencial:
             faltam.append(d.chave)

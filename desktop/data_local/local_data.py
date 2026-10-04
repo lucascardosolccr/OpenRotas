@@ -129,6 +129,34 @@ class LocalDataRegistry:
         self._cache.clear()
 
     # ---- integridade / versão (§17/§18/§19) ----
+    def legivel(self, chave: str) -> bool:
+        """Verifica BARATO se o arquivo realmente ABRE no formato esperado (não só existe):
+        Parquet → lê o schema (rodapé, O(1)); pickle_gz → descomprime 1 KB; csv → lê 1 linha.
+        Detecta corrupção que a checagem de existência não pega (§18). Nunca levanta."""
+        try:
+            d = _POR_CHAVE[chave]
+            p = self.caminho(chave)
+            if not p.exists():
+                return False
+            fmt = d.formato
+            if fmt == "parquet":
+                import pyarrow.parquet as pq
+                pq.read_schema(str(p))                 # só o rodapé; não carrega os dados
+                return True
+            if fmt == "pickle_gz":
+                import gzip
+                with gzip.open(p, "rb") as f:
+                    f.read(1024)
+                return True
+            if fmt == "csv":
+                with open(p, "r", encoding="utf-8", errors="ignore") as f:
+                    f.readline()
+                return True
+            return True                                # osrm/outro: existência basta
+        except Exception:
+            logger.warning("Recurso %r não está legível (possível corrupção).", chave, exc_info=True)
+            return False
+
     def assinatura(self, chave: str) -> dict:
         """Tamanho + hash parcial rápido (1º e último MB) — barato mesmo em arquivos de GB,
         suficiente para detectar troca de versão/corrupção sem ler o arquivo inteiro."""

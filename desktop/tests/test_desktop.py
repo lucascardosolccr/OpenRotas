@@ -186,6 +186,18 @@ def test_offline_pronto_estrutura(reg):
 def test_osrm_brasil_e_opcional_ausente(reg):
     assert reg.existe("osrm_brasil") is False
 
+def test_legivel_base_valida(reg):
+    assert reg.legivel("municipios") is True          # parquet real abre (lê só o schema)
+
+def test_legivel_detecta_parquet_corrompido(tmp_path):
+    # um "parquet" com lixo deve ser detectado como não-legível (§18)
+    r = local_data.LocalDataRegistry(cfg.app_root(), tmp_path / "data_local")
+    ov = r.override_dir / "municipios.parquet"
+    ov.parent.mkdir(parents=True, exist_ok=True)
+    ov.write_bytes(b"isto nao e um parquet valido")
+    assert r.existe("municipios") is True             # existe (override)
+    assert r.legivel("municipios") is False           # mas não abre → corrompido
+
 def test_override_vence_o_bundle(tmp_path):
     # Uma cópia reparada/atualizada no diretório de override do perfil do usuário tem
     # prioridade sobre a base embarcada read-only (§18/§19/§45).
