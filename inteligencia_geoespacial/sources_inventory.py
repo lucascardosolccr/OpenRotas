@@ -31,7 +31,7 @@ integração que não existe.
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 from inteligencia_geoespacial.fontes_registry import SourceRegistry, SourcesRegistry, SourceStatus
 
@@ -718,7 +718,8 @@ def saude_dos_dados() -> dict:
     qualidade_media = (sum(completudes) / len(completudes)) if completudes else None
 
     return {
-        "gerado_em": datetime.utcnow(),
+        # UTC naive (equivalente ao antigo utcnow(), sem a DeprecationWarning do Python 3.12+).
+        "gerado_em": datetime.now(timezone.utc).replace(tzinfo=None),
         "fontes_catalogadas": len(fontes),
         "fontes_ativas": len(ativas),
         "fontes_em_teste": len(em_teste),
