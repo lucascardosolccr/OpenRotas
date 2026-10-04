@@ -83,7 +83,7 @@ def _tabela_recursos(osrm_cfg=None) -> str:
     linhas = rm.status(osrm_cfg)
     out = ['<table><thead><tr><th>Recurso</th><th>Estado</th><th>Tipo</th><th>Módulo</th><th class="num">Tamanho</th></tr></thead><tbody>']
     for r in linhas:
-        mb = ("%s MB" % r["mb"]) if r.get("mb") else "—"
+        mb = ("%s MB" % r["mb"]) if r.get("mb") is not None else "—"
         out.append("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td class='num'>%s</td></tr>" % (
             html.escape(str(r["chave"])), _badge(r["estado"]),
             html.escape(str(r["tipo"])), html.escape(str(r["modulo"])), html.escape(mb)))

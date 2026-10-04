@@ -38,6 +38,13 @@ def versao_atual() -> str:
     return str(getattr(cfg, "APP_VERSION", "0.0.0"))
 
 
+def _extrair_versao(texto) -> str:
+    """Extrai o 1º número de versão (ex. '1.2.3' / '0.10') de um texto livre; '' se não houver."""
+    import re
+    m = re.search(r"\d+(?:\.\d+)+", str(texto or ""))
+    return m.group(0) if m else ""
+
+
 def _versao_tupla(v: str):
     """('1.2.3' | 'v1.2.3' | '2026.10') → tupla de inteiros p/ comparação. None se não-numérico."""
     v = str(v or "").strip().lstrip("vV")
@@ -75,8 +82,10 @@ def consultar_release(repo: str = REPO, tag: str = APP_RELEASE_TAG, timeout: int
         })
         with urllib.request.urlopen(req, timeout=timeout) as r:
             dados = json.loads(r.read().decode("utf-8", "replace"))
-        # Versão: do campo 'name' ou da própria tag (ex. 'v0.2.0' → '0.2.0').
-        versao = str(dados.get("name") or dados.get("tag_name") or "").strip().lstrip("vV")
+        # Versão: extrai o 1º token numérico (ex. 'OpenRotas 0.2.0' → '0.2.0') do name ou da
+        # tag, para não cair na comparação textual quando o nome não for uma versão pura.
+        versao = _extrair_versao(dados.get("name")) or _extrair_versao(dados.get("tag_name")) \
+            or str(dados.get("tag_name") or "").strip().lstrip("vV")
         # procura o primeiro asset .exe (o instalador)
         url_exe = None
         for a in dados.get("assets", []) or []:

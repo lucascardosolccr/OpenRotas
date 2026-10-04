@@ -176,16 +176,64 @@ def resumo_ambiente(osrm_cfg: dict | None = None) -> str:
 MANIFESTO_PATH = _AQUI / "manifest.json"
 
 
-def carregar_manifesto(caminho: Path | None = None) -> dict:
-    """Lê o manifesto embarcado (ou outro arquivo). {} em qualquer falha — nunca levanta."""
-    p = Path(caminho) if caminho else MANIFESTO_PATH
+def _manifesto_local_path() -> Path | None:
+    """Manifesto GRAVÁVEL no perfil do usuário, que registra as versões já instaladas via
+    atualização (o embarcado é read-only em Program Files). É o que torna a atualização
+    IDEMPOTENTE (§19): sem ele, cada run reportaria tudo como pendente para sempre."""
+    try:
+        import desktop_config as cfg
+        return cfg.user_data_dir() / "manifest.local.json"
+    except Exception:
+        return None
+
+
+def _ler_json(p) -> dict:
     try:
         with open(p, "r", encoding="utf-8") as f:
             m = json.load(f)
         return m if isinstance(m, dict) else {}
     except Exception:
-        logger.warning("[RECURSOS] não foi possível ler o manifesto %s", p, exc_info=True)
         return {}
+
+
+def carregar_manifesto(caminho: Path | None = None) -> dict:
+    """Manifesto EFETIVO de versões instaladas. Com `caminho`, lê só esse arquivo. Sem ele,
+    parte do embarcado e SOBREPÕE as versões registradas no manifesto local do usuário
+    (recursos já atualizados) — assim verificar_atualizacoes não reporta o mesmo para sempre.
+    {} em falha; nunca levanta."""
+    if caminho is not None:
+        m = _ler_json(caminho)
+        if not m:
+            logger.warning("[RECURSOS] não foi possível ler o manifesto %s", caminho)
+        return m
+    base = _ler_json(MANIFESTO_PATH)
+    lp = _manifesto_local_path()
+    local = _ler_json(lp) if lp and Path(lp).exists() else {}
+    if local.get("recursos"):
+        rec = dict(base.get("recursos", {}))
+        for chave, r in local["recursos"].items():
+            if chave in rec and isinstance(r, dict) and r.get("versao"):
+                rec[chave] = dict(rec[chave], versao=r["versao"])  # versão instalada vence
+        base["recursos"] = rec
+    return base
+
+
+def _registrar_versao_local(chave: str, versao: str) -> None:
+    """Persiste no manifesto local do usuário a versão recém-instalada de um recurso (§19)."""
+    lp = _manifesto_local_path()
+    if not lp:
+        return
+    try:
+        Path(lp).parent.mkdir(parents=True, exist_ok=True)
+        m = _ler_json(lp)
+        rec = m.get("recursos", {}) if isinstance(m.get("recursos"), dict) else {}
+        rec[chave] = {"versao": str(versao)}
+        m["recursos"] = rec
+        m.setdefault("schema", 1)
+        with open(lp, "w", encoding="utf-8") as f:
+            json.dump(m, f, ensure_ascii=False, indent=2)
+    except Exception:
+        logger.warning("[RECURSOS] não foi possível registrar a versão local de %s", chave, exc_info=True)
 
 
 def carregar_manifesto_remoto(base_url: str, timeout: int = 15) -> dict:
@@ -309,12 +357,22 @@ def atualizar(manifesto_remoto: dict, base_url: str, apenas=None) -> list:
     diretório de override no perfil do usuário e verifica por sha256. `apenas` (iterável de chaves)
     limita o que atualizar. Devolve a lista de resultados por recurso. Não levanta."""
     cfg, reg = _registry()
+    import local_data
+    _provisionaveis = {d.chave for d in local_data.CATALOGO if d.formato == "osrm"}
     pendentes = verificar_atualizacoes(manifesto_remoto)
     if apenas is not None:
         apenas = set(apenas)
         pendentes = [p for p in pendentes if p["chave"] in apenas]
     resultados = []
     for p in pendentes:
+        # O grafo OSRM NÃO é uma base de cópia simples (vem em partes e é extraído/servido via
+        # Docker); é provisionado por provisionar_grafo/garantir_grafo, não por aqui. Baixá-lo
+        # para override_dir seria ignorado (caminho() não consulta override p/ data_local/).
+        if p["chave"] in _provisionaveis:
+            resultados.append({"chave": p["chave"], "ok": False, "arquivo": p.get("arquivo", ""),
+                               "versao": p["versao_remota"],
+                               "detalhe": "provisionável (grafo) — use provisionar_grafo/--reparar, não atualizar"})
+            continue
         arq = p.get("arquivo") or ""
         if not arq:
             resultados.append({"chave": p["chave"], "ok": False, "detalhe": "sem nome de arquivo no manifesto"})
@@ -322,6 +380,8 @@ def atualizar(manifesto_remoto: dict, base_url: str, apenas=None) -> list:
         url = base_url.rstrip("/") + "/" + arq
         destino = reg.override_dir / arq
         r = baixar_e_verificar(url, destino, p.get("sha256", ""))
+        if r["ok"]:
+            _registrar_versao_local(p["chave"], p["versao_remota"])   # idempotência (§19)
         reg.liberar_memoria()               # invalida cache em memória para reler a cópia nova
         resultados.append({"chave": p["chave"], "ok": r["ok"], "arquivo": arq,
                            "versao": p["versao_remota"], "detalhe": r["detalhe"], "caminho": r.get("caminho")})

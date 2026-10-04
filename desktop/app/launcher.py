@@ -247,7 +247,8 @@ def main() -> int:
                 print("Central de Recursos: %s" % gerado)
                 try:
                     import webbrowser
-                    webbrowser.open("file://" + gerado)
+                    from pathlib import Path as _P
+                    webbrowser.open(_P(gerado).as_uri())   # file:/// válido em Windows e Unix
                 except Exception:
                     pass
                 return 0

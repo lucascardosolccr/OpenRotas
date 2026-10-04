@@ -186,13 +186,28 @@ def _base_partes(url: str) -> str:
     return re.sub(r"\d+$", "", url)
 
 
+def _parte_ausente(exc: Exception) -> bool:
+    """True se a exceção significa 'esta parte não existe' (fim das partes) — e NÃO um erro
+    transitório de rede. Distinguir os dois evita concatenar um tar truncado e reportar sucesso."""
+    import urllib.error
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code in (403, 404, 416)          # Release: asset inexistente
+    if isinstance(exc, urllib.error.URLError):
+        return isinstance(getattr(exc, "reason", None), FileNotFoundError)   # file:// ausente
+    if isinstance(exc, FileNotFoundError):
+        return True
+    return False
+
+
 def _baixar_partes(url: str, destino_tar) -> bool:
     """Baixa as partes sequenciais (…part00, …part01, …) e as concatena em `destino_tar`
-    (Release publica o grafo em partes ≤1900 MB). Para no 1º índice ausente. True se baixou
-    ao menos uma parte. Nunca levanta."""
+    (Release publica o grafo em partes ≤1900 MB). Para quando a PRÓXIMA parte não existe
+    (fim normal). Um erro transitório de rede no meio ABORTA e descarta o arquivo parcial —
+    não é confundido com fim das partes. True só se baixou ao menos uma parte com sucesso e
+    sem erro transitório. Nunca levanta."""
     base = _base_partes(url)
     destino_tar = Path(destino_tar)
-    baixou = 0
+    baixou, abortou = 0, False
     try:
         with open(destino_tar, "wb") as out:
             for i in range(0, 1000):
@@ -207,17 +222,22 @@ def _baixar_partes(url: str, destino_tar) -> bool:
                             out.write(bloco)
                     baixou += 1
                     logger.info("[OSRM] parte %02d do grafo baixada.", i)
-                except Exception:
-                    break          # índice ausente → acabou
+                except Exception as e:
+                    if _parte_ausente(e):
+                        break                       # fim das partes (índice inexistente)
+                    logger.warning("[OSRM] erro ao baixar a parte %02d (transitório); abortando.", i, exc_info=True)
+                    abortou = True
+                    break
     except Exception:
         logger.warning("[OSRM] falha ao baixar partes do grafo.", exc_info=True)
-        return False
-    if not baixou:
+        abortou = True
+    if abortou or not baixou:
         try:
             destino_tar.unlink()
         except Exception:
             pass
-    return baixou > 0
+        return False
+    return True
 
 
 def garantir_grafo(cfg_osrm: dict | None, destino_dir) -> str | None:
@@ -243,27 +263,48 @@ def garantir_grafo(cfg_osrm: dict | None, destino_dir) -> str | None:
         url = str(cfg.get("graph_url", "")).strip()
         if not url:
             return gp or None
-        import tarfile
+        import tarfile, shutil
         tmp = destino / "_grafo_download.tar.gz"
-        if ".part" in url:
-            # Grafo publicado em PARTES (Release) → baixa todas e concatena antes de extrair.
-            logger.info("[OSRM] provisionando grafo em partes a partir de %s", url)
-            if not _baixar_partes(url, tmp):
-                return gp or None
-        else:
-            logger.info("[OSRM] provisionando grafo (download único) de %s", url)
-            urllib.request.urlretrieve(url, tmp)
-        with tarfile.open(tmp, "r:gz") as t:
-            try:
-                t.extractall(destino, filter="data")   # py3.12+: extração segura
-            except TypeError:
-                t.extractall(destino)                  # fallback versões antigas
+        staging = destino / "_staging"
         try:
-            tmp.unlink()
-        except Exception:
-            pass
-        cand = next(destino.glob("*.osrm"), None)
-        return str(cand) if cand else (gp or None)
+            if ".part" in url:
+                # Grafo publicado em PARTES (Release) → baixa todas e concatena antes de extrair.
+                logger.info("[OSRM] provisionando grafo em partes a partir de %s", url)
+                if not _baixar_partes(url, tmp):
+                    return gp or None
+            else:
+                logger.info("[OSRM] provisionando grafo (download único) de %s", url)
+                urllib.request.urlretrieve(url, tmp)
+            # Extrai numa área de STAGING; só promove ao destino se der certo — evita deixar
+            # um .osrm PARCIAL que o próximo run confundiria com 'já provisionado'.
+            if staging.exists():
+                shutil.rmtree(staging, ignore_errors=True)
+            staging.mkdir(parents=True, exist_ok=True)
+            with tarfile.open(tmp, "r:gz") as t:
+                try:
+                    t.extractall(staging, filter="data")   # py3.12+: extração segura
+                except TypeError:
+                    t.extractall(staging)                  # fallback versões antigas
+            cand = next(staging.rglob("*.osrm"), None)
+            if cand is None:
+                logger.warning("[OSRM] arquivo .osrm não encontrado no pacote; descartando.")
+                return gp or None
+            # move todos os artefatos do grafo (*.osrm*) para o destino final
+            for f in cand.parent.glob("brazil-latest.osrm*"):
+                destino_f = destino / f.name
+                if destino_f.exists():
+                    destino_f.unlink()
+                shutil.move(str(f), str(destino_f))
+            final = next(destino.glob("*.osrm"), None)
+            return str(final) if final else (gp or None)
+        finally:
+            for p in (tmp,):
+                try:
+                    if p.exists():
+                        p.unlink()
+                except Exception:
+                    pass
+            shutil.rmtree(staging, ignore_errors=True)
     except Exception:
         logger.warning("[OSRM] falha ao provisionar o grafo.", exc_info=True)
         return gp or None

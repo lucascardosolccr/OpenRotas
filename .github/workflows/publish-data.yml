@@ -39,6 +39,7 @@ jobs:
       - name: Empacotar bases + gerar manifesto com sha256
         env:
           VERSAO: ${{ github.event.inputs.versao }}
+          RELEASE_TAG: ${{ github.event.inputs.release_tag }}
         run: |
           python3 - <<'PY'
           import os, json, hashlib, shutil, pathlib

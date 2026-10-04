@@ -286,6 +286,25 @@ def test_rm_verificar_atualizacoes_sem_mudanca():
     mesmo = {"recursos": {"municipios": {"versao": "2026.10", "arquivo": "municipios.parquet"}}}
     assert rm.verificar_atualizacoes(mesmo, mesmo) == []
 
+def test_rm_manifesto_local_overlay_idempotente(tmp_path, monkeypatch):
+    # Após registrar uma versão instalada no manifesto local, carregar_manifesto() a sobrepõe
+    # e verificar_atualizacoes deixa de reportar o recurso como pendente (§19, idempotência).
+    local = tmp_path / "manifest.local.json"
+    monkeypatch.setattr(rm, "_manifesto_local_path", lambda: local)
+    rm._registrar_versao_local("municipios", "2026.11")
+    m = rm.carregar_manifesto()
+    assert m["recursos"]["municipios"]["versao"] == "2026.11"   # instalada vence a embarcada
+    remoto = {"recursos": {"municipios": {"versao": "2026.11", "arquivo": "municipios.parquet"}}}
+    assert rm.verificar_atualizacoes(remoto) == []              # nada pendente
+
+def test_rm_atualizar_pula_grafo_osrm(tmp_path, monkeypatch):
+    # osrm_brasil é provisionável (grafo), não base de cópia: atualizar NÃO deve baixá-lo.
+    monkeypatch.setattr(rm, "_manifesto_local_path", lambda: tmp_path / "ml.json")
+    remoto = {"recursos": {"osrm_brasil": {"versao": "2099.1", "arquivo": "brazil-osrm-mld.tar.gz"}}}
+    res = rm.atualizar(remoto, "http://exemplo.invalido/base")
+    assert len(res) == 1 and res[0]["chave"] == "osrm_brasil"
+    assert res[0]["ok"] is False and "provision" in res[0]["detalhe"].lower()
+
 def test_rm_baixar_e_verificar_rejeita_hash_errado(tmp_path):
     origem = tmp_path / "origem.bin"
     origem.write_bytes(b"conteudo-de-teste")
@@ -404,3 +423,23 @@ def test_update_verificar_detecta_nova(monkeypatch):
 def test_update_baixar_sem_url_nao_quebra():
     r = app_update.baixar_instalador("")
     assert r["ok"] is False
+
+def test_update_extrair_versao():
+    assert app_update._extrair_versao("OpenRotas 0.2.0") == "0.2.0"
+    assert app_update._extrair_versao("v1.10.3") == "1.10.3"
+    assert app_update._extrair_versao("sem numero") == ""
+
+def test_update_compara_0_10_maior_que_0_9():
+    # bug clássico de comparação textual: 0.10 deve ser > 0.9
+    assert app_update.ha_atualizacao("0.9", "0.10") is True
+
+
+# --------------------- osrm parts: classificação de erro ---------------------
+def test_osrm_parte_ausente_classifica():
+    import urllib.error
+    he404 = urllib.error.HTTPError("u", 404, "nf", {}, None)
+    he500 = urllib.error.HTTPError("u", 500, "err", {}, None)
+    assert osrm._parte_ausente(he404) is True
+    assert osrm._parte_ausente(he500) is False          # 5xx = transitório, não fim
+    assert osrm._parte_ausente(urllib.error.URLError(FileNotFoundError())) is True
+    assert osrm._parte_ausente(urllib.error.URLError(ConnectionResetError())) is False
