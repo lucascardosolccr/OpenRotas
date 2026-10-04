@@ -276,6 +276,29 @@ def test_rm_reparar_tudo_sem_base_url():
     rel = rm.reparar_tudo(osrm_cfg={}, base_url="")
     assert rel["verificacao"]["ok"] is True
     assert rel["bases_atualizadas"] == [] and rel["grafo"] is None and rel["ok"] is True
+    assert rel["bases_reparadas"] == []
+
+def test_rm_reparar_corrompidos_rebaixa_forcado(tmp_path, monkeypatch):
+    # Uma base corrompida na MESMA versão deve ser re-baixada (forçado) da Release e auto-curar.
+    import hashlib
+    monkeypatch.setattr(cfg, "user_data_dir", lambda: tmp_path / "ud")   # isola do perfil real
+    monkeypatch.setattr(rm, "_manifesto_local_path", lambda: tmp_path / "ml.json")
+    # arquivo "bom" servido via file:// (base_url = pasta); sha256 confere.
+    srv = tmp_path / "srv"; srv.mkdir()
+    bom = b"PARQUET-BOM-SIMULADO" * 100
+    (srv / "snirh_rios.csv").write_bytes(bom)
+    base_url = srv.as_uri()
+    remoto = {"recursos": {"snirh_rios": {"versao": "2026.10", "arquivo": "snirh_rios.csv",
+                                          "sha256": hashlib.sha256(bom).hexdigest()}}}
+    res = rm.reparar_corrompidos(remoto, base_url, ["snirh_rios"])
+    assert len(res) == 1 and res[0]["chave"] == "snirh_rios" and res[0]["ok"] is True
+    # o arquivo foi gravado no override do perfil do usuário
+    _, reg = rm._registry()
+    assert (reg.override_dir / "snirh_rios.csv").read_bytes() == bom
+
+def test_rm_reparar_corrompidos_pula_grafo():
+    res = rm.reparar_corrompidos({"recursos": {}}, "http://x/", ["osrm_brasil"])
+    assert res[0]["ok"] is False and "provision" in res[0]["detalhe"].lower()
 
 def test_rm_reparar_tudo_manifesto_remoto_ausente_nao_quebra(monkeypatch):
     # manifesto remoto indisponível → {} → sem atualizações, não levanta, ok continua True

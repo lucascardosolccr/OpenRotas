@@ -391,22 +391,56 @@ def atualizar(manifesto_remoto: dict, base_url: str, apenas=None) -> list:
     return resultados
 
 
+def reparar_corrompidos(remoto: dict, base_url: str, chaves) -> list:
+    """Re-BAIXA bases específicas (corrompidas/ausentes) da Release, IGNORANDO a versão — uma
+    base corrompida na MESMA versão não é 'pendente' de atualização, então precisa deste caminho
+    forçado para se auto-curar (§18). Pula o grafo (provisionável). Verifica sha256. Não levanta."""
+    cfg, reg = _registry()
+    import local_data
+    provisionaveis = {d.chave for d in local_data.CATALOGO if d.formato == "osrm"}
+    r_rec = (remoto or {}).get("recursos", {}) or {}
+    out = []
+    for chave in chaves:
+        if chave in provisionaveis:
+            out.append({"chave": chave, "ok": False, "detalhe": "provisionável (grafo) — use provisionar_grafo"})
+            continue
+        r = r_rec.get(chave) or {}
+        arq = r.get("arquivo") or ""
+        if not arq:
+            out.append({"chave": chave, "ok": False, "detalhe": "sem este recurso no manifesto remoto"})
+            continue
+        url = base_url.rstrip("/") + "/" + arq
+        res = baixar_e_verificar(url, reg.override_dir / arq, r.get("sha256", ""))
+        if res["ok"] and r.get("versao"):
+            _registrar_versao_local(chave, r["versao"])
+        reg.liberar_memoria()
+        out.append({"chave": chave, "ok": res["ok"], "arquivo": arq, "detalhe": res["detalhe"]})
+    return out
+
+
 def reparar_tudo(osrm_cfg: dict | None = None, base_url: str = "") -> dict:
     """[REPARO DE UM CLIQUE - §18] Verifica tudo e conserta o que der, SEM reinstalar:
       1. integridade/ausência dos recursos (verificar);
-      2. se `base_url` (Release de dados) → baixa/atualiza as bases pendentes (sha256);
+      2. se `base_url` (Release de dados) → RE-BAIXA corrompidos/ausentes (forçado) e atualiza
+         as bases com versão nova (sha256);
       3. se `osrm_cfg.graph_url` e o grafo falta → provisiona o grafo.
     Devolve um relatório combinado. Não levanta. É o que o atalho "Reparar/Atualizar" e o
     `launcher --reparar` chamam."""
-    rel = {"verificacao": verificar(), "bases_atualizadas": [], "grafo": None, "ok": True}
+    v = verificar()
+    rel = {"verificacao": v, "bases_reparadas": [], "bases_atualizadas": [], "grafo": None, "ok": True}
     base_url = str(base_url or "").strip()
     try:
         if base_url:
             remoto = carregar_manifesto_remoto(base_url)
             if remoto:
+                # (a) força a re-baixar o que está corrompido/obrigatório ausente (mesma versão);
+                corrompidos = [p["chave"] for p in v["problemas"]] + list(v["faltam_obrigatorios"])
+                if corrompidos:
+                    rel["bases_reparadas"] = reparar_corrompidos(remoto, base_url, dict.fromkeys(corrompidos))
+                # (b) aplica atualizações de versão pendentes.
                 rel["bases_atualizadas"] = atualizar(remoto, base_url)
     except Exception:
-        logger.warning("[RECURSOS] atualização de bases no reparo falhou.", exc_info=True)
+        logger.warning("[RECURSOS] reparo/atualização de bases falhou.", exc_info=True)
     try:
         cfg, reg = _registry()
         oc = dict(osrm_cfg or {})
@@ -414,8 +448,10 @@ def reparar_tudo(osrm_cfg: dict | None = None, base_url: str = "") -> dict:
             rel["grafo"] = provisionar_grafo(oc)
     except Exception:
         logger.warning("[RECURSOS] provisionamento do grafo no reparo falhou.", exc_info=True)
-    # 'ok' reflete: nada obrigatório faltando/corrompido e nenhum download marcado como falho.
-    rel["ok"] = (rel["verificacao"]["ok"]
+    # 'ok': ou a verificação inicial estava limpa, ou todos os reparos forçados tiveram sucesso;
+    # e nenhuma atualização/provisão falhou.
+    reparos_ok = all(b.get("ok", False) for b in rel["bases_reparadas"]) if rel["bases_reparadas"] else True
+    rel["ok"] = ((rel["verificacao"]["ok"] or (rel["bases_reparadas"] and reparos_ok))
                  and all(b.get("ok", True) for b in rel["bases_atualizadas"])
                  and (rel["grafo"] is None or rel["grafo"].get("ok", True)))
     return rel

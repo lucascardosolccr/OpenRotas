@@ -248,9 +248,11 @@ def _reparar() -> int:
     if v["faltam_obrigatorios"]:
         print("  faltam (obrigatórios, exigem reinstalar): %s" % ", ".join(v["faltam_obrigatorios"]))
     for p in v["problemas"]:
-        print("  corrompido (exige reinstalar): %s" % p["chave"])
+        print("  corrompido: %s" % p["chave"])
+    for b in rel.get("bases_reparadas", []):
+        print("  reparo %s: %s (%s)" % (b["chave"], "✓" if b["ok"] else "✗", b.get("detalhe", "")))
     for b in rel["bases_atualizadas"]:
-        print("  base %s: %s (%s)" % (b["chave"], "✓" if b["ok"] else "✗", b.get("detalhe", "")))
+        print("  atualização %s: %s (%s)" % (b["chave"], "✓" if b["ok"] else "✗", b.get("detalhe", "")))
     if rel["grafo"] is not None:
         print("  grafo: %s (%s)" % ("✓" if rel["grafo"]["ok"] else "✗", rel["grafo"].get("detalhe", "")))
     print("\nResultado: %s" % ("tudo OK ✓" if rel["ok"] else "pendências acima"))
