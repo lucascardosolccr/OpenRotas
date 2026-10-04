@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.join(_DESKTOP, "app"))
 sys.path.insert(0, _DESKTOP)
 sys.path.insert(0, os.path.join(_DESKTOP, "data_local"))
 sys.path.insert(0, os.path.join(_DESKTOP, "telemetry"))
+sys.path.insert(0, os.path.join(_DESKTOP, "installer"))
 
 import desktop_config as cfg          # noqa: E402
 import diagnostics                    # noqa: E402
@@ -80,6 +81,35 @@ def test_garantir_grafo_reusa_ja_provisionado(tmp_path):
     (tmp_path / "brazil-latest.osrm").write_text("x")  # já provisionado antes
     got = osrm.garantir_grafo({"graph_url": "http://exemplo/inexistente.tar.gz"}, tmp_path)
     assert got == str(tmp_path / "brazil-latest.osrm")  # não baixa; reusa
+
+def test_base_partes_normaliza():
+    assert osrm._base_partes("http://x/g.tar.gz.part") == "http://x/g.tar.gz.part"
+    assert osrm._base_partes("http://x/g.tar.gz.part00") == "http://x/g.tar.gz.part"
+    assert osrm._base_partes("http://x/g.tar.gz.part7") == "http://x/g.tar.gz.part"
+
+def test_garantir_grafo_em_partes(tmp_path):
+    import io, tarfile, gzip
+    # cria um tar.gz com um 'brazil-latest.osrm' dentro
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as t:
+        dado = b"GRAFO-OSRM-FAKE" * 5000
+        info = tarfile.TarInfo("brazil-latest.osrm"); info.size = len(dado)
+        t.addfile(info, io.BytesIO(dado))
+    targz = gzip.compress(buf.getvalue())
+    # divide em 2 partes
+    meio = len(targz) // 2
+    srv = tmp_path / "srv"; srv.mkdir()
+    (srv / "brazil-osrm-mld.tar.gz.part00").write_bytes(targz[:meio])
+    (srv / "brazil-osrm-mld.tar.gz.part01").write_bytes(targz[meio:])
+    base_uri = (srv / "brazil-osrm-mld.tar.gz.part").as_uri()
+    destino = tmp_path / "dl"
+    got = osrm.garantir_grafo({"graph_url": base_uri}, destino)
+    assert got == str(destino / "brazil-latest.osrm") and (destino / "brazil-latest.osrm").exists()
+
+def test_baixar_partes_sem_nenhuma_parte(tmp_path):
+    base = (tmp_path / "naoexiste.part").as_uri()
+    assert osrm._baixar_partes(base, tmp_path / "out.tar.gz") is False
+    assert not (tmp_path / "out.tar.gz").exists()
 
 
 # -------------------------------- local_data ---------------------------------
@@ -169,6 +199,20 @@ def test_painel_escapa_conteudo_sem_quebrar():
     # construir_html nunca levanta e produz HTML bem-formado mesmo sem osrm_cfg
     h = painel.construir_html(osrm_cfg={"graph_url": "http://x/<b>"})
     assert "<html" in h and "</html>" in h
+
+
+# ------------------------------- make_icon (§38) -----------------------------
+def test_make_icon_gera_ico_multi_resolucao(tmp_path):
+    import make_icon
+    out = tmp_path / "openrotas.ico"
+    got = make_icon.gerar(str(out))
+    if got is None:
+        pytest.skip("Pillow indisponível neste ambiente")
+    assert out.exists()
+    from PIL import Image
+    im = Image.open(str(out))
+    assert im.format == "ICO"
+    assert (256, 256) in set(im.info.get("sizes", []))   # alta resolução presente
 
 def test_rm_reparar_tudo_sem_base_url():
     # sem base_url e com as essenciais presentes: nada a baixar, verificação OK, ok=True

@@ -179,6 +179,47 @@ def resolver(cfg_osrm: dict | None, osrm_url_legado: str = "") -> ResultadoMotor
     return ResultadoMotor(url=None, modo=modo, ativo=False, detalhe="modo desconhecido: %r" % modo)
 
 
+def _base_partes(url: str) -> str:
+    """Normaliza uma URL de parte para o PREFIXO antes do número. Aceita '…part',
+    '…part0', '…part00' etc. → devolve '…part' (sem dígitos finais)."""
+    import re
+    return re.sub(r"\d+$", "", url)
+
+
+def _baixar_partes(url: str, destino_tar) -> bool:
+    """Baixa as partes sequenciais (…part00, …part01, …) e as concatena em `destino_tar`
+    (Release publica o grafo em partes ≤1900 MB). Para no 1º índice ausente. True se baixou
+    ao menos uma parte. Nunca levanta."""
+    base = _base_partes(url)
+    destino_tar = Path(destino_tar)
+    baixou = 0
+    try:
+        with open(destino_tar, "wb") as out:
+            for i in range(0, 1000):
+                parte_url = "%s%02d" % (base, i)
+                try:
+                    req = urllib.request.Request(parte_url, headers={"User-Agent": "OpenRotas-Desktop"})
+                    with urllib.request.urlopen(req, timeout=120) as r:
+                        while True:
+                            bloco = r.read(1024 * 256)
+                            if not bloco:
+                                break
+                            out.write(bloco)
+                    baixou += 1
+                    logger.info("[OSRM] parte %02d do grafo baixada.", i)
+                except Exception:
+                    break          # índice ausente → acabou
+    except Exception:
+        logger.warning("[OSRM] falha ao baixar partes do grafo.", exc_info=True)
+        return False
+    if not baixou:
+        try:
+            destino_tar.unlink()
+        except Exception:
+            pass
+    return baixou > 0
+
+
 def garantir_grafo(cfg_osrm: dict | None, destino_dir) -> str | None:
     """[GRAFO COMO PRODUTO] Garante que o grafo OSRM do Brasil exista localmente e devolve o
     caminho do arquivo .osrm base. Ordem:
@@ -204,8 +245,14 @@ def garantir_grafo(cfg_osrm: dict | None, destino_dir) -> str | None:
             return gp or None
         import tarfile
         tmp = destino / "_grafo_download.tar.gz"
-        logger.info("[OSRM] provisionando grafo (download único) de %s", url)
-        urllib.request.urlretrieve(url, tmp)
+        if ".part" in url:
+            # Grafo publicado em PARTES (Release) → baixa todas e concatena antes de extrair.
+            logger.info("[OSRM] provisionando grafo em partes a partir de %s", url)
+            if not _baixar_partes(url, tmp):
+                return gp or None
+        else:
+            logger.info("[OSRM] provisionando grafo (download único) de %s", url)
+            urllib.request.urlretrieve(url, tmp)
         with tarfile.open(tmp, "r:gz") as t:
             try:
                 t.extractall(destino, filter="data")   # py3.12+: extração segura

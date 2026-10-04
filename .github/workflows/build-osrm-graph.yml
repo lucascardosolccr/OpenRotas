@@ -86,22 +86,42 @@ jobs:
             osrm-customize /data/brazil-latest.osrm
           echo "=== após customize ===" ; free -h ; df -h /mnt
 
-      - name: Empacotar o grafo (no disco grande /mnt)
+      - name: Empacotar o grafo (stream tar|gzip|split — sem arquivo intermediário)
         run: |
-          # O grafo construído (extract+partition+customize OK) vira um tar.gz. Gravamos o
-          # tarball em /mnt — mesmo volume dos .osrm* e com espaço de sobra. A 3ª tentativa
-          # falhou AQUI (tar exit 2) por tentar escrever o tarball de vários GB em
-          # $GITHUB_WORKSPACE (volume / pequeno, ainda com o swapfile) → disco cheio.
-          sudo swapoff -a || true                 # libera o /swapfile (fases pesadas já acabaram)
+          # As 3ª/4ª tentativas falharam SÓ aqui (tar exit 2 = disco cheio): guardar o .tar.gz
+          # inteiro de vários GB junto da fonte estourava o volume. Correção definitiva:
+          #  • libera o /swapfile (reclama ~18 GB no /), pois as fases de memória já acabaram;
+          #  • NÃO cria arquivo intermediário: faz tar|gzip|split em streaming, gravando partes
+          #    de ≤1900 MB direto no volume RAIZ (fonte fica em /mnt) — nada precisa caber os
+          #    dois no mesmo disco, e as partes respeitam o limite por-asset da Release;
+          #  • escreve diagnóstico de disco/tamanhos no RESUMO do job (legível via API).
+          sudo swapoff -a || true
+          sudo rm -f /swapfile || true
+          OUT="$GITHUB_WORKSPACE/release"; mkdir -p "$OUT"
           cd /mnt/osrm
-          tar -czf /mnt/osrm/brazil-osrm-mld.tar.gz brazil-latest.osrm*
-          echo "=== pacote ===" ; ls -lh /mnt/osrm/brazil-osrm-mld.tar.gz ; df -h /mnt
+          { echo "### Empacotamento do grafo";
+            echo '```'; echo "-- disco antes --"; df -h / /mnt;
+            echo "-- tamanho dos .osrm --"; du -sch brazil-latest.osrm* | tail -1; echo '```';
+          } >> "$GITHUB_STEP_SUMMARY"
+          tar -cf - brazil-latest.osrm* | gzip | split -b 1900m -d -a 2 - "$OUT/brazil-osrm-mld.tar.gz.part"
+          # manifesto simples das partes (para o desktop remontar em ordem)
+          ( cd "$OUT" && ls -1 brazil-osrm-mld.tar.gz.part* | sort > brazil-osrm-mld.parts.txt )
+          { echo '```'; echo "-- partes geradas --"; ls -lh "$OUT";
+            echo "-- disco depois --"; df -h / /mnt; echo '```';
+          } >> "$GITHUB_STEP_SUMMARY"
+          ls -lh "$OUT"
 
       - name: Publicar na Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.release_tag }}
           name: "OSRM Brasil (MLD)"
-          body: "Grafo rodoviário OSRM do Brasil (algoritmo MLD) para a edição desktop do OpenRotas. Consuma via osrm.graph_url no desktop.json."
-          files: /mnt/osrm/brazil-osrm-mld.tar.gz
+          body: >
+            Grafo rodoviário OSRM do Brasil (algoritmo MLD) para a edição desktop do OpenRotas.
+            Publicado em PARTES (brazil-osrm-mld.tar.gz.partNN) para respeitar o limite por asset;
+            o app baixa todas as partes, concatena e extrai. Consuma via osrm.graph_url (aponte para
+            brazil-osrm-mld.tar.gz.part — o app detecta e baixa as demais).
+          files: |
+            release/brazil-osrm-mld.tar.gz.part*
+            release/brazil-osrm-mld.parts.txt
           fail_on_unmatched_files: true
