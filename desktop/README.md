@@ -48,7 +48,8 @@ desktop/
 ├── app/
 │   ├── launcher.py          # bootstrapper: motor local + sobe o Streamlit + janela nativa
 │   │                        #   flags: --diagnostico, --recursos [--html], --atualizar [--baixar],
-   │                        #          --reparar, --provisionar-grafo, --help
+   │                        #          --reparar, --provisionar-grafo, --benchmark, --telemetria,
+   │                        #          --versao, --help
 │   ├── desktop_config.py    # hardware, cache persistente, secrets/env, APP_VERSION (fonte única)
 │   ├── diagnostics.py       # autodiagnóstico de bases/cache/motor + telemetria + update (§17/§18)
 │   └── app_update.py        # verifica nova versão do app via Releases do GitHub (§19)

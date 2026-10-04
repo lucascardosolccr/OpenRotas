@@ -66,6 +66,20 @@ def test_user_data_dir_e_resumo():
     r = cfg.resumo_config()
     assert {"app_root", "hardware", "porta", "user_data"} <= set(r)
 
+def test_bootstrap_config_cria_do_exemplo(tmp_path, monkeypatch):
+    # 1º uso: cria desktop.json a partir do exemplo; 2ª chamada é no-op.
+    monkeypatch.setattr(cfg, "user_data_dir", lambda: tmp_path)
+    criado = cfg.bootstrap_config_usuario()
+    destino = tmp_path / "config" / "desktop.json"
+    assert criado == destino and destino.exists()
+    import json as _json
+    dados = _json.loads(destino.read_text(encoding="utf-8"))
+    assert "SUPABASE_URL" in dados and "osrm" in dados     # veio do exemplo
+    assert cfg.bootstrap_config_usuario() is None          # já existe → não recria
+
+def test_caminho_exemplo_config_existe():
+    assert cfg._caminho_exemplo_config() is not None       # o exemplo embarcado é encontrável
+
 
 # ------------------------------- osrm_manager --------------------------------
 def test_resolver_off_nao_mexe_na_url():
@@ -87,6 +101,16 @@ def test_resolver_modo_desconhecido_defensivo():
 def test_health_url_vazia_e_encerrar_noop():
     assert osrm.health("") is False
     osrm.encerrar(osrm.ResultadoMotor(url=None, modo="off", ativo=False))  # não levanta
+
+def test_remover_container_nunca_levanta():
+    osrm._remover_container("")                    # nome vazio → no-op
+    osrm._remover_container("openrotas-osrm-inexistente")   # docker ausente → não levanta
+
+def test_encerrar_gerenciado_sem_docker_nao_levanta():
+    # ResultadoMotor gerenciado com nome: encerrar tenta parar o container (docker ausente) sem erro
+    r = osrm.ResultadoMotor(url="http://localhost:5000", modo="docker", ativo=True,
+                            gerenciado=True, nome=osrm.CONTAINER_OSRM)
+    osrm.encerrar(r)
 
 
 def test_garantir_grafo_sem_url_e_noop(tmp_path):

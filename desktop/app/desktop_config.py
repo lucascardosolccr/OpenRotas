@@ -131,6 +131,43 @@ def _ram_total_gb():
 # ---------------------------------------------------------------------------
 # Config local do usuário (desktop.json) — OSRM_URL, Supabase, modo offline…
 # ---------------------------------------------------------------------------
+def _caminho_exemplo_config() -> Path | None:
+    """Localiza o desktop.example.json embarcado (dev ou empacotado). None se não achar."""
+    candidatos = [
+        Path(__file__).resolve().parents[1] / "config" / "desktop.example.json",   # dev: desktop/config/
+        app_root() / "config" / "desktop.example.json",                            # empacotado ({app}/config)
+        app_root() / "desktop" / "config" / "desktop.example.json",
+    ]
+    for c in candidatos:
+        try:
+            if c.exists():
+                return c
+        except Exception:
+            pass
+    return None
+
+
+def bootstrap_config_usuario() -> Path | None:
+    """1º uso: se não houver <user_data>/config/desktop.json, cria um a partir do exemplo
+    embarcado (um TEMPLATE com placeholders para o usuário preencher). Devolve o caminho se
+    CRIOU agora; None se já existia ou não foi possível. Nunca levanta."""
+    try:
+        destino = user_data_dir() / "config" / "desktop.json"
+        if destino.exists():
+            return None
+        exemplo = _caminho_exemplo_config()
+        if not exemplo:
+            return None
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        import shutil
+        shutil.copyfile(str(exemplo), str(destino))
+        logger.info("desktop.json criado a partir do exemplo em %s (preencha as chaves).", destino)
+        return destino
+    except Exception:
+        logger.warning("Não foi possível criar o desktop.json inicial.", exc_info=True)
+        return None
+
+
 def carregar_config_usuario() -> dict:
     """Lê <user_data>/config/desktop.json (criado no 1º uso a partir do exemplo).
     Nunca levanta — devolve {} se não existir/estiver inválido."""

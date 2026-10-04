@@ -40,9 +40,16 @@ def _configurar_logs(paths) -> None:
     log_file = paths["logs"] / "openrotas-desktop.log"
     handlers = [logging.StreamHandler(sys.stdout)]
     try:
-        handlers.append(logging.FileHandler(log_file, encoding="utf-8"))
+        # ROTAÇÃO: num desktop de longa vida o log cresceria sem limite. Mantém 3 arquivos de
+        # até 2 MB (openrotas-desktop.log + .1 + .2), descartando o mais antigo.
+        from logging.handlers import RotatingFileHandler
+        handlers.append(RotatingFileHandler(log_file, maxBytes=2 * 1024 * 1024,
+                                            backupCount=3, encoding="utf-8"))
     except Exception:
-        pass
+        try:
+            handlers.append(logging.FileHandler(log_file, encoding="utf-8"))
+        except Exception:
+            pass
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
                         handlers=handlers)
@@ -198,6 +205,9 @@ _AJUDA = """OpenRotas Desktop — uso:
   OpenRotas.exe --atualizar --baixar   aplica as atualizações pendentes (baixa/verifica)
   OpenRotas.exe --reparar       repara/atualiza tudo que puder, sem reinstalar (§18)
   OpenRotas.exe --provisionar-grafo   baixa o grafo OSRM do Brasil (prepara o offline; sem Docker)
+  OpenRotas.exe --benchmark     mede o OSRM local × público (evidência de desempenho, §9/§29)
+  OpenRotas.exe --telemetria    mostra o resumo do perfil de execução local (§42)
+  OpenRotas.exe --versao        mostra a versão instalada
   OpenRotas.exe --help          esta ajuda
 Flags auxiliares: --silencioso (diagnóstico sem imprimir)."""
 
@@ -251,8 +261,18 @@ def main() -> int:
     if "--help" in sys.argv or "-h" in sys.argv:
         print(_AJUDA)
         return 0
+    if "--versao" in sys.argv or "--version" in sys.argv:
+        print("OpenRotas Desktop %s" % getattr(cfg, "APP_VERSION", "?"))
+        return 0
     paths = cfg.ensure_user_dirs()
     _configurar_logs(paths)
+    # 1º uso: cria o desktop.json a partir do exemplo embarcado (template a preencher).
+    try:
+        criado = cfg.bootstrap_config_usuario()
+        if criado:
+            log.info("Config inicial criada em %s — preencha SUPABASE_* (ou use local_login).", criado)
+    except Exception:
+        pass
 
     # Modo DIAGNÓSTICO (usado pelo instalador no teste de integridade e pelo atalho
     # "Diagnóstico"): o MESMO executável roda o autodiagnóstico e sai, sem abrir a janela.
@@ -296,6 +316,28 @@ def main() -> int:
     # offline antes. Usa osrm.graph_url/graph_path da config.
     if "--provisionar-grafo" in sys.argv:
         return _provisionar_grafo(paths)
+
+    # Modo BENCHMARK (§9/§29): mede o OSRM local × público e sai (evidência do ganho).
+    if "--benchmark" in sys.argv:
+        try:
+            from engines import benchmark
+            conf = cfg.carregar_config_usuario() or {}
+            url_local = (conf.get("osrm") or {}).get("url") or "http://localhost:5000"
+            return benchmark.main(["--url", url_local, "--rotulo", "OSRM configurado"]
+                                  if "--local" in sys.argv else None)
+        except Exception as e:
+            print("Falha ao rodar o benchmark: %s" % e)
+            return 1
+
+    # Modo TELEMETRIA (§42): imprime o resumo do perfil de execução local e sai.
+    if "--telemetria" in sys.argv:
+        try:
+            sys.path.insert(0, os.path.join(os.path.dirname(_AQUI), "telemetry"))
+            import exec_profile
+            return exec_profile._cli(["resumo"])
+        except Exception as e:
+            print("Perfil de execução indisponível: %s" % e)
+            return 1
 
     _t_inicio = time.perf_counter()
     log.info("OpenRotas Desktop iniciando. Config: %s", cfg.resumo_config())

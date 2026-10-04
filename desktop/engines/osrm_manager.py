@@ -33,6 +33,9 @@ from dataclasses import dataclass, field
 logger = logging.getLogger("openrotas.desktop.osrm")
 
 URL_PADRAO = "http://localhost:5000"
+# Nome fixo do container que ESTE app gerencia — permite parada/limpeza confiáveis e evita
+# conflito de nome após um encerramento abrupto (crash/queda de energia).
+CONTAINER_OSRM = "openrotas-osrm"
 
 
 def _telemetria(evento: str, **campos) -> None:
@@ -58,6 +61,7 @@ class ResultadoMotor:
     gerenciado: bool = False   # True se ESTE processo subiu o OSRM (precisa encerrar depois)
     processo: object = field(default=None, repr=False)
     detalhe: str = ""
+    nome: str = ""             # nome do container Docker (quando gerenciado), p/ parada confiável
 
 
 # ---------------------------------------------------------------------------
@@ -120,10 +124,15 @@ def _subir_docker(cfg: dict) -> ResultadoMotor:
         return ResultadoMotor(url=url if ok else None, modo="docker", ativo=ok, gerenciado=False,
                               detalhe="porta %d já em uso; reaproveitando" % porta)
 
+    # Remove um container órfão nosso de uma execução anterior (crash/queda) para não dar
+    # "name already in use" nem segurar a porta. Best-effort.
+    _remover_container(CONTAINER_OSRM)
+
     graph_dir = os.path.dirname(os.path.abspath(graph))
     graph_base = os.path.basename(graph)
-    # -v <dir>:/data  → referencia /data/<arquivo>.osrm dentro do container.
-    cmd = ["docker", "run", "--rm", "-p", "%d:5000" % porta,
+    # -v <dir>:/data  → referencia /data/<arquivo>.osrm dentro do container. --name p/ parada
+    # confiável depois (docker stop <nome>), e --rm para o container sumir ao parar.
+    cmd = ["docker", "run", "--rm", "--name", CONTAINER_OSRM, "-p", "%d:5000" % porta,
            "-v", "%s:/data" % graph_dir, imagem,
            "osrm-routed", "--algorithm", algoritmo, "-i", "0.0.0.0", "-p", "5000",
            "/data/%s" % graph_base]
@@ -138,16 +147,28 @@ def _subir_docker(cfg: dict) -> ResultadoMotor:
     if _esperar_health(url, timeout_s=float(cfg.get("start_timeout_s", 90))):
         _telemetria("docker_start", ok=True, ms=round((time.perf_counter() - _t0) * 1000.0, 1))
         return ResultadoMotor(url=url, modo="docker", ativo=True, gerenciado=True, processo=proc,
-                              detalhe="OSRM local no ar (gerenciado)")
+                              nome=CONTAINER_OSRM, detalhe="OSRM local no ar (gerenciado)")
     _telemetria("docker_start", ok=False, ms=round((time.perf_counter() - _t0) * 1000.0, 1),
                 detalhe="health-check timeout")
-    # Não respondeu a tempo — encerra o que subimos e deixa cair no público.
+    # Não respondeu a tempo — para o container (confiável) e deixa cair no público.
+    _remover_container(CONTAINER_OSRM)
     try:
         proc.terminate()
     except Exception:
         pass
     return ResultadoMotor(url=None, modo="docker", ativo=False,
                           detalhe="OSRM não respondeu ao health-check a tempo")
+
+
+def _remover_container(nome: str) -> None:
+    """Para/remove um container Docker pelo nome, se existir. Best-effort; nunca levanta."""
+    if not nome:
+        return
+    try:
+        subprocess.run(["docker", "rm", "-f", nome], stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=20)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -311,10 +332,15 @@ def garantir_grafo(cfg_osrm: dict | None, destino_dir) -> str | None:
 
 
 def encerrar(res: ResultadoMotor) -> None:
-    """Encerra o OSRM que ESTE processo subiu (modo docker gerenciado). No-op caso contrário."""
-    if res and res.gerenciado and res.processo is not None:
+    """Encerra o OSRM que ESTE processo subiu (modo docker gerenciado). No-op caso contrário.
+    Para o CONTAINER pelo nome (confiável: garante que suma mesmo se o cliente docker já
+    tiver desанexado) e, por garantia, encerra o processo cliente."""
+    if not (res and res.gerenciado):
+        return
+    _remover_container(res.nome or CONTAINER_OSRM)      # docker rm -f <nome> (para + remove)
+    if res.processo is not None:
         try:
             res.processo.terminate()
-            logger.info("[OSRM] motor local gerenciado encerrado.")
         except Exception:
-            logger.warning("[OSRM] falha ao encerrar o motor local.", exc_info=True)
+            pass
+    logger.info("[OSRM] motor local gerenciado encerrado.")
