@@ -86,6 +86,25 @@ class GeoIntelligenceRepository:
             self._arrays[camada] = None
             return None
 
+    def atributos(self, camada: str, colunas):
+        """DataFrame com as COLUNAS de atributo pedidas da camada (cacheado por chave+colunas),
+        para enriquecer feições candidatas (nome, navegabilidade, tipo…). None se indisponível.
+        Projeção: lê só as colunas pedidas. Nunca levanta."""
+        chave_cache = ("_attr", camada, tuple(colunas))
+        if chave_cache in self._arrays:
+            return self._arrays[chave_cache]
+        if not self.reg.existe(camada):
+            self._arrays[chave_cache] = None
+            return None
+        try:
+            df = self.reg.carregar_parquet(camada, colunas=list(colunas))
+            self._arrays[chave_cache] = df
+            return df
+        except Exception:
+            logger.warning("[GEO] falha ao carregar atributos de %r %s.", camada, colunas, exc_info=True)
+            self._arrays[chave_cache] = None
+            return None
+
     def liberar(self):
         self._arrays.clear()
 

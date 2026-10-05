@@ -205,6 +205,7 @@ _AJUDA = """OpenRotas Desktop — uso:
   OpenRotas.exe --fontes [--md] catálogo de fontes/procedência (§33); --md salva o Markdown
   OpenRotas.exe --mapa-cobertura   abre o Mapa de Cobertura Nacional (matriz UF × camada) no navegador
   OpenRotas.exe --integridade   audita defeitos geométricos das camadas (inválidas/fora do Brasil)
+  OpenRotas.exe --dossie "lon,lat;lon,lat"   dossiê completo da rota (integra todos os dados)
   OpenRotas.exe --auditoria --relatorio   salva o Relatório de Cobertura Nacional (.md) em exports/
   OpenRotas.exe --recursos      status dos recursos (Gerenciador de Recursos)
   OpenRotas.exe --recursos --html   abre a Central de Recursos (painel visual) no navegador
@@ -424,6 +425,15 @@ def main() -> int:
             return integridade._cli()
         except Exception as e:
             print("Auditoria de integridade indisponível: %s" % e)
+            return 1
+
+    # Modo DOSSIÊ DE ROTA (§27-30): integração TOTAL dos dados numa rota origem→destino. Sai.
+    if "--dossie" in sys.argv:
+        try:
+            from geo import dossie_rota
+            return dossie_rota._cli([a for a in sys.argv[1:] if a != "--dossie"])
+        except Exception as e:
+            print("Dossiê de rota indisponível: %s" % e)
             return 1
 
     # Modo BENCHMARK (§9/§29): mede o OSRM local × público e sai (evidência do ganho).

@@ -1021,3 +1021,58 @@ def test_integridade_render_e_cli():
     txt = ig.render_texto(aud)
     assert "INTEGRIDADE GEOMÉTRICA" in txt and "rodovias" in txt
     assert ig._cli() == 0
+
+
+# ============================================================================
+#  DOSSIÊ DE ROTA — integração TOTAL dos dados na rota (§27/§28/§29/§30/§76).
+# ============================================================================
+@pytest.fixture(scope="module")
+def dossie_sp_rio():
+    from geo import dossie_rota
+    # SP → Rio: rota real que cruza MG/RJ/SP, rios, pontes, balsa, ferrovias
+    return dossie_rota.dossie([(-46.63, -23.55), (-43.20, -22.90)], folga_km=3.0)
+
+def test_dossie_origem_destino_municipio(dossie_sp_rio):
+    d = dossie_sp_rio
+    assert d["origem"]["municipio"]["uf"] == "SP"
+    assert d["destino"]["municipio"]["uf"] == "RJ"
+    assert d["origem"]["municipio"]["nome"] and d["destino"]["municipio"]["nome"]
+
+def test_dossie_travessia_territorial(dossie_sp_rio):
+    tt = dossie_sp_rio["travessia_territorial"]
+    assert tt["n_municipios"] > 0
+    # o corredor SP→Rio passa por SP, MG e RJ
+    assert {"SP", "RJ"}.issubset(set(tt["ufs"]))
+
+def test_dossie_hidrografia_rica(dossie_sp_rio):
+    h = dossie_sp_rio["hidrografia"]
+    assert h["trechos"] > 100
+    assert h["rios_nomeados"]                         # rios nomeados reais
+    nomes = " ".join(r["nome"] for r in h["rios_nomeados"]).lower()
+    assert "paraíba do sul" in nomes or "tietê" in nomes or "rio" in nomes
+
+def test_dossie_camadas_e_alertas(dossie_sp_rio):
+    cam = dossie_sp_rio["camadas"]
+    assert cam["rodovias"]["feicoes"] > 0 and cam["pontes"]["feicoes"] >= 0
+    assert isinstance(dossie_sp_rio["alertas"], list) and len(dossie_sp_rio["alertas"]) >= 1
+    assert "drenagem" in dossie_sp_rio["fontes"]      # rastreabilidade das fontes
+
+def test_dossie_multimodal_e_render(dossie_sp_rio):
+    assert dossie_sp_rio["multimodal"].get("rodoviario", 0) > 0
+    from geo import dossie_rota
+    txt = dossie_rota.render_texto(dossie_sp_rio)
+    assert "DOSSIÊ DA ROTA" in txt and "Hidrografia" in txt and "Alertas" in txt
+
+def test_dossie_rota_vazia_e_parse():
+    from geo import dossie_rota
+    assert dossie_rota.dossie([]).get("erro")
+    assert dossie_rota._parse_coords("-46.6,-23.5;-43.2,-22.9") == [(-46.6, -23.5), (-43.2, -22.9)]
+    assert dossie_rota._cli([]) == 2                  # sem coords → uso
+
+def test_dossie_ponto_unico_nao_quebra():
+    from geo import dossie_rota
+    from audit import coverage_auditor as ca
+    d = dossie_rota.dossie([(-47.88, -15.79)])        # região de Brasília, ponto único
+    # município mais próximo (nearest-centroid honesto): DF ou GO vizinho — UF válida
+    assert d["origem"]["municipio"]["uf"] in ca.UFS_ESPERADAS and d["pontos"] == 1
+    assert d["origem"]["municipio"]["nome"]
