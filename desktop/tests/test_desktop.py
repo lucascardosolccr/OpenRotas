@@ -23,6 +23,7 @@ from resources import resource_manager as rm   # noqa: E402
 from resources import painel                    # noqa: E402
 from resources import provisionamento as prov   # noqa: E402
 from resources import central_dados             # noqa: E402
+from audit import coverage_auditor as ca         # noqa: E402
 import exec_profile                   # noqa: E402
 import app_update                     # noqa: E402
 
@@ -730,3 +731,75 @@ def test_manifesto_cobre_catalogo_completo():
 def test_painel_tem_bloco_dados_completos():
     h = painel.construir_html()
     assert "Dados completos" in h and "Central de Dados" in h
+
+
+# ============================================================================
+#  AUDITOR DE COBERTURA NACIONAL (§3/§4/§40/§42/§64/§65/§66) — prova objetiva,
+#  números derivados dos dados REAIS instalados (nunca fabricados).
+# ============================================================================
+
+def test_uf_do_geocodigo_mapeia_prefixo():
+    import pandas as pd
+    s = pd.Series(["3550308", "1100015", "5300108", "2927408", "abc", "9999999"])
+    uf = list(ca._uf_do_geocodigo(s))
+    assert uf[0] == "SP" and uf[1] == "RO" and uf[2] == "DF" and uf[3] == "BA"
+    assert pd.isna(uf[4]) and pd.isna(uf[5])      # lixo/código inexistente → NaN (sem inventar)
+
+def test_auditoria_estados_27_e_municipios_reais():
+    reg = ca._registry()
+    em = ca.cobertura_estados_municipios(reg)
+    assert em["estados"]["encontrado"] == 27 and em["estados"]["status"] == "OK"
+    assert set(em["estados"]["presentes"]) == ca.UFS_ESPERADAS
+    # número REAL de municípios (IBGE 5.570 + Fernando de Noronha) — não um valor inventado
+    assert em["municipios"]["encontrado"] >= ca.MUNICIPIOS_OFICIAIS
+    assert len(em["municipios"]["por_uf"]) == 27
+
+def test_auditoria_completa_estrutura_e_camadas():
+    laudo = ca.auditar(rapido=True)
+    assert laudo["estados"]["encontrado"] == 27
+    assert "rodovias" in laudo["camadas"] and "drenagem" in laudo["camadas"]
+    rod = laudo["camadas"]["rodovias"]
+    assert rod["instalado"] is True and rod["feicoes"] > 100000
+    assert len(rod["ufs_presentes"]) >= 20          # malha nacional presente em (quase) todas as UFs
+    assert rod["status"] in ("OK", "PARCIAL")
+    r = laudo["resumo"]
+    assert r["dimensoes"] == r["ok"] + r["parciais"] + r["ausentes"]
+
+def test_auditoria_grafo_ausente_e_honesto():
+    # o grafo OSRM não está instalado neste ambiente → AUSENTE (não mascarado como OK)
+    laudo = ca.auditar(rapido=True)
+    assert laudo["grafo"]["instalado"] is False and laudo["grafo"]["status"] == "AUSENTE"
+
+def test_auditoria_presenca_uf_camada_ausente(tmp_path):
+    # registry isolado sem bases → camada não instalada vira AUSENTE, sem levantar
+    import local_data
+    reg = local_data.LocalDataRegistry(cfg.app_root(), tmp_path / "data_local")
+    r = ca.presenca_espacial_uf(reg, "eclusas", {}, amostra=None)
+    # eclusas é embarcada (existe no bundle), mas sem bboxes a presença fica vazia, sem quebrar
+    assert isinstance(r["ufs_presentes"], list)
+
+def test_render_texto_tem_cabecalho_e_barra():
+    laudo = ca.auditar(rapido=True)
+    txt = ca.render_texto(laudo)
+    assert "AUDITORIA NACIONAL" in txt and "Estados (UFs)" in txt
+    assert "Municípios" in txt and "█" in txt       # barra de progresso ASCII
+
+def test_relatorio_md_gera_arquivo(tmp_path):
+    laudo = ca.auditar(rapido=True)
+    out = tmp_path / "rel.md"
+    got = ca.gerar_relatorio_md(laudo, out)
+    assert got == str(out) and out.exists()
+    conteudo = out.read_text(encoding="utf-8")
+    assert conteudo.startswith("# Relatório de Cobertura Nacional")
+    assert "Municípios por UF" in conteudo and "Nenhum dado foi" in conteudo  # nota de honestidade
+    assert "| SP |" in conteudo                      # tabela por UF preenchida com dado real
+
+def test_resumo_curto_e_cli():
+    laudo = ca.auditar(rapido=True)
+    s = ca.resumo_curto(laudo)
+    assert "UFs 27/27" in s
+    assert ca._cli(["--rapido"]) == 0                # essenciais presentes → saída 0
+
+def test_painel_tem_bloco_cobertura():
+    h = painel.construir_html()
+    assert "Auditoria de Cobertura Nacional" in h and "Estados (UFs)" in h

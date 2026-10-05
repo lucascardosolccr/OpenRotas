@@ -139,6 +139,39 @@ def _bloco_telemetria() -> str:
     return "".join(out)
 
 
+def _bloco_cobertura() -> str:
+    """Auditoria de Cobertura Nacional (§3/§64) resumida: UFs, municípios e presença por camada,
+    com números REAIS dos dados instalados. Modo rápido (amostra) para não travar o painel."""
+    try:
+        sys.path.insert(0, str(_AQUI.parent / "audit"))
+        from audit import coverage_auditor as ca
+        laudo = ca.auditar(rapido=True)
+    except Exception:
+        return '<p class="empty">Auditoria de cobertura indisponível.</p>'
+    e, m = laudo.get("estados", {}), laudo.get("municipios", {})
+    out = ['<div class="kpis">']
+    out.append('<div class="kpi"><div class="v">%s/27</div><div class="l">Estados (UFs)</div></div>'
+               % e.get("encontrado", 0))
+    out.append('<div class="kpi"><div class="v">%s</div><div class="l">Municípios</div></div>'
+               % m.get("encontrado", 0))
+    r = laudo.get("resumo", {})
+    out.append('<div class="kpi"><div class="v">%s/%s</div><div class="l">Dimensões OK</div></div>'
+               % (r.get("ok", "?"), r.get("dimensoes", "?")))
+    out.append("</div>")
+    out.append('<table><thead><tr><th>Camada</th><th>Status</th><th class="num">Feições</th>'
+               '<th class="num">UFs</th></tr></thead><tbody>')
+    for chave, c in laudo.get("camadas", {}).items():
+        cls = {"OK": "b-ok", "PARCIAL": "b-warn", "AUSENTE": "b-bad"}.get(c["status"], "")
+        feic = ("%d" % c["feicoes"]) if c.get("instalado") else "—"
+        out.append("<tr><td>%s</td><td><span class='badge %s'>%s</span></td>"
+                   "<td class='num'>%s</td><td class='num'>%d/27</td></tr>"
+                   % (html.escape(c["rotulo"]), cls, c["status"], feic, len(c.get("ufs_presentes") or [])))
+    out.append("</tbody></table>")
+    out.append('<p class="empty">Presença por UF é espacial (bbox), aproximada. '
+               'Relatório completo: <code>OpenRotas.exe --auditoria --relatorio</code>.</p>')
+    return "".join(out)
+
+
 def _bloco_dados_completos() -> str:
     """Explica como obter TODO O BRASIL (grafo de roteamento) pela Central de Dados — a opção
     dentro do software que baixa e instala o conteúdo pesado direto na pasta do app."""
@@ -195,6 +228,7 @@ def construir_html(osrm_cfg=None) -> str:
         "<section class='card'><h2>Recursos do software</h2>", _tabela_recursos(osrm_cfg), "</section>",
         "<section class='card'><h2>Prontidão offline</h2>", _bloco_offline(), "</section>",
         "<section class='card'><h2>Dados completos (Brasil inteiro)</h2>", _bloco_dados_completos(), "</section>",
+        "<section class='card'><h2>Auditoria de Cobertura Nacional</h2>", _bloco_cobertura(), "</section>",
         "<section class='card'><h2>Perfil de execução (local)</h2>", _bloco_telemetria(), "</section>",
         "<section class='card'><h2>Configuração</h2>", _bloco_config(), "</section>",
         "<footer>Dados locais — nada sai do seu computador.</footer>",

@@ -199,6 +199,8 @@ def _verificar_atualizacoes(aplicar: bool = False) -> int:
 _AJUDA = """OpenRotas Desktop — uso:
   OpenRotas.exe                 abre o aplicativo (janela nativa)
   OpenRotas.exe --diagnostico   autodiagnóstico (bases, cache, motor, offline, atualização)
+  OpenRotas.exe --auditoria     Auditoria de Cobertura Nacional (prova objetiva por UF/município)
+  OpenRotas.exe --auditoria --relatorio   salva o Relatório de Cobertura Nacional (.md) em exports/
   OpenRotas.exe --recursos      status dos recursos (Gerenciador de Recursos)
   OpenRotas.exe --recursos --html   abre a Central de Recursos (painel visual) no navegador
   OpenRotas.exe --atualizar     verifica atualização do app e das bases
@@ -247,6 +249,18 @@ def _provisionar_grafo(paths) -> int:
         return 0
     print("Não foi possível provisionar o grafo: %s" % r["detalhe"])
     return 1
+
+
+def _auditoria() -> int:
+    """Auditoria de Cobertura Nacional (§3/§64): mede, dos dados REAIS instalados, a cobertura por
+    UF/município/camada e imprime o laudo honesto. Com --relatorio, salva o Relatório de Cobertura
+    Nacional (Markdown) em exports/. --rapido amostra as camadas grandes."""
+    try:
+        from audit import coverage_auditor as ca
+        return ca._cli([a for a in sys.argv[1:] if a != "--auditoria"])
+    except Exception as e:
+        print("Auditoria indisponível: %s" % e)
+        return 1
 
 
 def _central_dados() -> int:
@@ -348,6 +362,11 @@ def main() -> int:
     # um clique, direto na pasta de dados do app, e reparar/atualizar bases. Sai ao fechar.
     if "--central" in sys.argv:
         return _central_dados()
+
+    # Modo AUDITORIA NACIONAL (§3/§64): prova objetiva de cobertura (UFs/municípios/camadas) a
+    # partir dos dados reais instalados; com --relatorio salva o Relatório de Cobertura. Sai.
+    if "--auditoria" in sys.argv:
+        return _auditoria()
 
     # Modo BENCHMARK (§9/§29): mede o OSRM local × público e sai (evidência do ganho).
     if "--benchmark" in sys.argv:
