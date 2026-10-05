@@ -973,3 +973,51 @@ def test_mapa_cobertura_todas_as_ufs_presentes_no_html():
     for _, ufs in cm.REGIOES:
         for uf in ufs:
             assert (">%s<" % uf) in h
+
+
+# ============================================================================
+#  INTEGRIDADE GEOMÉTRICA (§20/§43) — defeitos reais nas feições instaladas.
+# ============================================================================
+def test_integridade_dados_reais_limpos():
+    from audit import integridade as ig
+    aud = ig.auditar()
+    por = {c["chave"]: c for c in aud["camadas"]}
+    # as bases nacionais embarcadas devem estar geometricamente limpas (0 inválidas/fora do BR)
+    assert por["rodovias"]["invalidas"] == 0 and por["rodovias"]["fora_brasil"] == 0
+    assert por["drenagem"]["feicoes"] > 2_000_000 and por["drenagem"]["invalidas"] == 0
+    assert aud["resumo"]["total_invalidas"] == 0 and aud["resumo"]["total_fora_brasil"] == 0
+    assert aud["resumo"]["status"] == "OK"
+
+def test_integridade_detecta_defeitos_sinteticos(tmp_path, monkeypatch):
+    # injeta uma camada com bbox invertida, coord nula e ponto fora do Brasil → deve acusar
+    import numpy as np
+    from audit import integridade as ig
+
+    class _FakeRepo:
+        def arrays(self, chave):
+            return {"n": 4,
+                    "lon": np.array([-47.0, np.nan, 10.0, -46.0]),    # 2ª nula, 3ª fora do BR
+                    "lat": np.array([-15.0, -15.0, 10.0, -15.0]),
+                    "xmin": np.array([-47.0, -47.0, 10.0, -46.1]),
+                    "ymin": np.array([-15.1, -15.1, 9.9, -15.1]),
+                    "xmax": np.array([-46.9, -46.9, 10.1, -47.0]),    # 4ª invertida (xmin>xmax)
+                    "ymax": np.array([-14.9, -14.9, 10.1, -14.9])}
+    r = ig.checar_camada(_FakeRepo(), "x")
+    assert r["coord_nula"] == 1 and r["fora_brasil"] == 1 and r["invalidas"] >= 1
+    assert r["status"] == "PARCIAL"
+
+def test_integridade_camada_ausente(tmp_path):
+    import local_data
+    from audit import integridade as ig
+    from geo import repositorio
+    reg = local_data.LocalDataRegistry(cfg.app_root(), tmp_path / "dl")
+    repo = repositorio.GeoIntelligenceRepository(registry=reg)
+    r = ig.checar_camada(repo, "osrm_brasil")
+    assert r["instalado"] is False and r["status"] == "AUSENTE"
+
+def test_integridade_render_e_cli():
+    from audit import integridade as ig
+    aud = ig.auditar()
+    txt = ig.render_texto(aud)
+    assert "INTEGRIDADE GEOMÉTRICA" in txt and "rodovias" in txt
+    assert ig._cli() == 0

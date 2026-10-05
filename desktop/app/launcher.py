@@ -204,6 +204,7 @@ _AJUDA = """OpenRotas Desktop — uso:
   OpenRotas.exe --rotas-nacionais   testa corredores inter-UF nas 5 regiões (cobertura distribuída)
   OpenRotas.exe --fontes [--md] catálogo de fontes/procedência (§33); --md salva o Markdown
   OpenRotas.exe --mapa-cobertura   abre o Mapa de Cobertura Nacional (matriz UF × camada) no navegador
+  OpenRotas.exe --integridade   audita defeitos geométricos das camadas (inválidas/fora do Brasil)
   OpenRotas.exe --auditoria --relatorio   salva o Relatório de Cobertura Nacional (.md) em exports/
   OpenRotas.exe --recursos      status dos recursos (Gerenciador de Recursos)
   OpenRotas.exe --recursos --html   abre a Central de Recursos (painel visual) no navegador
@@ -414,6 +415,15 @@ def main() -> int:
             return coverage_map._cli([a for a in sys.argv[1:] if a != "--mapa-cobertura"])
         except Exception as e:
             print("Mapa de cobertura indisponível: %s" % e)
+            return 1
+
+    # Modo INTEGRIDADE (§20/§43): defeitos geométricos (inválidas/fora do Brasil/duplicatas). Sai.
+    if "--integridade" in sys.argv:
+        try:
+            from audit import integridade
+            return integridade._cli()
+        except Exception as e:
+            print("Auditoria de integridade indisponível: %s" % e)
             return 1
 
     # Modo BENCHMARK (§9/§29): mede o OSRM local × público e sai (evidência do ganho).
