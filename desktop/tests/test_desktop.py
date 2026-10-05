@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.join(_DESKTOP, "installer"))
 
 import desktop_config as cfg          # noqa: E402
 import diagnostics                    # noqa: E402
+import janela                         # noqa: E402
 from engines import osrm_manager as osrm   # noqa: E402
 import local_data                     # noqa: E402
 from resources import resource_manager as rm   # noqa: E402
@@ -1498,3 +1499,28 @@ def test_osrm_baixar_partes_ainda_funciona_via_downloader(tmp_path):
     assert osrm._baixar_partes(base, out) is True
     import gzip as _gz
     assert out.exists() and out.read_bytes() == targz
+
+
+# ------------------------------- janela (GUI nativa) -------------------------------
+# Testes HEADLESS-SAFE: nunca instanciam QApplication (não há display aqui). Cobrem as
+# funções puras e o contrato de disponibilidade/fallback.
+def test_janela_disponivel_e_booleano():
+    assert isinstance(janela.disponivel(), bool)
+
+def test_janela_css_premium_tem_tokens_resolvidos():
+    css = janela._css_premium()
+    assert "@BRAND@" not in css and "@BG0@" not in css        # tokens substituídos
+    assert janela.MARCA["brand"] in css                       # cor da marca presente
+    assert "::-webkit-scrollbar" in css                       # scrollbar premium
+    assert "stToolbar" in css                                 # esconde a barra do Streamlit
+
+def test_janela_splash_html_bem_formado():
+    html = janela._html_splash()
+    assert html.lstrip().lower().startswith("<!doctype html>")
+    assert "@TEXTO@" not in html and "@BRAND2@" not in html   # tokens substituídos
+    assert "OpenRotas" in html and "Motor Nacional" in html
+
+def test_janela_js_string_escapa_com_seguranca():
+    import json
+    bruto = 'quebra"aspas</style>\n<script>'
+    assert json.loads(janela._js_string(bruto)) == bruto      # round-trip seguro

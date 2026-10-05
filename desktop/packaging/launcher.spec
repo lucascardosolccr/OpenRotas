@@ -27,9 +27,13 @@ _pacotes_coletar = [
     "cachetools", "unidecode", "supabase", "supabase_auth", "storage3", "postgrest",
     "realtime", "kaleido", "xlsxwriter", "openpyxl", "python_calamine",
     "streamlit_js_eval",
-    # [JANELA NATIVA] pywebview e suas dependências de runtime. SEM coletar 'webview' aqui, o
+    # [JANELA NATIVA — PREFERIDA] PySide6/QtWebEngine: Chromium EMBARCADO no .exe. É o motor
+    # da janela nativa (desktop/app/janela.py) e não depende de WebView2/navegador. collect_all
+    # traz os plugins Qt, recursos do QtWebEngine (QtWebEngineProcess, ICU, locales) e binários.
+    "PySide6", "shiboken6",
+    # [JANELA NATIVA — FALLBACK] pywebview e dependências de runtime. SEM coletar 'webview', o
     # pacote congelado não encontra os backends de plataforma (webview.platforms.*) nem o
-    # pythonnet/clr — e o app cai no navegador (o bug "abriu um localhost"). Coletar tudo.
+    # pythonnet/clr. Coletar tudo.
     "webview", "proxy_tools", "bottle", "typing_extensions",
     "clr_loader", "pythonnet",
 ]
@@ -57,18 +61,26 @@ hiddenimports += [
 for _meta in ("streamlit", "altair", "pandas", "numpy", "pyarrow", "plotly", "pydeck",
               "supabase", "supabase_auth", "scikit-learn", "scipy", "rapidfuzz",
               "streamlit-js-eval", "diskcache", "cachetools",
-              "pywebview", "pythonnet", "clr_loader"):
+              "pywebview", "pythonnet", "clr_loader", "PySide6", "shiboken6"):
     try:
         datas += copy_metadata(_meta)
     except Exception:
         pass
 # Módulos próprios do desktop (imports em nível de função / via __import__ que a análise
 # estática pode não enxergar) — congela-os explicitamente no bundle.
-hiddenimports += ["desktop_config", "diagnostics", "engines", "engines.osrm_manager"]
+hiddenimports += ["desktop_config", "diagnostics", "janela", "engines", "engines.osrm_manager"]
+# QtWebEngine: módulos usados dinamicamente pela janela nativa.
+hiddenimports += ["PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineCore",
+                  "PySide6.QtWidgets", "PySide6.QtGui", "PySide6.QtCore", "PySide6.QtNetwork"]
 # Amostra de pares O/D do benchmark, servida ao lado do pacote engines.
 _sample = os.path.join(REPO_ROOT, "desktop", "engines", "sample_pairs.csv")
 if os.path.exists(_sample):
     datas.append((_sample, "engines"))
+# Ícone do app (gerado por make_icon.py antes do empacotamento) — levado para a raiz do bundle
+# para a JANELA NATIVA exibi-lo (janela.abrir procura em app_root()/openrotas.ico).
+_ico = os.path.join(REPO_ROOT, "desktop", "installer", "openrotas.ico")
+if os.path.exists(_ico):
+    datas.append((_ico, "."))
 
 # --- A APLICAÇÃO e as BASES embarcadas (reutiliza o app web por inteiro, §21/§34) ---
 # Mapeadas para a MESMA estrutura relativa, pois o app as acessa por caminho relativo.

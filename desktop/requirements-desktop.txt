@@ -4,11 +4,16 @@
 
 -r ../requirements.txt
 
-# --- Janela nativa (embrulha o Streamlit num app de verdade, sem barra do navegador) ---
+# --- Janela nativa com CHROMIUM EMBARCADO (preferida) ---
+# PySide6/QtWebEngine traz o próprio motor de renderização DENTRO do executável: a janela
+# nativa abre sem depender de nada instalado no Windows (sem WebView2, sem navegador, sem
+# "localhost solto"). É o caminho primário (desktop/app/janela.py).
+PySide6>=6.6            # inclui QtWebEngine (Chromium) via PySide6-Addons
+
+# --- Janela nativa ALTERNATIVA (fallback leve, se o QtWebEngine não estiver disponível) ---
 pywebview>=5.1          # usa o WebView2 (Edge) no Windows — leve, nativo
 # O backend EdgeChromium (WebView2) do pywebview no Windows conversa com o runtime via
-# pythonnet (módulo 'clr'). Sem ele, a janela nativa NÃO abre e o app cai no navegador.
-# Só é usado no Windows; em Linux/macOS a instalação é ignorada pelo marcador de plataforma.
+# pythonnet (módulo 'clr'). Só é usado no Windows; em Linux/macOS é ignorado pelo marcador.
 pythonnet>=3.0.3 ; platform_system == "Windows"
 
 # --- Diagnóstico de hardware (dimensionamento automático de workers/cache) ---

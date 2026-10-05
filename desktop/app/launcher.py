@@ -223,14 +223,36 @@ def _iniciar_streamlit(env: dict) -> None:
 
 
 def _abrir_janela(url: str):
-    """Abre a JANELA NATIVA (pywebview) embrulhando o app local. Devolve (abriu, motivo):
-    abriu=True quando a janela nativa rodou; (False, motivo) quando não há backend e o
-    chamador precisa recorrer ao navegador. No Windows usa o WebView2 (Edge) — moderno e
-    compatível com o Streamlit; o motivo textual ajuda o diagnóstico do usuário."""
+    """Abre a JANELA NATIVA embrulhando o app local. Devolve (abriu, motivo).
+
+    Ordem de preferência:
+      1) QtWebEngine (PySide6) — Chromium EMBARCADO no próprio .exe: não depende de nada
+         instalado no Windows (sem WebView2, sem navegador, sem localhost solto). É o caminho
+         primário e o mais bonito (splash + tema premium).
+      2) pywebview (WebView2) — alternativa leve, se o QtWebEngine não estiver no pacote.
+      3) (False, motivo) → o chamador recorre ao navegador como último recurso.
+    """
+    # 1) Chromium embarcado (preferido).
+    try:
+        import janela as _janela   # desktop/app/janela.py (mesmo diretório, já no path)
+        if _janela.disponivel():
+            icone = str(cfg.app_root() / "desktop" / "installer" / "openrotas.ico")
+            if not os.path.exists(icone):
+                icone = str(cfg.app_root() / "openrotas.ico")
+            log.info("Abrindo janela nativa com Chromium embarcado (QtWebEngine).")
+            if _janela.abrir(url, icone if os.path.exists(icone) else None):
+                return (True, "ok (QtWebEngine)")
+            log.warning("QtWebEngine não conseguiu abrir; tentando pywebview.")
+        else:
+            log.info("QtWebEngine não disponível no pacote; tentando pywebview.")
+    except Exception:
+        log.warning("Falha ao usar o QtWebEngine; tentando pywebview.", exc_info=True)
+
+    # 2) pywebview (WebView2) — alternativa.
     try:
         import webview  # pywebview
     except Exception as e:
-        return (False, "pywebview não disponível no pacote: %s" % e)
+        return (False, "sem backend de janela nativa (QtWebEngine/pywebview): %s" % e)
 
     # No Windows, força o backend EdgeChromium (WebView2) — é o único renderer moderno
     # (o MSHTML/IE antigo NÃO roda o Streamlit). Requer o 'WebView2 Runtime' no sistema
