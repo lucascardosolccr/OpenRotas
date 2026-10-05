@@ -1126,3 +1126,84 @@ def test_grafo_camada_ausente():
     from geo import grafo_topologico as gt
     g = gt.construir("osrm_brasil")
     assert g["status"] == "AUSENTE"
+
+
+# ============================================================================
+#  TELEMETRIA INCREMENTAL (§9/§10/§11/§34/§35) — store append-only + watermark +
+#  dedup; laço incremental com fonte injetável (mock). Sem rede nos testes.
+# ============================================================================
+def test_telemetria_store_ingere_e_dedup(tmp_path):
+    from telemetry import ana_incremental as tel
+    st = tel.TelemetryStore(tmp_path / "tel")
+    r1 = st.ingerir("estacoes", [{"codigo": "1", "nome": "A"}, {"codigo": "2", "nome": "B"}])
+    assert r1 == {"novos": 2, "duplicados": 0, "total": 2}
+    # reingerir 1 duplicado + 1 novo
+    r2 = st.ingerir("estacoes", [{"codigo": "2", "nome": "B"}, {"codigo": "3", "nome": "C"}])
+    assert r2["novos"] == 1 and r2["duplicados"] == 1 and r2["total"] == 3
+
+def test_telemetria_watermark_persiste(tmp_path):
+    from telemetry import ana_incremental as tel
+    st = tel.TelemetryStore(tmp_path / "tel")
+    assert st.carregar_watermark("chuva") is None
+    st.salvar_watermark("chuva", "2026-10-05")
+    assert tel.TelemetryStore(tmp_path / "tel").carregar_watermark("chuva") == "2026-10-05"
+
+def test_telemetria_atualizar_incremental_so_novos(tmp_path):
+    from telemetry import ana_incremental as tel
+    st = tel.TelemetryStore(tmp_path / "tel")
+    lote1 = [{"codigo": "9", "data": "2026-10-01", "cota": 100},
+             {"codigo": "9", "data": "2026-10-02", "cota": 110}]
+    chamadas = {"wm": []}
+    def fetch(wm):
+        chamadas["wm"].append(wm)
+        # fonte "incremental": devolve tudo >= wm (simplificado devolve lote conforme wm)
+        if wm is None:
+            return lote1
+        return [{"codigo": "9", "data": "2026-10-03", "cota": 120}]  # só o novo
+    r1 = tel.atualizar_incremental("serie", fetch, store=st, campo_ts="data")
+    assert r1["novos"] == 2 and r1["watermark_anterior"] is None and r1["watermark_novo"] == "2026-10-02"
+    r2 = tel.atualizar_incremental("serie", fetch, store=st, campo_ts="data")
+    assert r2["novos"] == 1 and r2["watermark_novo"] == "2026-10-03"   # avançou o watermark
+    assert chamadas["wm"] == [None, "2026-10-02"]                      # 2ª busca partiu do watermark
+    assert st.contar("serie") == 3
+
+def test_telemetria_inventario(tmp_path):
+    from telemetry import ana_incremental as tel
+    st = tel.TelemetryStore(tmp_path / "tel")
+    st.ingerir("estacoes", [{"codigo": "1"}])
+    st.salvar_watermark("estacoes", "x")
+    inv = st.inventario()
+    assert inv["estacoes"]["registros"] == 1 and inv["estacoes"]["watermark"] == "x"
+
+def test_telemetria_ana_client_sem_url_degrada():
+    from telemetry import ana_incremental as tel
+    cli = tel.AnaClient(conf={})            # sem telemetria.inventario_url
+    r = cli.inventario_estacoes()
+    assert r["ok"] is False and "inventario_url" in r["detalhe"]
+
+def test_telemetria_ana_client_parse_csv_e_json():
+    from telemetry import ana_incremental as tel
+    cli = tel.AnaClient(conf={})
+    assert cli._parse('[{"codigo":"1"},{"codigo":"2"}]') == [{"codigo": "1"}, {"codigo": "2"}]
+    assert cli._parse('{"estacoes":[{"a":1}]}') == [{"a": 1}]
+    linhas = cli._parse("codigo,nome\n1,A\n2,B")
+    assert len(linhas) == 2 and linhas[0]["nome"] == "A"
+
+def test_telemetria_ana_client_offline_no_net(monkeypatch):
+    from telemetry import ana_incremental as tel
+    monkeypatch.setenv("OPENROTAS_NO_NET", "1")
+    cli = tel.AnaClient(conf={"telemetria": {"inventario_url": "http://x/export.json"}})
+    r = cli.inventario_estacoes()
+    assert r["ok"] is False and "rede desabilitada" in r["detalhe"]
+
+def test_dossie_estacao_proxima_do_store(tmp_path, monkeypatch):
+    # com inventário local, o dossiê surfaça a estação mais próxima (integração telemetria→rota)
+    from telemetry import ana_incremental as tel
+    from geo import dossie_rota
+    import desktop_config as _cfg
+    monkeypatch.setattr(_cfg, "user_data_dir", lambda: tmp_path / "ud")
+    st = tel.TelemetryStore((tmp_path / "ud") / "telemetry")
+    st.ingerir("estacoes", [{"nome": "Est. Tietê", "lat": -23.5, "lon": -46.6},
+                            {"nome": "Est. Longe", "lat": 2.0, "lon": -60.0}])
+    r = dossie_rota._estacao_proxima(-46.63, -23.55)
+    assert r.get("estacao") == "Est. Tietê" and r.get("dist_km") is not None

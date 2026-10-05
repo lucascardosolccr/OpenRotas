@@ -95,6 +95,34 @@ def _ref_hidrografica(reg, lon, lat) -> dict:
         return {}
 
 
+def _estacao_proxima(lon, lat) -> dict:
+    """Estação de telemetria local mais próxima, SE houver inventário local (telemetry store).
+    Integra a telemetria ao dossiê (§30). {} quando não há inventário — honesto, sem inventar."""
+    try:
+        import math as _m
+        sys.path.insert(0, str(_AQUI.parent / "telemetry"))
+        import ana_incremental as tel
+        regs = tel.TelemetryStore().listar("estacoes")
+        if not regs:
+            return {}
+        melhor, md = None, None
+        for r in regs:
+            try:
+                rlat = float(r.get("lat") or r.get("latitude"))
+                rlon = float(r.get("lon") or r.get("longitude"))
+            except Exception:
+                continue
+            d = (rlon - lon) ** 2 + (rlat - lat) ** 2
+            if md is None or d < md:
+                md, melhor = d, r
+        if melhor is None:
+            return {}
+        nome = melhor.get("nome") or melhor.get("estacao") or melhor.get("codigo") or "?"
+        return {"estacao": str(nome), "dist_km": round(_m.sqrt(md) * _GRAU_KM, 1)}
+    except Exception:
+        return {}
+
+
 def _idx_corredor(repo, camada, coords, folga_graus):
     """Índices (np.ndarray) das feições da camada no corredor (união por trecho). [] se vazio."""
     import numpy as np
@@ -165,9 +193,11 @@ def dossie(coords, folga_km: float = 3.0) -> dict:
         "gerado_em": time.strftime("%d/%m/%Y %H:%M"),
         "pontos": len(coords),
         "origem": {"lon": o[0], "lat": o[1], "municipio": _municipio_proximo(reg, *o),
-                   "referencia_hidrografica": _ref_hidrografica(reg, *o)},
+                   "referencia_hidrografica": _ref_hidrografica(reg, *o),
+                   "estacao_telemetria": _estacao_proxima(*o)},
         "destino": {"lon": d[0], "lat": d[1], "municipio": _municipio_proximo(reg, *d),
-                    "referencia_hidrografica": _ref_hidrografica(reg, *d)},
+                    "referencia_hidrografica": _ref_hidrografica(reg, *d),
+                    "estacao_telemetria": _estacao_proxima(*d)},
         "corredor": {"folga_km": folga_km},
         "camadas": {}, "alertas": [], "fontes": {},
     }

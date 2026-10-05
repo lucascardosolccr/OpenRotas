@@ -69,6 +69,8 @@ Name: "{group}\Auditoria de Cobertura Nacional"; Filename: "{app}\{#AppExe}"; Pa
 Name: "{group}\Catálogo de Dados Nacionais"; Filename: "{app}\{#AppExe}"; Parameters: "--fontes --md"
 Name: "{group}\Mapa de Cobertura Nacional"; Filename: "{app}\{#AppExe}"; Parameters: "--mapa-cobertura"
 Name: "{group}\Auditoria de Integridade"; Filename: "{app}\{#AppExe}"; Parameters: "--integridade"
+Name: "{group}\Conectividade da Malha"; Filename: "{app}\{#AppExe}"; Parameters: "--conectividade"
+Name: "{group}\Telemetria (atualizar)"; Filename: "{app}\{#AppExe}"; Parameters: "--telemetria-ana --atualizar"
 Name: "{group}\Central de Recursos"; Filename: "{app}\{#AppExe}"; Parameters: "--recursos --html"
 Name: "{group}\Verificar atualizações"; Filename: "{app}\{#AppExe}"; Parameters: "--atualizar"
 Name: "{group}\Reparar instalação"; Filename: "{app}\{#AppExe}"; Parameters: "--reparar"
