@@ -165,20 +165,38 @@ def _html_splash() -> str:
 </body></html>""")
 
 
-def abrir(url: str, icone: str | None = None) -> bool:
+def abrir(url: str, icone: str | None = None, perfil_dir: str | None = None) -> bool:
     """Abre a janela nativa (Chromium embarcado) apontando para `url` (o Streamlit local).
     Mostra o splash até a página carregar e injeta o tema premium. Bloqueia até a janela
     fechar. Devolve True se a janela nativa rodou; False se o QtWebEngine não está disponível
-    ou falhou ao iniciar (o chamador então tenta outra via). Nunca levanta."""
+    ou falhou ao iniciar (o chamador então tenta outra via). Nunca levanta.
+
+    `perfil_dir`: pasta para o PERFIL PERSISTENTE do Chromium (cookies + localStorage em disco),
+    para a SESSÃO DE LOGIN sobreviver ao fechar/reabrir (sem isto, o perfil é efêmero e o login
+    'não cola')."""
     try:
         from PySide6.QtCore import Qt, QUrl, QTimer
-        from PySide6.QtGui import QIcon
+        from PySide6.QtGui import QIcon, QDesktopServices
         from PySide6.QtWidgets import QApplication, QMainWindow, QStackedWidget
         from PySide6.QtWebEngineWidgets import QWebEngineView
-        from PySide6.QtWebEngineCore import QWebEngineScript, QWebEngineSettings
+        from PySide6.QtWebEngineCore import (QWebEngineScript, QWebEngineSettings,
+                                             QWebEngineProfile, QWebEnginePage)
     except Exception as e:
         logger.info("QtWebEngine indisponível (%s).", e)
         return False
+
+    # Página que abre links target=_blank / window.open no NAVEGADOR DO SISTEMA (o "Continuar
+    # para o Google →" e demais links externos deixam de ser "mortos" na janela embarcada).
+    class _Pagina(QWebEnginePage):
+        def createWindow(self, _tipo):
+            _temp = QWebEnginePage(self.profile(), self)
+            def _abrir_externo(_u):
+                try:
+                    QDesktopServices.openUrl(_u)
+                finally:
+                    _temp.deleteLater()
+            _temp.urlChanged.connect(_abrir_externo)
+            return _temp
 
     try:
         # Compatibilidade de GPU/drivers variados no Windows: contexto GL compartilhado é
@@ -209,7 +227,24 @@ def abrir(url: str, icone: str | None = None) -> bool:
         pilha = QStackedWidget()
         splash = QWebEngineView()
         splash.setHtml(_html_splash())
+
+        # PERFIL PERSISTENTE (cookies + localStorage em disco) — é o que faz a SESSÃO de login
+        # "colar" e sobreviver ao fechar/reabrir. Sem perfil nomeado, o Chromium é efêmero.
         view = QWebEngineView()
+        try:
+            if perfil_dir:
+                os.makedirs(perfil_dir, exist_ok=True)
+            _profile = QWebEngineProfile("openrotas", app)   # perfil NOMEADO = persistente
+            if perfil_dir:
+                _profile.setPersistentStoragePath(perfil_dir)
+                _profile.setCachePath(perfil_dir)
+            _profile.setPersistentCookiesPolicy(
+                QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies)
+            _pagina = _Pagina(_profile, view)
+            view.setPage(_pagina)
+        except Exception:
+            logger.warning("Não foi possível criar perfil persistente; seguindo com o padrão.",
+                           exc_info=True)
 
         # Tema premium: injeta o CSS depois que o documento carrega (persiste nos reruns do
         # Streamlit, que apenas repintam o DOM sem recarregar a página).
@@ -249,7 +284,9 @@ def abrir(url: str, icone: str | None = None) -> bool:
             st.setAttribute(QWebEngineSettings.WebAttribute.ScrollAnimatorEnabled, True)
             st.setAttribute(QWebEngineSettings.WebAttribute.FullScreenSupportEnabled, True)
             st.setAttribute(QWebEngineSettings.WebAttribute.LocalStorageEnabled, True)
-            st.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanOpenWindows, False)
+            # Permite window.open/target=_blank (roteados para o navegador do sistema via
+            # _Pagina.createWindow) — necessário para o "Continuar para o Google →" não ser morto.
+            st.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanOpenWindows, True)
         except Exception:
             pass
 

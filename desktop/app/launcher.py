@@ -205,6 +205,13 @@ def _iniciar_streamlit(env: dict) -> None:
             "server.address": "127.0.0.1",
             "server.headless": True,
             "browser.gatherUsageStats": False,
+            # [DESKTOP LOCAL] Desliga XSRF/CORS no servidor LOCAL (127.0.0.1, um único usuário,
+            # sem origem cruzada). Com XSRF ligado, a janela embarcada (QtWebEngine) tem a conexão
+            # WebSocket do Streamlit recusada em alguns casos — a página renderiza mas os BOTÕES
+            # não respondem ("clico em Entrar e não acontece nada"). Em servidor local isto é
+            # seguro e remove essa classe de travamento de interatividade.
+            "server.enableXsrfProtection": False,
+            "server.enableCORS": False,
             # CRÍTICO: no .exe congelado, o caminho do streamlit NÃO contém "site-packages", então
             # o Streamlit auto-detecta "modo de desenvolvimento" e FORÇA a porta 8501 + um "node dev
             # server" (localhost:3000) que não existe no pacote — o servidor nunca sobe na nossa
@@ -250,8 +257,13 @@ def _abrir_janela(url: str):
             icone = str(cfg.app_root() / "desktop" / "installer" / "openrotas.ico")
             if not os.path.exists(icone):
                 icone = str(cfg.app_root() / "openrotas.ico")
+            # Perfil persistente do Chromium no diretório do usuário → a sessão de login cola.
+            try:
+                _perfil = str(cfg.user_data_dir() / "webview")
+            except Exception:
+                _perfil = None
             log.info("Abrindo janela nativa com Chromium embarcado (QtWebEngine).")
-            if _janela.abrir(url, icone if os.path.exists(icone) else None):
+            if _janela.abrir(url, icone if os.path.exists(icone) else None, _perfil):
                 return (True, "ok (QtWebEngine)")
             log.warning("QtWebEngine não conseguiu abrir; tentando pywebview.")
         else:
@@ -739,6 +751,18 @@ def main() -> int:
         if _login_local:
             os.environ["OPENROTAS_DESKTOP_LOCAL"] = "1"
             log.info("[LOGIN LOCAL] bypass de login local ligado (OPENROTAS_DESKTOP_LOCAL=1).")
+    except Exception:
+        pass
+
+    # [LOGIN SOCIAL NO DESKTOP] O retorno do OAuth (Google/Microsoft) precisa voltar PARA a janela
+    # do app, que roda em http://127.0.0.1:PORTA. Se o usuário não definiu um APP_URL próprio,
+    # usamos a URL local como redirect_to — assim o ?code= cai de volta na janela e a sessão é
+    # concluída aqui. (Requer que http://127.0.0.1:PORTA esteja nas "Redirect URLs" do Supabase.)
+    try:
+        _conf_app = cfg.carregar_config_usuario() or {}
+        if not str(_conf_app.get("APP_URL", "") or "").strip() and not os.environ.get("APP_URL"):
+            os.environ["APP_URL"] = "http://127.0.0.1:%s" % cfg.PORTA_LOCAL
+            log.info("[AUTH] APP_URL do desktop = %s (retorno do OAuth na janela).", os.environ["APP_URL"])
     except Exception:
         pass
 
