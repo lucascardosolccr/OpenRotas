@@ -192,6 +192,17 @@ def _bloco_dados_completos() -> str:
             'ou execute <code>OpenRotas.exe --central</code>.</p>' % html.escape(str(pasta)))
 
 
+def _bloco_dossie() -> str:
+    """Explica o Dossiê de Rota (integração total dos dados) e como gerá-lo/exportá-lo."""
+    return ('<p>O <b>Dossiê de Rota</b> integra TODOS os dados nacionais numa rota origem→destino: '
+            'município/UF de origem e destino, rios cruzados (nomeados/navegáveis), pontes, '
+            'travessias/balsas, hidrovias, portos, cruzamentos ferroviários, alertas e fontes.</p>'
+            '<p class="empty">Gere pela linha de comando: '
+            '<code>OpenRotas.exe --dossie "lon,lat;lon,lat" --html --excel</code> '
+            '(salva HTML e planilha em exports/). Grafo/conectividade: '
+            '<code>--conectividade</code>; telemetria: <code>--telemetria-ana</code>.</p>')
+
+
 def _bloco_config() -> str:
     try:
         import desktop_config as cfg
@@ -229,6 +240,7 @@ def construir_html(osrm_cfg=None) -> str:
         "<section class='card'><h2>Prontidão offline</h2>", _bloco_offline(), "</section>",
         "<section class='card'><h2>Dados completos (Brasil inteiro)</h2>", _bloco_dados_completos(), "</section>",
         "<section class='card'><h2>Auditoria de Cobertura Nacional</h2>", _bloco_cobertura(), "</section>",
+        "<section class='card'><h2>Dossiê de Rota (integração total)</h2>", _bloco_dossie(), "</section>",
         "<section class='card'><h2>Perfil de execução (local)</h2>", _bloco_telemetria(), "</section>",
         "<section class='card'><h2>Configuração</h2>", _bloco_config(), "</section>",
         "<footer>Dados locais — nada sai do seu computador.</footer>",

@@ -1207,3 +1207,34 @@ def test_dossie_estacao_proxima_do_store(tmp_path, monkeypatch):
                             {"nome": "Est. Longe", "lat": 2.0, "lon": -60.0}])
     r = dossie_rota._estacao_proxima(-46.63, -23.55)
     assert r.get("estacao") == "Est. Tietê" and r.get("dist_km") is not None
+
+
+# ============================================================================
+#  DOSSIÊ: exportação HTML/Excel + surfacing no painel (§11/§12 — camada desktop).
+# ============================================================================
+def test_dossie_gera_html(tmp_path, dossie_sp_rio):
+    from geo import dossie_rota
+    out = tmp_path / "dossie.html"
+    got = dossie_rota.gerar_html(dossie_sp_rio, out)
+    assert got == str(out) and out.exists()
+    c = out.read_text(encoding="utf-8")
+    assert c.startswith("<!doctype html>") and "Dossiê da Rota" in c
+    assert "prefers-color-scheme" in c and "Hidrografia" in c and "Alertas" in c
+
+def test_dossie_exporta_excel(tmp_path, dossie_sp_rio):
+    import openpyxl
+    from geo import dossie_rota
+    out = tmp_path / "dossie.xlsx"
+    got = dossie_rota.exportar_excel(dossie_sp_rio, out)
+    assert got == str(out) and out.exists()
+    wb = openpyxl.load_workbook(out)
+    assert set(["Resumo", "Rios", "Feicoes", "Fontes", "Alertas"]).issubset(set(wb.sheetnames))
+
+def test_dossie_export_erro_nao_quebra(tmp_path):
+    from geo import dossie_rota
+    assert dossie_rota.gerar_html({"erro": "x"}, tmp_path / "a.html") is None
+    assert dossie_rota.exportar_excel({"erro": "x"}, tmp_path / "a.xlsx") is None
+
+def test_painel_tem_bloco_dossie():
+    h = painel.construir_html()
+    assert "Dossiê de Rota (integração total)" in h and "--dossie" in h

@@ -205,7 +205,7 @@ _AJUDA = """OpenRotas Desktop — uso:
   OpenRotas.exe --fontes [--md] catálogo de fontes/procedência (§33); --md salva o Markdown
   OpenRotas.exe --mapa-cobertura   abre o Mapa de Cobertura Nacional (matriz UF × camada) no navegador
   OpenRotas.exe --integridade   audita defeitos geométricos das camadas (inválidas/fora do Brasil)
-  OpenRotas.exe --dossie "lon,lat;lon,lat"   dossiê completo da rota (integra todos os dados)
+  OpenRotas.exe --dossie "lon,lat;lon,lat" [--html] [--excel]   dossiê completo da rota (todos os dados)
   OpenRotas.exe --conectividade [rodovias|ferrovias|drenagem]   grafo topológico e componentes (§43)
   OpenRotas.exe --telemetria-ana [--atualizar]   telemetria local + atualização incremental (§35)
   OpenRotas.exe --auditoria --relatorio   salva o Relatório de Cobertura Nacional (.md) em exports/

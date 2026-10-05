@@ -278,6 +278,165 @@ def render_texto(dd: dict) -> str:
     return "\n".join(L)
 
 
+_CSS_DOSSIE = """
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1a2230;--muted:#5b6676;--line:#e6e9ef;--accent:#1f6feb;
+  --ok:#1a7f4b;--warn:#9a6700;--chip:#eef2f7}
+:root:not([data-theme="light"]){}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0e1117;--card:#161b22;--ink:#e6edf3;--muted:#9aa4b2;--line:#283039;--accent:#4a9eff;
+  --ok:#3fb950;--warn:#d29922;--chip:#1c232c}}
+:root[data-theme="dark"]{--bg:#0e1117;--card:#161b22;--ink:#e6edf3;--muted:#9aa4b2;--line:#283039;
+  --accent:#4a9eff;--ok:#3fb950;--warn:#d29922;--chip:#1c232c}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;line-height:1.55}
+.wrap{max-width:900px;margin:0 auto;padding:32px 16px 56px}
+h1{font-size:1.5rem;margin:0 0 2px;letter-spacing:-.01em}
+.sub{color:var(--muted);margin:0 0 20px;font-size:.9rem}
+.rota{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:1.05rem;font-weight:600;margin-bottom:6px}
+.seta{color:var(--accent)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:0 0 16px}
+.card h2{font-size:1.05rem;margin:0 0 10px}
+.kpis{display:flex;flex-wrap:wrap;gap:12px}
+.kpi{flex:1 1 150px;background:var(--chip);border-radius:10px;padding:12px 14px}
+.kpi .v{font-size:1.4rem;font-weight:700;font-variant-numeric:tabular-nums}
+.kpi .l{color:var(--muted);font-size:.78rem}
+table{width:100%;border-collapse:collapse;font-size:.9rem}
+th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line)}
+th{color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.03em}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+.alerta{background:var(--chip);border-left:3px solid var(--warn);padding:8px 12px;border-radius:0 8px 8px 0;margin:6px 0}
+.empty{color:var(--muted);font-style:italic}
+footer{color:var(--muted);font-size:.78rem;margin-top:10px;text-align:center}
+"""
+
+
+def _ponto_html(p, titulo):
+    m = p.get("municipio", {})
+    ref = p.get("referencia_hidrografica") or {}
+    est = p.get("estacao_telemetria") or {}
+    linhas = ["<div class='kpi'><div class='l'>%s</div><div class='v'>%s</div><div class='l'>%s</div></div>"
+              % (titulo, html.escape(str(m.get("nome", "?"))), html.escape(str(m.get("uf", "?"))))]
+    if ref.get("nome"):
+        linhas.append("<div class='kpi'><div class='l'>Ref. hidrográfica</div><div>%s</div><div class='l'>%s km</div></div>"
+                      % (html.escape(str(ref["nome"])), ref.get("dist_km", "?")))
+    if est.get("estacao"):
+        linhas.append("<div class='kpi'><div class='l'>Estação telemétrica</div><div>%s</div><div class='l'>%s km</div></div>"
+                      % (html.escape(str(est["estacao"])), est.get("dist_km", "?")))
+    return "".join(linhas)
+
+
+def gerar_html(dd: dict, caminho) -> str | None:
+    """Escreve o Dossiê da Rota como HTML autossuficiente (tema claro/escuro, pronto p/ imprimir→PDF)."""
+    try:
+        if dd.get("erro"):
+            return None
+        o, d = dd["origem"], dd["destino"]
+        h = dd.get("hidrografia", {})
+        cam = dd.get("camadas", {})
+        tt = dd.get("travessia_territorial", {})
+        P = ["<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'>",
+             "<meta name='viewport' content='width=device-width,initial-scale=1'>",
+             "<title>Dossiê da Rota — OpenRotas</title><style>", _CSS_DOSSIE, "</style></head><body><div class='wrap'>",
+             "<h1>Dossiê da Rota</h1><p class='sub'>Integração nacional de dados · gerado em %s</p>"
+             % html.escape(dd.get("gerado_em", "")),
+             "<div class='rota'>%s/%s <span class='seta'>→</span> %s/%s</div>"
+             % (html.escape(str(o["municipio"]["nome"])), html.escape(str(o["municipio"]["uf"])),
+                html.escape(str(d["municipio"]["nome"])), html.escape(str(d["municipio"]["uf"]))),
+             "<section class='card'><h2>Origem e destino</h2><div class='kpis'>",
+             _ponto_html(o, "Origem"), _ponto_html(d, "Destino"), "</div>"]
+        if tt.get("ufs"):
+            P.append("<p class='sub'>Corredor atravessa %s (%d municípios).</p>"
+                     % (", ".join(tt["ufs"]), tt.get("n_municipios", 0)))
+        P.append("</section>")
+        # Hidrografia
+        P.append("<section class='card'><h2>Hidrografia</h2><div class='kpis'>"
+                 "<div class='kpi'><div class='v'>%d</div><div class='l'>trechos de rio</div></div>"
+                 "<div class='kpi'><div class='v'>%d</div><div class='l'>navegáveis</div></div></div>"
+                 % (h.get("trechos", 0), h.get("navegaveis", 0)))
+        if h.get("rios_nomeados"):
+            P.append("<table><thead><tr><th>Rio</th><th class='num'>trechos</th></tr></thead><tbody>")
+            for r in h["rios_nomeados"]:
+                P.append("<tr><td>%s</td><td class='num'>%d</td></tr>" % (html.escape(str(r["nome"])), r["trechos"]))
+            P.append("</tbody></table>")
+        P.append("</section>")
+        # Camadas no corredor
+        P.append("<section class='card'><h2>Feições no corredor</h2>"
+                 "<table><thead><tr><th>Camada</th><th class='num'>feições</th></tr></thead><tbody>")
+        for ch, info in cam.items():
+            P.append("<tr><td>%s</td><td class='num'>%s</td></tr>"
+                     % (html.escape(ch), info.get("feicoes", 0) if info.get("disponivel") else "—"))
+        P.append("</tbody></table></section>")
+        # Alertas
+        if dd.get("alertas"):
+            P.append("<section class='card'><h2>Alertas</h2>")
+            for a in dd["alertas"]:
+                P.append("<div class='alerta'>%s</div>" % html.escape(a))
+            P.append("</section>")
+        # Fontes
+        if dd.get("fontes"):
+            P.append("<section class='card'><h2>Fontes (rastreabilidade)</h2><table><tbody>")
+            for ch, f in dd["fontes"].items():
+                P.append("<tr><td>%s</td><td>%s</td><td>%s</td></tr>"
+                         % (html.escape(ch), html.escape(str(f.get("organizacao", ""))), html.escape(str(f.get("licenca", "")))))
+            P.append("</tbody></table></section>")
+        P.append("<footer>Corredor ±%s km, nível bbox aproximado. Dados nacionais locais — nada sai do seu computador.</footer>"
+                 % dd["corredor"]["folga_km"])
+        P.append("</div></body></html>")
+        pth = Path(caminho)
+        pth.parent.mkdir(parents=True, exist_ok=True)
+        pth.write_text("".join(P), encoding="utf-8")
+        return str(pth)
+    except Exception:
+        logger.warning("[DOSSIE] falha ao gerar HTML.", exc_info=True)
+        return None
+
+
+def exportar_excel(dd: dict, caminho) -> str | None:
+    """Exporta o dossiê para .xlsx (abas Resumo, Rios, Feições, Fontes). Requer openpyxl (dep)."""
+    try:
+        if dd.get("erro"):
+            return None
+        import pandas as pd
+        o, d = dd["origem"], dd["destino"]
+        h = dd.get("hidrografia", {})
+        cam = dd.get("camadas", {})
+        tt = dd.get("travessia_territorial", {})
+        resumo = [
+            ("Origem", "%s/%s" % (o["municipio"]["nome"], o["municipio"]["uf"])),
+            ("Destino", "%s/%s" % (d["municipio"]["nome"], d["municipio"]["uf"])),
+            ("UFs no corredor", ", ".join(tt.get("ufs", []))),
+            ("Municípios no corredor", tt.get("n_municipios", 0)),
+            ("Trechos de rio", h.get("trechos", 0)),
+            ("Rios navegáveis (trechos)", h.get("navegaveis", 0)),
+            ("Pontes", cam.get("pontes", {}).get("feicoes", 0)),
+            ("Travessias/balsas", cam.get("travessias", {}).get("feicoes", 0)),
+            ("Hidrovias", cam.get("hidrovias", {}).get("feicoes", 0)),
+            ("Portos", cam.get("complexos_portuarios", {}).get("feicoes", 0)),
+            ("Cruzamentos ferroviários", cam.get("ferrovias", {}).get("feicoes", 0)),
+            ("Gerado em", dd.get("gerado_em", "")),
+        ]
+        pth = Path(caminho)
+        pth.parent.mkdir(parents=True, exist_ok=True)
+        with pd.ExcelWriter(str(pth), engine="openpyxl") as xw:
+            pd.DataFrame(resumo, columns=["Campo", "Valor"]).to_excel(xw, sheet_name="Resumo", index=False)
+            rios = h.get("rios_nomeados") or []
+            pd.DataFrame(rios or [{"nome": "—", "trechos": 0}]).to_excel(xw, sheet_name="Rios", index=False)
+            feic = [{"camada": ch, "feicoes": info.get("feicoes", 0), "disponivel": info.get("disponivel")}
+                    for ch, info in cam.items()]
+            pd.DataFrame(feic).to_excel(xw, sheet_name="Feicoes", index=False)
+            fontes = [{"camada": ch, "organizacao": f.get("organizacao", ""), "licenca": f.get("licenca", "")}
+                      for ch, f in (dd.get("fontes") or {}).items()]
+            pd.DataFrame(fontes or [{"camada": "—", "organizacao": "", "licenca": ""}]).to_excel(
+                xw, sheet_name="Fontes", index=False)
+            pd.DataFrame([{"alerta": a} for a in (dd.get("alertas") or [])] or [{"alerta": "—"}]).to_excel(
+                xw, sheet_name="Alertas", index=False)
+        return str(pth)
+    except Exception:
+        logger.warning("[DOSSIE] falha ao exportar Excel.", exc_info=True)
+        return None
+
+
 def _parse_coords(texto):
     return [tuple(float(x) for x in par.split(",")) for par in str(texto).split(";") if par.strip()]
 
@@ -292,9 +451,28 @@ def _cli(argv=None) -> int:
             except Exception:
                 coords = None
     if not coords:
-        print("uso: --dossie \"lon,lat;lon,lat[;...]\"  (ex.: -46.63,-23.55;-43.20,-22.90)")
+        print("uso: --dossie \"lon,lat;lon,lat[;...]\" [--html] [--excel]  (ex.: -46.63,-23.55;-43.20,-22.90)")
         return 2
-    print(render_texto(dossie(coords)))
+    dd = dossie(coords)
+    print(render_texto(dd))
+    if "--html" in argv or "--excel" in argv:
+        try:
+            import desktop_config as cfg
+            exp = cfg.ensure_user_dirs()["exports"]
+        except Exception:
+            exp = Path(".")
+        if "--html" in argv:
+            got = gerar_html(dd, exp / "dossie_rota.html")
+            if got:
+                print("\nHTML: %s" % got)
+                try:
+                    import webbrowser
+                    webbrowser.open(Path(got).as_uri())
+                except Exception:
+                    pass
+        if "--excel" in argv:
+            got = exportar_excel(dd, exp / "dossie_rota.xlsx")
+            print("Excel: %s" % (got or "falha ao exportar"))
     return 0
 
 
