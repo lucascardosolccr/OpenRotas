@@ -45,11 +45,51 @@ DISPONIVEIS = (
 _PESADAS = frozenset({"rodovias", "drenagem", "massas_dagua", "ferrovias"})
 
 
+# As bases NACIONAIS grandes (drenagem/rodovias) são versionadas em PEDAÇOS <100 MB em
+# _bigparts/ e reassembladas no .parquet inteiro. O build/CI faz isso, mas um deploy comum
+# (ex.: Streamlit Cloud) NÃO roda o reassembly — então a cobertura nacional (rios de TODO o
+# Brasil, não só Amazônia) só aparece se reassemblarmos SOB DEMANDA quando o .parquet falta e
+# os pedaços existem. Idempotente, uma tentativa por processo, degrada em silêncio (sem o
+# .parquet a camada simplesmente continua indisponível, como antes — zero regressão).
+_BIGPARTS = _DERIVADAS / "_bigparts"
+_MONTAGEM_TENTADA = False
+
+
+def _garantir_derivada(camada: str) -> bool:
+    """Garante o .parquet da camada no disco. Se faltar mas houver pedaços em _bigparts/,
+    reassembla (uma vez por processo, via montar_bases_grandes). Devolve True se o arquivo existe
+    ao fim. Nunca levanta."""
+    global _MONTAGEM_TENTADA
+    p = _DERIVADAS / (camada + ".parquet")
+    if p.exists():
+        return True
+    try:
+        tem_pedacos = _BIGPARTS.exists() and any(_BIGPARTS.glob(camada + ".parquet.part*"))
+    except Exception:
+        tem_pedacos = False
+    if not tem_pedacos or _MONTAGEM_TENTADA:
+        return p.exists()
+    _MONTAGEM_TENTADA = True
+    try:
+        import importlib.util
+        script = _PROJ_ROOT / "montar_bases_grandes.py"
+        if script.exists():
+            spec = importlib.util.spec_from_file_location("_montar_bases_grandes", script)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            mod.montar(verbose=False)       # reassembla todas as bases grandes do manifesto
+    except Exception:
+        logger = __import__("logging").getLogger("openrotas.geo.bases")
+        logger.warning("[BASES] reassembly sob demanda de %r falhou.", camada, exc_info=True)
+    return p.exists()
+
+
 def _caminho(camada: str) -> Path:
     if camada not in DISPONIVEIS:
         raise ValueError(
             "Camada desconhecida %r. Disponíveis: %s" % (camada, ", ".join(DISPONIVEIS))
         )
+    _garantir_derivada(camada)
     p = _DERIVADAS / (camada + ".parquet")
     if not p.exists():
         raise FileNotFoundError(
@@ -59,10 +99,15 @@ def _caminho(camada: str) -> Path:
 
 
 def camadas_disponiveis() -> list:
-    """Devolve as camadas existentes em data/brasil/ibge/derivadas/."""
+    """Devolve as camadas existentes em data/brasil/ibge/derivadas/ (reassemblando as grandes
+    sob demanda a partir de _bigparts/, para cobertura nacional completa)."""
     if not _DERIVADAS.exists():
         return []
-    return [c for c in DISPONIVEIS if (_DERIVADAS / (c + ".parquet")).exists()]
+    out = []
+    for c in DISPONIVEIS:
+        if (_DERIVADAS / (c + ".parquet")).exists() or _garantir_derivada(c):
+            out.append(c)
+    return out
 
 
 def manifest() -> dict:
