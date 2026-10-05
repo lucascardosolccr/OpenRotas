@@ -200,6 +200,7 @@ _AJUDA = """OpenRotas Desktop — uso:
   OpenRotas.exe                 abre o aplicativo (janela nativa)
   OpenRotas.exe --diagnostico   autodiagnóstico (bases, cache, motor, offline, atualização)
   OpenRotas.exe --auditoria     Auditoria de Cobertura Nacional (prova objetiva por UF/município)
+  OpenRotas.exe --multimodal    inventário multimodal nacional (+ análise de rota: "lon,lat;lon,lat")
   OpenRotas.exe --auditoria --relatorio   salva o Relatório de Cobertura Nacional (.md) em exports/
   OpenRotas.exe --recursos      status dos recursos (Gerenciador de Recursos)
   OpenRotas.exe --recursos --html   abre a Central de Recursos (painel visual) no navegador
@@ -249,6 +250,18 @@ def _provisionar_grafo(paths) -> int:
         return 0
     print("Não foi possível provisionar o grafo: %s" % r["detalhe"])
     return 1
+
+
+def _multimodal() -> int:
+    """Inventário multimodal nacional (§8) + análise on-route opcional: o GeoIntelligenceRepository
+    (§24) carrega as bases instaladas e responde consultas espaciais unificadas. Passe
+    'lon,lat;lon,lat;...' para analisar os cruzamentos de uma rota. Sai ao terminar."""
+    try:
+        from geo import repositorio
+        return repositorio._cli([a for a in sys.argv[1:] if a != "--multimodal"])
+    except Exception as e:
+        print("Repositório geoespacial indisponível: %s" % e)
+        return 1
 
 
 def _auditoria() -> int:
@@ -367,6 +380,10 @@ def main() -> int:
     # partir dos dados reais instalados; com --relatorio salva o Relatório de Cobertura. Sai.
     if "--auditoria" in sys.argv:
         return _auditoria()
+
+    # Modo MULTIMODAL (§8/§24): inventário dos modais + consulta espacial unificada (on-route). Sai.
+    if "--multimodal" in sys.argv:
+        return _multimodal()
 
     # Modo BENCHMARK (§9/§29): mede o OSRM local × público e sai (evidência do ganho).
     if "--benchmark" in sys.argv:

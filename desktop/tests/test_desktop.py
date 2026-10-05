@@ -24,6 +24,7 @@ from resources import painel                    # noqa: E402
 from resources import provisionamento as prov   # noqa: E402
 from resources import central_dados             # noqa: E402
 from audit import coverage_auditor as ca         # noqa: E402
+from geo import repositorio as georepo            # noqa: E402
 import exec_profile                   # noqa: E402
 import app_update                     # noqa: E402
 
@@ -803,3 +804,64 @@ def test_resumo_curto_e_cli():
 def test_painel_tem_bloco_cobertura():
     h = painel.construir_html()
     assert "Auditoria de Cobertura Nacional" in h and "Estados (UFs)" in h
+
+
+# ============================================================================
+#  GeoIntelligenceRepository + multimodal/fluvial (§6/§8/§24/§25) — consultas
+#  espaciais unificadas (nível bbox, numpy), sobre os dados REAIS instalados.
+# ============================================================================
+@pytest.fixture(scope="module")
+def repo():
+    return georepo.GeoIntelligenceRepository()
+
+def test_repo_arrays_projecao_leve(repo):
+    a = repo.arrays("rodovias")
+    assert a and a["n"] > 100000
+    assert set(("lon", "lat", "xmin", "ymin", "xmax", "ymax")).issubset(a.keys())
+
+def test_repo_camada_inexistente_degrada(repo):
+    assert repo.arrays("nao_existe_xyz") is None
+    assert repo.disponivel("osrm_brasil") is False      # provisionável, ausente aqui
+
+def test_repo_intersecta_bbox_sp(repo):
+    import numpy as np
+    # janela sobre a cidade de São Paulo deve conter feições rodoviárias
+    idx = repo.intersecta_bbox("rodovias", -46.8, -23.8, -46.3, -23.4)
+    assert isinstance(idx, np.ndarray) and idx.size > 0
+
+def test_repo_intersecta_bbox_fora_do_brasil_vazio(repo):
+    # no meio do Atlântico não há feições rodoviárias
+    assert repo.intersecta_bbox("rodovias", 10.0, 10.0, 11.0, 11.0).size == 0
+
+def test_repo_proximidade_ponto(repo):
+    r = repo.proximidade("drenagem", -60.02, -3.1, raio_km=25)   # Manaus/AM (muitos rios)
+    assert r["total"] > 0 and r["raio_km"] == 25
+
+def test_repo_contar_na_rota_sp_rio(repo):
+    coords = [(-46.63, -23.55), (-43.20, -22.90)]
+    res = repo.contar_na_rota(coords, camadas=["drenagem", "rodovias", "pontes"])
+    assert res["drenagem"]["feicoes"] > 0 and res["drenagem"]["disponivel"] is True
+    assert res["rodovias"]["feicoes"] > 0
+
+def test_repo_contar_na_rota_camada_ausente(repo):
+    res = repo.contar_na_rota([(-46.6, -23.5), (-46.5, -23.4)], camadas=["osrm_brasil"])
+    assert res["osrm_brasil"] == {"feicoes": 0, "disponivel": False}
+
+def test_repo_inventario_multimodal(repo):
+    inv = repo.inventario_multimodal()
+    assert inv["camadas"]["rodovias"]["instalado"] is True
+    assert inv["camadas"]["drenagem"]["classe"] == "fluvial"
+    assert "rodoviario" in inv["classes_presentes"] and "fluvial" in inv["classes_presentes"]
+    assert inv["total_feicoes"] > 2_000_000
+
+def test_repo_analise_multimodal_rota(repo):
+    res = repo.analise_multimodal_rota([(-46.63, -23.55), (-43.20, -22.90)])
+    assert res["cruza_rio"] is True
+    assert res["por_classe"]["rodoviario"] > 0 and res["por_classe"]["fluvial"] > 0
+    assert "aproximada" in res["nota"]
+
+def test_repo_render_e_cli():
+    inv = georepo.GeoIntelligenceRepository().inventario_multimodal()
+    txt = georepo.render_inventario(inv)
+    assert "INVENTÁRIO MULTIMODAL" in txt and "rodovias" in txt
+    assert georepo._cli([]) == 0
