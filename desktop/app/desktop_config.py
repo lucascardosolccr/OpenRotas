@@ -35,6 +35,36 @@ APP_VERSION = "0.1.0"
 # Porta local do servidor Streamlit embutido (alta, improvável de colidir).
 PORTA_LOCAL = int(os.environ.get("OPENROTAS_PORT", "8537"))
 
+# ---------------------------------------------------------------------------
+# Repositório/Release do grafo OSRM do Brasil — fonte TURNKEY do "mapa de rotas"
+# completo (§12/§32). O instalador fica leve (sem o grafo de vários GB embutido);
+# o próprio software baixa o grafo UMA VEZ, direto para a pasta de dados do
+# usuário, por um clique na Central de Dados ou por --provisionar-grafo. Assim o
+# usuário tem TODO O BRASIL sem precisar editar config nem achar URL nenhuma.
+# Sobrescrevíveis por ambiente (fork/mirror).
+REPO = os.environ.get("OPENROTAS_REPO", "lucascardosolccr/OpenRotas")
+GRAFO_RELEASE_TAG = os.environ.get("OPENROTAS_GRAFO_TAG", "osrm-brasil-latest")
+
+
+def url_grafo_padrao() -> str:
+    """URL PADRÃO do grafo OSRM do Brasil (1ª parte). O grafo é publicado em PARTES
+    (brazil-osrm-mld.tar.gz.partNN) numa Release do GitHub; apontar para '…part00' basta —
+    o provisionador detecta e baixa as demais, concatena e extrai. É o default turnkey quando
+    a config do usuário não traz um graph_url próprio."""
+    return ("https://github.com/%s/releases/download/%s/brazil-osrm-mld.tar.gz.part00"
+            % (REPO, GRAFO_RELEASE_TAG))
+
+
+def resolver_graph_url(conf: dict | None = None) -> str:
+    """graph_url EFETIVO: o configurado em osrm.graph_url (se o usuário preencheu) tem
+    prioridade; senão cai no padrão turnkey (url_grafo_padrao). Nunca levanta."""
+    try:
+        oc = dict((conf or carregar_config_usuario()).get("osrm") or {})
+        u = str(oc.get("graph_url", "") or "").strip()
+        return u or url_grafo_padrao()
+    except Exception:
+        return url_grafo_padrao()
+
 
 # ---------------------------------------------------------------------------
 # Localização de arquivos — funciona tanto em DEV (rodando do repositório) quanto

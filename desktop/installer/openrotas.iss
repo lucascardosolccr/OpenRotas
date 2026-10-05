@@ -63,6 +63,7 @@ Name: "{localappdata}\{#AppName}\logs"; Flags: uninsneveruninstall
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
+Name: "{group}\Central de Dados (baixar o Brasil inteiro)"; Filename: "{app}\{#AppExe}"; Parameters: "--central"
 Name: "{group}\Diagnóstico do OpenRotas"; Filename: "{app}\{#AppExe}"; Parameters: "--diagnostico"
 Name: "{group}\Central de Recursos"; Filename: "{app}\{#AppExe}"; Parameters: "--recursos --html"
 Name: "{group}\Verificar atualizações"; Filename: "{app}\{#AppExe}"; Parameters: "--atualizar"

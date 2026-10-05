@@ -139,6 +139,26 @@ def _bloco_telemetria() -> str:
     return "".join(out)
 
 
+def _bloco_dados_completos() -> str:
+    """Explica como obter TODO O BRASIL (grafo de roteamento) pela Central de Dados — a opção
+    dentro do software que baixa e instala o conteúdo pesado direto na pasta do app."""
+    try:
+        import provisionamento as prov
+        tem = prov.grafo_instalado()
+        pasta = prov.pasta_de_dados()
+    except Exception:
+        tem, pasta = False, "(perfil do usuário)"
+    if tem:
+        return ('<p class="empty">Grafo de roteamento do Brasil instalado ✓ — todo o país offline. '
+                'Arquivos em <code>%s</code>.</p>' % html.escape(str(pasta)))
+    return ('<p>As bases geoespaciais/fluviais/rodoviárias de todo o Brasil já vêm instaladas. '
+            'O <b>mapa de rotas do Brasil</b> (grafo OSRM, ~6,7 GB) é opcional e baixável com '
+            '<b>um clique</b> na <b>Central de Dados</b> — ele vai direto para a pasta que o app usa '
+            '(<code>%s</code>) e habilita o roteamento offline.</p>'
+            '<p class="empty">Abra: menu Iniciar → “OpenRotas — Central de Dados”, '
+            'ou execute <code>OpenRotas.exe --central</code>.</p>' % html.escape(str(pasta)))
+
+
 def _bloco_config() -> str:
     try:
         import desktop_config as cfg
@@ -174,6 +194,7 @@ def construir_html(osrm_cfg=None) -> str:
             (" v" + html.escape(str(versao))) if versao else "", html.escape(quando)),
         "<section class='card'><h2>Recursos do software</h2>", _tabela_recursos(osrm_cfg), "</section>",
         "<section class='card'><h2>Prontidão offline</h2>", _bloco_offline(), "</section>",
+        "<section class='card'><h2>Dados completos (Brasil inteiro)</h2>", _bloco_dados_completos(), "</section>",
         "<section class='card'><h2>Perfil de execução (local)</h2>", _bloco_telemetria(), "</section>",
         "<section class='card'><h2>Configuração</h2>", _bloco_config(), "</section>",
         "<footer>Dados locais — nada sai do seu computador.</footer>",

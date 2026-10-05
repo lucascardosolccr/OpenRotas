@@ -222,15 +222,27 @@ def _parte_ausente(exc: Exception) -> bool:
     return False
 
 
-def _baixar_partes(url: str, destino_tar) -> bool:
+def _emitir(progresso, **campos) -> None:
+    """Chama o callback de progresso (se houver) de forma 100% defensiva — um progresso que
+    levanta NUNCA pode abortar/corromper um download de vários GB."""
+    if progresso is None:
+        return
+    try:
+        progresso(dict(campos))
+    except Exception:
+        pass
+
+
+def _baixar_partes(url: str, destino_tar, progresso=None) -> bool:
     """Baixa as partes sequenciais (…part00, …part01, …) e as concatena em `destino_tar`
     (Release publica o grafo em partes ≤1900 MB). Para quando a PRÓXIMA parte não existe
     (fim normal). Um erro transitório de rede no meio ABORTA e descarta o arquivo parcial —
     não é confundido com fim das partes. True só se baixou ao menos uma parte com sucesso e
-    sem erro transitório. Nunca levanta."""
+    sem erro transitório. `progresso` (opcional): callback que recebe um dict por atualização
+    ({fase:'baixando', parte, bytes}) para a UI exibir andamento. Nunca levanta."""
     base = _base_partes(url)
     destino_tar = Path(destino_tar)
-    baixou, abortou = 0, False
+    baixou, abortou, total = 0, False, 0
     try:
         with open(destino_tar, "wb") as out:
             for i in range(0, 1000):
@@ -243,7 +255,12 @@ def _baixar_partes(url: str, destino_tar) -> bool:
                             if not bloco:
                                 break
                             out.write(bloco)
+                            total += len(bloco)
+                            # Emite a cada ~16 MB para não inundar a UI (256 KB * 64).
+                            if total % (1024 * 1024 * 16) < (1024 * 256):
+                                _emitir(progresso, fase="baixando", parte=i, bytes=total)
                     baixou += 1
+                    _emitir(progresso, fase="baixando", parte=i, bytes=total, parte_concluida=True)
                     logger.info("[OSRM] parte %02d do grafo baixada.", i)
                 except Exception as e:
                     if _parte_ausente(e):
@@ -263,25 +280,29 @@ def _baixar_partes(url: str, destino_tar) -> bool:
     return True
 
 
-def garantir_grafo(cfg_osrm: dict | None, destino_dir) -> str | None:
+def garantir_grafo(cfg_osrm: dict | None, destino_dir, progresso=None) -> str | None:
     """[GRAFO COMO PRODUTO] Garante que o grafo OSRM do Brasil exista localmente e devolve o
     caminho do arquivo .osrm base. Ordem:
       1. se graph_path já existe → usa;
       2. se já foi provisionado antes em destino_dir → usa;
       3. se há graph_url (ex.: Release do GitHub) → BAIXA o .tar.gz UMA VEZ e extrai em destino_dir.
     É assim que o grafo "vem com o produto" sem inchar o instalador: um download único no 1º uso,
-    guardado no perfil do usuário (sobrevive a atualizações do app). Defensivo: nunca levanta —
-    em falha devolve o graph_path (possivelmente ausente) e o app cai no OSRM público.
-    Download grande é esperado (vários GB); é feito só uma vez."""
+    guardado no perfil do usuário (sobrevive a atualizações do app). `progresso` (opcional):
+    callback de andamento repassado ao downloader e às fases de extração — a Central de Dados o
+    usa para a barra de progresso. Defensivo: nunca levanta — em falha devolve o graph_path
+    (possivelmente ausente) e o app cai no OSRM público. Download grande é esperado (vários GB);
+    é feito só uma vez."""
     cfg = dict(cfg_osrm or {})
     gp = str(cfg.get("graph_path", "")).strip()
     if gp and os.path.exists(gp):
+        _emitir(progresso, fase="pronto", caminho=gp)
         return gp
     try:
         destino = Path(destino_dir)
         destino.mkdir(parents=True, exist_ok=True)
         ja = next(destino.glob("*.osrm"), None)       # já provisionado antes?
         if ja is not None:
+            _emitir(progresso, fase="pronto", caminho=str(ja))
             return str(ja)
         url = str(cfg.get("graph_url", "")).strip()
         if not url:
@@ -293,11 +314,13 @@ def garantir_grafo(cfg_osrm: dict | None, destino_dir) -> str | None:
             if ".part" in url:
                 # Grafo publicado em PARTES (Release) → baixa todas e concatena antes de extrair.
                 logger.info("[OSRM] provisionando grafo em partes a partir de %s", url)
-                if not _baixar_partes(url, tmp):
+                if not _baixar_partes(url, tmp, progresso=progresso):
                     return gp or None
             else:
                 logger.info("[OSRM] provisionando grafo (download único) de %s", url)
+                _emitir(progresso, fase="baixando", bytes=0)
                 urllib.request.urlretrieve(url, tmp)
+            _emitir(progresso, fase="extraindo")
             # Extrai numa área de STAGING; só promove ao destino se der certo — evita deixar
             # um .osrm PARCIAL que o próximo run confundiria com 'já provisionado'.
             if staging.exists():

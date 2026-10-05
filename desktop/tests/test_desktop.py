@@ -21,6 +21,8 @@ from engines import osrm_manager as osrm   # noqa: E402
 import local_data                     # noqa: E402
 from resources import resource_manager as rm   # noqa: E402
 from resources import painel                    # noqa: E402
+from resources import provisionamento as prov   # noqa: E402
+from resources import central_dados             # noqa: E402
 import exec_profile                   # noqa: E402
 import app_update                     # noqa: E402
 
@@ -551,3 +553,180 @@ def test_osrm_parte_ausente_classifica():
     assert osrm._parte_ausente(he500) is False          # 5xx = transitório, não fim
     assert osrm._parte_ausente(urllib.error.URLError(FileNotFoundError())) is True
     assert osrm._parte_ausente(urllib.error.URLError(ConnectionResetError())) is False
+
+
+# ============================================================================
+#  CONTEÚDO COMPLETO DO BRASIL — graph_url turnkey, provisionamento e Central
+#  de Dados (a opção DENTRO do software para baixar/instalar tudo). §12/§32.
+# ============================================================================
+
+# ---- desktop_config: URL turnkey do grafo ----
+def test_url_grafo_padrao_aponta_para_release():
+    u = cfg.url_grafo_padrao()
+    assert u.startswith("https://github.com/") and "osrm-brasil-latest" in u
+    assert u.endswith("brazil-osrm-mld.tar.gz.part00")
+
+def test_resolver_graph_url_configurado_vence():
+    conf = {"osrm": {"graph_url": "http://meu/servidor/grafo.tar.gz.part00"}}
+    assert cfg.resolver_graph_url(conf) == "http://meu/servidor/grafo.tar.gz.part00"
+
+def test_resolver_graph_url_cai_no_padrao():
+    assert cfg.resolver_graph_url({"osrm": {"mode": "docker"}}) == cfg.url_grafo_padrao()
+    assert cfg.resolver_graph_url({}) == cfg.url_grafo_padrao()
+
+def test_resolver_graph_url_env_override(monkeypatch):
+    import importlib
+    monkeypatch.setenv("OPENROTAS_REPO", "fulano/Fork")
+    monkeypatch.setenv("OPENROTAS_GRAFO_TAG", "osrm-x")
+    importlib.reload(cfg)
+    try:
+        u = cfg.url_grafo_padrao()
+        assert "fulano/Fork" in u and "osrm-x" in u
+    finally:
+        monkeypatch.delenv("OPENROTAS_REPO", raising=False)
+        monkeypatch.delenv("OPENROTAS_GRAFO_TAG", raising=False)
+        importlib.reload(cfg)   # restaura os padrões para os demais testes
+
+
+# ---- osrm_manager: callback de progresso no download em partes ----
+def test_baixar_partes_emite_progresso(tmp_path):
+    srv = tmp_path / "srv"; srv.mkdir()
+    (srv / "g.tar.gz.part00").write_bytes(b"A" * (1024 * 300))
+    (srv / "g.tar.gz.part01").write_bytes(b"B" * (1024 * 300))
+    base = (srv / "g.tar.gz.part").as_uri()
+    eventos = []
+    ok = osrm._baixar_partes(base, tmp_path / "out.tar.gz", progresso=lambda ev: eventos.append(ev))
+    assert ok is True and (tmp_path / "out.tar.gz").exists()
+    assert any(e.get("fase") == "baixando" for e in eventos)
+    assert any(e.get("parte_concluida") for e in eventos)   # fim de cada parte sinalizado
+
+def test_baixar_partes_progresso_que_levanta_nao_quebra(tmp_path):
+    srv = tmp_path / "srv"; srv.mkdir()
+    (srv / "g.tar.gz.part00").write_bytes(b"A" * 2048)
+    base = (srv / "g.tar.gz.part").as_uri()
+    def _boom(ev):
+        raise RuntimeError("callback ruim")
+    # um progresso defeituoso NUNCA pode abortar/corromper o download
+    assert osrm._baixar_partes(base, tmp_path / "out.tar.gz", progresso=_boom) is True
+
+def test_garantir_grafo_emite_pronto_quando_ja_existe(tmp_path):
+    destino = tmp_path / "dl"; destino.mkdir()
+    (destino / "brazil-latest.osrm").write_bytes(b"x")
+    eventos = []
+    got = osrm.garantir_grafo({}, destino, progresso=lambda ev: eventos.append(ev))
+    assert got == str(destino / "brazil-latest.osrm")
+    assert any(e.get("fase") == "pronto" for e in eventos)
+
+
+# ---- provisionamento: camada pura ----
+def test_prov_pasta_de_dados_existe():
+    p = prov.pasta_de_dados()
+    assert p.name == "data_local"
+
+def test_prov_humano_bytes():
+    assert prov.humano_bytes(0) == "0 B"
+    assert prov.humano_bytes(1536).endswith("KB")
+    assert prov.humano_bytes(6_700_000_000).endswith("GB")
+    assert prov.humano_bytes("xx") == "—"
+
+def test_prov_inventario_estrutura():
+    inv = prov.inventario()
+    assert "recursos" in inv and "resumo" in inv and "offline" in inv
+    assert inv["resumo"]["total"] >= 1
+    # as bases essenciais estão instaladas neste repo (reassembladas) → nenhum obrigatório falta
+    assert isinstance(inv["resumo"]["faltam_obrigatorios"], list)
+    assert "osrm_brasil" in inv["resumo"]["faltam_opcionais"]   # grafo ausente aqui
+
+def test_prov_grafo_instalado_falso_aqui():
+    assert prov.grafo_instalado() is False
+
+def test_prov_baixar_grafo_em_partes_para_a_pasta(tmp_path, monkeypatch):
+    import io, tarfile, gzip
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as t:
+        dado = b"OSRM" * 4000
+        info = tarfile.TarInfo("brazil-latest.osrm"); info.size = len(dado)
+        t.addfile(info, io.BytesIO(dado))
+    targz = gzip.compress(buf.getvalue())
+    srv = tmp_path / "srv"; srv.mkdir()
+    meio = len(targz) // 2
+    (srv / "brazil-osrm-mld.tar.gz.part00").write_bytes(targz[:meio])
+    (srv / "brazil-osrm-mld.tar.gz.part01").write_bytes(targz[meio:])
+    base = (srv / "brazil-osrm-mld.tar.gz.part").as_uri()
+    destino = tmp_path / "pasta_dados"
+    monkeypatch.setattr(prov, "pasta_de_dados", lambda: destino)
+    eventos = []
+    r = prov.baixar_grafo(progresso=lambda ev: eventos.append(ev),
+                          conf={"osrm": {"graph_url": base}})
+    assert r["ok"] is True and (destino / "brazil-latest.osrm").exists()
+    assert any(e.get("fase") in ("baixando", "extraindo") for e in eventos)
+
+def test_prov_baixar_grafo_sem_url_nao_quebra(monkeypatch):
+    # força graph_url vazio e sem padrão → mensagem clara, sem levantar
+    monkeypatch.setattr(cfg, "resolver_graph_url", lambda *a, **k: "")
+    r = prov.baixar_grafo(conf={"osrm": {}})
+    assert r["ok"] is False and "nada a baixar" in r["detalhe"]
+
+def test_prov_abrir_pasta_headless_e_noop(monkeypatch):
+    monkeypatch.setenv("OPENROTAS_NO_NET", "1")
+    assert prov.abrir_pasta_dados() is False      # em CI/headless não tenta abrir GUI
+
+def test_prov_ativar_roteamento_local_grava_config(tmp_path, monkeypatch):
+    monkeypatch.setattr(cfg, "user_data_dir", lambda: tmp_path / "ud")
+    r = prov.ativar_roteamento_local()
+    assert r["ok"] is True
+    import json as _json
+    conf = _json.loads((tmp_path / "ud" / "config" / "desktop.json").read_text(encoding="utf-8"))
+    assert conf["osrm"]["mode"] == "docker"
+    assert conf["osrm"]["graph_url"].endswith("part00")   # garante uma URL utilizável
+
+def test_prov_ativar_roteamento_local_preserva_config(tmp_path, monkeypatch):
+    import json as _json
+    ud = tmp_path / "ud"; (ud / "config").mkdir(parents=True)
+    (ud / "config" / "desktop.json").write_text(
+        _json.dumps({"SUPABASE_URL": "https://x", "osrm": {"graph_url": "http://meu/g.part00"}}),
+        encoding="utf-8")
+    monkeypatch.setattr(cfg, "user_data_dir", lambda: ud)
+    prov.ativar_roteamento_local()
+    conf = _json.loads((ud / "config" / "desktop.json").read_text(encoding="utf-8"))
+    assert conf["SUPABASE_URL"] == "https://x"               # resto preservado
+    assert conf["osrm"]["mode"] == "docker"
+    assert conf["osrm"]["graph_url"] == "http://meu/g.part00"  # url do usuário preservada
+
+def test_prov_reparar_bases_emite_e_nao_quebra():
+    eventos = []
+    rel = prov.reparar_bases(progresso=lambda ev: eventos.append(ev))
+    assert isinstance(rel, dict)
+    assert any(e.get("fase") == "concluido" for e in eventos)
+
+
+# ---- central_dados: fallback de texto (sem GUI) ----
+def test_central_resumo_texto_tem_pasta_e_grafo():
+    txt = central_dados._resumo_texto()
+    assert "Central de Dados" in txt and "grafo" in txt.lower()
+    assert "Pasta de dados:" in txt
+
+def test_central_executar_texto_sem_baixar_retorna_0(capsys):
+    rc = central_dados._executar_texto(baixar=False)
+    assert rc == 0
+    assert "--central --baixar" in capsys.readouterr().out
+
+def test_central_main_cai_para_texto_sem_display(monkeypatch, capsys):
+    # sem Tkinter utilizável, main() usa o modo texto e não levanta
+    monkeypatch.setattr(central_dados, "_tkinter_disponivel", lambda: False)
+    rc = central_dados.main([])
+    assert rc == 0 and "Central de Dados" in capsys.readouterr().out
+
+
+# ---- manifesto: completude (todas as camadas nacionais embarcadas) ----
+def test_manifesto_cobre_catalogo_completo():
+    m = rm.carregar_manifesto()
+    rec = m.get("recursos", {})
+    for chave in ("drenagem", "rodovias", "ferrovias", "pontes", "travessias", "hidrovias",
+                  "eclusas", "atracadouros_terminal", "complexos_portuarios", "sinalizacao"):
+        assert chave in rec, "manifesto deveria listar %r" % chave
+    assert rec["drenagem"]["obrigatorio"] is True and rec["rodovias"]["obrigatorio"] is True
+
+def test_painel_tem_bloco_dados_completos():
+    h = painel.construir_html()
+    assert "Dados completos" in h and "Central de Dados" in h

@@ -204,6 +204,7 @@ _AJUDA = """OpenRotas Desktop — uso:
   OpenRotas.exe --atualizar     verifica atualização do app e das bases
   OpenRotas.exe --atualizar --baixar   aplica as atualizações pendentes (baixa/verifica)
   OpenRotas.exe --reparar       repara/atualiza tudo que puder, sem reinstalar (§18)
+  OpenRotas.exe --central       abre a Central de Dados (baixar o Brasil inteiro com 1 clique)
   OpenRotas.exe --provisionar-grafo   baixa o grafo OSRM do Brasil (prepara o offline; sem Docker)
   OpenRotas.exe --benchmark     mede o OSRM local × público (evidência de desempenho, §9/§29)
   OpenRotas.exe --telemetria    mostra o resumo do perfil de execução local (§42)
@@ -214,26 +215,50 @@ Flags auxiliares: --silencioso (diagnóstico sem imprimir)."""
 
 def _provisionar_grafo(paths) -> int:
     """Baixa/extrai o grafo OSRM do Brasil para o perfil do usuário (não precisa de Docker —
-    Docker só é necessário para SERVIR). Lê osrm.graph_url/graph_path da config."""
-    conf = cfg.carregar_config_usuario() or {}
-    oc = dict(conf.get("osrm") or {})
-    if not str(oc.get("graph_url", "")).strip() and not str(oc.get("graph_path", "")).strip():
-        print("Sem osrm.graph_url/graph_path na config. Preencha graph_url (Release do grafo) "
-              "no desktop.json e tente de novo.")
-        return 2
-    print("Provisionando o grafo OSRM do Brasil (download único, vários GB — pode demorar)...")
+    Docker só é necessário para SERVIR). TURNKEY: usa o graph_url configurado OU o padrão
+    (desktop_config.url_grafo_padrao) — o usuário não precisa achar URL nenhuma. Mostra
+    progresso textual (a cada ~200 MB)."""
     try:
-        import engines.osrm_manager as osrm
-        caminho = osrm.garantir_grafo(oc, paths["data_local"])
+        sys.path.insert(0, os.path.join(os.path.dirname(_AQUI), "resources"))
+        import provisionamento as prov
     except Exception as e:
-        print("Falha ao provisionar o grafo: %s" % e)
+        print("Provisionamento indisponível: %s" % e)
         return 1
-    if caminho:
-        print("Grafo pronto em: %s" % caminho)
-        print("Para SERVIR (roteamento local/offline), use osrm.mode='docker' com o Docker Desktop instalado.")
+    if prov.grafo_instalado():
+        print("O grafo do Brasil já está instalado em %s. Nada a baixar." % prov.pasta_de_dados())
         return 0
-    print("Não foi possível provisionar o grafo (verifique a URL/conexão).")
+    print("Provisionando o grafo OSRM do Brasil (download único, ~6,7 GB — pode demorar)...")
+    estado = {"ultimo": -1}
+
+    def _prog(ev):
+        if ev.get("fase") == "baixando":
+            mb = int((ev.get("bytes") or 0) / (1024 * 1024))
+            if mb - estado["ultimo"] >= 200:
+                estado["ultimo"] = mb
+                print("  baixado: %s" % prov.humano_bytes(ev.get("bytes") or 0))
+        elif ev.get("fase") == "extraindo":
+            print("  extraindo o pacote...")
+
+    r = prov.baixar_grafo(progresso=_prog)
+    if r["ok"]:
+        print("Grafo pronto em: %s" % r["caminho"])
+        print("Para SERVIR (roteamento local/offline), ligue osrm.mode='docker' (ou use a Central "
+              "de Dados → 'Ativar roteamento local') com o Docker Desktop instalado.")
+        return 0
+    print("Não foi possível provisionar o grafo: %s" % r["detalhe"])
     return 1
+
+
+def _central_dados() -> int:
+    """Abre a Central de Dados (janela nativa) — a opção DENTRO do software para baixar/instalar
+    todo o conteúdo do Brasil direto na pasta do app. Cai para modo texto se não houver GUI."""
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(_AQUI), "resources"))
+        import central_dados
+        return central_dados.main([a for a in sys.argv[1:] if a != "--central"])
+    except Exception as e:
+        print("Central de Dados indisponível: %s" % e)
+        return 1
 
 
 def _reparar() -> int:
@@ -319,6 +344,11 @@ def main() -> int:
     if "--provisionar-grafo" in sys.argv:
         return _provisionar_grafo(paths)
 
+    # Modo CENTRAL DE DADOS: janela nativa para baixar/instalar o conteúdo do Brasil (grafo) com
+    # um clique, direto na pasta de dados do app, e reparar/atualizar bases. Sai ao fechar.
+    if "--central" in sys.argv:
+        return _central_dados()
+
     # Modo BENCHMARK (§9/§29): mede o OSRM local × público e sai (evidência do ganho).
     if "--benchmark" in sys.argv:
         try:
@@ -366,7 +396,11 @@ def main() -> int:
                     if _emb is not None:
                         _osrm_cfg["graph_path"] = str(_emb)
                         log.info("[OSRM] grafo embutido no bundle: %s", _emb)
-                # 2º: senão, usa/baixa para o perfil do usuário (auto-provisionamento).
+                # 2º: senão, usa/baixa para o perfil do usuário (auto-provisionamento). TURNKEY:
+                # se não houver graph_url na config, cai no padrão (Release oficial) para o
+                # download funcionar sem o usuário ter de preencher URL.
+                if not str(_osrm_cfg.get("graph_url", "") or "").strip():
+                    _osrm_cfg["graph_url"] = cfg.resolver_graph_url(_conf)
                 _gp = osrm.garantir_grafo(_osrm_cfg, paths["data_local"])
                 if _gp:
                     _osrm_cfg["graph_path"] = _gp
