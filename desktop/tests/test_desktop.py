@@ -1076,3 +1076,53 @@ def test_dossie_ponto_unico_nao_quebra():
     # município mais próximo (nearest-centroid honesto): DF ou GO vizinho — UF válida
     assert d["origem"]["municipio"]["uf"] in ca.UFS_ESPERADAS and d["pontos"] == 1
     assert d["origem"]["municipio"]["nome"]
+
+
+# ============================================================================
+#  GRAFO TOPOLÓGICO / CONECTIVIDADE (§43) — nós/arestas via WKB + Union-Find.
+# ============================================================================
+def test_grafo_extremidades_wkb_linestring():
+    import struct
+    from geo import grafo_topologico as gt
+    # LineString big-endian com 3 pontos: (1,2)->(3,4)->(5,6)
+    pts = [(1.0, 2.0), (3.0, 4.0), (5.0, 6.0)]
+    b = b"\x00" + struct.pack(">I", 2) + struct.pack(">I", 3)
+    for x, y in pts:
+        b += struct.pack(">dd", x, y)
+    r = gt._extremidades_wkb(b)
+    assert r == (1.0, 2.0, 5.0, 6.0)                   # início e fim
+
+def test_grafo_extremidades_wkb_lixo_nao_quebra():
+    from geo import grafo_topologico as gt
+    assert gt._extremidades_wkb(b"\x00\x00") is None
+
+def test_grafo_unionfind_componentes():
+    from geo import grafo_topologico as gt
+    uf = gt._UF(5)
+    uf.union(0, 1); uf.union(1, 2); uf.union(3, 4)
+    raizes = {uf.find(i) for i in range(5)}
+    assert len(raizes) == 2                            # {0,1,2} e {3,4}
+
+@pytest.fixture(scope="module")
+def grafo_rodovias():
+    from geo import grafo_topologico as gt
+    return gt.construir("rodovias", precisao=3)
+
+def test_grafo_rodovias_bem_conectado(grafo_rodovias):
+    g = grafo_rodovias
+    assert g["status"] == "OK"
+    assert g["arestas"] > 250000 and g["nos"] > 100000
+    # malha rodoviária nacional real: maior componente domina (muito acima de 90%)
+    assert g["pct_maior"] > 90.0
+    assert g["componentes"] >= 1 and g["nos_grau1"] >= 0
+
+def test_grafo_render_e_cli(grafo_rodovias):
+    from geo import grafo_topologico as gt
+    txt = gt.render_texto(grafo_rodovias)
+    assert "GRAFO TOPOLÓGICO" in txt and "maior componente" in txt
+    assert gt._cli(["ferrovias"]) == 0                 # camada menor, roda rápido
+
+def test_grafo_camada_ausente():
+    from geo import grafo_topologico as gt
+    g = gt.construir("osrm_brasil")
+    assert g["status"] == "AUSENTE"

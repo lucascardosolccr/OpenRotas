@@ -206,6 +206,7 @@ _AJUDA = """OpenRotas Desktop — uso:
   OpenRotas.exe --mapa-cobertura   abre o Mapa de Cobertura Nacional (matriz UF × camada) no navegador
   OpenRotas.exe --integridade   audita defeitos geométricos das camadas (inválidas/fora do Brasil)
   OpenRotas.exe --dossie "lon,lat;lon,lat"   dossiê completo da rota (integra todos os dados)
+  OpenRotas.exe --conectividade [rodovias|ferrovias|drenagem]   grafo topológico e componentes (§43)
   OpenRotas.exe --auditoria --relatorio   salva o Relatório de Cobertura Nacional (.md) em exports/
   OpenRotas.exe --recursos      status dos recursos (Gerenciador de Recursos)
   OpenRotas.exe --recursos --html   abre a Central de Recursos (painel visual) no navegador
@@ -434,6 +435,15 @@ def main() -> int:
             return dossie_rota._cli([a for a in sys.argv[1:] if a != "--dossie"])
         except Exception as e:
             print("Dossiê de rota indisponível: %s" % e)
+            return 1
+
+    # Modo CONECTIVIDADE (§43): grafo topológico de uma malha (rodovias por padrão) e componentes. Sai.
+    if "--conectividade" in sys.argv:
+        try:
+            from geo import grafo_topologico
+            return grafo_topologico._cli([a for a in sys.argv[1:] if a != "--conectividade"])
+        except Exception as e:
+            print("Grafo topológico indisponível: %s" % e)
             return 1
 
     # Modo BENCHMARK (§9/§29): mede o OSRM local × público e sai (evidência do ganho).
