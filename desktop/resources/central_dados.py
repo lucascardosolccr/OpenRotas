@@ -117,6 +117,21 @@ class _App:
                                      command=self._on_baixar_grafo)
         self.btn_baixar.pack(anchor="w", padx=12, pady=(0, 10))
 
+        # Dossiê de Rota por nome de cidade (integração total dos dados numa rota).
+        dossie = ttk.LabelFrame(root, text="Dossiê de Rota (origem → destino, por cidade)")
+        dossie.pack(fill="x", **pad)
+        linha = ttk.Frame(dossie)
+        linha.pack(fill="x", padx=12, pady=(8, 4))
+        ttk.Label(linha, text="Origem:").pack(side="left")
+        self.ent_origem = ttk.Entry(linha, width=22)
+        self.ent_origem.insert(0, "São Paulo/SP")
+        self.ent_origem.pack(side="left", padx=(4, 10))
+        ttk.Label(linha, text="Destino:").pack(side="left")
+        self.ent_destino = ttk.Entry(linha, width=22)
+        self.ent_destino.insert(0, "Rio de Janeiro/RJ")
+        self.ent_destino.pack(side="left", padx=4)
+        ttk.Button(dossie, text="Gerar dossiê (HTML)", command=self._on_dossie).pack(anchor="w", padx=12, pady=(0, 10))
+
         self.barra = ttk.Progressbar(root, mode="determinate", maximum=100)
         self.barra.pack(fill="x", **pad)
         self.status = ttk.Label(root, text="Pronto.", foreground="#5b6676")
@@ -188,6 +203,36 @@ class _App:
     def _on_abrir(self):
         prov.abrir_pasta_dados()
 
+    def _on_dossie(self):
+        if self._ocupado:
+            return
+        origem = self.ent_origem.get().strip()
+        destino = self.ent_destino.get().strip()
+        if not origem or not destino:
+            self._set_status("Informe origem e destino.", "#b42318")
+            return
+        self._travar(True)
+        self._set_status("Gerando dossiê %s → %s..." % (origem, destino))
+        threading.Thread(target=self._thread_dossie, args=(origem, destino), daemon=True).start()
+
+    def _thread_dossie(self, origem, destino):
+        try:
+            from geo import dossie_rota
+            dd, _ = dossie_rota.dossie_por_nomes([origem, destino])
+            if dd.get("erro"):
+                self.fila.put(("dossie_fim", {"ok": False, "detalhe": dd["erro"]}))
+                return
+            destino_html = prov.pasta_de_dados().parent / "exports" / "dossie_rota.html"
+            got = dossie_rota.gerar_html(dd, destino_html)
+            if got:
+                try:
+                    prov.abrir_pasta_dados(Path(got).parent)
+                except Exception:
+                    pass
+            self.fila.put(("dossie_fim", {"ok": bool(got), "caminho": got}))
+        except Exception as e:
+            self.fila.put(("dossie_fim", {"ok": False, "detalhe": str(e)}))
+
     # ---- consumidor da fila (thread-safe via after) ----
     def _bombear_fila(self):
         try:
@@ -206,6 +251,12 @@ class _App:
                                      "#1a7f4b" if dado.get("ok") else "#b42318")
                     self._travar(False)
                     self._atualizar_inventario()
+                elif tipo == "dossie_fim":
+                    if dado.get("ok"):
+                        self._set_status("Dossiê gerado: %s" % dado.get("caminho", ""), "#1a7f4b")
+                    else:
+                        self._set_status("Dossiê: %s" % dado.get("detalhe", "falha"), "#b42318")
+                    self._travar(False)
                 elif tipo == "reparo_fim":
                     ok = bool((dado or {}).get("ok"))
                     self._set_status("Bases: %s" % ("tudo OK ✓" if ok else "ver detalhes/log"),

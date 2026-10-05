@@ -1238,3 +1238,45 @@ def test_dossie_export_erro_nao_quebra(tmp_path):
 def test_painel_tem_bloco_dossie():
     h = painel.construir_html()
     assert "Dossiê de Rota (integração total)" in h and "--dossie" in h
+
+
+# ============================================================================
+#  DOSSIÊ POR NOME DE CIDADE (desktop) — resolução via índice de municípios IBGE.
+# ============================================================================
+def test_resolver_local_parse():
+    from geo import dossie_rota as dr
+    assert dr._parse_local("São Paulo/SP") == ("sao paulo", "SP")
+    assert dr._parse_local("Rio de Janeiro, RJ") == ("rio de janeiro", "RJ")
+    assert dr._parse_local("Belo Horizonte - MG") == ("belo horizonte", "MG")
+    assert dr._parse_local("Curitiba PR") == ("curitiba", "PR")
+    assert dr._parse_local("Manaus") == ("manaus", None)
+
+def test_resolver_local_cidade_real():
+    from geo import dossie_rota as dr
+    r = dr.resolver_local("São Paulo/SP")
+    assert r["ok"] and r["uf"] == "SP" and r["nome"].lower().startswith("são paulo")
+    assert -47 < r["lon"] < -46 and -24 < r["lat"] < -23
+
+def test_resolver_local_desambigua_por_uf():
+    from geo import dossie_rota as dr
+    # "Bom Jesus" existe em várias UFs; com /PI deve resolver no Piauí
+    r = dr.resolver_local("Bom Jesus/PI")
+    assert r["ok"] and r["uf"] == "PI"
+
+def test_resolver_local_inexistente():
+    from geo import dossie_rota as dr
+    r = dr.resolver_local("Cidade Inexistente XYZ")
+    assert r["ok"] is False
+
+def test_dossie_por_nomes_sp_rio():
+    from geo import dossie_rota as dr
+    dd, resol = dr.dossie_por_nomes("São Paulo/SP;Rio de Janeiro/RJ")
+    assert not dd.get("erro")
+    assert dd["origem"]["municipio"]["uf"] == "SP" and dd["destino"]["municipio"]["uf"] == "RJ"
+    assert dd["hidrografia"]["trechos"] > 100
+    assert len(dd["locais"]) == 2 and all(l["ok"] for l in dd["locais"])
+
+def test_dossie_por_nomes_nenhuma_resolvida():
+    from geo import dossie_rota as dr
+    dd, resol = dr.dossie_por_nomes("Xyzabc123;Qwerty999")
+    assert dd.get("erro") and all(not r["ok"] for r in resol)

@@ -25,6 +25,7 @@ import html
 import math
 import time
 import logging
+import unicodedata
 from pathlib import Path
 
 _AQUI = Path(__file__).resolve().parent
@@ -35,6 +36,7 @@ for _p in (_AQUI, _AQUI.parent, _AQUI.parent / "app", _AQUI.parent / "data_local
 logger = logging.getLogger("openrotas.desktop.geo.dossie")
 
 _GRAU_KM = 111.0
+_NOME_NORM_CACHE: dict = {}       # id(df) -> Série de nomes normalizados (base única de municípios)
 
 
 def _repo():
@@ -54,6 +56,87 @@ def _col(df, *nomes):
         if n in df.columns:
             return n
     return None
+
+
+def _normalizar(s) -> str:
+    """Normaliza para busca: sem acento, minúsculo, espaços colapsados."""
+    s = unicodedata.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode("ascii")
+    return " ".join(s.lower().split())
+
+
+_UF_SIGLAS = {"ac", "al", "ap", "am", "ba", "ce", "df", "es", "go", "ma", "mt", "ms", "mg",
+              "pa", "pb", "pr", "pe", "pi", "rj", "rn", "rs", "ro", "rr", "sc", "sp", "se", "to"}
+
+
+def _parse_local(texto):
+    """'Cidade/UF' | 'Cidade, UF' | 'Cidade - UF' | 'Cidade' → (nome_norm, uf_or_None)."""
+    t = str(texto or "").strip()
+    uf = None
+    for sep in ("/", ",", " - ", "-"):
+        if sep in t:
+            a, b = t.rsplit(sep, 1)
+            if _normalizar(b) in _UF_SIGLAS:
+                return _normalizar(a), _normalizar(b).upper()
+    # UF solta no fim? ("São Paulo SP")
+    toks = t.split()
+    if len(toks) >= 2 and _normalizar(toks[-1]) in _UF_SIGLAS:
+        return _normalizar(" ".join(toks[:-1])), _normalizar(toks[-1]).upper()
+    return _normalizar(t), uf
+
+
+def resolver_local(texto, reg=None) -> dict:
+    """Resolve um nome de cidade (com ou sem UF) para coordenada via a base de municípios IBGE.
+    {ok, lon, lat, nome, uf, ambiguo, candidatos}. Desambigua por UF quando informada; sem UF e com
+    homônimos, escolhe o 1º e marca ambiguo com a lista. Nunca levanta; {ok:False} se não achar."""
+    try:
+        from audit import coverage_auditor as ca
+        reg = reg or _reg()
+        nome_q, uf_q = _parse_local(texto)
+        if not nome_q:
+            return {"ok": False, "detalhe": "nome vazio"}
+        df = reg.carregar_parquet("municipios", colunas=["lon", "lat", "nome", "geocodigo"])
+        # nomes normalizados (cache por id do df — carregar_parquet reusa o mesmo objeto).
+        chave = id(df)
+        norm = _NOME_NORM_CACHE.get(chave)
+        if norm is None:
+            norm = df["nome"].astype(str).map(_normalizar)
+            _NOME_NORM_CACHE.clear()               # mantém no máx. 1 entrada (base única)
+            _NOME_NORM_CACHE[chave] = norm
+        sub = df[norm.values == nome_q]
+        if len(sub) == 0:
+            return {"ok": False, "detalhe": "cidade não encontrada: %s" % texto, "candidatos": []}
+        gc = sub["geocodigo"].astype(str).str.replace(r"\D", "", regex=True).str.zfill(7)
+        ufs = [ca.UF_POR_CODIGO.get(int(c[:2])) for c in gc]
+        cand = [{"nome": str(sub["nome"].iloc[i]), "uf": ufs[i],
+                 "lon": float(sub["lon"].iloc[i]), "lat": float(sub["lat"].iloc[i])}
+                for i in range(len(sub))]
+        if uf_q:
+            cand_uf = [c for c in cand if c["uf"] == uf_q]
+            if cand_uf:
+                cand = cand_uf
+        escolhido = cand[0]
+        return {"ok": True, "lon": escolhido["lon"], "lat": escolhido["lat"],
+                "nome": escolhido["nome"], "uf": escolhido["uf"],
+                "ambiguo": len(cand) > 1, "candidatos": cand}
+    except Exception:
+        logger.warning("[DOSSIE] resolução de %r falhou.", texto, exc_info=True)
+        return {"ok": False, "detalhe": "erro ao resolver"}
+
+
+def dossie_por_nomes(locais, folga_km: float = 3.0):
+    """Dossiê a partir de NOMES de cidade (lista ou 'A;B;C'). Resolve cada um e chama dossie().
+    Devolve (dossie_dict, resolucoes). Nunca levanta."""
+    if isinstance(locais, str):
+        locais = [x for x in locais.split(";") if x.strip()]
+    resol = [resolver_local(x) for x in (locais or [])]
+    coords = [(r["lon"], r["lat"]) for r in resol if r.get("ok")]
+    if not coords:
+        return {"erro": "nenhuma cidade resolvida", "resolucoes": resol}, resol
+    dd = dossie(coords, folga_km=folga_km)
+    dd["locais"] = [{"consulta": q, "resolvido": (r.get("nome"), r.get("uf")) if r.get("ok") else None,
+                     "ok": r.get("ok"), "ambiguo": r.get("ambiguo", False)}
+                    for q, r in zip(locais, resol)]
+    return dd, resol
 
 
 def _municipio_proximo(reg, lon, lat) -> dict:
@@ -443,17 +526,33 @@ def _parse_coords(texto):
 
 def _cli(argv=None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
-    coords = None
-    for a in argv:
-        if ";" in a and "," in a:
-            try:
-                coords = _parse_coords(a)
-            except Exception:
-                coords = None
-    if not coords:
-        print("uso: --dossie \"lon,lat;lon,lat[;...]\" [--html] [--excel]  (ex.: -46.63,-23.55;-43.20,-22.90)")
-        return 2
-    dd = dossie(coords)
+    dd = None
+    # Modo por NOMES: --rota-nomes "São Paulo/SP;Rio de Janeiro/RJ"
+    if "--rota-nomes" in argv:
+        i = argv.index("--rota-nomes")
+        texto = argv[i + 1] if i + 1 < len(argv) else ""
+        dd, resol = dossie_por_nomes(texto)
+        for r in resol:
+            if not r.get("ok"):
+                print("! não resolvido: %s" % r.get("detalhe", "?"))
+            elif r.get("ambiguo"):
+                print("! '%s/%s' é ambíguo (%d homônimos) — usando o 1º; qualifique com /UF."
+                      % (r.get("nome"), r.get("uf"), len(r.get("candidatos", []))))
+        if dd.get("erro"):
+            print("Dossiê indisponível: %s" % dd["erro"])
+            return 2
+    else:
+        coords = None
+        for a in argv:
+            if ";" in a and "," in a:
+                try:
+                    coords = _parse_coords(a)
+                except Exception:
+                    coords = None
+        if not coords:
+            print("uso: --dossie \"lon,lat;lon,lat\" | --rota-nomes \"Cidade/UF;Cidade/UF\" [--html] [--excel]")
+            return 2
+        dd = dossie(coords)
     print(render_texto(dd))
     if "--html" in argv or "--excel" in argv:
         try:
