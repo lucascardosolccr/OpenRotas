@@ -198,14 +198,25 @@ def _iniciar_streamlit(env: dict) -> None:
     log.info("Subindo Streamlit: %s (porta %s)", app_path, cfg.PORTA_LOCAL)
     try:
         from streamlit.web import bootstrap as st_bootstrap
+        from streamlit import config as st_config
         # bootstrap.run é a API interna estável usada por 'streamlit run'.
         flag_options = {
             "server.port": cfg.PORTA_LOCAL,
             "server.address": "127.0.0.1",
             "server.headless": True,
             "browser.gatherUsageStats": False,
+            # CRÍTICO: no .exe congelado, o caminho do streamlit NÃO contém "site-packages", então
+            # o Streamlit auto-detecta "modo de desenvolvimento" e FORÇA a porta 8501 + um "node dev
+            # server" (localhost:3000) que não existe no pacote — o servidor nunca sobe na nossa
+            # porta. Desligar o modo dev é o que faz o app servir o frontend embarcado na porta certa.
             "global.developmentMode": False,
         }
+        # CRÍTICO: bootstrap.run() NÃO aplica flag_options ao config sozinho — quem faz isso é a
+        # CLI ("streamlit run"), via load_config_options(), ANTES de run(). Sem esta chamada, a
+        # porta/headless/developmentMode acima eram ignorados e o Streamlit subia em 8501, em modo
+        # dev, abrindo um localhost quebrado. Replicamos exatamente o que o _main_run da CLI faz.
+        st_config._main_script_path = os.path.abspath(app_path)
+        st_bootstrap.load_config_options(flag_options=flag_options)
         st_bootstrap.run(app_path, is_hello=False, args=[], flag_options=flag_options)
     except Exception:
         log.exception("bootstrap.run falhou; tentando a CLI (stcli.main).")
