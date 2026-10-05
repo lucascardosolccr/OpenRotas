@@ -1389,3 +1389,112 @@ def test_saude_gera_arquivo(tmp_path):
     got = sn.gerar(out, rapido=True)
     assert got == str(out) and out.exists()
     assert out.read_text(encoding="utf-8").startswith("<!doctype html>")
+
+
+# ============================================================================
+#  DOWNLOADER ROBUSTO (§18/§20) — retomada, velocidade/ETA, retry, sha256.
+#  Opener INJETÁVEL → testável sem rede.
+# ============================================================================
+def _fake_opener(dados, falhar_apos=None):
+    """Cria um 'abrir' que serve `dados` a partir de `inicio` (Range). Se `falhar_apos` é dado,
+    a PRIMEIRA chamada corta a leitura após N bytes (simula queda); as próximas servem normal."""
+    import io
+    estado = {"chamadas": 0}
+    class _F(io.BytesIO):
+        def __init__(self, buf, corta):
+            super().__init__(buf); self._corta = corta; self._lido = 0
+        def read(self, n=-1):
+            if self._corta is not None and self._lido >= self._corta:
+                raise OSError("conexão caiu (simulado)")
+            b = super().read(n)
+            self._lido += len(b)
+            if self._corta is not None and self._lido > self._corta:
+                # devolve só até o corte e marca para estourar na próxima
+                excesso = self._lido - self._corta
+                self._lido = self._corta
+                return b[:len(b) - excesso]
+            return b
+    def abrir(url, inicio=0, timeout=120):
+        estado["chamadas"] += 1
+        corta = falhar_apos if (estado["chamadas"] == 1 and falhar_apos is not None) else None
+        buf = dados[inicio:]
+        return _F(buf, corta), len(buf), (inicio > 0)
+    return abrir, estado
+
+def test_downloader_sucesso_simples(tmp_path):
+    from resources import downloader as dl
+    dados = b"OPENROTAS" * 1000
+    abrir, _ = _fake_opener(dados)
+    out = tmp_path / "f.bin"
+    eventos = []
+    r = dl.baixar("http://x/f", out, progresso=lambda e: eventos.append(e), abrir=abrir)
+    assert r["ok"] and r["bytes"] == len(dados) and out.read_bytes() == dados
+    assert any(e.get("fase") == "baixando" for e in eventos)
+    assert any(e.get("fase") == "concluido" for e in eventos)
+
+def test_downloader_retoma_apos_queda(tmp_path):
+    from resources import downloader as dl
+    dados = b"x" * 1000
+    abrir, estado = _fake_opener(dados, falhar_apos=400)   # cai após 400 bytes na 1ª tentativa
+    out = tmp_path / "f.bin"
+    r = dl.baixar("http://x/f", out, abrir=abrir, dormir=lambda s: None)
+    assert r["ok"] and out.read_bytes() == dados
+    assert r["tentativas"] == 2 and estado["chamadas"] == 2   # 2ª chamada retomou via Range
+
+def test_downloader_sha256_rejeita(tmp_path):
+    from resources import downloader as dl
+    dados = b"conteudo"
+    abrir, _ = _fake_opener(dados)
+    out = tmp_path / "f.bin"
+    r = dl.baixar("http://x/f", out, sha256="0" * 64, abrir=abrir, dormir=lambda s: None)
+    assert r["ok"] is False and not out.exists()           # hash errado → descartado, sem retry infinito
+    assert r["tentativas"] == 1
+
+def test_downloader_sha256_aceita(tmp_path):
+    import hashlib
+    from resources import downloader as dl
+    dados = b"conteudo-ok-123"
+    abrir, _ = _fake_opener(dados)
+    out = tmp_path / "f.bin"
+    r = dl.baixar("http://x/f", out, sha256=hashlib.sha256(dados).hexdigest(), abrir=abrir)
+    assert r["ok"] and out.read_bytes() == dados
+
+def test_downloader_falha_persistente_desiste(tmp_path):
+    from resources import downloader as dl
+    def abrir(url, inicio=0, timeout=120):
+        raise OSError("sem rede")
+    r = dl.baixar("http://x/f", tmp_path / "f.bin", abrir=abrir, tentativas=3, dormir=lambda s: None)
+    assert r["ok"] is False and r["tentativas"] == 3 and "falha" in r["detalhe"].lower()
+
+def test_downloader_formatadores():
+    from resources import downloader as dl
+    assert dl.humano_velocidade(1024 * 1024).endswith("MB/s")
+    assert dl.humano_eta(90) == "1min 30s" and dl.humano_eta(-1) == "—"
+    assert dl.humano_eta(3700).endswith("min")
+
+def test_prov_bases_ausentes_e_reassembly():
+    from resources import provisionamento as prov
+    # neste repo as bases nacionais já estão montadas → nenhuma ausente (exceto grafo, excluído)
+    assert isinstance(prov.bases_ausentes(), list)
+    r = prov._reassemblar_bigparts()
+    assert isinstance(r, dict) and "ok" in r
+
+def test_osrm_baixar_partes_ainda_funciona_via_downloader(tmp_path):
+    # regressão: a nova trilha (downloader por parte) ainda concatena partes file:// corretamente
+    import io, tarfile, gzip
+    from engines import osrm_manager as osrm
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as t:
+        dado = b"G" * 3000
+        info = tarfile.TarInfo("brazil-latest.osrm"); info.size = len(dado)
+        t.addfile(info, io.BytesIO(dado))
+    targz = gzip.compress(buf.getvalue())
+    srv = tmp_path / "srv"; srv.mkdir()
+    meio = len(targz) // 2
+    (srv / "g.tar.gz.part00").write_bytes(targz[:meio])
+    (srv / "g.tar.gz.part01").write_bytes(targz[meio:])
+    base = (srv / "g.tar.gz.part").as_uri()
+    out = tmp_path / "grafo.tar.gz"
+    assert osrm._baixar_partes(base, out) is True
+    import gzip as _gz
+    assert out.exists() and out.read_bytes() == targz

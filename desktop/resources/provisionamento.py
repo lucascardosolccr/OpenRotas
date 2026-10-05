@@ -141,6 +141,39 @@ def baixar_grafo(progresso=None, conf: dict | None = None) -> dict:
     return {"ok": False, "caminho": None, "detalhe": "não foi possível provisionar (verifique conexão)"}
 
 
+def _reassemblar_bigparts() -> dict:
+    """Reassembla as bases NACIONAIS grandes (drenagem/rodovias) a partir dos pedaços _bigparts/
+    embarcados, via montar_bases_grandes.py (idempotente, sha256). Para completar as bases
+    nacionais mesmo sem rede. {ok, detalhe}. Nunca levanta."""
+    cfg = _cfg()
+    try:
+        import importlib.util
+        for base in (cfg.app_root(), cfg.app_root() / "desktop", Path(__file__).resolve().parents[2]):
+            script = Path(base) / "montar_bases_grandes.py"
+            if script.exists():
+                spec = importlib.util.spec_from_file_location("_montar_bg_prov", script)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                rc = mod.montar(verbose=False)
+                return {"ok": rc == 0, "detalhe": "bases grandes reassembladas" if rc == 0 else "reassembly com pendências"}
+        return {"ok": False, "detalhe": "montar_bases_grandes.py não encontrado"}
+    except Exception as e:
+        logger.warning("[PROV] reassembly de _bigparts falhou.", exc_info=True)
+        return {"ok": False, "detalhe": "erro: %s" % e}
+
+
+def bases_ausentes(conf: dict | None = None) -> list:
+    """Lista as chaves das bases NACIONAIS ausentes (exclui o grafo OSRM, tratado à parte). []
+    quando tudo presente. Nunca levanta."""
+    try:
+        import local_data
+        _, reg = _registry()
+        return [d.chave for d in local_data.CATALOGO
+                if d.formato != "osrm" and not reg.existe(d.chave)]
+    except Exception:
+        return []
+
+
 def reparar_bases(progresso=None, conf: dict | None = None) -> dict:
     """Repara/atualiza as bases (sem reinstalar) via resource_manager.reparar_tudo, usando o
     dados_base_url da config (se houver) e provisionando o grafo se faltar. Devolve o relatório
@@ -156,10 +189,15 @@ def reparar_bases(progresso=None, conf: dict | None = None) -> dict:
             progresso({"fase": "reparando"})
         except Exception:
             pass
+    # 1º: completa as bases NACIONAIS a partir dos pedaços embarcados (_bigparts/), sem depender
+    # de rede — resolve drenagem/rodovias ausentes em qualquer máquina. 2º: reparo/atualização
+    # normal (resource_manager) para o resto, usando dados_base_url se houver.
+    reassembly = _reassemblar_bigparts()
     try:
         import resource_manager as rm
         rel = rm.reparar_tudo(osrm_cfg=_osrm_cfg_efetivo(conf),
                               base_url=str((conf or {}).get("dados_base_url", "") or ""))
+        rel["reassembly_bigparts"] = reassembly
         if progresso:
             try:
                 progresso({"fase": "concluido", "ok": bool(rel.get("ok"))})
@@ -238,3 +276,19 @@ def humano_bytes(n) -> str:
             return ("%.0f %s" % (n, unidade)) if unidade == "B" else ("%.1f %s" % (n, unidade))
         n /= 1024.0
     return "%.1f PB" % n
+
+
+def humano_velocidade(bps) -> str:
+    try:
+        import downloader
+        return downloader.humano_velocidade(bps)
+    except Exception:
+        return (humano_bytes(bps) + "/s") if bps else "—"
+
+
+def humano_eta(seg) -> str:
+    try:
+        import downloader
+        return downloader.humano_eta(seg)
+    except Exception:
+        return "—"

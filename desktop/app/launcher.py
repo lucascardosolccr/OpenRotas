@@ -248,7 +248,15 @@ def _provisionar_grafo(paths) -> int:
             mb = int((ev.get("bytes") or 0) / (1024 * 1024))
             if mb - estado["ultimo"] >= 200:
                 estado["ultimo"] = mb
-                print("  baixado: %s" % prov.humano_bytes(ev.get("bytes") or 0))
+                extra = ""
+                if ev.get("velocidade_bps"):
+                    extra += " · %s" % prov.humano_velocidade(ev.get("velocidade_bps"))
+                if ev.get("eta_s") not in (None, -1):
+                    extra += " · ETA %s" % prov.humano_eta(ev.get("eta_s"))
+                p = (" parte %02d" % ev["parte"]) if ev.get("parte") is not None else ""
+                print("  baixado%s: %s%s" % (p, prov.humano_bytes(ev.get("bytes") or 0), extra))
+        elif ev.get("fase") == "concatenando":
+            print("  concatenando %s parte(s)..." % ev.get("partes", "?"))
         elif ev.get("fase") == "extraindo":
             print("  extraindo o pacote...")
 

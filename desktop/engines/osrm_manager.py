@@ -233,45 +233,103 @@ def _emitir(progresso, **campos) -> None:
         pass
 
 
-def _baixar_partes(url: str, destino_tar, progresso=None) -> bool:
+def _parte_existe(url: str, timeout: int = 30) -> bool:
+    """Probe barato: a parte existe? (pede 1 byte via Range). False em 403/404/416 (fim das
+    partes); True se respondeu 200/206. Em erro transitório, assume que EXISTE (não trata fim)."""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "OpenRotas-Desktop", "Range": "bytes=0-0"})
+        with urllib.request.urlopen(req, timeout=timeout):
+            return True
+    except Exception as e:
+        if _parte_ausente(e):
+            return False
+        return True
+
+
+def _baixar_partes(url: str, destino_tar, progresso=None, sha256: str = "") -> bool:
     """Baixa as partes sequenciais (…part00, …part01, …) e as concatena em `destino_tar`
-    (Release publica o grafo em partes ≤1900 MB). Para quando a PRÓXIMA parte não existe
-    (fim normal). Um erro transitório de rede no meio ABORTA e descarta o arquivo parcial —
-    não é confundido com fim das partes. True só se baixou ao menos uma parte com sucesso e
-    sem erro transitório. `progresso` (opcional): callback que recebe um dict por atualização
-    ({fase:'baixando', parte, bytes}) para a UI exibir andamento. Nunca levanta."""
+    (Release publica o grafo em partes). Cada parte usa o DOWNLOADER ROBUSTO (retomada por Range,
+    velocidade/ETA, retry com backoff) — se a conexão cair, retoma de onde parou. Para quando a
+    PRÓXIMA parte não existe (fim normal, detectado por probe). Com `sha256`, valida o tar
+    concatenado ao final (§20). True só se concatenou ao menos uma parte íntegra. Nunca levanta."""
     base = _base_partes(url)
     destino_tar = Path(destino_tar)
-    baixou, abortou, total = 0, False, 0
+    parts_tmp = []
+    abortou = False
     try:
-        with open(destino_tar, "wb") as out:
-            for i in range(0, 1000):
-                parte_url = "%s%02d" % (base, i)
-                try:
-                    req = urllib.request.Request(parte_url, headers={"User-Agent": "OpenRotas-Desktop"})
-                    with urllib.request.urlopen(req, timeout=120) as r:
-                        while True:
-                            bloco = r.read(1024 * 256)
-                            if not bloco:
-                                break
-                            out.write(bloco)
-                            total += len(bloco)
-                            # Emite a cada ~16 MB para não inundar a UI (256 KB * 64).
-                            if total % (1024 * 1024 * 16) < (1024 * 256):
-                                _emitir(progresso, fase="baixando", parte=i, bytes=total)
-                    baixou += 1
-                    _emitir(progresso, fase="baixando", parte=i, bytes=total, parte_concluida=True)
-                    logger.info("[OSRM] parte %02d do grafo baixada.", i)
-                except Exception as e:
-                    if _parte_ausente(e):
-                        break                       # fim das partes (índice inexistente)
-                    logger.warning("[OSRM] erro ao baixar a parte %02d (transitório); abortando.", i, exc_info=True)
+        import sys as _sys
+        _res = str(Path(__file__).resolve().parents[1] / "resources")
+        if _res not in _sys.path:
+            _sys.path.insert(0, _res)
+        import downloader
+    except Exception:
+        downloader = None
+    try:
+        for i in range(0, 1000):
+            parte_url = "%s%02d" % (base, i)
+            tmp_i = destino_tar.with_suffix(destino_tar.suffix + (".p%02d" % i))
+
+            def _prog(ev, _i=i):
+                _emitir(progresso, fase="baixando", parte=_i, bytes=ev.get("baixado"),
+                        total_parte=ev.get("total"), velocidade_bps=ev.get("velocidade_bps"),
+                        eta_s=ev.get("eta_s"), pct_parte=ev.get("pct"))
+
+            if downloader is not None:
+                r = downloader.baixar(parte_url, tmp_i, progresso=_prog, tentativas=4, timeout=120)
+                if not r.get("ok"):
+                    # fim normal (parte inexistente) ou falha real?
+                    if not _parte_existe(parte_url):
+                        break
+                    logger.warning("[OSRM] parte %02d falhou de modo persistente; abortando.", i)
                     abortou = True
                     break
+            else:
+                # fallback stdlib (sem retomada) — mantém o comportamento mínimo.
+                try:
+                    req = urllib.request.Request(parte_url, headers={"User-Agent": "OpenRotas-Desktop"})
+                    with urllib.request.urlopen(req, timeout=120) as resp, open(tmp_i, "wb") as out:
+                        while True:
+                            b = resp.read(1024 * 256)
+                            if not b:
+                                break
+                            out.write(b)
+                except Exception as e:
+                    if _parte_ausente(e):
+                        break
+                    abortou = True
+                    break
+            parts_tmp.append(tmp_i)
+            _emitir(progresso, fase="baixando", parte=i, parte_concluida=True)
+            logger.info("[OSRM] parte %02d do grafo pronta.", i)
+        if not abortou and parts_tmp:
+            _emitir(progresso, fase="concatenando", partes=len(parts_tmp))
+            with open(destino_tar, "wb") as out:
+                for tmp_i in parts_tmp:
+                    with open(tmp_i, "rb") as f:
+                        while True:
+                            b = f.read(1024 * 1024)
+                            if not b:
+                                break
+                            out.write(b)
+            if sha256:
+                import hashlib
+                h = hashlib.sha256()
+                with open(destino_tar, "rb") as f:
+                    for b in iter(lambda: f.read(1024 * 1024), b""):
+                        h.update(b)
+                if h.hexdigest().lower() != str(sha256).lower():
+                    logger.warning("[OSRM] sha256 do grafo concatenado não confere — descartando.")
+                    abortou = True
     except Exception:
-        logger.warning("[OSRM] falha ao baixar partes do grafo.", exc_info=True)
+        logger.warning("[OSRM] falha ao baixar/concatenar partes do grafo.", exc_info=True)
         abortou = True
-    if abortou or not baixou:
+    finally:
+        for tmp_i in parts_tmp:
+            try:
+                tmp_i.unlink()
+            except Exception:
+                pass
+    if abortou or not parts_tmp:
         try:
             destino_tar.unlink()
         except Exception:
@@ -314,7 +372,8 @@ def garantir_grafo(cfg_osrm: dict | None, destino_dir, progresso=None) -> str | 
             if ".part" in url:
                 # Grafo publicado em PARTES (Release) → baixa todas e concatena antes de extrair.
                 logger.info("[OSRM] provisionando grafo em partes a partir de %s", url)
-                if not _baixar_partes(url, tmp, progresso=progresso):
+                _sha = str(cfg.get("graph_sha256", "") or "").strip()
+                if not _baixar_partes(url, tmp, progresso=progresso, sha256=_sha):
                     return gp or None
             else:
                 logger.info("[OSRM] provisionando grafo (download único) de %s", url)

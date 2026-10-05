@@ -139,7 +139,7 @@ class _App:
 
         rod = ttk.Frame(root)
         rod.pack(fill="x", side="bottom", **pad)
-        ttk.Button(rod, text="Reparar/atualizar bases", command=self._on_reparar).pack(side="left")
+        ttk.Button(rod, text="Reparar/instalar bases nacionais", command=self._on_reparar).pack(side="left")
         ttk.Button(rod, text="Abrir pasta de dados", command=self._on_abrir).pack(side="left", padx=8)
         ttk.Button(rod, text="Ativar roteamento local (Docker)",
                    command=self._on_ativar_local).pack(side="left")
@@ -239,11 +239,21 @@ class _App:
             while True:
                 tipo, dado = self.fila.get_nowait()
                 if tipo == "grafo":
+                    fase = (dado or {}).get("fase")
                     b = (dado or {}).get("bytes") or 0
-                    if b:
-                        self._set_status("Baixando: %s" % prov.humano_bytes(b))
-                    elif (dado or {}).get("fase") == "extraindo":
+                    if fase == "extraindo":
                         self._set_status("Extraindo o pacote do grafo...")
+                    elif fase == "concatenando":
+                        self._set_status("Concatenando %s parte(s)..." % (dado or {}).get("partes", "?"))
+                    elif b:
+                        txt = "Baixando: %s" % prov.humano_bytes(b)
+                        if (dado or {}).get("parte") is not None:
+                            txt += " (parte %02d)" % dado["parte"]
+                        if (dado or {}).get("velocidade_bps"):
+                            txt += " · %s" % prov.humano_velocidade(dado["velocidade_bps"])
+                        if (dado or {}).get("eta_s") not in (None, -1):
+                            txt += " · ETA %s" % prov.humano_eta(dado["eta_s"])
+                        self._set_status(txt)
                 elif tipo == "grafo_fim":
                     self.barra.stop()
                     self.barra.config(mode="determinate", value=(100 if dado.get("ok") else 0))
