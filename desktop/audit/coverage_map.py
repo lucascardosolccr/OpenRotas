@@ -78,13 +78,31 @@ def _laudo(rapido: bool):
     return ca.auditar(rapido=rapido)
 
 
-def construir_html(rapido: bool = False) -> str:
-    """Monta o HTML do Mapa de Cobertura. Nunca levanta."""
+def _dossie_rota(rota):
+    """Resolve uma rota (string 'A;B' de nomes, ou lista de nomes/coords) para um dossiê. None se
+    indisponível. Usado para sobrepor a rota ao mapa."""
+    if not rota:
+        return None
+    try:
+        from geo import dossie_rota as dr
+        if isinstance(rota, str):
+            return dr.dossie_por_nomes(rota)[0]
+        return dr.dossie_por_nomes(list(rota))[0]
+    except Exception:
+        logger.warning("[MAPA] dossiê da rota sobreposta falhou.", exc_info=True)
+        return None
+
+
+def construir_html(rapido: bool = False, rota=None) -> str:
+    """Monta o HTML do Mapa de Cobertura. Com `rota` (nomes 'A/UF;B/UF' ou coords), sobrepõe a rota:
+    cabeçalho-resumo + marca as UFs atravessadas. Nunca levanta."""
     quando = time.strftime("%d/%m/%Y %H:%M")
     try:
         laudo = _laudo(rapido)
     except Exception:
         laudo = None
+    dd_rota = _dossie_rota(rota)
+    ufs_rota = set((dd_rota.get("travessia_territorial", {}) or {}).get("ufs") or []) if dd_rota else set()
     partes = ["<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'>",
               "<meta name='viewport' content='width=device-width,initial-scale=1'>",
               "<title>Mapa de Cobertura Nacional — OpenRotas</title><style>", _CSS,
@@ -95,17 +113,34 @@ def construir_html(rapido: bool = False) -> str:
     if not laudo:
         partes.append("<p>Auditoria indisponível.</p></div></body></html>")
         return "".join(partes)
+    # Camada de ROTA sobreposta (opcional): resumo + marcação das UFs atravessadas.
+    if dd_rota and not dd_rota.get("erro"):
+        o = dd_rota.get("origem", {}).get("municipio", {})
+        d = dd_rota.get("destino", {}).get("municipio", {})
+        h = dd_rota.get("hidrografia", {})
+        partes.append("<section class='card'><h2 style='margin:0 0 8px'>Rota sobreposta</h2>"
+                      "<p class='sub' style='margin:0'>%s/%s → %s/%s · UFs: %s · %d trechos de rio · "
+                      "%d ponte(s)</p></section>"
+                      % (html.escape(str(o.get("nome", "?"))), html.escape(str(o.get("uf", "?"))),
+                         html.escape(str(d.get("nome", "?"))), html.escape(str(d.get("uf", "?"))),
+                         ", ".join(sorted(ufs_rota)) or "—", h.get("trechos", 0),
+                         dd_rota.get("camadas", {}).get("pontes", {}).get("feicoes", 0)))
     presentes = {ch: set((laudo.get("camadas", {}).get(ch, {}) or {}).get("ufs_presentes") or [])
                  for ch, _ in COLUNAS}
     por_uf = (laudo.get("municipios", {}) or {}).get("por_uf", {}) or {}
-    partes.append("<div class='card'><table><thead><tr><th class='uf'>UF</th><th class='num'>Mun.</th>")
+    col_rota = "<th>Rota</th>" if ufs_rota else ""
+    partes.append("<div class='card'><table><thead><tr><th class='uf'>UF</th><th class='num'>Mun.</th>" + col_rota)
     for _, rot in COLUNAS:
         partes.append("<th>%s</th>" % html.escape(rot))
     partes.append("</tr></thead><tbody>")
+    ncols = len(COLUNAS) + 2 + (1 if ufs_rota else 0)
     for regiao, ufs in REGIOES:
-        partes.append("<tr><td class='reg' colspan='%d'>%s</td></tr>" % (len(COLUNAS) + 2, html.escape(regiao)))
+        partes.append("<tr><td class='reg' colspan='%d'>%s</td></tr>" % (ncols, html.escape(regiao)))
         for uf in ufs:
             partes.append("<tr><td class='uf'>%s</td><td class='num'>%s</td>" % (uf, por_uf.get(uf, 0)))
+            if ufs_rota:
+                na_rota = uf in ufs_rota
+                partes.append("<td class='cell %s'>%s</td>" % ("ok" if na_rota else "", "●" if na_rota else ""))
             for ch, _ in COLUNAS:
                 ok = uf in presentes.get(ch, set())
                 partes.append("<td class='cell %s'>%s</td>" % ("ok" if ok else "bad", "✓" if ok else "—"))
@@ -124,11 +159,11 @@ def construir_html(rapido: bool = False) -> str:
     return "".join(partes)
 
 
-def gerar(caminho, rapido: bool = False) -> str | None:
+def gerar(caminho, rapido: bool = False, rota=None) -> str | None:
     try:
         p = Path(caminho)
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(construir_html(rapido=rapido), encoding="utf-8")
+        p.write_text(construir_html(rapido=rapido, rota=rota), encoding="utf-8")
         return str(p)
     except Exception:
         logger.warning("[MAPA] falha ao gerar o mapa de cobertura.", exc_info=True)
@@ -138,12 +173,16 @@ def gerar(caminho, rapido: bool = False) -> str | None:
 def _cli(argv=None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
     rapido = "--rapido" in argv
+    rota = None
+    if "--rota" in argv:
+        i = argv.index("--rota")
+        rota = argv[i + 1] if i + 1 < len(argv) else None
     try:
         import desktop_config as cfg
         destino = cfg.ensure_user_dirs()["cache"] / "mapa_cobertura.html"
     except Exception:
         destino = Path("mapa_cobertura.html")
-    got = gerar(destino, rapido=rapido)
+    got = gerar(destino, rapido=rapido, rota=rota)
     if not got:
         print("Falha ao gerar o mapa de cobertura.")
         return 1

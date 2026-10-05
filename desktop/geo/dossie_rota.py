@@ -123,7 +123,7 @@ def resolver_local(texto, reg=None) -> dict:
         return {"ok": False, "detalhe": "erro ao resolver"}
 
 
-def dossie_por_nomes(locais, folga_km: float = 3.0):
+def dossie_por_nomes(locais, folga_km: float = 3.0, usar_osrm: bool = False, osrm_url=None):
     """Dossiê a partir de NOMES de cidade (lista ou 'A;B;C'). Resolve cada um e chama dossie().
     Devolve (dossie_dict, resolucoes). Nunca levanta."""
     if isinstance(locais, str):
@@ -132,7 +132,7 @@ def dossie_por_nomes(locais, folga_km: float = 3.0):
     coords = [(r["lon"], r["lat"]) for r in resol if r.get("ok")]
     if not coords:
         return {"erro": "nenhuma cidade resolvida", "resolucoes": resol}, resol
-    dd = dossie(coords, folga_km=folga_km)
+    dd = dossie(coords, folga_km=folga_km, usar_osrm=usar_osrm, osrm_url=osrm_url)
     dd["locais"] = [{"consulta": q, "resolvido": (r.get("nome"), r.get("uf")) if r.get("ok") else None,
                      "ok": r.get("ok"), "ambiguo": r.get("ambiguo", False)}
                     for q, r in zip(locais, resol)]
@@ -206,6 +206,58 @@ def _estacao_proxima(lon, lat) -> dict:
         return {}
 
 
+def _parse_osrm_geojson(texto):
+    """Extrai (coords[(lon,lat)...], distancia_m, duracao_s) da resposta JSON do OSRM
+    (overview=full&geometries=geojson). (None, None, None) em falha."""
+    import json
+    try:
+        d = json.loads(texto)
+        if str(d.get("code")) != "Ok" or not d.get("routes"):
+            return None, None, None
+        rota = d["routes"][0]
+        coords = [(float(c[0]), float(c[1])) for c in rota["geometry"]["coordinates"]]
+        return (coords or None, rota.get("distance"), rota.get("duration"))
+    except Exception:
+        return None, None, None
+
+
+def _osrm_url(conf=None):
+    """URL do OSRM a usar: osrm.url da config (modo external/docker) ou None."""
+    try:
+        import desktop_config as cfg
+        conf = conf if conf is not None else cfg.carregar_config_usuario()
+        oc = dict((conf or {}).get("osrm") or {})
+        if str(oc.get("mode", "")).lower() in ("external", "docker"):
+            return str(oc.get("url") or "http://localhost:5000").rstrip("/")
+        u = str((conf or {}).get("OSRM_URL") or "").strip()
+        return u.rstrip("/") or None
+    except Exception:
+        return None
+
+
+def geometria_osrm(coords, url=None, timeout: int = 20):
+    """Busca a POLILINHA REAL da rota num servidor OSRM. Devolve lista [(lon,lat),...] ou None
+    (offline/sem servidor/erro). Best-effort — nunca levanta. Respeita OPENROTAS_NO_NET."""
+    import os as _os
+    import urllib.request
+    if _os.environ.get("OPENROTAS_NO_NET"):
+        return None
+    url = url or _osrm_url()
+    if not url or not coords or len(coords) < 2:
+        return None
+    try:
+        pontos = ";".join("%s,%s" % (c[0], c[1]) for c in coords)
+        full = "%s/route/v1/driving/%s?overview=full&geometries=geojson" % (url, pontos)
+        req = urllib.request.Request(full, headers={"User-Agent": "OpenRotas-Desktop"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            texto = r.read().decode("utf-8", "replace")
+        linha, dist, dur = _parse_osrm_geojson(texto)
+        return linha
+    except Exception:
+        logger.info("[DOSSIE] OSRM indisponível para a rota real.", exc_info=True)
+        return None
+
+
 def _idx_corredor(repo, camada, coords, folga_graus):
     """Índices (np.ndarray) das feições da camada no corredor (união por trecho). [] se vazio."""
     import numpy as np
@@ -263,13 +315,23 @@ def _municipios_corredor(repo, reg, coords, folga_graus) -> dict:
         return {"n_municipios": 0, "ufs": []}
 
 
-def dossie(coords, folga_km: float = 3.0) -> dict:
-    """Monta o DOSSIÊ completo da rota. `coords`=[(lon,lat),...] (≥1 ponto). Nunca levanta."""
+def dossie(coords, folga_km: float = 3.0, usar_osrm: bool = False, osrm_url=None) -> dict:
+    """Monta o DOSSIÊ completo da rota. `coords`=[(lon,lat),...] (≥1 ponto). Com `usar_osrm`,
+    tenta obter a POLILINHA REAL da estrada (OSRM) e a usa como corredor; se não houver OSRM,
+    degrada para a reta origem→destino e marca rota_real=False. Nunca levanta."""
     t0 = time.perf_counter()
     repo, reg = _repo(), _reg()
     coords = [tuple(map(float, c)) for c in (coords or [])]
     if not coords:
         return {"erro": "rota vazia"}
+    rota_real = False
+    pontos_osrm = 0
+    if usar_osrm and len(coords) >= 2:
+        linha = geometria_osrm(coords, url=osrm_url)
+        if linha and len(linha) >= 2:
+            coords = [tuple(map(float, c)) for c in linha]
+            rota_real = True
+            pontos_osrm = len(coords)
     folga = max(0.0, float(folga_km)) / _GRAU_KM
     o, d = coords[0], coords[-1]
     dd = {
@@ -282,6 +344,7 @@ def dossie(coords, folga_km: float = 3.0) -> dict:
                     "referencia_hidrografica": _ref_hidrografica(reg, *d),
                     "estacao_telemetria": _estacao_proxima(*d)},
         "corredor": {"folga_km": folga_km},
+        "rota_real": rota_real, "rota_pontos_osrm": pontos_osrm,
         "camadas": {}, "alertas": [], "fontes": {},
     }
     # Contagens por camada no corredor.
@@ -357,7 +420,9 @@ def render_texto(dd: dict) -> str:
         for a in dd["alertas"]:
             L.append("  • " + a)
     L.append("")
-    L.append("(corredor ±%s km, nível bbox aproximado; %s ms)" % (dd["corredor"]["folga_km"], dd.get("ms", "?")))
+    via = ("rota real OSRM, %d pontos" % dd.get("rota_pontos_osrm", 0)) if dd.get("rota_real") \
+        else "corredor reta origem→destino (sem OSRM)"
+    L.append("(%s; folga ±%s km, nível bbox aproximado; %s ms)" % (via, dd["corredor"]["folga_km"], dd.get("ms", "?")))
     return "\n".join(L)
 
 
@@ -528,10 +593,15 @@ def _cli(argv=None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
     dd = None
     # Modo por NOMES: --rota-nomes "São Paulo/SP;Rio de Janeiro/RJ"
+    usar_osrm = "--osrm" in argv
+    osrm_url = None
+    if "--osrm-url" in argv:
+        j = argv.index("--osrm-url")
+        osrm_url = argv[j + 1] if j + 1 < len(argv) else None
     if "--rota-nomes" in argv:
         i = argv.index("--rota-nomes")
         texto = argv[i + 1] if i + 1 < len(argv) else ""
-        dd, resol = dossie_por_nomes(texto)
+        dd, resol = dossie_por_nomes(texto, usar_osrm=usar_osrm, osrm_url=osrm_url)
         for r in resol:
             if not r.get("ok"):
                 print("! não resolvido: %s" % r.get("detalhe", "?"))
@@ -550,9 +620,9 @@ def _cli(argv=None) -> int:
                 except Exception:
                     coords = None
         if not coords:
-            print("uso: --dossie \"lon,lat;lon,lat\" | --rota-nomes \"Cidade/UF;Cidade/UF\" [--html] [--excel]")
+            print("uso: --dossie \"lon,lat;lon,lat\" | --rota-nomes \"Cidade/UF;Cidade/UF\" [--osrm] [--html] [--excel]")
             return 2
-        dd = dossie(coords)
+        dd = dossie(coords, usar_osrm=usar_osrm, osrm_url=osrm_url)
     print(render_texto(dd))
     if "--html" in argv or "--excel" in argv:
         try:

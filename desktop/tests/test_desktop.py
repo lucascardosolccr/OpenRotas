@@ -1280,3 +1280,68 @@ def test_dossie_por_nomes_nenhuma_resolvida():
     from geo import dossie_rota as dr
     dd, resol = dr.dossie_por_nomes("Xyzabc123;Qwerty999")
     assert dd.get("erro") and all(not r["ok"] for r in resol)
+
+
+# ============================================================================
+#  ROTA REAL OSRM + LOTE + SOBREPOSIÇÃO NO MAPA (desktop).
+# ============================================================================
+def test_osrm_parse_geojson():
+    from geo import dossie_rota as dr
+    j = '{"code":"Ok","routes":[{"distance":1000,"duration":60,"geometry":{"type":"LineString",'\
+        '"coordinates":[[-46.6,-23.5],[-46.0,-23.2],[-43.2,-22.9]]}}]}'
+    coords, dist, dur = dr._parse_osrm_geojson(j)
+    assert coords == [(-46.6, -23.5), (-46.0, -23.2), (-43.2, -22.9)] and dist == 1000
+    assert dr._parse_osrm_geojson('{"code":"NoRoute"}') == (None, None, None)
+
+def test_osrm_no_net_retorna_none(monkeypatch):
+    from geo import dossie_rota as dr
+    monkeypatch.setenv("OPENROTAS_NO_NET", "1")
+    assert dr.geometria_osrm([(-46.6, -23.5), (-43.2, -22.9)], url="http://x") is None
+
+def test_dossie_usa_rota_real_quando_osrm_responde(monkeypatch):
+    from geo import dossie_rota as dr
+    # polilinha "real" densa (simula OSRM), hugging um caminho diferente da reta
+    fake = [(-46.63, -23.55), (-46.0, -23.2), (-44.5, -23.0), (-43.20, -22.90)]
+    monkeypatch.setattr(dr, "geometria_osrm", lambda coords, url=None: fake)
+    dd = dr.dossie([(-46.63, -23.55), (-43.20, -22.90)], usar_osrm=True)
+    assert dd["rota_real"] is True and dd["rota_pontos_osrm"] == 4
+
+def test_dossie_sem_osrm_degrada(monkeypatch):
+    from geo import dossie_rota as dr
+    monkeypatch.setattr(dr, "geometria_osrm", lambda coords, url=None: None)
+    dd = dr.dossie([(-46.63, -23.55), (-43.20, -22.90)], usar_osrm=True)
+    assert dd["rota_real"] is False     # sem OSRM → corredor reta, honesto
+
+def test_lote_ler_pares_e_processar(tmp_path):
+    import pandas as pd
+    from geo import dossie_lote as dl
+    ent = tmp_path / "pares.xlsx"
+    pd.DataFrame({"origem": ["São Paulo/SP", "Curitiba/PR"],
+                  "destino": ["Rio de Janeiro/RJ", "Florianópolis/SC"]}).to_excel(ent, index=False)
+    assert dl.ler_pares(ent) == [("São Paulo/SP", "Rio de Janeiro/RJ"), ("Curitiba/PR", "Florianópolis/SC")]
+    out = tmp_path / "consol.xlsx"
+    r = dl.processar_lote(ent, out)
+    assert r["ok"] and r["linhas"] == 2 and os.path.exists(r["saida"])
+    import openpyxl
+    wb = openpyxl.load_workbook(out)
+    assert "Rotas" in wb.sheetnames
+    ws = wb["Rotas"]
+    assert ws.max_row == 3        # cabeçalho + 2 rotas
+
+def test_lote_coords_e_sem_pares(tmp_path):
+    from geo import dossie_lote as dl
+    assert dl._coords_de("-46.6,-23.5") == (-46.6, -23.5)
+    assert dl._coords_de("São Paulo") is None
+    r = dl.processar_lote(tmp_path / "naoexiste.xlsx")
+    assert r["ok"] is False
+
+def test_mapa_cobertura_sobrepoe_rota():
+    from audit import coverage_map as cm
+    h = cm.construir_html(rapido=True, rota="São Paulo/SP;Rio de Janeiro/RJ")
+    assert "Rota sobreposta" in h and "<th>Rota</th>" in h
+    assert "●" in h             # UFs atravessadas marcadas
+
+def test_mapa_cobertura_sem_rota_igual_antes():
+    from audit import coverage_map as cm
+    h = cm.construir_html(rapido=True)
+    assert "Rota sobreposta" not in h and "<th>Rota</th>" not in h

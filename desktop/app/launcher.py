@@ -203,7 +203,8 @@ _AJUDA = """OpenRotas Desktop — uso:
   OpenRotas.exe --multimodal    inventário multimodal nacional (+ análise de rota: "lon,lat;lon,lat")
   OpenRotas.exe --rotas-nacionais   testa corredores inter-UF nas 5 regiões (cobertura distribuída)
   OpenRotas.exe --fontes [--md] catálogo de fontes/procedência (§33); --md salva o Markdown
-  OpenRotas.exe --mapa-cobertura   abre o Mapa de Cobertura Nacional (matriz UF × camada) no navegador
+  OpenRotas.exe --mapa-cobertura [--rota "A/UF;B/UF"]   Mapa de Cobertura (opcional: sobrepõe a rota)
+  OpenRotas.exe --dossie-lote entrada.xlsx [saida.xlsx] [--osrm]   lote de dossiês → Excel consolidado
   OpenRotas.exe --integridade   audita defeitos geométricos das camadas (inválidas/fora do Brasil)
   OpenRotas.exe --dossie "lon,lat;lon,lat" [--html] [--excel]   dossiê completo da rota (todos os dados)
   OpenRotas.exe --dossie --rota-nomes "São Paulo/SP;Rio de Janeiro/RJ" [--html] [--excel]   dossiê por cidade
@@ -412,13 +413,23 @@ def main() -> int:
             print("Catálogo de fontes indisponível: %s" % e)
             return 1
 
-    # Modo MAPA DE COBERTURA (§41): gera e abre o mapa visual (matriz UF × camada) no navegador. Sai.
+    # Modo MAPA DE COBERTURA (§41): gera e abre o mapa visual (matriz UF × camada) no navegador.
+    # Com --rota "A/UF;B/UF" sobrepõe a rota (marca UFs atravessadas). Sai.
     if "--mapa-cobertura" in sys.argv:
         try:
             from audit import coverage_map
             return coverage_map._cli([a for a in sys.argv[1:] if a != "--mapa-cobertura"])
         except Exception as e:
             print("Mapa de cobertura indisponível: %s" % e)
+            return 1
+
+    # Modo LOTE DE DOSSIÊS (§11): processa uma planilha de pares origem/destino → Excel consolidado. Sai.
+    if "--dossie-lote" in sys.argv:
+        try:
+            from geo import dossie_lote
+            return dossie_lote._cli([a for a in sys.argv[1:] if a != "--dossie-lote"])
+        except Exception as e:
+            print("Lote de dossiês indisponível: %s" % e)
             return 1
 
     # Modo INTEGRIDADE (§20/§43): defeitos geométricos (inválidas/fora do Brasil/duplicatas). Sai.
