@@ -1524,3 +1524,41 @@ def test_janela_js_string_escapa_com_seguranca():
     import json
     bruto = 'quebra"aspas</style>\n<script>'
     assert json.loads(janela._js_string(bruto)) == bruto      # round-trip seguro
+
+
+# ------------------------- config padrão embutida (turnkey) -------------------------
+def test_config_ofuscacao_roundtrip():
+    import gerar_config_padrao as gen
+    original = '{"SUPABASE_URL":"https://x.supabase.co","SUPABASE_ANON_KEY":"sb_publishable_abc"}'
+    blob = gen._ofuscar(original)
+    assert blob != original.encode("utf-8")            # não é texto puro
+    assert cfg._desofuscar(blob) == original           # mesmo salt → volta idêntico
+    assert gen._OFUSCA_SALT == cfg._OFUSCA_SALT         # gerador e runtime casam
+
+def test_config_eh_placeholder():
+    assert cfg._eh_placeholder("https://SEUPROJETO.supabase.co")
+    assert cfg._eh_placeholder("eyJ...SUA_CHAVE")
+    assert cfg._eh_placeholder("") and cfg._eh_placeholder("   ")
+    assert not cfg._eh_placeholder("https://anlnimltffkrsvojtgwd.supabase.co")
+    assert not cfg._eh_placeholder("sb_publishable_realkey")
+
+def test_merge_placeholder_cai_no_embutido():
+    d = {"SUPABASE_URL": "https://real.supabase.co", "SUPABASE_ANON_KEY": "sb_publishable_real"}
+    u = {"SUPABASE_URL": "https://SEUPROJETO.supabase.co", "SUPABASE_ANON_KEY": "eyJ...SUA_CHAVE", "offline": False}
+    eff = cfg._mesclar_config(d, u)
+    assert eff["SUPABASE_URL"] == "https://real.supabase.co"      # placeholder → embutido
+    assert eff["SUPABASE_ANON_KEY"] == "sb_publishable_real"
+    assert eff["offline"] is False                                 # outros campos do usuário entram
+
+def test_merge_usuario_real_vence_sobre_embutido():
+    d = {"SUPABASE_URL": "https://real.supabase.co", "SUPABASE_ANON_KEY": "sb_publishable_real"}
+    u = {"SUPABASE_URL": "https://meuproprio.supabase.co"}
+    eff = cfg._mesclar_config(d, u)
+    assert eff["SUPABASE_URL"] == "https://meuproprio.supabase.co"  # usuário real vence
+    assert eff["SUPABASE_ANON_KEY"] == "sb_publishable_real"        # ausente → embutido
+
+def test_gerador_recusa_service_role(monkeypatch, tmp_path):
+    import gerar_config_padrao as gen
+    monkeypatch.setenv("ORK_SUPABASE_URL", "https://x.supabase.co")
+    monkeypatch.setenv("ORK_SUPABASE_ANON_KEY", "sb_secret_PERIGO")
+    assert gen.main() == 2        # trava: nunca embutir secret/service_role

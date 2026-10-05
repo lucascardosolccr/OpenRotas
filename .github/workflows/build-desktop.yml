@@ -93,6 +93,17 @@ jobs:
           Remove-Item desktop/data_local/brazil-osrm-mld.tar.gz
           Get-ChildItem desktop/data_local | Select-Object Name,Length
 
+      - name: Embutir configuração padrão (turnkey — Supabase) a partir de SECRETS
+        shell: pwsh
+        env:
+          ORK_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          ORK_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          ORK_GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+        run: |
+          # Gera desktop/config/_config_padrao.ork (blob ofuscado) SE os secrets existirem.
+          # Sem secrets, não gera nada e o instalador sai "não-turnkey" (usa o desktop.json).
+          python desktop/installer/gerar_config_padrao.py
+
       - name: Empacotar (PyInstaller onedir)
         id: pyinstaller
         working-directory: desktop

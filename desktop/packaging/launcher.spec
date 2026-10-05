@@ -144,6 +144,12 @@ if os.path.exists(_sample):
 _ico = os.path.join(REPO_ROOT, "desktop", "installer", "openrotas.ico")
 if os.path.exists(_ico):
     datas.append((_ico, "."))
+# [TURNKEY] Config padrão EMBUTIDA (blob ofuscado gerado no CI a partir de secrets do GitHub),
+# para o instalador já vir configurado (SUPABASE_URL/ANON_KEY). Só entra se o build gerou o
+# arquivo; caso contrário o app usa o desktop.json do usuário, como antes.
+_ork = os.path.join(REPO_ROOT, "desktop", "config", "_config_padrao.ork")
+if os.path.exists(_ork):
+    datas.append((_ork, "config"))
 
 # --- A APLICAÇÃO e as BASES embarcadas (reutiliza o app web por inteiro, §21/§34) ---
 # Mapeadas para a MESMA estrutura relativa, pois o app as acessa por caminho relativo.

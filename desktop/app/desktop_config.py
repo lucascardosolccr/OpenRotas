@@ -198,16 +198,85 @@ def bootstrap_config_usuario() -> Path | None:
         return None
 
 
+# ---------------------------------------------------------------------------
+# CONFIGURAÇÃO PADRÃO EMBUTIDA (instalador turnkey) — §19/§42
+# ---------------------------------------------------------------------------
+# Para distribuir o app já configurado (ex.: SUPABASE_URL/ANON_KEY) sem o usuário
+# final mexer em arquivo, o build injeta essas chaves num pequeno blob OFUSCADO
+# (config/_config_padrao.ork), gerado no CI a partir de SECRETS do GitHub —
+# NUNCA do código-fonte. Honestidade de segurança: a chave anon/publishable é
+# PÚBLICA por natureza (vai para todo cliente) e a proteção real é o RLS do
+# Supabase; a ofuscação só evita texto puro no disco — não é "inquebrável", e a
+# service_role JAMAIS é embutida. Valores que o usuário põe no desktop.json
+# SEMPRE têm prioridade sobre os embutidos.
+import base64 as _base64
+import hashlib as _hashlib
+
+_OFUSCA_SALT = b"OpenRotas-Desktop-config-v1"   # não é segredo: só embaralha o blob
+
+
+def _desofuscar(blob: bytes) -> str:
+    raw = _base64.b64decode(blob)
+    chave = _hashlib.sha256(_OFUSCA_SALT).digest()
+    return bytes(b ^ chave[i % len(chave)] for i, b in enumerate(raw)).decode("utf-8")
+
+
+def _eh_placeholder(v) -> bool:
+    """True se o valor é vazio ou um PLACEHOLDER do desktop.example.json (p.ex.
+    'https://SEUPROJETO...', 'eyJ...SUA_CHAVE') — nesse caso cai no embutido."""
+    if not isinstance(v, str):
+        return v in (None, "")
+    s = v.strip()
+    return (not s) or ("SEUPROJETO" in s) or ("SUA_CHAVE" in s) or ("COLE_AQUI" in s)
+
+
+def _defaults_embutidos() -> dict:
+    """Lê o blob embutido (config/_config_padrao.ork) ao lado do app e devolve o dict de
+    padrões. {} se não existir (build sem turnkey) ou inválido. Nunca levanta."""
+    candidatos = [
+        app_root() / "config" / "_config_padrao.ork",                 # empacotado ({app}/config)
+        Path(__file__).resolve().parents[1] / "config" / "_config_padrao.ork",  # dev
+    ]
+    for c in candidatos:
+        try:
+            if c.exists():
+                return json.loads(_desofuscar(c.read_bytes()))
+        except Exception:
+            logger.warning("Config padrão embutida inválida — ignorando.", exc_info=True)
+    return {}
+
+
+def _mesclar_config(defaults: dict, usuario: dict) -> dict:
+    """Mescla defaults embutidos + config do usuário. O usuário vence, EXCETO quando o valor
+    dele é vazio/placeholder (aí mantém o embutido). Dicts aninhados (ex.: osrm) são mesclados
+    raso. Puro; nunca levanta."""
+    try:
+        eff = dict(defaults or {})
+        for k, v in (usuario or {}).items():
+            if isinstance(v, dict) and isinstance(eff.get(k), dict):
+                _sub = dict(eff[k]); _sub.update({kk: vv for kk, vv in v.items() if not _eh_placeholder(vv)})
+                eff[k] = _sub
+            elif _eh_placeholder(v):
+                continue  # mantém o embutido
+            else:
+                eff[k] = v
+        return eff
+    except Exception:
+        return dict(usuario or {}) or dict(defaults or {})
+
+
 def carregar_config_usuario() -> dict:
-    """Lê <user_data>/config/desktop.json (criado no 1º uso a partir do exemplo).
-    Nunca levanta — devolve {} se não existir/estiver inválido."""
+    """Config EFETIVA: defaults embutidos (instalador turnkey) + <user_data>/config/desktop.json,
+    com o que o usuário preencheu tendo prioridade (placeholders são ignorados). Nunca levanta —
+    devolve os embutidos (ou {}) se o desktop.json não existir/for inválido."""
     cfg_path = user_data_dir() / "config" / "desktop.json"
+    usuario = {}
     try:
         if cfg_path.exists():
-            return json.loads(cfg_path.read_text(encoding="utf-8"))
+            usuario = json.loads(cfg_path.read_text(encoding="utf-8"))
     except Exception:
         logger.warning("desktop.json inválido — usando padrões.", exc_info=True)
-    return {}
+    return _mesclar_config(_defaults_embutidos(), usuario)
 
 
 def preparar_secrets_e_env(paths: dict) -> dict:
