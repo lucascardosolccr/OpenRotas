@@ -72,6 +72,69 @@ hiddenimports += ["desktop_config", "diagnostics", "janela", "engines", "engines
 # QtWebEngine: módulos usados dinamicamente pela janela nativa.
 hiddenimports += ["PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineCore",
                   "PySide6.QtWidgets", "PySide6.QtGui", "PySide6.QtCore", "PySide6.QtNetwork"]
+
+# [IMPORTS DA APLICAÇÃO — correção do "No module named 'email.mime'"] O ponto de entrada da
+# análise do PyInstaller é o launcher.py; o streamlit_app.py é COPIADO como dado e só roda em
+# runtime, então os imports DELE (e dos módulos da app) NÃO eram vistos → módulos como
+# email.mime.text, smtplib e deps de auth/inteligencia_geoespacial ficavam de fora do bundle.
+# Correção abrangente (sem caça a guaxinim): (1) streamlit_app.py entra como script de análise
+# (abaixo, no Analysis) para o PyInstaller seguir TODO o fecho de imports dele; (2) reforço aqui
+# coletando submódulos da stdlib e dos pacotes próprios da app que possam ser importados de forma
+# dinâmica/preguiçosa (a análise estática não enxerga esses).
+for _pac_app in ("email", "auth", "inteligencia_geoespacial"):
+    try:
+        hiddenimports += collect_submodules(_pac_app)
+    except Exception:
+        pass
+hiddenimports += [
+    "semantica",
+    "email.mime", "email.mime.text", "email.mime.multipart", "email.mime.base",
+    "email.mime.application", "email.mime.nonmultipart", "email.mime.message",
+    "email.mime.image", "email.mime.audio",
+    "smtplib", "email.utils", "email.header", "email.encoders",
+]
+
+# [VARREDURA DE IMPORTS DA APP] Lê estaticamente (ast, SEM executar) todo o fecho de código da
+# aplicação — streamlit_app.py, semantica.py e os pacotes auth/ e inteligencia_geoespacial/ — e
+# acrescenta CADA módulo importado como hiddenimport. Assim qualquer dependência que só a app usa
+# (e que a análise a partir do launcher.py não alcança) entra no bundle. Idempotente e tolerante a
+# falhas; nomes inexistentes só geram aviso do PyInstaller, nunca erro.
+import ast as _ast
+
+def _varrer_imports(raiz):
+    nomes = set()
+    arquivos = []
+    for _alvo in ("streamlit_app.py", "semantica.py"):
+        _p = os.path.join(raiz, _alvo)
+        if os.path.exists(_p):
+            arquivos.append(_p)
+    for _pkg in ("auth", "inteligencia_geoespacial"):
+        _d = os.path.join(raiz, _pkg)
+        if os.path.isdir(_d):
+            for _r, _ds, _fs in os.walk(_d):
+                if "test" in _r.replace("\\", "/"):   # ignora diretórios de teste
+                    continue
+                for _f in _fs:
+                    if _f.endswith(".py"):
+                        arquivos.append(os.path.join(_r, _f))
+    for _arq in arquivos:
+        try:
+            _tree = _ast.parse(open(_arq, "r", encoding="utf-8").read(), filename=_arq)
+        except Exception:
+            continue
+        for _node in _ast.walk(_tree):
+            if isinstance(_node, _ast.Import):
+                for _n in _node.names:
+                    nomes.add(_n.name)
+            elif isinstance(_node, _ast.ImportFrom):
+                if _node.module and _node.level == 0:      # só imports absolutos
+                    nomes.add(_node.module)
+    return sorted(nomes)
+
+try:
+    hiddenimports += _varrer_imports(REPO_ROOT)
+except Exception:
+    pass
 # Amostra de pares O/D do benchmark, servida ao lado do pacote engines.
 _sample = os.path.join(REPO_ROOT, "desktop", "engines", "sample_pairs.csv")
 if os.path.exists(_sample):
