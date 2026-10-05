@@ -46,6 +46,10 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Reassemblar bases nacionais grandes (drenagem/rodovias)
+        shell: pwsh
+        run: python montar_bases_grandes.py
+
       - name: Instalar dependências do desktop
         shell: pwsh
         run: |

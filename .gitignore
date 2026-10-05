@@ -34,9 +34,13 @@ data/brasil/ibge/*
 !data/brasil/ibge/derivadas/
 !data/brasil/ibge/derivadas/manifest.json
 !data/brasil/ibge/derivadas/*.parquet
-# Camadas que excedem o limite de 100MB do GitHub (bootstrap via Release de dados):
+# As bases grandes drenagem/rodovias NÃO entram inteiras (excedem 100MB do push comum);
+# os .parquet reassemblados são ARTEFATOS (ignorados) — o que entra são os PEDAÇOS <100MB em
+# _bigparts/, reassemblados por montar_bases_grandes.py no build/CI. Cobertura nacional completa.
 data/brasil/ibge/derivadas/drenagem.parquet
 data/brasil/ibge/derivadas/rodovias.parquet
+!data/brasil/ibge/derivadas/_bigparts/
+!data/brasil/ibge/derivadas/_bigparts/**
 
 # ---- Python ----
 __pycache__/

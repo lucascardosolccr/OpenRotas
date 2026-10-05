@@ -1,0 +1,7 @@
+{
+  "_comentario": "Bases nacionais grandes versionadas em PEDAÇOS (<100MB, limite do GitHub) por não caberem num push comum nem em LFS (bloqueado neste ambiente). Reassemble com montar_bases_grandes.py. sha256 = do arquivo .parquet INTEIRO reassemblado (verificação de integridade).",
+  "bases": [
+    {"nome": "drenagem.parquet", "sha256": "618b363ec6bbd1a3e319f7c368285b2aa3d88eb36bdb971e87363392587b49bc", "partes": 5},
+    {"nome": "rodovias.parquet", "sha256": "a1e86909a349853adbca63d8896b42a1653a91486308b4e99cda59b35f377a26", "partes": 2}
+  ]
+}
