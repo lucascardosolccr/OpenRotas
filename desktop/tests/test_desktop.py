@@ -945,3 +945,31 @@ def test_catalogo_render_e_md(tmp_path):
 def test_catalogo_cli():
     from catalog import fontes
     assert fontes._cli([]) == 0
+
+
+# ============================================================================
+#  MAPA DE COBERTURA NACIONAL (§41) — matriz UF × camada; gaps identificáveis.
+# ============================================================================
+def test_mapa_cobertura_html_estrutura():
+    from audit import coverage_map as cm
+    h = cm.construir_html(rapido=True)
+    assert "<!doctype html>" in h and "Mapa de Cobertura Nacional" in h
+    assert "prefers-color-scheme" in h                 # tema claro/escuro
+    for regiao in ("Norte", "Nordeste", "Centro-Oeste", "Sudeste", "Sul"):
+        assert regiao in h
+    assert "class='cell ok" in h and "class='cell bad" in h   # presença e lacuna visíveis
+    assert h.count("class='uf'") == 28                 # 27 UFs + cabeçalho
+
+def test_mapa_cobertura_gera_arquivo(tmp_path):
+    from audit import coverage_map as cm
+    out = tmp_path / "mapa.html"
+    got = cm.gerar(out, rapido=True)
+    assert got == str(out) and out.exists()
+    assert out.read_text(encoding="utf-8").startswith("<!doctype html>")
+
+def test_mapa_cobertura_todas_as_ufs_presentes_no_html():
+    from audit import coverage_map as cm
+    h = cm.construir_html(rapido=True)
+    for _, ufs in cm.REGIOES:
+        for uf in ufs:
+            assert (">%s<" % uf) in h

@@ -67,6 +67,7 @@ Name: "{group}\Central de Dados (baixar o Brasil inteiro)"; Filename: "{app}\{#A
 Name: "{group}\Diagnóstico do OpenRotas"; Filename: "{app}\{#AppExe}"; Parameters: "--diagnostico"
 Name: "{group}\Auditoria de Cobertura Nacional"; Filename: "{app}\{#AppExe}"; Parameters: "--auditoria --relatorio"
 Name: "{group}\Catálogo de Dados Nacionais"; Filename: "{app}\{#AppExe}"; Parameters: "--fontes --md"
+Name: "{group}\Mapa de Cobertura Nacional"; Filename: "{app}\{#AppExe}"; Parameters: "--mapa-cobertura"
 Name: "{group}\Central de Recursos"; Filename: "{app}\{#AppExe}"; Parameters: "--recursos --html"
 Name: "{group}\Verificar atualizações"; Filename: "{app}\{#AppExe}"; Parameters: "--atualizar"
 Name: "{group}\Reparar instalação"; Filename: "{app}\{#AppExe}"; Parameters: "--reparar"
