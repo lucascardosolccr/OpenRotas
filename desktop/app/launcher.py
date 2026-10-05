@@ -4,11 +4,14 @@
 Fluxo:
   1. prepara diretórios persistentes do usuário + secrets.toml local + variáveis de ambiente;
   2. sobe o servidor Streamlit embutido (o MESMO streamlit_app.py da web) em 127.0.0.1:PORTA,
-     numa thread, headless;
-  3. espera a porta aceitar conexão;
-  4. abre uma JANELA NATIVA (pywebview) apontando para o app local — com fallback para o
-     navegador padrão se o pywebview não estiver disponível;
-  5. ao fechar a janela, encerra o processo.
+     num PROCESSO SEPARADO (reexecutando este programa com a flag interna --__servidor__),
+     headless. Processo separado = o Streamlit roda no main thread dele, então os handlers de
+     sinal do bootstrap do Streamlit são instalados SEM o "ValueError: signal only works in
+     main thread" que derrubava o servidor logo após abrir a porta;
+  3. espera a porta aceitar conexão (e mostra a causa real, do log, se não subir);
+  4. abre uma JANELA NATIVA (pywebview/WebView2) apontando para o app local — com diálogo de
+     erro nativo e fallback para o navegador se o backend nativo não estiver disponível;
+  5. ao fechar a janela, encerra o processo do servidor.
 
 Arquitetura escolhida (Opção B do pedido): Streamlit local + launcher desktop. Reutiliza a
 aplicação web inteira (ZERO perda de funcionalidade, §21/§44) e ganha as vantagens locais via
@@ -25,7 +28,15 @@ import sys
 import time
 import socket
 import logging
-import threading
+import subprocess
+
+# Flag/variável interna que marca o PROCESSO FILHO que roda APENAS o servidor Streamlit.
+# Rodar o Streamlit num processo próprio (e no MAIN thread dele) é o que evita o
+# "ValueError: signal only works in main thread" — o bootstrap do Streamlit instala
+# handlers de sinal, que só podem ser instalados na thread principal. Antes o servidor
+# subia numa thread secundária: a porta abria por um instante (o navegador abria) e logo
+# o handler de sinal derrubava o servidor → "localhost que não funciona".
+_SERVIDOR_FLAG = "--__servidor__"
 
 # Garante que 'desktop/app' (módulos soltos: desktop_config/diagnostics) E 'desktop/' (pacote
 # 'engines') estejam no path, tanto rodando como script solto quanto empacotado.
@@ -88,9 +99,99 @@ def _esperar_porta(host: str, porta: int, timeout_s: float = 90.0) -> bool:
     return False
 
 
+def _mostrar_erro_nativo(titulo: str, mensagem: str) -> None:
+    """Mostra um diálogo de erro NATIVO (Tkinter, que vem no Python). Garante que, se o
+    software não conseguir abrir, o usuário veja o PORQUÊ e onde está o log — em vez de
+    uma aba de navegador morta ou um .exe que "não faz nada". Degrada para print."""
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+        raiz = tk.Tk()
+        raiz.withdraw()            # não mostra a janela-raiz vazia, só a caixa de diálogo
+        raiz.attributes("-topmost", True)
+        messagebox.showerror(titulo, mensagem)
+        try:
+            raiz.destroy()
+        except Exception:
+            pass
+    except Exception:
+        print("ERRO: %s\n%s" % (titulo, mensagem))
+
+
+def _comando_servidor() -> list:
+    """Comando para (re)executar ESTE programa em modo "só servidor". Empacotado
+    (PyInstaller onedir), sys.executable é o próprio OpenRotas.exe; em DEV, é o python +
+    o caminho deste script. Em ambos, acrescenta a flag interna do processo filho."""
+    cmd = [sys.executable]
+    if not getattr(sys, "frozen", False):
+        cmd.append(os.path.abspath(__file__))
+    cmd.append(_SERVIDOR_FLAG)
+    return cmd
+
+
+def _subir_servidor_em_processo(env: dict, paths) -> "subprocess.Popen | None":
+    """Sobe o Streamlit num PROCESSO SEPARADO (main thread dele → sem erro de signal) e
+    redireciona a saída dele para logs/streamlit-server.log, para diagnóstico real quando
+    algo falha. Devolve o Popen, ou None se nem conseguir iniciar o processo."""
+    log_path = paths["logs"] / "streamlit-server.log"
+    try:
+        saida = open(log_path, "a", buffering=1, encoding="utf-8", errors="replace")
+        saida.write("\n==== %s — subindo servidor Streamlit ====\n" % time.strftime("%Y-%m-%d %H:%M:%S"))
+        saida.flush()
+    except Exception:
+        saida = None
+    # No Windows, evita abrir um console preto para o processo filho.
+    creation = 0
+    if os.name == "nt":
+        creation = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    # Marca o filho também por ENV (além da flag de argv) — robusto se o bootloader mexer no argv.
+    env = dict(env)
+    env["OPENROTAS_STREAMLIT_CHILD"] = "1"
+    try:
+        proc = subprocess.Popen(
+            _comando_servidor(),
+            env=env,
+            stdout=(saida or subprocess.DEVNULL),
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            creationflags=creation,
+            close_fds=(os.name != "nt"),
+        )
+        log.info("Servidor Streamlit iniciado como processo PID %s (log: %s)", proc.pid, log_path)
+        return proc
+    except Exception:
+        log.exception("Não foi possível iniciar o processo do servidor Streamlit.")
+        return None
+
+
+def _encerrar_servidor(proc) -> None:
+    """Encerra o processo do servidor Streamlit com cortesia (terminate → kill)."""
+    if proc is None:
+        return
+    try:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                proc.kill()
+    except Exception:
+        pass
+
+
+def _tail_arquivo(caminho, n_linhas: int = 25) -> str:
+    """Últimas linhas de um arquivo de log (para mostrar a causa real de uma falha)."""
+    try:
+        from pathlib import Path as _P
+        linhas = _P(caminho).read_text(encoding="utf-8", errors="replace").splitlines()
+        return "\n".join(linhas[-n_linhas:])
+    except Exception:
+        return ""
+
+
 def _iniciar_streamlit(env: dict) -> None:
-    """Sobe o Streamlit no processo atual (thread dedicada), chamando a CLI dele
-    programaticamente — padrão que funciona tanto em DEV quanto empacotado."""
+    """Sobe o Streamlit no processo atual (no MAIN thread, quando chamado do processo
+    filho), chamando a API dele programaticamente — padrão que funciona em DEV e empacotado."""
     # Aplica as variáveis de ambiente preparadas (headless/porta/cache) ANTES de importar a CLI.
     os.environ.update(env)
     app_path = str(cfg.app_root() / "streamlit_app.py")
@@ -121,26 +222,51 @@ def _iniciar_streamlit(env: dict) -> None:
             raise
 
 
-def _abrir_janela(url: str) -> bool:
-    """Abre a janela nativa (pywebview). Retorna True se abriu em modo nativo;
-    False se o pywebview não está disponível (o chamador cai pro navegador)."""
+def _abrir_janela(url: str):
+    """Abre a JANELA NATIVA (pywebview) embrulhando o app local. Devolve (abriu, motivo):
+    abriu=True quando a janela nativa rodou; (False, motivo) quando não há backend e o
+    chamador precisa recorrer ao navegador. No Windows usa o WebView2 (Edge) — moderno e
+    compatível com o Streamlit; o motivo textual ajuda o diagnóstico do usuário."""
     try:
         import webview  # pywebview
-    except Exception:
-        log.warning("pywebview indisponível — abrindo no navegador padrão.")
-        return False
+    except Exception as e:
+        return (False, "pywebview não disponível no pacote: %s" % e)
+
+    # No Windows, força o backend EdgeChromium (WebView2) — é o único renderer moderno
+    # (o MSHTML/IE antigo NÃO roda o Streamlit). Requer o 'WebView2 Runtime' no sistema
+    # (o instalador garante) e o pythonnet embarcado (clr).
+    gui = None
+    if os.name == "nt":
+        gui = "edgechromium"
     try:
-        webview.create_window(
+        janela = webview.create_window(
             "OpenRotas — Motor Nacional de Inteligência Logística",
             url, width=1400, height=900, min_size=(1024, 700),
             text_select=True, confirm_close=True,
         )
+        log.info("Abrindo janela nativa (backend=%s).", gui or "padrão")
         # Bloqueia até a janela fechar. http_server=False pois já temos nosso servidor.
-        webview.start()
-        return True
-    except Exception:
-        log.exception("pywebview falhou ao abrir — caindo pro navegador.")
-        return False
+        if gui:
+            webview.start(gui=gui)
+        else:
+            webview.start()
+        return (True, "ok")
+    except Exception as e:
+        # Backend específico falhou (ex.: WebView2 Runtime ausente) — tenta o padrão do
+        # pywebview uma vez antes de desistir e cair no navegador.
+        log.warning("Janela nativa com backend '%s' falhou (%s); tentando backend padrão.",
+                    gui, e, exc_info=True)
+        try:
+            webview.create_window(
+                "OpenRotas — Motor Nacional de Inteligência Logística",
+                url, width=1400, height=900, min_size=(1024, 700),
+                text_select=True, confirm_close=True,
+            )
+            webview.start()
+            return (True, "ok (backend padrão)")
+        except Exception as e2:
+            log.exception("pywebview falhou ao abrir em qualquer backend.")
+            return (False, "WebView2/backend indisponível: %s" % e2)
 
 
 def _verificar_atualizacoes(aplicar: bool = False) -> int:
@@ -338,6 +464,19 @@ def main() -> int:
         return 0
     paths = cfg.ensure_user_dirs()
     _configurar_logs(paths)
+
+    # [PROCESSO FILHO — SÓ SERVIDOR] Quando reexecutado com a flag interna, este processo
+    # NÃO abre janela: roda apenas o Streamlit, no próprio main thread (assim os handlers de
+    # sinal do bootstrap do Streamlit são instalados sem erro). A saída já está redirecionada
+    # para logs/streamlit-server.log pelo processo pai.
+    if _SERVIDOR_FLAG in sys.argv or os.environ.get("OPENROTAS_STREAMLIT_CHILD") == "1":
+        try:
+            _iniciar_streamlit(dict(os.environ))
+            return 0
+        except Exception:
+            log.exception("Servidor Streamlit (processo filho) encerrou com erro.")
+            return 3
+
     # 1º uso: cria o desktop.json a partir do exemplo embarcado (template a preencher).
     try:
         criado = cfg.bootstrap_config_usuario()
@@ -577,15 +716,38 @@ def main() -> int:
     env = cfg.preparar_secrets_e_env(paths)
 
     host, porta = "127.0.0.1", cfg.PORTA_LOCAL
+    servidor = None
     if _porta_aberta(host, porta):
         log.info("Já havia algo na porta %s — reaproveitando (app já aberto?).", porta)
     else:
-        t = threading.Thread(target=_iniciar_streamlit, args=(env,), daemon=True)
-        t.start()
-        if not _esperar_porta(host, porta):
-            log.error("Streamlit não respondeu a tempo na porta %s.", porta)
-            print("ERRO: o motor não subiu a tempo. Veja o log em:", paths["logs"])
+        # Sobe o Streamlit num PROCESSO separado (main thread dele → sem erro de signal).
+        servidor = _subir_servidor_em_processo(env, paths)
+        if servidor is None:
+            _mostrar_erro_nativo(
+                "OpenRotas — falha ao iniciar",
+                "Não foi possível iniciar o motor do aplicativo.\n\n"
+                "Veja o log em:\n%s" % paths["logs"])
             return 2
+        if not _esperar_porta(host, porta):
+            # O servidor morreu ou demorou demais — mostra a CAUSA (tail do log), não um
+            # navegador morto.
+            try:
+                servidor.terminate()
+            except Exception:
+                pass
+            cauda = _tail_arquivo(paths["logs"] / "streamlit-server.log", 25)
+            log.error("Streamlit não respondeu a tempo na porta %s.\n%s", porta, cauda)
+            _mostrar_erro_nativo(
+                "OpenRotas — o motor não subiu",
+                "O aplicativo não conseguiu iniciar o motor interno a tempo.\n\n"
+                "Detalhes técnicos (últimas linhas do log):\n\n%s\n\n"
+                "Log completo em:\n%s" % (cauda or "(sem detalhes)", paths["logs"]))
+            return 2
+
+    # Encerra o servidor ao sair, aconteça o que acontecer (fechar a janela, erro, etc.).
+    import atexit as _atexit
+    if servidor is not None:
+        _atexit.register(lambda: _encerrar_servidor(servidor))
 
     url = "http://%s:%s" % (host, porta)
     log.info("App no ar em %s", url)
@@ -601,18 +763,38 @@ def main() -> int:
     except Exception:
         pass
 
-    if not _abrir_janela(url):
+    abriu, motivo = _abrir_janela(url)
+    if not abriu:
+        # Janela nativa indisponível: avisa de forma VISÍVEL (o usuário quer uma janela, não um
+        # navegador) e, como último recurso, abre no navegador para não deixar o trabalho travado.
+        log.warning("Janela nativa indisponível (%s) — recorrendo ao navegador.", motivo)
+        _mostrar_erro_nativo(
+            "OpenRotas — janela nativa indisponível",
+            "Não foi possível abrir a janela nativa do aplicativo "
+            "(%s).\n\nO OpenRotas vai abrir no seu navegador como alternativa.\n\n"
+            "Se isso se repetir, instale o 'Microsoft Edge WebView2 Runtime' (o instalador "
+            "tenta instalá-lo automaticamente) e abra o app novamente." % motivo)
         import webbrowser
         webbrowser.open(url)
         # Sem janela nativa: mantém o processo vivo enquanto o servidor roda.
-        print("OpenRotas rodando em", url, "— feche esta janela de terminal para encerrar.")
+        print("OpenRotas rodando em", url, "— feche esta janela para encerrar.")
         try:
             while True:
-                time.sleep(3600)
+                if servidor is not None and servidor.poll() is not None:
+                    break      # o servidor morreu — não há mais o que manter vivo
+                time.sleep(2)
         except KeyboardInterrupt:
             pass
+    _encerrar_servidor(servidor)
     return 0
 
 
 if __name__ == "__main__":
+    # Proteção padrão para apps congelados que possam usar multiprocessing — evita que um
+    # processo-filho acidental reexecute o programa inteiro (recursão). Inócuo fora do bundle.
+    try:
+        import multiprocessing
+        multiprocessing.freeze_support()
+    except Exception:
+        pass
     raise SystemExit(main())

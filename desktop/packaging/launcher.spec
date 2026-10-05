@@ -27,6 +27,11 @@ _pacotes_coletar = [
     "cachetools", "unidecode", "supabase", "supabase_auth", "storage3", "postgrest",
     "realtime", "kaleido", "xlsxwriter", "openpyxl", "python_calamine",
     "streamlit_js_eval",
+    # [JANELA NATIVA] pywebview e suas dependências de runtime. SEM coletar 'webview' aqui, o
+    # pacote congelado não encontra os backends de plataforma (webview.platforms.*) nem o
+    # pythonnet/clr — e o app cai no navegador (o bug "abriu um localhost"). Coletar tudo.
+    "webview", "proxy_tools", "bottle", "typing_extensions",
+    "clr_loader", "pythonnet",
 ]
 datas, binaries, hiddenimports = [], [], []
 for _pac in _pacotes_coletar:
@@ -36,13 +41,23 @@ for _pac in _pacotes_coletar:
     except Exception:
         pass
 hiddenimports += collect_submodules("streamlit")
+# Backends de plataforma do pywebview são importados DINAMICAMENTE (importlib), então a análise
+# estática não os enxerga — congela-os explicitamente. No Windows o relevante é o edgechromium
+# (WebView2) + winforms; os demais são inócuos se ausentes.
+hiddenimports += collect_submodules("webview")
+hiddenimports += [
+    "webview.platforms.edgechromium", "webview.platforms.winforms",
+    "webview.platforms.mshtml", "webview.platforms.cef",
+    "clr", "clr_loader", "clr_loader.netfx", "clr_loader.ffi",
+]
 
 # [METADADOS - correção clássica Streamlit+PyInstaller] O Streamlit (e várias libs) leem a PRÓPRIA
 # versão em runtime via importlib.metadata.version(...); sem os .dist-info embutidos, o app quebra
 # ao iniciar com PackageNotFoundError. copy_metadata embute esses metadados no bundle. Defensivo.
 for _meta in ("streamlit", "altair", "pandas", "numpy", "pyarrow", "plotly", "pydeck",
               "supabase", "supabase_auth", "scikit-learn", "scipy", "rapidfuzz",
-              "streamlit-js-eval", "diskcache", "cachetools"):
+              "streamlit-js-eval", "diskcache", "cachetools",
+              "pywebview", "pythonnet", "clr_loader"):
     try:
         datas += copy_metadata(_meta)
     except Exception:
@@ -90,7 +105,9 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],
-    excludes=["tkinter", "torch", "transformers", "tensorflow"],  # peso morto (não usados)
+    # NÃO excluir tkinter: é usado para o DIÁLOGO DE ERRO NATIVO do launcher (mostra a causa
+    # quando o motor não sobe, em vez de uma aba de navegador morta) e pela Central de Dados.
+    excludes=["torch", "transformers", "tensorflow"],  # peso morto (não usados)
     cipher=block_cipher,
     noarchive=False,
 )

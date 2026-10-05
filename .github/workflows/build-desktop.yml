@@ -64,6 +64,22 @@ jobs:
         shell: pwsh
         run: python desktop/installer/make_icon.py desktop/installer/openrotas.ico
 
+      - name: Baixar o bootstrapper do WebView2 Runtime (p/ o instalador garantir a janela nativa)
+        shell: pwsh
+        continue-on-error: true   # não-fatal: sem ele, o instalador compila e o app ainda abre no navegador
+        run: |
+          $url = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
+          $out = "desktop/installer/MicrosoftEdgeWebview2Setup.exe"
+          Write-Host "Baixando o WebView2 Evergreen Bootstrapper de $url"
+          curl.exe -L --retry 4 --retry-delay 2 -o $out $url
+          if (Test-Path $out) {
+            $sz = (Get-Item $out).Length
+            Write-Host "WebView2 bootstrapper baixado: $sz bytes"
+            if ($sz -lt 100000) { Write-Warning "Arquivo suspeito (muito pequeno); o instalador vai ignorá-lo." ; Remove-Item $out }
+          } else {
+            Write-Warning "Não foi possível baixar o bootstrapper do WebView2; instalador seguirá sem ele."
+          }
+
       - name: (Opcional) Embutir o grafo OSRM do Brasil
         if: ${{ github.event.inputs.embed_graph == 'true' }}
         shell: pwsh

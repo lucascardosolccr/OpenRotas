@@ -53,6 +53,14 @@ Name: "desktopicon"; Description: "Criar atalho na Área de Trabalho"; GroupDesc
 Source: "..\build\dist\OpenRotas\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 ; Exemplo de configuração (o app cria o real em %LOCALAPPDATA% no 1º uso).
 Source: "..\config\desktop.example.json"; DestDir: "{app}\config"; Flags: ignoreversion
+; [WEBVIEW2] Bootstrapper "Evergreen" do Microsoft Edge WebView2 Runtime — o motor que a janela
+; nativa (pywebview) usa para desenhar o app. O workflow de build baixa este .exe para a pasta
+; do instalador; se não estiver presente no momento da compilação, o bloco é ignorado (instalador
+; compila mesmo assim). Vai para {tmp} e é removido após a instalação.
+#if FileExists(AddBackslash(SourcePath) + "MicrosoftEdgeWebview2Setup.exe")
+  #define HasWebView2Setup
+Source: "MicrosoftEdgeWebview2Setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall; Check: WebView2Faltando
+#endif
 
 [Dirs]
 ; Diretório PERSISTENTE de dados do usuário (sobrevive a updates/desinstalação controlada).
@@ -79,6 +87,12 @@ Name: "{group}\Desinstalar {#AppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
 
 [Run]
+; [WEBVIEW2] Garante o runtime do WebView2 ANTES de validar/abrir o app — sem ele a janela
+; nativa não desenha. Roda silencioso e só se o runtime estiver faltando. Não é fatal: se a
+; instalação do runtime falhar (ex.: sem internet), o app ainda abre no navegador como alternativa.
+#ifdef HasWebView2Setup
+Filename: "{tmp}\MicrosoftEdgeWebview2Setup.exe"; Parameters: "/silent /install"; StatusMsg: "Instalando o componente de exibição (Microsoft WebView2)..."; Flags: waituntilterminated; Check: WebView2Faltando
+#endif
 ; Teste de integridade pós-instalação (§18/§30): roda o diagnóstico silencioso; se falhar,
 ; o usuário é avisado mas a instalação não é abortada (ele pode reparar depois).
 Filename: "{app}\{#AppExe}"; Parameters: "--diagnostico --silencioso"; StatusMsg: "Validando a instalação..."; Flags: runhidden; Check: SempreExecutar
@@ -88,4 +102,21 @@ Filename: "{app}\{#AppExe}"; Description: "Abrir o {#AppName} agora"; Flags: now
 function SempreExecutar: Boolean;
 begin
   Result := True;
+end;
+
+{ Detecta se o Microsoft Edge WebView2 Runtime (Evergreen) JÁ está instalado na máquina,
+  consultando a chave 'pv' do cliente de atualização do runtime (GUID oficial do WebView2),
+  tanto por máquina (HKLM, 32/64 bits) quanto por usuário (HKCU). Devolve True quando o
+  runtime está AUSENTE (ou seja, precisa instalar). }
+function WebView2Faltando: Boolean;
+var
+  pv: string;
+  Guid: string;
+begin
+  Guid := '{{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}}';
+  pv := '';
+  if not RegQueryStringValue(HKLM, 'SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\' + Guid, 'pv', pv) then
+    if not RegQueryStringValue(HKLM, 'SOFTWARE\Microsoft\EdgeUpdate\Clients\' + Guid, 'pv', pv) then
+      RegQueryStringValue(HKCU, 'SOFTWARE\Microsoft\EdgeUpdate\Clients\' + Guid, 'pv', pv);
+  Result := (pv = '') or (pv = '0.0.0.0');
 end;
