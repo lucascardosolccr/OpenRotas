@@ -1345,3 +1345,47 @@ def test_mapa_cobertura_sem_rota_igual_antes():
     from audit import coverage_map as cm
     h = cm.construir_html(rapido=True)
     assert "Rota sobreposta" not in h and "<th>Rota</th>" not in h
+
+
+# ============================================================================
+#  SAÚDE DOS DADOS NACIONAIS (§39) — painel único que consolida os auditores.
+# ============================================================================
+@pytest.fixture(scope="module")
+def saude():
+    from audit import saude_nacional as sn
+    return sn.diagnostico(rapido=True)
+
+def test_saude_dimensoes_e_resumo(saude):
+    nomes = {x["nome"] for x in saude["dimensoes"]}
+    assert "Cobertura territorial" in nomes and "Integridade geométrica" in nomes
+    assert "Rede multimodal" in nomes and "Prontidão offline" in nomes
+    r = saude["resumo"]
+    assert r["total"] == len(saude["dimensoes"]) == 5
+    assert r["ok"] + r["parciais"] + r["ausentes"] == r["total"]
+    assert r["status"] in ("OK", "PARCIAL", "AUSENTE")
+
+def test_saude_cobertura_ok(saude):
+    cob = next(x for x in saude["dimensoes"] if x["nome"] == "Cobertura territorial")
+    assert cob["status"] == "OK" and "27/27" in cob["resumo"]
+    integ = next(x for x in saude["dimensoes"] if x["nome"] == "Integridade geométrica")
+    assert integ["status"] == "OK"
+
+def test_saude_offline_parcial_sem_grafo(saude):
+    # sem o grafo OSRM instalado aqui, a prontidão offline é PARCIAL (honesto)
+    off = next(x for x in saude["dimensoes"] if x["nome"] == "Prontidão offline")
+    assert off["status"] == "PARCIAL" and "grafo" in (off["resumo"] + off["detalhe"]).lower()
+
+def test_saude_render_e_html(saude):
+    from audit import saude_nacional as sn
+    txt = sn.render_texto(saude)
+    assert "SAÚDE DOS DADOS NACIONAIS" in txt and "Resumo:" in txt
+    h = sn.construir_html(rapido=True)
+    assert "<!doctype html>" in h and "Saúde dos Dados Nacionais" in h
+    assert "prefers-color-scheme" in h and "Ver detalhes" in h
+
+def test_saude_gera_arquivo(tmp_path):
+    from audit import saude_nacional as sn
+    out = tmp_path / "saude.html"
+    got = sn.gerar(out, rapido=True)
+    assert got == str(out) and out.exists()
+    assert out.read_text(encoding="utf-8").startswith("<!doctype html>")

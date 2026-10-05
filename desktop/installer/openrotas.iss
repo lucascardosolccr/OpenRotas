@@ -65,6 +65,7 @@ Name: "{localappdata}\{#AppName}\logs"; Flags: uninsneveruninstall
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
 Name: "{group}\Central de Dados (baixar o Brasil inteiro)"; Filename: "{app}\{#AppExe}"; Parameters: "--central"
 Name: "{group}\Diagnóstico do OpenRotas"; Filename: "{app}\{#AppExe}"; Parameters: "--diagnostico"
+Name: "{group}\Saúde dos Dados Nacionais"; Filename: "{app}\{#AppExe}"; Parameters: "--saude-nacional --html"
 Name: "{group}\Auditoria de Cobertura Nacional"; Filename: "{app}\{#AppExe}"; Parameters: "--auditoria --relatorio"
 Name: "{group}\Catálogo de Dados Nacionais"; Filename: "{app}\{#AppExe}"; Parameters: "--fontes --md"
 Name: "{group}\Mapa de Cobertura Nacional"; Filename: "{app}\{#AppExe}"; Parameters: "--mapa-cobertura"

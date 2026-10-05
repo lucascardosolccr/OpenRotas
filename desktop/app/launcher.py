@@ -205,6 +205,7 @@ _AJUDA = """OpenRotas Desktop — uso:
   OpenRotas.exe --fontes [--md] catálogo de fontes/procedência (§33); --md salva o Markdown
   OpenRotas.exe --mapa-cobertura [--rota "A/UF;B/UF"]   Mapa de Cobertura (opcional: sobrepõe a rota)
   OpenRotas.exe --dossie-lote entrada.xlsx [saida.xlsx] [--osrm]   lote de dossiês → Excel consolidado
+  OpenRotas.exe --saude-nacional [--html]   painel único "Saúde dos Dados Nacionais" (§39)
   OpenRotas.exe --integridade   audita defeitos geométricos das camadas (inválidas/fora do Brasil)
   OpenRotas.exe --dossie "lon,lat;lon,lat" [--html] [--excel]   dossiê completo da rota (todos os dados)
   OpenRotas.exe --dossie --rota-nomes "São Paulo/SP;Rio de Janeiro/RJ" [--html] [--excel]   dossiê por cidade
@@ -430,6 +431,16 @@ def main() -> int:
             return dossie_lote._cli([a for a in sys.argv[1:] if a != "--dossie-lote"])
         except Exception as e:
             print("Lote de dossiês indisponível: %s" % e)
+            return 1
+
+    # Modo SAÚDE DOS DADOS NACIONAIS (§39): painel único de status (cobertura/integridade/
+    # multimodal/offline/recursos). Com --html, abre o board no navegador. Sai.
+    if "--saude-nacional" in sys.argv:
+        try:
+            from audit import saude_nacional
+            return saude_nacional._cli([a for a in sys.argv[1:] if a != "--saude-nacional"])
+        except Exception as e:
+            print("Saúde dos Dados Nacionais indisponível: %s" % e)
             return 1
 
     # Modo INTEGRIDADE (§20/§43): defeitos geométricos (inválidas/fora do Brasil/duplicatas). Sai.
