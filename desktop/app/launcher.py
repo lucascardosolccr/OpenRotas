@@ -201,6 +201,7 @@ _AJUDA = """OpenRotas Desktop — uso:
   OpenRotas.exe --diagnostico   autodiagnóstico (bases, cache, motor, offline, atualização)
   OpenRotas.exe --auditoria     Auditoria de Cobertura Nacional (prova objetiva por UF/município)
   OpenRotas.exe --multimodal    inventário multimodal nacional (+ análise de rota: "lon,lat;lon,lat")
+  OpenRotas.exe --rotas-nacionais   testa corredores inter-UF nas 5 regiões (cobertura distribuída)
   OpenRotas.exe --auditoria --relatorio   salva o Relatório de Cobertura Nacional (.md) em exports/
   OpenRotas.exe --recursos      status dos recursos (Gerenciador de Recursos)
   OpenRotas.exe --recursos --html   abre a Central de Recursos (painel visual) no navegador
@@ -384,6 +385,15 @@ def main() -> int:
     # Modo MULTIMODAL (§8/§24): inventário dos modais + consulta espacial unificada (on-route). Sai.
     if "--multimodal" in sys.argv:
         return _multimodal()
+
+    # Modo ROTAS NACIONAIS (§44): corredores inter-UF nas 5 regiões — detecta buracos regionais. Sai.
+    if "--rotas-nacionais" in sys.argv:
+        try:
+            from audit import route_coverage
+            return route_coverage._cli()
+        except Exception as e:
+            print("Teste nacional de rotas indisponível: %s" % e)
+            return 1
 
     # Modo BENCHMARK (§9/§29): mede o OSRM local × público e sai (evidência do ganho).
     if "--benchmark" in sys.argv:

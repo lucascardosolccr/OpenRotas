@@ -865,3 +865,37 @@ def test_repo_render_e_cli():
     txt = georepo.render_inventario(inv)
     assert "INVENTÁRIO MULTIMODAL" in txt and "rodovias" in txt
     assert georepo._cli([]) == 0
+
+
+# ============================================================================
+#  TESTE NACIONAL DE ROTAS / COBERTURA DISTRIBUÍDA (§42/§43/§44/§45) — corredores
+#  inter-UF nas 5 regiões, sobre os dados REAIS, pegando buracos regionais.
+# ============================================================================
+def test_rotas_corredores_cobrem_as_regioes():
+    from audit import route_coverage as rc
+    regioes = " ".join(r for *_, r in rc.CORREDORES)
+    assert "Norte" in regioes and "Nordeste" in regioes and "Sul" in regioes
+    assert len(rc.CORREDORES) >= 10
+
+def test_rotas_nacional_todos_corredores_com_malha():
+    from audit import route_coverage as rc
+    aud = rc.auditar_rotas()
+    assert aud["resumo"]["total"] == len(rc.CORREDORES)
+    # toda a malha nacional deve aparecer em TODOS os corredores inter-UF (sem buraco regional)
+    assert aud["resumo"]["status"] == "OK" and aud["resumo"]["ok"] == aud["resumo"]["total"]
+    for c in aud["corredores"]:
+        assert c["ok"] is True and c["rodoviario"] > 0
+
+def test_rotas_amazonia_tem_rios():
+    # corredores amazônicos devem cruzar muitos rios (sanidade regional — §45)
+    from audit import route_coverage as rc
+    aud = rc.auditar_rotas()
+    amaz = [c for c in aud["corredores"] if c["corredor"].startswith(("AC→AM", "RR→PA"))]
+    assert amaz and all(c["cruza_rio"] and c["fluvial"] > 0 for c in amaz)
+
+def test_rotas_render_e_cli():
+    from audit import route_coverage as rc
+    aud = rc.auditar_rotas()
+    txt = rc.render_texto(aud)
+    assert "TESTE NACIONAL DE ROTAS" in txt and "corredores" in txt
+    assert rc._cli() == 0
