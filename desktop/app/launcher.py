@@ -202,6 +202,7 @@ _AJUDA = """OpenRotas Desktop — uso:
   OpenRotas.exe --auditoria     Auditoria de Cobertura Nacional (prova objetiva por UF/município)
   OpenRotas.exe --multimodal    inventário multimodal nacional (+ análise de rota: "lon,lat;lon,lat")
   OpenRotas.exe --rotas-nacionais   testa corredores inter-UF nas 5 regiões (cobertura distribuída)
+  OpenRotas.exe --fontes [--md] catálogo de fontes/procedência (§33); --md salva o Markdown
   OpenRotas.exe --auditoria --relatorio   salva o Relatório de Cobertura Nacional (.md) em exports/
   OpenRotas.exe --recursos      status dos recursos (Gerenciador de Recursos)
   OpenRotas.exe --recursos --html   abre a Central de Recursos (painel visual) no navegador
@@ -393,6 +394,16 @@ def main() -> int:
             return route_coverage._cli()
         except Exception as e:
             print("Teste nacional de rotas indisponível: %s" % e)
+            return 1
+
+    # Modo CATÁLOGO DE FONTES (§33): procedência/rastreabilidade de cada base; --md salva o
+    # Catálogo de Dados Nacionais em exports/. Sai.
+    if "--fontes" in sys.argv:
+        try:
+            from catalog import fontes
+            return fontes._cli([a for a in sys.argv[1:] if a != "--fontes"])
+        except Exception as e:
+            print("Catálogo de fontes indisponível: %s" % e)
             return 1
 
     # Modo BENCHMARK (§9/§29): mede o OSRM local × público e sai (evidência do ganho).

@@ -899,3 +899,49 @@ def test_rotas_render_e_cli():
     txt = rc.render_texto(aud)
     assert "TESTE NACIONAL DE ROTAS" in txt and "corredores" in txt
     assert rc._cli() == 0
+
+
+# ============================================================================
+#  CATÁLOGO DE FONTES / RASTREABILIDADE (§14/§15/§33/§69/§70) — procedência REAL
+#  lida dos dados + metadados declarados (organização/licença/portal).
+# ============================================================================
+def test_catalogo_estrutura_e_procedencia_real():
+    from catalog import fontes
+    cat = fontes.catalogo(medir=True)
+    por = {r["chave"]: r for r in cat}
+    assert por["municipios"]["organizacao"] == "IBGE"
+    assert por["municipios"]["instalado"] and por["municipios"]["registros"] == 5571
+    # procedência lida do próprio dado (não declarada): BC250, versão 2025
+    assert "BC250" in (por["municipios"]["fonte_base"] or [])
+    assert por["drenagem"]["registros"] > 2_000_000
+    assert por["snirh_rios"]["organizacao"].startswith("ANA")
+
+def test_catalogo_medir_false_e_rapido():
+    from catalog import fontes
+    cat = fontes.catalogo(medir=False)
+    # sem medir: ainda traz metadados e existência, mas não procedência pesada
+    assert all("organizacao" in r for r in cat)
+    assert all("fonte_base" not in r for r in cat)
+
+def test_catalogo_tipos_de_fonte_classificados():
+    from catalog import fontes
+    por = {r["chave"]: r for r in fontes.catalogo(medir=False)}
+    assert por["municipios"]["tipo_fonte"] == "primaria"
+    assert por["snirh_rios"]["tipo_fonte"] == "complementar"
+    assert por["sinalizacao"]["tipo_fonte"] == "auxiliar"
+
+def test_catalogo_render_e_md(tmp_path):
+    from catalog import fontes
+    cat = fontes.catalogo(medir=True)
+    txt = fontes.render_texto(cat)
+    assert "CATÁLOGO DE DADOS NACIONAIS" in txt and "IBGE" in txt
+    out = tmp_path / "cat.md"
+    got = fontes.gerar_md(out, cat)
+    assert got == str(out) and out.exists()
+    c = out.read_text(encoding="utf-8")
+    assert c.startswith("# Catálogo de Dados Nacionais") and "Rastreabilidade" in c
+    assert "BC250" in c                       # procedência real na tabela
+
+def test_catalogo_cli():
+    from catalog import fontes
+    assert fontes._cli([]) == 0
