@@ -156,6 +156,25 @@ def test_baixar_partes_sem_nenhuma_parte(tmp_path):
     assert osrm._baixar_partes(base, tmp_path / "out.tar.gz") is False
     assert not (tmp_path / "out.tar.gz").exists()
 
+def test_garantir_grafo_nome_base_diferente(tmp_path):
+    # o move deve derivar o padrão do arquivo encontrado, não de 'brazil-latest' fixo.
+    import io, tarfile, gzip
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as t:
+        for nome in ("brasil.osrm", "brasil.osrm.edges"):
+            dado = (nome + "-data").encode() * 100
+            info = tarfile.TarInfo(nome); info.size = len(dado)
+            t.addfile(info, io.BytesIO(dado))
+    (tmp_path / "g.tar.gz").write_bytes(gzip.compress(buf.getvalue()))
+    destino = tmp_path / "dl"
+    got = osrm.garantir_grafo({"graph_url": (tmp_path / "g.tar.gz").as_uri()}, destino)
+    assert got == str(destino / "brasil.osrm")
+    assert (destino / "brasil.osrm.edges").exists()       # artefato irmão também foi movido
+
+def test_remover_container_retorna_bool():
+    assert osrm._remover_container("") is False            # nome vazio
+    assert isinstance(osrm._remover_container("openrotas-osrm-x"), bool)
+
 
 # -------------------------------- local_data ---------------------------------
 @pytest.fixture(scope="module")
@@ -299,6 +318,15 @@ def test_rm_reparar_corrompidos_rebaixa_forcado(tmp_path, monkeypatch):
 def test_rm_reparar_corrompidos_pula_grafo():
     res = rm.reparar_corrompidos({"recursos": {}}, "http://x/", ["osrm_brasil"])
     assert res[0]["ok"] is False and "provision" in res[0]["detalhe"].lower()
+
+def test_rm_reparar_tudo_grafo_nao_polui_ok(monkeypatch):
+    # manifesto remoto sobe só o grafo (provisionável): NÃO deve entrar em bases_atualizadas
+    # nem derrubar o ok (as bases essenciais estão presentes e legíveis).
+    remoto = {"recursos": {"osrm_brasil": {"versao": "2099.1", "arquivo": "brazil-osrm-mld.tar.gz"}}}
+    monkeypatch.setattr(rm, "carregar_manifesto_remoto", lambda *a, **k: remoto)
+    rel = rm.reparar_tudo(osrm_cfg={}, base_url="https://exemplo/dados/")
+    assert rel["bases_atualizadas"] == []          # grafo excluído do atualizar
+    assert rel["ok"] is True and isinstance(rel["ok"], bool)
 
 def test_rm_reparar_tudo_manifesto_remoto_ausente_nao_quebra(monkeypatch):
     # manifesto remoto indisponível → {} → sem atualizações, não levanta, ok continua True

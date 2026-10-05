@@ -160,15 +160,17 @@ def _subir_docker(cfg: dict) -> ResultadoMotor:
                           detalhe="OSRM não respondeu ao health-check a tempo")
 
 
-def _remover_container(nome: str) -> None:
-    """Para/remove um container Docker pelo nome, se existir. Best-effort; nunca levanta."""
+def _remover_container(nome: str) -> bool:
+    """Para/remove um container Docker pelo nome, se existir. Best-effort; nunca levanta.
+    Devolve True se o comando docker executou com sucesso (returncode 0)."""
     if not nome:
-        return
+        return False
     try:
-        subprocess.run(["docker", "rm", "-f", nome], stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL, timeout=20)
+        p = subprocess.run(["docker", "rm", "-f", nome], stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=20)
+        return p.returncode == 0
     except Exception:
-        pass
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -310,8 +312,10 @@ def garantir_grafo(cfg_osrm: dict | None, destino_dir) -> str | None:
             if cand is None:
                 logger.warning("[OSRM] arquivo .osrm não encontrado no pacote; descartando.")
                 return gp or None
-            # move todos os artefatos do grafo (*.osrm*) para o destino final
-            for f in cand.parent.glob("brazil-latest.osrm*"):
+            # move todos os artefatos do grafo para o destino final. O padrão é DERIVADO do
+            # arquivo base encontrado (cand.name == "<base>.osrm") — não um nome fixo — para
+            # funcionar se o grafo for publicado com outro nome-base.
+            for f in cand.parent.glob(cand.name + "*"):
                 destino_f = destino / f.name
                 if destino_f.exists():
                     destino_f.unlink()
@@ -337,10 +341,14 @@ def encerrar(res: ResultadoMotor) -> None:
     tiver desанexado) e, por garantia, encerra o processo cliente."""
     if not (res and res.gerenciado):
         return
-    _remover_container(res.nome or CONTAINER_OSRM)      # docker rm -f <nome> (para + remove)
+    parou = _remover_container(res.nome or CONTAINER_OSRM)      # docker rm -f <nome> (para + remove)
     if res.processo is not None:
         try:
             res.processo.terminate()
         except Exception:
             pass
-    logger.info("[OSRM] motor local gerenciado encerrado.")
+    if parou:
+        logger.info("[OSRM] motor local gerenciado encerrado.")
+    else:
+        logger.warning("[OSRM] não foi possível confirmar a parada do container %s — "
+                       "verifique com 'docker ps'.", res.nome or CONTAINER_OSRM)

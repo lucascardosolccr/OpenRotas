@@ -325,8 +325,10 @@ def main() -> int:
             from engines import benchmark
             conf = cfg.carregar_config_usuario() or {}
             url_local = (conf.get("osrm") or {}).get("url") or "http://localhost:5000"
+            # [] (não None) → o benchmark usa seu padrão (local × público) sem reparsear o
+            # argv do launcher, o que dispararia SystemExit(2) não capturável.
             return benchmark.main(["--url", url_local, "--rotulo", "OSRM configurado"]
-                                  if "--local" in sys.argv else None)
+                                  if "--local" in sys.argv else [])
         except Exception as e:
             print("Falha ao rodar o benchmark: %s" % e)
             return 1

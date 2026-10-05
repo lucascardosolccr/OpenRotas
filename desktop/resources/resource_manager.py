@@ -158,7 +158,7 @@ def resumo_ambiente(osrm_cfg: dict | None = None) -> str:
             marca = "○"
         else:
             marca = "✗"
-        tam = (" (%s MB)" % r["mb"]) if r.get("mb") else ""
+        tam = (" (%s MB)" % r["mb"]) if r.get("mb") is not None else ""
         obr = "obrigatório" if r["obrigatorio"] else "opcional"
         linhas.append("  %s %-22s %-13s %-12s %s%s" % (marca, r["chave"], r["estado"], obr, r["modulo"], tam))
     return "\n".join(linhas)
@@ -433,12 +433,18 @@ def reparar_tudo(osrm_cfg: dict | None = None, base_url: str = "") -> dict:
         if base_url:
             remoto = carregar_manifesto_remoto(base_url)
             if remoto:
+                import local_data
+                provisionaveis = {d.chave for d in local_data.CATALOGO if d.formato == "osrm"}
                 # (a) força a re-baixar o que está corrompido/obrigatório ausente (mesma versão);
                 corrompidos = [p["chave"] for p in v["problemas"]] + list(v["faltam_obrigatorios"])
                 if corrompidos:
                     rel["bases_reparadas"] = reparar_corrompidos(remoto, base_url, dict.fromkeys(corrompidos))
-                # (b) aplica atualizações de versão pendentes.
-                rel["bases_atualizadas"] = atualizar(remoto, base_url)
+                # (b) aplica atualizações de versão pendentes — SÓ bases de cópia (o grafo é
+                #     provisionável e seria 'skip ok=False', poluindo o resultado; ele é tratado
+                #     por provisionar_grafo/--provisionar-grafo).
+                pend = [p["chave"] for p in verificar_atualizacoes(remoto) if p["chave"] not in provisionaveis]
+                if pend:
+                    rel["bases_atualizadas"] = atualizar(remoto, base_url, apenas=pend)
     except Exception:
         logger.warning("[RECURSOS] reparo/atualização de bases falhou.", exc_info=True)
     try:
@@ -451,9 +457,9 @@ def reparar_tudo(osrm_cfg: dict | None = None, base_url: str = "") -> dict:
     # 'ok': ou a verificação inicial estava limpa, ou todos os reparos forçados tiveram sucesso;
     # e nenhuma atualização/provisão falhou.
     reparos_ok = all(b.get("ok", False) for b in rel["bases_reparadas"]) if rel["bases_reparadas"] else True
-    rel["ok"] = ((rel["verificacao"]["ok"] or (rel["bases_reparadas"] and reparos_ok))
-                 and all(b.get("ok", True) for b in rel["bases_atualizadas"])
-                 and (rel["grafo"] is None or rel["grafo"].get("ok", True)))
+    rel["ok"] = bool((rel["verificacao"]["ok"] or (bool(rel["bases_reparadas"]) and reparos_ok))
+                     and all(b.get("ok", True) for b in rel["bases_atualizadas"])
+                     and (rel["grafo"] is None or rel["grafo"].get("ok", True)))
     return rel
 
 
