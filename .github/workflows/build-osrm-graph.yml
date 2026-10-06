@@ -133,6 +133,25 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           ls -lh "$OUT"
 
+      - name: Limpar assets ANTIGOS da Release (evita parte órfã de um build anterior)
+        # O app baixa partNN em sequência até uma dar 404. Se um build anterior deixou MAIS partes
+        # (ex.: grafo maior) e o novo gera MENOS, a(s) parte(s) órfã(s) ficam na Release e o app
+        # concatenaria lixo → grafo corrompido. Aqui apagamos TODOS os assets do tag antes de
+        # publicar os novos. O GITHUB_TOKEN do CI (contents: write) pode deletar assets.
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ github.event.inputs.release_tag }}"
+          rid=$(gh api "/repos/${{ github.repository }}/releases/tags/$tag" --jq '.id' 2>/dev/null || echo "")
+          if [ -n "$rid" ]; then
+            for aid in $(gh api "/repos/${{ github.repository }}/releases/$rid/assets" --jq '.[].id' 2>/dev/null); do
+              gh api -X DELETE "/repos/${{ github.repository }}/releases/$rid/assets/$aid" && echo "asset $aid deletado" || echo "falha ao deletar $aid (seguindo)"
+            done
+          else
+            echo "Release $tag ainda não existe — nada a limpar."
+          fi
+
       - name: Publicar na Release
         uses: softprops/action-gh-release@v2
         with:
