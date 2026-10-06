@@ -105,6 +105,110 @@ def _docker_disponivel() -> bool:
         return False
 
 
+# ---------------------------------------------------------------------------
+# Motor NATIVO embarcado (SEM Docker) — osrm-routed empacotado no próprio app.
+# É o caminho turnkey: o usuário clica "baixar o mapa" e o app serve o grafo
+# localmente, só enquanto está aberto (encerra ao fechar). Sem servidor 24h,
+# sem Docker, sem PC ligado. Se o binário/grafo faltar, cai no público.
+# ---------------------------------------------------------------------------
+def _nome_binario() -> str:
+    return "osrm-routed.exe" if os.name == "nt" else "osrm-routed"
+
+
+def _bin_osrm_routed() -> str | None:
+    """Localiza o binário osrm-routed EMBARCADO no app (sem Docker). Procura, nesta ordem:
+    a env OSRM_ROUTED_BIN (override), engines/bin ao lado do app empacotado e desktop/engines/bin
+    (dev). Devolve o caminho ou None. Nunca levanta."""
+    nome = _nome_binario()
+    cands = []
+    env = os.environ.get("OSRM_ROUTED_BIN")
+    if env:
+        cands.append(Path(env))
+    try:
+        import desktop_config as _dc  # type: ignore
+        cands.append(_dc.app_root() / "engines" / "bin" / nome)
+    except Exception:
+        pass
+    cands.append(Path(__file__).resolve().parent / "bin" / nome)       # dev: desktop/engines/bin
+    for c in cands:
+        try:
+            if c and Path(c).exists():
+                return str(c)
+        except Exception:
+            pass
+    return None
+
+
+def motor_nativo_disponivel() -> bool:
+    """True se há um binário osrm-routed embarcado (serve o grafo local SEM Docker)."""
+    return _bin_osrm_routed() is not None
+
+
+def _encerrar_processo(proc) -> None:
+    """Encerra um processo filho (terminate → wait → kill) de forma 100% defensiva."""
+    if proc is None:
+        return
+    try:
+        proc.terminate()
+    except Exception:
+        pass
+    try:
+        proc.wait(timeout=10)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
+def _subir_local(cfg: dict) -> ResultadoMotor:
+    """Sobe o osrm-routed EMBARCADO (sem Docker) apontando para o grafo local, e gerencia seu
+    ciclo de vida (encerra ao fechar o app). Fallback seguro: se faltar binário/grafo, se a porta
+    tiver outro serviço, ou se não subir a tempo, devolve inativo e o app cai no OSRM público
+    (zero regressão). Nunca levanta."""
+    graph = str(cfg.get("graph_path", "")).strip()
+    porta = int(cfg.get("port", 5000))
+    algoritmo = str(cfg.get("algorithm", "mld"))
+    url = cfg.get("url") or ("http://127.0.0.1:%d" % porta)
+
+    if not graph or not os.path.exists(graph):
+        return ResultadoMotor(url=None, modo="local", ativo=False,
+                              detalhe="grafo não encontrado em graph_path: %r" % graph)
+    binario = _bin_osrm_routed()
+    if not binario:
+        return ResultadoMotor(url=None, modo="local", ativo=False,
+                              detalhe="binário osrm-routed embarcado não encontrado")
+    if _porta_ocupada("127.0.0.1", porta):
+        ok = _esperar_health(url, timeout_s=8.0)
+        return ResultadoMotor(url=url if ok else None, modo="local", ativo=ok, gerenciado=False,
+                              detalhe="porta %d já em uso; reaproveitando" % porta)
+
+    bin_dir = os.path.dirname(os.path.abspath(binario))
+    env = dict(os.environ)
+    # As DLLs de runtime (TBB/bz2 no Windows) ficam AO LADO do binário → garante que carreguem.
+    env["PATH"] = bin_dir + os.pathsep + env.get("PATH", "")
+    cmd = [binario, "--algorithm", algoritmo, "-i", "127.0.0.1", "-p", str(porta), graph]
+    logger.info("[OSRM] subindo motor nativo embarcado (sem Docker): %s", " ".join(cmd))
+    _t0 = time.perf_counter()
+    try:
+        creation = getattr(subprocess, "CREATE_NO_WINDOW", 0)   # sem janela de console no Windows
+        proc = subprocess.Popen(cmd, cwd=bin_dir, env=env, stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL, creationflags=creation)
+    except Exception as e:
+        _telemetria("local_start", ok=False, detalhe="popen falhou")
+        return ResultadoMotor(url=None, modo="local", ativo=False,
+                              detalhe="falha ao iniciar o motor nativo: %s" % e)
+    if _esperar_health(url, timeout_s=float(cfg.get("start_timeout_s", 90))):
+        _telemetria("local_start", ok=True, ms=round((time.perf_counter() - _t0) * 1000.0, 1))
+        return ResultadoMotor(url=url, modo="local", ativo=True, gerenciado=True, processo=proc,
+                              detalhe="motor nativo embarcado no ar (sem Docker)")
+    _telemetria("local_start", ok=False, ms=round((time.perf_counter() - _t0) * 1000.0, 1),
+                detalhe="health-check timeout")
+    _encerrar_processo(proc)
+    return ResultadoMotor(url=None, modo="local", ativo=False,
+                          detalhe="motor nativo não respondeu ao health-check a tempo")
+
+
 def _subir_docker(cfg: dict) -> ResultadoMotor:
     graph = str(cfg.get("graph_path", "")).strip()
     porta = int(cfg.get("port", 5000))
@@ -196,8 +300,26 @@ def resolver(cfg_osrm: dict | None, osrm_url_legado: str = "") -> ResultadoMotor
         return ResultadoMotor(url=url if ok else None, modo="external", ativo=ok,
                               detalhe="OSRM externo %s" % ("respondeu" if ok else "NÃO respondeu"))
 
+    if modo == "local":
+        return _subir_local(cfg)
+
     if modo == "docker":
         return _subir_docker(cfg)
+
+    if modo == "auto":
+        # O modo MAIS INTELIGENTE (turnkey, sem configuração): tenta primeiro o motor NATIVO
+        # embarcado (sem Docker); se não houver binário/não subir, tenta Docker; senão, cai no
+        # OSRM público. Assim o usuário só precisa baixar o mapa — o resto é automático.
+        if _bin_osrm_routed():
+            r = _subir_local(cfg)
+            if r.ativo:
+                return r
+        if _docker_disponivel():
+            r = _subir_docker(cfg)
+            if r.ativo:
+                return r
+        return ResultadoMotor(url=None, modo="auto", ativo=False,
+                              detalhe="nenhum motor local disponível (nativo/Docker); usando OSRM público")
 
     return ResultadoMotor(url=None, modo=modo, ativo=False, detalhe="modo desconhecido: %r" % modo)
 
@@ -418,19 +540,19 @@ def garantir_grafo(cfg_osrm: dict | None, destino_dir, progresso=None) -> str | 
 
 
 def encerrar(res: ResultadoMotor) -> None:
-    """Encerra o OSRM que ESTE processo subiu (modo docker gerenciado). No-op caso contrário.
-    Para o CONTAINER pelo nome (confiável: garante que suma mesmo se o cliente docker já
-    tiver desанexado) e, por garantia, encerra o processo cliente."""
+    """Encerra o OSRM que ESTE processo subiu. No-op caso contrário (não gerenciado). Dois casos:
+      • motor NATIVO embarcado (sem container, res.nome vazio) → encerra o processo filho;
+      • modo docker → para/remove o CONTAINER pelo nome (confiável) e encerra o cliente."""
     if not (res and res.gerenciado):
         return
-    parou = _remover_container(res.nome or CONTAINER_OSRM)      # docker rm -f <nome> (para + remove)
-    if res.processo is not None:
-        try:
-            res.processo.terminate()
-        except Exception:
-            pass
-    if parou:
-        logger.info("[OSRM] motor local gerenciado encerrado.")
-    else:
-        logger.warning("[OSRM] não foi possível confirmar a parada do container %s — "
-                       "verifique com 'docker ps'.", res.nome or CONTAINER_OSRM)
+    if res.nome:                                    # modo docker gerenciado
+        parou = _remover_container(res.nome)        # docker rm -f <nome> (para + remove)
+        _encerrar_processo(res.processo)
+        if parou:
+            logger.info("[OSRM] motor local (Docker) encerrado.")
+        else:
+            logger.warning("[OSRM] não foi possível confirmar a parada do container %s — "
+                           "verifique com 'docker ps'.", res.nome)
+    else:                                           # motor nativo embarcado (sem Docker)
+        _encerrar_processo(res.processo)
+        logger.info("[OSRM] motor nativo local encerrado.")

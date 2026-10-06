@@ -678,9 +678,10 @@ def test_prov_ativar_roteamento_local_grava_config(tmp_path, monkeypatch):
     monkeypatch.setattr(cfg, "user_data_dir", lambda: tmp_path / "ud")
     r = prov.ativar_roteamento_local()
     assert r["ok"] is True
+    assert "nativo" in r and "docker" in r      # relata a via disponível (nativo embarcado / Docker)
     import json as _json
     conf = _json.loads((tmp_path / "ud" / "config" / "desktop.json").read_text(encoding="utf-8"))
-    assert conf["osrm"]["mode"] == "docker"
+    assert conf["osrm"]["mode"] == "auto"       # turnkey: nativo s/ Docker > Docker > público
     assert conf["osrm"]["graph_url"].endswith("part00")   # garante uma URL utilizável
 
 def test_prov_ativar_roteamento_local_preserva_config(tmp_path, monkeypatch):
@@ -693,7 +694,7 @@ def test_prov_ativar_roteamento_local_preserva_config(tmp_path, monkeypatch):
     prov.ativar_roteamento_local()
     conf = _json.loads((ud / "config" / "desktop.json").read_text(encoding="utf-8"))
     assert conf["SUPABASE_URL"] == "https://x"               # resto preservado
-    assert conf["osrm"]["mode"] == "docker"
+    assert conf["osrm"]["mode"] == "auto"
     assert conf["osrm"]["graph_url"] == "http://meu/g.part00"  # url do usuário preservada
 
 def test_prov_reparar_bases_emite_e_nao_quebra():
@@ -1585,6 +1586,59 @@ def test_osrm_url_do_usuario_vence_sobre_embutido():
     d = {"OSRM_URL": "http://padrao.turnkey:5000"}
     eff = cfg._mesclar_config(d, {"OSRM_URL": "http://meu-osrm-local:5000"})
     assert eff["OSRM_URL"] == "http://meu-osrm-local:5000"   # usuário real vence o embutido
+
+
+# ------------------- motor NATIVO embarcado (sem Docker) — turnkey local -------------------
+def test_osrm_bin_locator_e_disponibilidade(tmp_path, monkeypatch):
+    # sem binário → indisponível; com OSRM_ROUTED_BIN apontando p/ um arquivo → localiza
+    monkeypatch.delenv("OSRM_ROUTED_BIN", raising=False)
+    # garante que não ache um binário dev acidental
+    monkeypatch.setattr(osrm, "_nome_binario", lambda: "osrm-routed-inexistente-xyz")
+    assert osrm._bin_osrm_routed() is None
+    assert osrm.motor_nativo_disponivel() is False
+    fake = tmp_path / "osrm-routed"
+    fake.write_text("#!/bin/sh\n")
+    monkeypatch.setenv("OSRM_ROUTED_BIN", str(fake))
+    assert osrm._bin_osrm_routed() == str(fake)
+    assert osrm.motor_nativo_disponivel() is True
+
+def test_osrm_resolver_local_sem_grafo_cai_no_publico(tmp_path, monkeypatch):
+    # modo 'local' sem grafo → inativo (não serve), app cai no público (zero regressão)
+    fake = tmp_path / "osrm-routed"; fake.write_text("x")
+    monkeypatch.setenv("OSRM_ROUTED_BIN", str(fake))
+    r = osrm.resolver({"mode": "local", "graph_path": str(tmp_path / "nao_existe.osrm")})
+    assert r.modo == "local" and r.ativo is False and r.url is None
+
+def test_osrm_resolver_auto_sem_motor_cai_no_publico(monkeypatch):
+    # modo 'auto' sem binário nativo e sem Docker → inativo, público (nunca levanta)
+    monkeypatch.setattr(osrm, "_bin_osrm_routed", lambda: None)
+    monkeypatch.setattr(osrm, "_docker_disponivel", lambda: False)
+    r = osrm.resolver({"mode": "auto"})
+    assert r.modo == "auto" and r.ativo is False and r.url is None
+
+def test_osrm_resolver_local_sem_binario_cai_no_publico(tmp_path, monkeypatch):
+    # modo 'local' COM grafo mas SEM binário embarcado → inativo (fallback seguro)
+    g = tmp_path / "brazil.osrm"; g.write_text("grafo")
+    monkeypatch.setattr(osrm, "_bin_osrm_routed", lambda: None)
+    r = osrm.resolver({"mode": "local", "graph_path": str(g)})
+    assert r.modo == "local" and r.ativo is False and r.url is None
+
+def test_osrm_encerrar_motor_nativo_encerra_processo_sem_docker():
+    # encerrar() de um motor NATIVO (sem container) termina o processo e NÃO chama docker
+    class _FakeProc:
+        def __init__(self): self.terminado = False
+        def terminate(self): self.terminado = True
+        def wait(self, timeout=None): return 0
+        def kill(self): pass
+    p = _FakeProc()
+    res = osrm.ResultadoMotor(url="http://127.0.0.1:5000", modo="local", ativo=True,
+                              gerenciado=True, processo=p, nome="")   # nome vazio = nativo
+    osrm.encerrar(res)
+    assert p.terminado is True
+
+def test_osrm_encerrar_nao_gerenciado_e_noop():
+    res = osrm.ResultadoMotor(url=None, modo="off", ativo=False, gerenciado=False)
+    osrm.encerrar(res)   # não levanta
 
 
 # ------------------------- camada premium 3D (desktop) -------------------------

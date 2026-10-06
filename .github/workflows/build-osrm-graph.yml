@@ -22,6 +22,10 @@ on:
         description: "Tag da Release onde publicar o grafo"
         default: "osrm-brasil-latest"
         required: true
+      osrm_image:
+        description: "Imagem Docker do OSRM (DEVE casar com a VERSÃO do binário nativo embarcado no desktop — ver osrm_bin_tag em build-desktop)"
+        default: "ghcr.io/project-osrm/osrm-backend:v6.0.0"
+        required: true
 
 permissions:
   contents: write   # necessário para criar/atualizar a Release
@@ -67,7 +71,7 @@ jobs:
       - name: OSRM extract (MLD)
         run: |
           cd /mnt/osrm
-          docker run --rm -t -v "$PWD:/data" osrm/osrm-backend \
+          docker run --rm -t -v "$PWD:/data" "${{ github.event.inputs.osrm_image }}" \
             osrm-extract -p /opt/car.lua /data/brazil-latest.osm.pbf
           rm -f brazil-latest.osm.pbf          # libera ~1,5 GB antes de particionar
           echo "=== após extract ===" ; free -h ; df -h /mnt
@@ -75,14 +79,14 @@ jobs:
       - name: OSRM partition (MLD)
         run: |
           cd /mnt/osrm
-          docker run --rm -t -v "$PWD:/data" osrm/osrm-backend \
+          docker run --rm -t -v "$PWD:/data" "${{ github.event.inputs.osrm_image }}" \
             osrm-partition /data/brazil-latest.osrm
           echo "=== após partition ===" ; free -h ; df -h /mnt
 
       - name: OSRM customize (MLD)
         run: |
           cd /mnt/osrm
-          docker run --rm -t -v "$PWD:/data" osrm/osrm-backend \
+          docker run --rm -t -v "$PWD:/data" "${{ github.event.inputs.osrm_image }}" \
             osrm-customize /data/brazil-latest.osrm
           echo "=== após customize ===" ; free -h ; df -h /mnt
 

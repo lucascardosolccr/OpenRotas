@@ -707,10 +707,11 @@ def main() -> int:
         import engines.osrm_manager as osrm  # desktop/engines (mesmo diretório-pai no path)
         _conf = cfg.carregar_config_usuario()
         _osrm_cfg = dict(_conf.get("osrm") or {})
-        # [GRAFO COMO PRODUTO] No modo docker, garante o grafo do Brasil localmente (usa o já
-        # instalado; senão baixa uma vez de graph_url para o perfil do usuário). Injeta o caminho
-        # resolvido em graph_path. Sem url/sem docker → no-op (cai no público). Defensivo.
-        if str(_osrm_cfg.get("mode", "")).lower() == "docker":
+        # [GRAFO COMO PRODUTO] Nos modos que SERVEM o grafo localmente (nativo embarcado 'local',
+        # 'auto' ou 'docker'), garante o grafo do Brasil na máquina (usa o já instalado; senão baixa
+        # uma vez de graph_url para o perfil do usuário). Injeta o caminho resolvido em graph_path.
+        # Sem url / modo que não serve → no-op (cai no público). Defensivo.
+        if str(_osrm_cfg.get("mode", "")).lower() in ("docker", "local", "auto"):
             try:
                 # 1º: grafo EMBUTIDO no bundle (instalador com embed_graph) em app_root/data_local.
                 if not _osrm_cfg.get("graph_path"):

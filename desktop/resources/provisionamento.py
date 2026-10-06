@@ -209,10 +209,21 @@ def reparar_bases(progresso=None, conf: dict | None = None) -> dict:
         return {"ok": False, "detalhe": "erro: %s" % e}
 
 
+def motor_nativo_disponivel() -> bool:
+    """True se o app traz o motor NATIVO embarcado (osrm-routed) — serve o grafo local SEM Docker."""
+    try:
+        import osrm_manager
+        return osrm_manager.motor_nativo_disponivel()
+    except Exception:
+        return False
+
+
 def ativar_roteamento_local(conf: dict | None = None) -> dict:
-    """Liga o roteamento LOCAL/offline gravando osrm.mode='docker' no desktop.json do usuário —
-    opt-in explícito. Requer Docker Desktop para SERVIR; avisa se não houver. Devolve
-    {ok, docker, detalhe}. Preserva o resto da config; nunca levanta."""
+    """Liga o roteamento LOCAL/offline gravando osrm.mode='auto' no desktop.json do usuário — o
+    modo mais inteligente e turnkey: usa o motor NATIVO embarcado (sem Docker) quando disponível e,
+    só se não houver, tenta o Docker; senão cai no OSRM público. Sem servidor 24h, sem PC ligado:
+    o motor roda apenas enquanto o app está aberto. Devolve {ok, nativo, docker, detalhe}. Preserva
+    o resto da config; nunca levanta."""
     cfg = _cfg()
     try:
         destino = cfg.user_data_dir() / "config" / "desktop.json"
@@ -223,20 +234,26 @@ def ativar_roteamento_local(conf: dict | None = None) -> dict:
             except Exception:
                 atual = {}
         oc = dict(atual.get("osrm") or {})
-        oc["mode"] = "docker"
-        # Garante um graph_url utilizável (padrão turnkey se vazio) para o docker achar o grafo.
+        oc["mode"] = "auto"
+        # Garante um graph_url utilizável (padrão turnkey se vazio) para achar/baixar o grafo.
         if not str(oc.get("graph_url", "") or "").strip():
             oc["graph_url"] = cfg.url_grafo_padrao()
         atual["osrm"] = oc
         destino.parent.mkdir(parents=True, exist_ok=True)
         destino.write_text(json.dumps(atual, ensure_ascii=False, indent=2), encoding="utf-8")
+        tem_nativo = motor_nativo_disponivel()
         tem_docker = docker_disponivel()
-        detalhe = ("roteamento local ligado (osrm.mode='docker')."
-                   + ("" if tem_docker else " Instale/abra o Docker Desktop para servir offline."))
-        return {"ok": True, "docker": tem_docker, "detalhe": detalhe}
+        if tem_nativo:
+            detalhe = "roteamento local ligado (motor nativo embarcado — sem Docker, rápido e offline)."
+        elif tem_docker:
+            detalhe = "roteamento local ligado (via Docker)."
+        else:
+            detalhe = ("roteamento local ligado (osrm.mode='auto'). Este build não traz o motor nativo "
+                       "e não há Docker: o app seguirá no OSRM público até um motor local existir.")
+        return {"ok": True, "nativo": tem_nativo, "docker": tem_docker, "detalhe": detalhe}
     except Exception as e:
         logger.warning("[PROV] ativação do roteamento local falhou.", exc_info=True)
-        return {"ok": False, "docker": False, "detalhe": "erro: %s" % e}
+        return {"ok": False, "nativo": False, "docker": False, "detalhe": "erro: %s" % e}
 
 
 def abrir_pasta_dados(caminho: Path | None = None) -> bool:

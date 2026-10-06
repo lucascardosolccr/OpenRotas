@@ -58,3 +58,5 @@ Thumbs.db
 *.suo
 # Config padrão embutida (gerada no CI a partir de secrets; NUNCA commitar — contém chaves)
 desktop/config/_config_padrao.ork
+# Motor OSRM nativo (osrm-routed + DLLs) baixado no CI; binário pesado, NUNCA commitar
+desktop/engines/bin/

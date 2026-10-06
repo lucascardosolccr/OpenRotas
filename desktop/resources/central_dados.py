@@ -141,7 +141,7 @@ class _App:
         rod.pack(fill="x", side="bottom", **pad)
         ttk.Button(rod, text="Reparar/instalar bases nacionais", command=self._on_reparar).pack(side="left")
         ttk.Button(rod, text="Abrir pasta de dados", command=self._on_abrir).pack(side="left", padx=8)
-        ttk.Button(rod, text="Ativar roteamento local (Docker)",
+        ttk.Button(rod, text="Ativar roteamento local (rápido, sem Docker)",
                    command=self._on_ativar_local).pack(side="left")
         ttk.Button(rod, text="Fechar", command=root.destroy).pack(side="right")
 
@@ -257,8 +257,18 @@ class _App:
                 elif tipo == "grafo_fim":
                     self.barra.stop()
                     self.barra.config(mode="determinate", value=(100 if dado.get("ok") else 0))
-                    self._set_status(dado.get("detalhe", ""),
-                                     "#1a7f4b" if dado.get("ok") else "#b42318")
+                    if dado.get("ok"):
+                        # Turnkey: assim que o mapa chega, LIGA o roteamento local sozinho (modo
+                        # 'auto' → motor nativo embarcado, sem Docker). O usuário não precisa de mais
+                        # nenhum passo — o próximo estudo já roda rápido e offline.
+                        try:
+                            r = prov.ativar_roteamento_local()
+                            self._set_status("Mapa instalado ✓ — " + r.get("detalhe", "roteamento local ligado."),
+                                             "#1a7f4b")
+                        except Exception:
+                            self._set_status(dado.get("detalhe", "Mapa instalado ✓"), "#1a7f4b")
+                    else:
+                        self._set_status(dado.get("detalhe", ""), "#b42318")
                     self._travar(False)
                     self._atualizar_inventario()
                 elif tipo == "dossie_fim":

@@ -144,6 +144,19 @@ except Exception:
 _sample = os.path.join(REPO_ROOT, "desktop", "engines", "sample_pairs.csv")
 if os.path.exists(_sample):
     datas.append((_sample, "engines"))
+# [MOTOR NATIVO — SEM DOCKER] Binário osrm-routed EMBARCADO (+ DLLs de runtime no Windows, p.ex.
+# TBB/bz2), baixado no CI de um release de binários OSRM (e-kotov/osrm-binaries) para engines/bin/.
+# Permite SERVIR o grafo do Brasil LOCALMENTE sem Docker — o caminho turnkey ("baixe o mapa e use").
+# Se a pasta não existir (binário não baixado nesse build), nada é embutido e o app cai no
+# Docker/OSRM público (zero regressão). Mapeado para engines/bin ao lado do app (osrm_manager o acha).
+_bin_dir = os.path.join(REPO_ROOT, "desktop", "engines", "bin")
+if os.path.isdir(_bin_dir):
+    for _r, _ds, _fs in os.walk(_bin_dir):
+        for _fn in _fs:
+            _full = os.path.join(_r, _fn)
+            _rel = os.path.relpath(os.path.dirname(_full), _bin_dir)
+            _dest = os.path.join("engines", "bin") if _rel in (".", "") else os.path.join("engines", "bin", _rel)
+            datas.append((_full, _dest))
 # Ícone do app (gerado por make_icon.py antes do empacotamento) — levado para a raiz do bundle
 # para a JANELA NATIVA exibi-lo (janela.abrir procura em app_root()/openrotas.ico).
 _ico = os.path.join(REPO_ROOT, "desktop", "installer", "openrotas.ico")

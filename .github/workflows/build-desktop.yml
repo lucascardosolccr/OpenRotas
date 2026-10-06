@@ -29,6 +29,9 @@ on:
       app_release_tag:
         description: "Tag da Release do app (quando publicar_release=true)"
         default: "app-latest"
+      osrm_bin_tag:
+        description: "Versão do motor OSRM nativo (sem Docker) a embarcar — e-kotov/osrm-binaries. DEVE casar com a VERSÃO do grafo (osrm_image em build-osrm-graph)."
+        default: "v6.0.0"
 
 permissions:
   contents: write
@@ -92,6 +95,37 @@ jobs:
           tar -xzf desktop/data_local/brazil-osrm-mld.tar.gz -C desktop/data_local
           Remove-Item desktop/data_local/brazil-osrm-mld.tar.gz
           Get-ChildItem desktop/data_local | Select-Object Name,Length
+
+      - name: Baixar o MOTOR OSRM NATIVO (sem Docker) para Windows — e-kotov/osrm-binaries
+        shell: pwsh
+        continue-on-error: true   # não-fatal: sem o binário, o app cai no Docker/OSRM público (zero regressão)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OSRM_BIN_TAG: ${{ github.event.inputs.osrm_bin_tag }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = if ($env:OSRM_BIN_TAG) { $env:OSRM_BIN_TAG } else { "v6.0.0" }
+          $hdr = @{ "User-Agent" = "OpenRotas-Build"; "Accept" = "application/vnd.github+json" }
+          if ($env:GH_TOKEN) { $hdr["Authorization"] = "Bearer $env:GH_TOKEN" }
+          Write-Host "Buscando release $tag de e-kotov/osrm-binaries"
+          $rel = Invoke-RestMethod -Headers $hdr "https://api.github.com/repos/e-kotov/osrm-binaries/releases/tags/$tag"
+          # Escolhe o asset do Windows x64 (osrm-<ver>-win32-x64-Release.tar.gz).
+          $asset = $rel.assets | Where-Object { $_.name -match "win32-x64" -and $_.name -match "\.(tar\.gz|zip)$" } | Select-Object -First 1
+          if (-not $asset) { Write-Warning "Asset Windows x64 nao encontrado no release $tag - build seguira sem motor nativo."; exit 0 }
+          Write-Host "Baixando $($asset.name) ($([math]::Round($asset.size/1MB,1)) MB)"
+          curl.exe -L --retry 4 --retry-delay 2 -o osrm-win.archive $asset.browser_download_url
+          New-Item -ItemType Directory -Force -Path _osrm_extract | Out-Null
+          if ($asset.name -match "\.zip$") { Expand-Archive -Path osrm-win.archive -DestinationPath _osrm_extract -Force }
+          else { tar -xzf osrm-win.archive -C _osrm_extract }
+          $routed = Get-ChildItem -Recurse -Filter osrm-routed.exe _osrm_extract | Select-Object -First 1
+          if (-not $routed) { Write-Warning "osrm-routed.exe nao encontrado no pacote - build seguira sem motor nativo."; exit 0 }
+          New-Item -ItemType Directory -Force -Path desktop/engines/bin | Out-Null
+          # Copia o osrm-routed.exe E TUDO ao lado dele (DLLs de runtime: TBB/bz2/etc., que o e-kotov inclui).
+          Copy-Item (Join-Path $routed.DirectoryName '*') -Destination desktop/engines/bin -Recurse -Force
+          Write-Host "Conteudo de desktop/engines/bin:"
+          Get-ChildItem desktop/engines/bin | Select-Object Name,Length | Format-Table -AutoSize
+          # Sanidade (nao-fatal): o binario inicia e carrega as DLLs?
+          try { & "desktop/engines/bin/osrm-routed.exe" --version 2>&1 | Select-Object -First 3 } catch { Write-Warning "osrm-routed --version falhou (pode faltar DLL); verifique o pacote." }
 
       - name: Embutir configuração padrão (turnkey — Supabase) a partir de SECRETS
         shell: pwsh
