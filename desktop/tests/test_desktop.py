@@ -1563,6 +1563,29 @@ def test_gerador_recusa_service_role(monkeypatch, tmp_path):
     monkeypatch.setenv("ORK_SUPABASE_ANON_KEY", "sb_secret_PERIGO")
     assert gen.main() == 2        # trava: nunca embutir secret/service_role
 
+def test_gerador_mapeia_motor_dedicado():
+    # Option A: o motor de rotas DEDICADO (acelera o lote) é embutível via secrets do build.
+    import gerar_config_padrao as gen
+    assert gen._MAPA.get("ORK_OSRM_URL") == "OSRM_URL"
+    assert gen._MAPA.get("ORK_VALHALLA_URL") == "VALHALLA_URL"
+    assert gen._MAPA.get("ORK_GRAPHHOPPER_URL") == "GRAPHHOPPER_URL"
+    # a URL de um OSRM próprio não é um segredo (service_role) — não pode cair na trava
+    assert not any(p in "http://osrm.meuservidor.com:5000".lower() for p in gen._PROIBIDO)
+
+def test_osrm_url_embutido_sobrevive_e_sinaliza_motor_proprio():
+    # Um OSRM_URL embutido (default turnkey) chega ao app quando o usuário não preencheu o seu,
+    # e aponta para uma instância PRÓPRIA (não o público) — o que deixa o lote rápido.
+    d = {"SUPABASE_URL": "https://real.supabase.co", "SUPABASE_ANON_KEY": "sb_publishable_real",
+         "OSRM_URL": "http://osrm-brasil.meuservidor.com:5000"}
+    eff = cfg._mesclar_config(d, {"offline": False})
+    assert eff["OSRM_URL"] == "http://osrm-brasil.meuservidor.com:5000"   # embutido entra
+    assert "project-osrm.org" not in eff["OSRM_URL"].lower()              # instância própria
+
+def test_osrm_url_do_usuario_vence_sobre_embutido():
+    d = {"OSRM_URL": "http://padrao.turnkey:5000"}
+    eff = cfg._mesclar_config(d, {"OSRM_URL": "http://meu-osrm-local:5000"})
+    assert eff["OSRM_URL"] == "http://meu-osrm-local:5000"   # usuário real vence o embutido
+
 
 # ------------------------- camada premium 3D (desktop) -------------------------
 def test_janela_css_premium_tem_3d_e_animacoes():

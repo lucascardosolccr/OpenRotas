@@ -99,6 +99,11 @@ jobs:
           ORK_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           ORK_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           ORK_GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          # Motor de rotas DEDICADO (turnkey — acelera o lote). Opcional: se o secret OSRM_URL
+          # não existir, o passo embute só o Supabase e o app segue no OSRM público (como antes).
+          ORK_OSRM_URL: ${{ secrets.OSRM_URL }}
+          ORK_VALHALLA_URL: ${{ secrets.VALHALLA_URL }}
+          ORK_GRAPHHOPPER_URL: ${{ secrets.GRAPHHOPPER_URL }}
         run: |
           # Gera desktop/config/_config_padrao.ork (blob ofuscado) SE os secrets existirem.
           # Sem secrets, não gera nada e o instalador sai "não-turnkey" (usa o desktop.json).

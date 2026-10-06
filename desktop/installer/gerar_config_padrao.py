@@ -15,7 +15,9 @@ segue dependendo do desktop.json do usuário, como antes.
 
 Uso (no workflow):  python desktop/installer/gerar_config_padrao.py
 Variáveis lidas:    ORK_SUPABASE_URL, ORK_SUPABASE_ANON_KEY, ORK_APP_URL (opcional),
-                    ORK_GOOGLE_MAPS_API_KEY (opcional)
+                    ORK_GOOGLE_MAPS_API_KEY (opcional), ORK_OSRM_URL (opcional — motor de
+                    rotas dedicado, acelera o processamento), ORK_VALHALLA_URL (opcional),
+                    ORK_GRAPHHOPPER_URL (opcional)
 """
 from __future__ import annotations
 
@@ -35,6 +37,14 @@ _MAPA = {
     "ORK_SUPABASE_ANON_KEY": "SUPABASE_ANON_KEY",
     "ORK_APP_URL": "APP_URL",
     "ORK_GOOGLE_MAPS_API_KEY": "GOOGLE_MAPS_API_KEY",
+    # Motor de rotas DEDICADO (turnkey — acelera o lote). Ver desktop/README.md "Motor local".
+    # Uma instância OSRM própria (URL != project-osrm.org) não tem o rate-limit do servidor
+    # público, então o app deixa de esperar e o scraper keyless do Google falha-rápido. Opcional:
+    # sem ORK_OSRM_URL o app segue usando o OSRM público (como antes). VALHALLA/GRAPHHOPPER são
+    # alternativas igualmente aceitas pela app (st.secrets), embutidas se fornecidas.
+    "ORK_OSRM_URL": "OSRM_URL",
+    "ORK_VALHALLA_URL": "VALHALLA_URL",
+    "ORK_GRAPHHOPPER_URL": "GRAPHHOPPER_URL",
 }
 
 # Trava de segurança: nunca embutir uma service_role / secret key.
