@@ -68,7 +68,12 @@ for _meta in ("streamlit", "altair", "pandas", "numpy", "pyarrow", "plotly", "py
         pass
 # Módulos próprios do desktop (imports em nível de função / via __import__ que a análise
 # estática pode não enxergar) — congela-os explicitamente no bundle.
-hiddenimports += ["desktop_config", "diagnostics", "janela", "engines", "engines.osrm_manager"]
+hiddenimports += ["desktop_config", "diagnostics", "janela", "notificacao",
+                  "engines", "engines.osrm_manager"]
+try:
+    hiddenimports += collect_submodules("winotify")   # toast nativo do Windows (se instalado)
+except Exception:
+    pass
 # QtWebEngine: módulos usados dinamicamente pela janela nativa.
 hiddenimports += ["PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineCore",
                   "PySide6.QtWidgets", "PySide6.QtGui", "PySide6.QtCore", "PySide6.QtNetwork"]
@@ -150,6 +155,11 @@ if os.path.exists(_ico):
 _ork = os.path.join(REPO_ROOT, "desktop", "config", "_config_padrao.ork")
 if os.path.exists(_ork):
     datas.append((_ork, "config"))
+# [NOTIFICAÇÃO] Módulo de toast do Windows, embarcado na RAIZ do bundle para o streamlit_app.py
+# (processo filho) poder 'import notificacao' ao concluir um estudo. Ausente na web → no-op.
+_notif = os.path.join(REPO_ROOT, "desktop", "resources", "notificacao.py")
+if os.path.exists(_notif):
+    datas.append((_notif, "."))
 
 # --- A APLICAÇÃO e as BASES embarcadas (reutiliza o app web por inteiro, §21/§34) ---
 # Mapeadas para a MESMA estrutura relativa, pois o app as acessa por caminho relativo.

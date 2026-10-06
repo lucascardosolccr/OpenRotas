@@ -12687,6 +12687,20 @@ def _job_status(job_id):
         return None
 
 
+def _notificar_conclusao_desktop(status, msg=""):
+    """[DESKTOP] Notificação NATIVA do Windows ao concluir um estudo (avisa mesmo com a janela
+    em 2º plano). INERTE na web: só roda quando OPENROTAS_DESKTOP=1 e o módulo 'notificacao'
+    (empacotado só no desktop) está disponível. Nunca levanta, nunca afeta o fluxo."""
+    try:
+        if os.environ.get("OPENROTAS_DESKTOP") != "1" or str(status) != "concluido":
+            return
+        import notificacao  # embarcado na raiz do app no desktop; ausente na web → no-op
+        notificacao.notificar("OpenRotas — estudo concluído",
+                              "Seu estudo de rotas terminou. Abra o app para ver os resultados.")
+    except Exception:
+        pass
+
+
 def _job_concluir(job_id, status="concluido", msg=""):
     """Marca o job como concluído/erro e carimba o fim. Thread-safe."""
     try:
@@ -12696,6 +12710,7 @@ def _job_concluir(job_id, status="concluido", msg=""):
             if _j is None:
                 return False
             _j["status"] = str(status); _j["t_fim"] = time.time(); _j["msg"] = str(msg)
+        _notificar_conclusao_desktop(status, msg)   # desktop-only; no-op na web
         return True
     except Exception:
         return False

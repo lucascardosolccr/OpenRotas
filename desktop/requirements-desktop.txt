@@ -19,6 +19,10 @@ pythonnet>=3.0.3 ; platform_system == "Windows"
 # --- Diagnóstico de hardware (dimensionamento automático de workers/cache) ---
 psutil>=5.9
 
+# --- Notificação nativa do Windows (toast "estudo concluído") ---
+# Pura-Python (sem extensões C); se ausente, notificacao.py cai no PowerShell/WinRT.
+winotify>=1.1 ; platform_system == "Windows"
+
 # --- Empacotamento (gera o executável onedir; o instalador é feito pelo Inno Setup) ---
 pyinstaller>=6.6
 

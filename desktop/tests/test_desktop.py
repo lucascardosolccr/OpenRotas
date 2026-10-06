@@ -1576,3 +1576,19 @@ def test_janela_js_premium_tilt_idempotente_e_seguro():
     assert "mousemove" in js and "perspective(900px)" in js
     assert "prefers-reduced-motion" in js  # respeita acessibilidade
     assert "try" in js and "catch" in js   # defensivo
+
+
+# ------------------------- notificação nativa (desktop) -------------------------
+def test_notificacao_importa_e_e_noop_fora_do_windows():
+    from resources import notificacao
+    # fora do Windows (ambiente de teste) é no-op seguro, nunca levanta
+    assert isinstance(notificacao.disponivel(), bool)
+    assert notificacao.notificar("t", "m") in (True, False)
+
+def test_streamlit_hook_notificacao_inerte_sem_env(monkeypatch):
+    # o hook do app só dispara com OPENROTAS_DESKTOP=1; sem a env, retorna cedo (inerte na web)
+    import importlib.util, os
+    monkeypatch.delenv("OPENROTAS_DESKTOP", raising=False)
+    _p = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "streamlit_app.py")
+    src = open(_p, encoding="utf-8").read()
+    assert "_notificar_conclusao_desktop" in src and 'OPENROTAS_DESKTOP") != "1"' in src
