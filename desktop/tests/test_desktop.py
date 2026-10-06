@@ -1562,3 +1562,17 @@ def test_gerador_recusa_service_role(monkeypatch, tmp_path):
     monkeypatch.setenv("ORK_SUPABASE_URL", "https://x.supabase.co")
     monkeypatch.setenv("ORK_SUPABASE_ANON_KEY", "sb_secret_PERIGO")
     assert gen.main() == 2        # trava: nunca embutir secret/service_role
+
+
+# ------------------------- camada premium 3D (desktop) -------------------------
+def test_janela_css_premium_tem_3d_e_animacoes():
+    css = janela._css_premium()
+    for m in ("ork-aurora", "ork-rise", "preserve-3d", "@media (prefers-reduced-motion"):
+        assert m in css, "faltou efeito premium: " + m
+
+def test_janela_js_premium_tilt_idempotente_e_seguro():
+    js = janela._js_premium()
+    assert "__orkTilt3d" in js            # guarda de idempotência
+    assert "mousemove" in js and "perspective(900px)" in js
+    assert "prefers-reduced-motion" in js  # respeita acessibilidade
+    assert "try" in js and "catch" in js   # defensivo
