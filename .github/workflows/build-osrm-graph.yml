@@ -45,24 +45,35 @@ jobs:
           docker image prune -af || true
           echo "=== disco após limpeza ===" ; df -h / /mnt
 
-      - name: Aumentar memória virtual (swap) — DOIS swapfiles (/ e /mnt) p/ caber o OSRM v6 (OOM)
+      - name: Aumentar memória virtual (swap) — dimensionado e DEFENSIVO (OSRM v6 estoura memória)
         run: |
-          # O OSRM v6.0.0 consome MAIS memória que o v5.25.0: o grafo do Brasil estourou com 7 GB
-          # RAM + 18 GB swap (exit 137 = OOM no fim do osrm-extract). Correção: ~48 GB de swap, em
-          # DOIS swapfiles — 24 GB no volume RAIZ (/) e 24 GB no /mnt — somando ~55 GB de memória
-          # virtual com a RAM. /mnt (≈74 GB) ainda sobra espaço de folga p/ os intermediários .osrm*
-          # do extract (~20 GB); por isso o swap em /mnt é moderado (24 GB) e não o enche (evita o
-          # exit-6/disco-cheio da tentativa antiga, que usava /mnt inteiro p/ swap).
+          # O OSRM v6.0.0 consome MAIS memória que o v5.25.0 (OOM/exit 137 no osrm-extract do Brasil
+          # com 7 GB RAM + 18 GB swap). Builds #8/#9 falhavam em ~1s no fallocate (/ sem espaço; e o
+          # /mnt pode NÃO suportar fallocate). Correção robusta: dimensiona o swap pelo espaço REAL
+          # livre, cai p/ `dd` se o fallocate falhar, protege cada comando e NUNCA derruba o passo
+          # (termina em `true`) — assim sempre vemos df/free e o build segue com o swap possível.
+          set -x
+          echo "=== disco/memória ANTES ==="; df -h / /mnt || true; free -h || true
           sudo swapoff -a || true
           sudo rm -f /swapfile /mnt/swapfile || true
-          # A MAIOR parte do swap vai p/ /mnt (~74 GB livres) — lá cabe folgado. O build #8 falhou
-          # porque 24 GB em / não coube (a RAIZ tem pouco espaço livre: 18 GB coube antes, 24 não).
-          sudo fallocate -l 34G /mnt/swapfile && sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
-          # Swap EXTRA menor em / — BEST-EFFORT: se não couber, NÃO derruba o build (segue só com o de /mnt).
-          ( sudo fallocate -l 12G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile ) \
-            || echo "swap extra em / pulado (sem espaço) — seguindo só com o swap de /mnt"
-          echo "=== memória + swap ===" ; free -h ; echo "--- swaps ---"; swapon --show
-          echo "--- / ---"; df -h / ; echo "--- /mnt ---"; df -h /mnt
+          mk_swap() {   # $1=caminho  $2=tamanho_GB
+            local p="$1" g="$2"
+            if [ "${g:-0}" -lt 6 ]; then echo "swap $p pulado (tamanho ${g:-0} GB)"; return 0; fi
+            if ! (sudo fallocate -l ${g}G "$p" 2>/dev/null); then
+              echo "fallocate falhou em $p; tentando dd..."
+              sudo dd if=/dev/zero of="$p" bs=1M count=$((g*1024)) status=none 2>/dev/null || { echo "alocação falhou em $p"; sudo rm -f "$p" || true; return 0; }
+            fi
+            sudo chmod 600 "$p" && sudo mkswap "$p" >/dev/null 2>&1 && sudo swapon "$p" && echo "swap LIGADO: $p ${g}G" || { echo "mkswap/swapon falhou em $p"; sudo rm -f "$p" || true; }
+          }
+          mnt_av=$(df -BG --output=avail /mnt 2>/dev/null | tail -1 | tr -dc '0-9'); mnt_av=${mnt_av:-0}
+          root_av=$(df -BG --output=avail /  2>/dev/null | tail -1 | tr -dc '0-9'); root_av=${root_av:-0}
+          mnt_swap=$(( mnt_av - 22 )); [ "$mnt_swap" -gt 40 ] && mnt_swap=40; [ "$mnt_swap" -lt 0 ] && mnt_swap=0
+          root_swap=$(( root_av - 10 )); [ "$root_swap" -gt 22 ] && root_swap=22; [ "$root_swap" -lt 0 ] && root_swap=0
+          echo "livre: /mnt=${mnt_av}G (swap ${mnt_swap}G)  /=${root_av}G (swap ${root_swap}G)"
+          mk_swap /mnt/swapfile "$mnt_swap"
+          mk_swap /swapfile "$root_swap"
+          echo "=== swap ATIVO ==="; swapon --show || true; free -h || true; df -h / /mnt || true
+          true   # nunca falha este passo: o build segue com o swap que conseguiu
 
       - name: Baixar o mapa do Brasil (no disco grande /mnt)
         run: |
