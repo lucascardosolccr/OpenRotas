@@ -45,18 +45,20 @@ jobs:
           docker image prune -af || true
           echo "=== disco após limpeza ===" ; df -h / /mnt
 
-      - name: Aumentar memória virtual (swap) — no volume RAIZ, deixando /mnt livre p/ o extract
+      - name: Aumentar memória virtual (swap) — DOIS swapfiles (/ e /mnt) p/ caber o OSRM v6 (OOM)
         run: |
-          # A tentativa anterior falhou no osrm-extract com EXIT CODE 6 (erro de I/O do OSRM),
-          # não 137/OOM: o swapfile de 30 GB estava em /mnt e disputava o espaço que o extract
-          # usa para os arquivos intermediários .osrm* do Brasil inteiro → disco cheio.
-          # Correção: swap fica no volume RAIZ (/), e /mnt fica INTEIRO para o processamento.
+          # O OSRM v6.0.0 consome MAIS memória que o v5.25.0: o grafo do Brasil estourou com 7 GB
+          # RAM + 18 GB swap (exit 137 = OOM no fim do osrm-extract). Correção: ~48 GB de swap, em
+          # DOIS swapfiles — 24 GB no volume RAIZ (/) e 24 GB no /mnt — somando ~55 GB de memória
+          # virtual com a RAM. /mnt (≈74 GB) ainda sobra espaço de folga p/ os intermediários .osrm*
+          # do extract (~20 GB); por isso o swap em /mnt é moderado (24 GB) e não o enche (evita o
+          # exit-6/disco-cheio da tentativa antiga, que usava /mnt inteiro p/ swap).
           sudo swapoff -a || true
-          sudo fallocate -l 18G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          echo "=== memória + swap ===" ; free -h ; echo "--- / ---"; df -h / ; echo "--- /mnt ---"; df -h /mnt
+          sudo rm -f /swapfile /mnt/swapfile || true
+          sudo fallocate -l 24G /swapfile      && sudo chmod 600 /swapfile     && sudo mkswap /swapfile     && sudo swapon /swapfile
+          sudo fallocate -l 24G /mnt/swapfile  && sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+          echo "=== memória + swap ===" ; free -h ; echo "--- swaps ---"; swapon --show
+          echo "--- / ---"; df -h / ; echo "--- /mnt ---"; df -h /mnt
 
       - name: Baixar o mapa do Brasil (no disco grande /mnt)
         run: |
@@ -94,13 +96,14 @@ jobs:
         run: |
           # As 3ª/4ª tentativas falharam SÓ aqui (tar exit 2 = disco cheio): guardar o .tar.gz
           # inteiro de vários GB junto da fonte estourava o volume. Correção definitiva:
-          #  • libera o /swapfile (reclama ~18 GB no /), pois as fases de memória já acabaram;
+          #  • libera os DOIS swapfiles (/ e /mnt, ~48 GB), pois as fases de memória já acabaram —
+          #    reclamando espaço em AMBOS os volumes antes de gravar as partes;
           #  • NÃO cria arquivo intermediário: faz tar|gzip|split em streaming, gravando partes
           #    de ≤1900 MB direto no volume RAIZ (fonte fica em /mnt) — nada precisa caber os
           #    dois no mesmo disco, e as partes respeitam o limite por-asset da Release;
           #  • escreve diagnóstico de disco/tamanhos no RESUMO do job (legível via API).
           sudo swapoff -a || true
-          sudo rm -f /swapfile || true
+          sudo rm -f /swapfile /mnt/swapfile || true
           OUT="$GITHUB_WORKSPACE/release"; mkdir -p "$OUT"
           cd /mnt/osrm
           { echo "### Empacotamento do grafo";
