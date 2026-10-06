@@ -30,8 +30,8 @@ on:
         description: "Tag da Release do app (quando publicar_release=true)"
         default: "app-latest"
       osrm_bin_tag:
-        description: "Versão do motor OSRM nativo (sem Docker) a embarcar — e-kotov/osrm-binaries. DEVE casar com a VERSÃO do grafo (osrm_image em build-osrm-graph)."
-        default: "v6.0.0"
+        description: "Versão do motor OSRM nativo (sem Docker) a embarcar — e-kotov/osrm-binaries. DEVE casar com a VERSÃO do grafo (osrm_image em build-osrm-graph). v5.27.1: o grafo do Brasil em v6 não cabe no runner grátis; o 5.x é leve e constrói."
+        default: "v5.27.1"
 
 permissions:
   contents: write

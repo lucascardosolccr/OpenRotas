@@ -23,8 +23,8 @@ on:
         default: "osrm-brasil-latest"
         required: true
       osrm_image:
-        description: "Imagem Docker do OSRM (DEVE casar com a VERSÃO do binário nativo embarcado no desktop — ver osrm_bin_tag em build-desktop)"
-        default: "ghcr.io/project-osrm/osrm-backend:v6.0.0"
+        description: "Imagem Docker do OSRM (DEVE casar com a VERSÃO do binário nativo embarcado no desktop — ver osrm_bin_tag em build-desktop). v5.27.1: o Brasil inteiro em v6.0.0 estoura a memória do runner grátis (OOM); o 5.x é bem mais leve e já construiu aqui."
+        default: "ghcr.io/project-osrm/osrm-backend:v5.27.1"
         required: true
 
 permissions:
