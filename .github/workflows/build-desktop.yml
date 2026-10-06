@@ -194,13 +194,31 @@ jobs:
           Write-Host "Instalador versao $ver"
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$ver" installer/openrotas.iss
 
-      - name: Publicar o instalador
+      - name: Publicar o instalador (artefato — pode falhar por cota; NÃO-FATAL)
+        continue-on-error: true   # a cota de artefatos do Actions pode bloquear (recalc 6-12h); a Release abaixo é o canal confiável
         uses: actions/upload-artifact@v4
         with:
           name: OpenRotas-Setup
           path: desktop/installer/dist_installer/*.exe
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publicar o instalador numa Release (download ESTÁVEL, SEM cota de artefatos)
+        # A Release usa armazenamento SEPARADO (não conta na cota de artefatos do Actions, que pode
+        # encher e só recalcula a cada 6-12h). Dá um LINK FIXO de download para o instalador de
+        # ~1,2 GB. Sempre publica/atualiza o tag 'desktop-latest'. Este é o canal principal de
+        # entrega do instalador ao usuário.
+        if: always()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: desktop-latest
+          name: OpenRotas Desktop (último build)
+          body: >
+            Instalador do OpenRotas Desktop — motor de rotas LOCAL nativo (sem Docker, roda só com o
+            app aberto), notificação do Windows e visual 3D. Baixe o "OpenRotas Setup.exe" abaixo.
+            Build automático do CI; sempre atualizado para o último build verde.
+          files: desktop/installer/dist_installer/*.exe
+          fail_on_unmatched_files: true
 
       - name: Ler a versão do app (fonte única = desktop_config.APP_VERSION)
         if: ${{ github.event.inputs.publicar_release == 'true' }}
