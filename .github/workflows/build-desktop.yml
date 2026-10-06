@@ -156,20 +156,25 @@ jobs:
 
       - name: Log do PyInstaller (sempre, útil se falhar)
         if: always()
+        continue-on-error: true   # diagnóstico: uma falha de upload (ex.: cota) NUNCA pode barrar o instalador
         uses: actions/upload-artifact@v4
         with:
           name: build-log
           path: desktop/build_pyinstaller.log
           if-no-files-found: ignore
+          retention-days: 5
 
-      - name: Pasta do programa (onedir — fallback se o Inno falhar)
-        if: always() && steps.pyinstaller.outcome == 'success'
+      - name: Pasta do programa (onedir — fallback SÓ quando o build falha)
+        # Só guarda o onedir (~1,6 GB) quando algo DEU ERRADO e o exe existe (p/ depurar). Em build
+        # verde, não guarda nada: evita encher a cota de artefatos (era a causa da falha do build #18).
+        if: failure() && steps.pyinstaller.outcome == 'success'
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: OpenRotas-onedir
           path: desktop/build/dist/OpenRotas/**
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 5
 
       - name: Validar bundle (autodiagnóstico)
         working-directory: desktop
@@ -195,7 +200,7 @@ jobs:
           name: OpenRotas-Setup
           path: desktop/installer/dist_installer/*.exe
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 14
 
       - name: Ler a versão do app (fonte única = desktop_config.APP_VERSION)
         if: ${{ github.event.inputs.publicar_release == 'true' }}
