@@ -1540,7 +1540,7 @@ def test_config_eh_placeholder():
     assert cfg._eh_placeholder("https://SEUPROJETO.supabase.co")
     assert cfg._eh_placeholder("eyJ...SUA_CHAVE")
     assert cfg._eh_placeholder("") and cfg._eh_placeholder("   ")
-    assert not cfg._eh_placeholder("https://anlnimltffkrsvojtgwd.supabase.co")
+    assert not cfg._eh_placeholder("https://meuprojetoreal0001.supabase.co")
     assert not cfg._eh_placeholder("sb_publishable_realkey")
 
 def test_merge_placeholder_cai_no_embutido():
