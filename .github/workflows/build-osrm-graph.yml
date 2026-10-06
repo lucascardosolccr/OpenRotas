@@ -55,8 +55,12 @@ jobs:
           # exit-6/disco-cheio da tentativa antiga, que usava /mnt inteiro p/ swap).
           sudo swapoff -a || true
           sudo rm -f /swapfile /mnt/swapfile || true
-          sudo fallocate -l 24G /swapfile      && sudo chmod 600 /swapfile     && sudo mkswap /swapfile     && sudo swapon /swapfile
-          sudo fallocate -l 24G /mnt/swapfile  && sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+          # A MAIOR parte do swap vai p/ /mnt (~74 GB livres) — lá cabe folgado. O build #8 falhou
+          # porque 24 GB em / não coube (a RAIZ tem pouco espaço livre: 18 GB coube antes, 24 não).
+          sudo fallocate -l 34G /mnt/swapfile && sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+          # Swap EXTRA menor em / — BEST-EFFORT: se não couber, NÃO derruba o build (segue só com o de /mnt).
+          ( sudo fallocate -l 12G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile ) \
+            || echo "swap extra em / pulado (sem espaço) — seguindo só com o swap de /mnt"
           echo "=== memória + swap ===" ; free -h ; echo "--- swaps ---"; swapon --show
           echo "--- / ---"; df -h / ; echo "--- /mnt ---"; df -h /mnt
 
