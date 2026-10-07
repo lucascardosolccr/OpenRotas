@@ -1,0 +1,63 @@
+# ============================================================================
+#  OpenRotas — limpeza RÁPIDA de assets órfãos numa Release (segundos, sem rebuild).
+#
+#  O build do grafo (build-osrm-graph) publica as partes brazil-osrm-mld.tar.gz.partNN.
+#  Se um build anterior deixou MAIS partes do que o atual gera, a(s) parte(s) órfã(s)
+#  ficam na Release e o app — que baixa partNN em sequência até dar 404 — concatenaria
+#  lixo (grafo corrompido). Este workflow apaga, em segundos, os assets cujo nome casa
+#  com um glob, SEM reconstruir o grafo (~46 min). Use quando sobrar parte velha.
+#
+#  Como usar: Actions → "limpar-release-assets" → Run workflow →
+#    tag:          osrm-brasil-latest   (a Release a limpar)
+#    delete_glob:  brazil-osrm-mld.tar.gz.part03   (o que apagar; aceita * e ?)
+# ============================================================================
+name: limpar-release-assets
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag da Release a limpar"
+        default: "osrm-brasil-latest"
+        required: true
+      delete_glob:
+        description: "Glob do NOME do asset a apagar (ex.: brazil-osrm-mld.tar.gz.part03). Aceita curingas * e ?"
+        default: "brazil-osrm-mld.tar.gz.part03"
+        required: true
+
+permissions:
+  contents: write   # necessário para deletar assets da Release
+
+jobs:
+  limpar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Apagar assets que casam com o glob
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          tag="${{ github.event.inputs.tag }}"
+          glob="${{ github.event.inputs.delete_glob }}"
+          rid=$(gh api "/repos/${{ github.repository }}/releases/tags/$tag" --jq '.id' 2>/dev/null || echo "")
+          if [ -z "$rid" ]; then echo "Release '$tag' não existe — nada a fazer."; exit 0; fi
+          echo "Release '$tag' (id=$rid). Apagando assets que casam com: $glob"
+          # id<TAB>nome de cada asset; filtra pelo glob via `case`.
+          gh api "/repos/${{ github.repository }}/releases/$rid/assets" \
+            --jq '.[] | "\(.id)\t\(.name)"' 2>/dev/null | while IFS=$'\t' read -r aid name; do
+              case "$name" in
+                $glob)
+                  # DELETE do asset NÃO leva o id da release: /releases/assets/{asset_id}
+                  if gh api -X DELETE "/repos/${{ github.repository }}/releases/assets/$aid"; then
+                    echo "APAGADO: $name (id=$aid)"
+                  else
+                    echo "FALHA ao apagar: $name (id=$aid)"
+                  fi
+                  ;;
+                *) echo "mantido: $name" ;;
+              esac
+            done
+          echo "=== assets restantes ==="
+          gh api "/repos/${{ github.repository }}/releases/$rid/assets" --jq '.[].name' 2>/dev/null || true

@@ -145,8 +145,11 @@ jobs:
           tag="${{ github.event.inputs.release_tag }}"
           rid=$(gh api "/repos/${{ github.repository }}/releases/tags/$tag" --jq '.id' 2>/dev/null || echo "")
           if [ -n "$rid" ]; then
+            # ATENÇÃO: o endpoint de DELETE do asset NÃO leva o id da release:
+            #   DELETE /repos/{owner}/{repo}/releases/assets/{asset_id}
+            # (a LISTAGEM leva: GET /repos/{owner}/{repo}/releases/{release_id}/assets)
             for aid in $(gh api "/repos/${{ github.repository }}/releases/$rid/assets" --jq '.[].id' 2>/dev/null); do
-              gh api -X DELETE "/repos/${{ github.repository }}/releases/$rid/assets/$aid" && echo "asset $aid deletado" || echo "falha ao deletar $aid (seguindo)"
+              gh api -X DELETE "/repos/${{ github.repository }}/releases/assets/$aid" && echo "asset $aid deletado" || echo "falha ao deletar $aid (seguindo)"
             done
           else
             echo "Release $tag ainda não existe — nada a limpar."
