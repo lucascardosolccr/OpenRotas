@@ -165,7 +165,8 @@ jobs:
         shell: pwsh
         continue-on-error: true
         run: |
-          $out = "desktop/osrm-check.txt"
+          # working-directory já é 'desktop', então o arquivo é relativo a ela (o upload busca em desktop/).
+          $out = "osrm-check.txt"
           $exe = Get-ChildItem -Recurse -Filter osrm-routed.exe build/dist/OpenRotas -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($exe) {
             $rel = $exe.FullName.Substring((Resolve-Path "build/dist/OpenRotas").Path.Length).TrimStart('\','/')
@@ -260,7 +261,9 @@ jobs:
             Instalador do OpenRotas Desktop — motor de rotas LOCAL nativo (sem Docker, roda só com o
             app aberto), notificação do Windows e visual 3D. Baixe o "OpenRotas Setup.exe" abaixo.
             Build automático do CI; sempre atualizado para o último build verde.
-          files: desktop/installer/dist_installer/*.exe
+          files: |
+            desktop/installer/dist_installer/*.exe
+            desktop/osrm-check.txt
           fail_on_unmatched_files: true
 
       - name: Ler a versão do app (fonte única = desktop_config.APP_VERSION)
