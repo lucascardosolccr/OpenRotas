@@ -165,22 +165,37 @@ jobs:
         shell: pwsh
         continue-on-error: true
         run: |
+          $out = "desktop/osrm-check.txt"
           $exe = Get-ChildItem -Recurse -Filter osrm-routed.exe build/dist/OpenRotas -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($exe) {
             $rel = $exe.FullName.Substring((Resolve-Path "build/dist/OpenRotas").Path.Length).TrimStart('\','/')
             $dlls = (Get-ChildItem $exe.DirectoryName -Filter *.dll -ErrorAction SilentlyContinue).Count
             $ver = ""
             try { $ver = (& $exe.FullName --version 2>&1 | Select-Object -First 1) } catch { $ver = "(--version falhou)" }
+            $msg = "EMBARCADO`npath=$rel`ndlls=$dlls`nversion=$ver"
             "## Motor OSRM nativo: ✅ EMBARCADO" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
             "- caminho no bundle: ``$rel``" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
             "- DLLs ao lado: $dlls" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
             "- versão: ``$ver``" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
             Write-Host "OSRM NATIVO OK: $rel (DLLs=$dlls, ver=$ver)"
           } else {
+            $msg = "AUSENTE`nosrm-routed.exe nao encontrado no bundle final"
             "## Motor OSRM nativo: ❌ AUSENTE do bundle" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
             "O instalador sairá SEM motor nativo — o app cairá no OSRM público (sem regressão, porém lento)." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
             Write-Warning "osrm-routed.exe AUSENTE do bundle final."
           }
+          # Verdito num arquivo PEQUENO, publicado como artefato (legível via API sem baixar o log de 1 GB).
+          $msg | Out-File -FilePath $out -Encoding utf8
+
+      - name: Publicar verdito do motor nativo (artefato pequeno — legível via API)
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: osrm-check
+          path: desktop/osrm-check.txt
+          if-no-files-found: warn
+          retention-days: 5
 
       - name: Log do PyInstaller (sempre, útil se falhar)
         if: always()
