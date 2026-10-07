@@ -1641,17 +1641,27 @@ def test_osrm_encerrar_nao_gerenciado_e_noop():
     osrm.encerrar(res)   # não levanta
 
 
-# ------------------------- camada premium 3D (desktop) -------------------------
-def test_janela_css_premium_tem_3d_e_animacoes():
+# ------------------------- camada premium ESTÁTICA (desktop) -------------------------
+def test_janela_css_premium_e_estatica_sem_flicker():
+    # Regressão do "piscar o tempo inteiro": a camada premium NÃO pode ter animação contínua
+    # (aurora infinita), NEM animação de entrada que o Streamlit reexecuta a cada rerun
+    # (ork-rise), NEM blur de tela cheia animado — tudo causava repaint constante no QtWebEngine.
     css = janela._css_premium()
-    for m in ("ork-aurora", "ork-rise", "preserve-3d", "@media (prefers-reduced-motion"):
-        assert m in css, "faltou efeito premium: " + m
+    for proibido in ("ork-aurora", "ork-rise", "@keyframes", "animation:", "preserve-3d"):
+        assert proibido not in css, "efeito que pisca voltou ao CSS premium: " + proibido
+    # mas a PROFUNDIDADE estática e o acabamento continuam presentes
+    assert "box-shadow" in css
+    assert "::-webkit-scrollbar" in css
+    assert "stToolbar" in css
+    assert "@media (prefers-reduced-motion" in css   # ainda respeita acessibilidade
 
-def test_janela_js_premium_tilt_idempotente_e_seguro():
+def test_janela_js_premium_sem_tilt_3d():
+    # O tilt 3D seguia o mouse reescrevendo transform (repaint contínuo + efeito 3D indesejado):
+    # foi removido. O JS fica inerte e idempotente.
     js = janela._js_premium()
-    assert "__orkTilt3d" in js            # guarda de idempotência
-    assert "mousemove" in js and "perspective(900px)" in js
-    assert "prefers-reduced-motion" in js  # respeita acessibilidade
+    assert "__orkPremium" in js            # guarda de idempotência (inerte)
+    assert "mousemove" not in js           # sem listener de movimento
+    assert "perspective(" not in js        # sem inclinação 3D
     assert "try" in js and "catch" in js   # defensivo
 
 

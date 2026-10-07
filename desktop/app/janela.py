@@ -61,14 +61,18 @@ def _aplicar_tokens(texto: str) -> str:
 
 
 def _css_premium() -> str:
-    """Camada de tema PREMIUM 3D injetada só no desktop. É ADITIVA: adiciona profundidade,
-    movimento e brilho SEM reescrever as cores/o layout do design system da web (para não
-    quebrar legibilidade nem a identidade já trabalhada). Ganhos: fundo "aurora" animado,
-    elevação/parallax nos cartões, inclinação 3D no hover, botões com shimmer, foco luminoso,
-    animação de entrada do conteúdo, scrollbars da marca — e a barra do Streamlit escondida
-    (cara de software, não de site). Tudo respeita prefers-reduced-motion."""
+    """Camada de tema PREMIUM injetada só no desktop. É ADITIVA: dá PROFUNDIDADE ESTÁTICA
+    (sombras, cantos, brilho da marca, scrollbars) SEM reescrever as cores/o layout do design
+    system da web.
+
+    IMPORTANTE — SEM MOVIMENTO CONTÍNUO. Versões anteriores tinham um fundo "aurora" animado
+    infinito e uma animação de ENTRADA do conteúdo (`ork-rise`) que o Streamlit REEXECUTA a cada
+    rerun — no Chromium embarcado (QtWebEngine, muitas vezes render por software) isso fazia a
+    tela "piscar o tempo inteiro". Também havia inclinação 3D seguindo o mouse. Tudo isso foi
+    REMOVIDO: a camada agora é 100% estática (só transições curtas em hover/foco, que não
+    repintam sozinhas). Sem flicker, mantendo o visual premium."""
     return _aplicar_tokens("""
-    /* ===== OpenRotas Desktop — camada PREMIUM 3D (injetada pela janela nativa) ===== */
+    /* ===== OpenRotas Desktop — camada PREMIUM ESTÁTICA (injetada pela janela nativa) ===== */
     :root { --ork-ease: cubic-bezier(.2,.8,.2,1); }
     html, body, .stApp {
         -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
@@ -82,76 +86,54 @@ def _css_premium() -> str:
     .stApp > header { height: 0 !important; }
     .block-container { padding-top: 2.2rem !important; }
 
-    /* ---- FUNDO AURORA animado (profundidade que a web não tem) ---- */
+    /* ---- FUNDO com profundidade — ESTÁTICO (sem animação; não pisca) ---- */
     .stApp { background: @BG0@ !important; position: relative; }
     .stApp::before {
-        content:""; position: fixed; inset: -22vmax; z-index: 0; pointer-events: none;
+        content:""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
         background:
-          radial-gradient(42vmax 42vmax at 12% -6%, rgba(59,130,246,0.20), transparent 60%),
-          radial-gradient(38vmax 38vmax at 110% 6%, rgba(96,165,250,0.16), transparent 55%),
-          radial-gradient(30vmax 30vmax at 50% 122%, rgba(34,211,238,0.12), transparent 60%);
-        filter: blur(10px) saturate(118%);
-        animation: ork-aurora 26s ease-in-out infinite alternate;
+          radial-gradient(42vmax 42vmax at 12% -6%, rgba(59,130,246,0.16), transparent 60%),
+          radial-gradient(38vmax 38vmax at 110% 6%, rgba(96,165,250,0.12), transparent 55%),
+          radial-gradient(30vmax 30vmax at 50% 122%, rgba(34,211,238,0.10), transparent 60%);
+        /* SEM animação e SEM filter:blur (blur de tela cheia animado = repaint constante/flicker) */
     }
-    @keyframes ork-aurora {
-        0%   { transform: translate3d(0,0,0) scale(1); }
-        50%  { transform: translate3d(2%, -1.6%, 0) scale(1.06); }
-        100% { transform: translate3d(-2%, 1.6%, 0) scale(1.05); }
-    }
-    /* conteúdo acima da aurora */
+    /* conteúdo acima do fundo */
     [data-testid="stAppViewContainer"], [data-testid="stSidebar"],
     [data-testid="stHeader"] { position: relative; z-index: 1; }
 
-    /* ---- Entrada suave do conteúdo (uma vez, ao montar) ---- */
-    .block-container { animation: ork-rise .55s var(--ork-ease) both; }
-    @keyframes ork-rise { from { opacity:0; transform: translateY(16px);} to {opacity:1; transform:none;} }
-
-    /* ---- SUPERFÍCIES com PROFUNDIDADE + hover 3D (sem trocar a cor de fundo do app) ---- */
+    /* ---- SUPERFÍCIES com PROFUNDIDADE estática; hover só muda SOMBRA/BORDA (sem transform) ---- */
     .mnil, [data-testid="stMetric"], [data-testid="stExpander"] details,
     [data-testid="stForm"], [data-testid="stAlert"], [data-testid="stNotification"],
     .stDataFrame, [data-testid="stTable"] {
         border-radius: 16px !important;
         box-shadow: 0 1px 0 rgba(255,255,255,.04) inset,
                     0 10px 28px rgba(0,0,0,.34), 0 2px 8px rgba(0,0,0,.22) !important;
-        transition: transform .28s var(--ork-ease), box-shadow .28s var(--ork-ease),
-                    border-color .28s var(--ork-ease) !important;
-        transform-style: preserve-3d; will-change: transform;
+        transition: box-shadow .2s var(--ork-ease), border-color .2s var(--ork-ease) !important;
     }
     .mnil:hover, [data-testid="stMetric"]:hover, [data-testid="stExpander"] details:hover,
     [data-testid="stForm"]:hover {
         box-shadow: 0 1px 0 rgba(255,255,255,.07) inset,
-                    0 22px 50px rgba(0,0,0,.5), 0 8px 20px rgba(59,130,246,.22) !important;
+                    0 18px 40px rgba(0,0,0,.46), 0 6px 16px rgba(59,130,246,.18) !important;
         border-color: rgba(96,165,250,.40) !important;
     }
-    /* Métricas (KPIs): valor com leve brilho da marca + realce 3D no hover */
+    /* Métricas (KPIs): valor com leve brilho da marca (estático) */
     [data-testid="stMetricValue"] {
-        text-shadow: 0 0 22px rgba(96,165,250,.28);
+        text-shadow: 0 0 22px rgba(96,165,250,.24);
         letter-spacing: -0.01em;
     }
 
-    /* ---- BOTÕES: elevação, brilho e "shimmer" (sem mudar as cores do design system) ---- */
+    /* ---- BOTÕES: elevação sutil só em hover (sombra/brilho; sem shimmer, sem transform) ---- */
     .stButton > button, [data-testid^="stBaseButton"], [data-testid="baseButton-primary"] {
-        position: relative; overflow: hidden;
-        transition: transform .18s var(--ork-ease), box-shadow .22s var(--ork-ease),
-                    filter .22s var(--ork-ease) !important;
+        transition: box-shadow .18s var(--ork-ease), filter .18s var(--ork-ease) !important;
     }
     .stButton > button:hover, [data-testid^="stBaseButton"]:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 26px rgba(59,130,246,.35), 0 2px 8px rgba(0,0,0,.3) !important;
-        filter: saturate(118%) brightness(1.04);
+        box-shadow: 0 8px 22px rgba(59,130,246,.30), 0 2px 8px rgba(0,0,0,.28) !important;
+        filter: saturate(112%) brightness(1.03);
     }
-    .stButton > button:active, [data-testid^="stBaseButton"]:active { transform: translateY(0) scale(.99); }
-    .stButton > button::after, [data-testid^="stBaseButton"]::after {
-        content:""; position:absolute; top:0; left:-140%; width:60%; height:100%;
-        background: linear-gradient(100deg, transparent, rgba(255,255,255,.28), transparent);
-        transform: skewX(-18deg); transition: left .6s var(--ork-ease);
-    }
-    .stButton > button:hover::after, [data-testid^="stBaseButton"]:hover::after { left: 160%; }
 
-    /* ---- INPUTS: foco luminoso da marca ---- */
+    /* ---- INPUTS: foco luminoso da marca (só ao focar) ---- */
     [data-baseweb="input"], [data-baseweb="textarea"], [data-baseweb="select"] > div,
     .stTextInput input, .stNumberInput input, .stTextArea textarea {
-        transition: box-shadow .22s var(--ork-ease), border-color .22s var(--ork-ease) !important;
+        transition: box-shadow .18s var(--ork-ease), border-color .18s var(--ork-ease) !important;
     }
     .stTextInput input:focus, .stNumberInput input:focus, .stTextArea textarea:focus,
     [data-baseweb="input"]:focus-within, [data-baseweb="select"] > div:focus-within {
@@ -159,9 +141,7 @@ def _css_premium() -> str:
         border-color: @BRAND2@ !important;
     }
 
-    /* ---- TABS: aba ativa com brilho e transição suave ---- */
-    [data-baseweb="tab"] { transition: color .2s var(--ork-ease), transform .2s var(--ork-ease) !important; }
-    [data-baseweb="tab"]:hover { transform: translateY(-1px); }
+    /* ---- TABS: aba ativa com brilho (estático) ---- */
     [data-baseweb="tab-highlight"], [data-baseweb="tab-border"] {
         box-shadow: 0 0 14px rgba(96,165,250,.6); border-radius: 999px;
     }
@@ -177,46 +157,28 @@ def _css_premium() -> str:
     ::selection { background: rgba(59,130,246,0.35); color: #fff; }
     :focus-visible { outline: 2px solid @BRAND2@ !important; outline-offset: 2px !important; }
 
-    /* ---- Acessibilidade: desliga animações/movimento quando o usuário pede ---- */
+    /* ---- Acessibilidade: zera até as transições de hover/foco quando o usuário pede ---- */
     @media (prefers-reduced-motion: reduce) {
-        .stApp::before, .block-container { animation: none !important; }
         .mnil, [data-testid="stMetric"], [data-testid="stExpander"] details,
-        [data-testid="stForm"], .stButton > button, [data-testid^="stBaseButton"] {
+        [data-testid="stForm"], .stButton > button, [data-testid^="stBaseButton"],
+        .stTextInput input, .stNumberInput input, .stTextArea textarea {
             transition: none !important;
         }
-        .stButton > button::after, [data-testid^="stBaseButton"]::after { display:none !important; }
     }
     """)
 
 
 def _js_premium() -> str:
-    """JS da camada premium: inclinação 3D REAL (tilt/parallax) seguindo o mouse nos cartões
-    (.mnil) e métricas. Idempotente (instala listeners delegados no document UMA vez, sobrevive
-    aos reruns do Streamlit) e respeita prefers-reduced-motion. Puro/defensivo (try/catch)."""
+    """JS da camada premium. REMOVIDO o tilt 3D que seguia o mouse: ele reescrevia o `transform`
+    dos cartões a cada movimento do mouse, forçando repaint contínuo (parte do "piscar") e era o
+    efeito 3D que o usuário pediu para tirar. Mantém-se uma guarda idempotente (não faz nada) para
+    não reinstalar nada nos reruns do Streamlit e para o contrato de injeção seguir igual. A
+    profundidade agora é 100% CSS estático (ver _css_premium). Puro/defensivo."""
     return """
     try {
-      if (!window.__orkTilt3d) {
-        window.__orkTilt3d = true;
-        var _reduz = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        if (!_reduz) {
-          var ORK_SEL = '.mnil, [data-testid="stMetric"]';
-          document.addEventListener('mousemove', function(e){
-            var t = e.target; if (!t || !t.closest) return;
-            var el = t.closest(ORK_SEL); if (!el) return;
-            var r = el.getBoundingClientRect(); if (!r.width || !r.height) return;
-            var px = (e.clientX - r.left) / r.width - 0.5;
-            var py = (e.clientY - r.top) / r.height - 0.5;
-            el.style.transition = 'transform .08s ease-out';
-            el.style.transform = 'perspective(900px) rotateX(' + (-py*4.5).toFixed(2) +
-                                 'deg) rotateY(' + (px*6).toFixed(2) + 'deg) translateY(-4px)';
-          }, {passive:true});
-          document.addEventListener('mouseout', function(e){
-            var t = e.target; if (!t || !t.closest) return;
-            var el = t.closest(ORK_SEL); if (!el) return;
-            el.style.transition = 'transform .4s cubic-bezier(.2,.8,.2,1)';
-            el.style.transform = '';
-          }, {passive:true});
-        }
+      if (!window.__orkPremium) {
+        window.__orkPremium = true;
+        /* Sem efeitos de movimento: a profundidade é estática (CSS). Nada a instalar aqui. */
       }
     } catch (e) {}
     """

@@ -473,7 +473,13 @@ def _central_dados() -> int:
         import central_dados
         return central_dados.main([a for a in sys.argv[1:] if a != "--central"])
     except Exception as e:
-        print("Central de Dados indisponível: %s" % e)
+        # O exe é de JANELA (console=False): um print aqui iria para o nada e o atalho
+        # "Central de Dados" pareceria "não abrir". Mostra a causa num diálogo NATIVO visível.
+        log.exception("Central de Dados indisponível.")
+        _mostrar_erro_nativo(
+            "OpenRotas — Central de Dados",
+            "Não foi possível abrir a Central de Dados.\n\nDetalhe: %s\n\n"
+            "Log em:\n%s" % (e, cfg.ensure_user_dirs().get("logs", "")))
         return 1
 
 

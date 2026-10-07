@@ -70,6 +70,15 @@ for _meta in ("streamlit", "altair", "pandas", "numpy", "pyarrow", "plotly", "py
 # estática pode não enxergar) — congela-os explicitamente no bundle.
 hiddenimports += ["desktop_config", "diagnostics", "janela", "notificacao",
                   "engines", "engines.osrm_manager"]
+# [CENTRAL DE DADOS / RECURSOS] Os módulos de desktop/resources são importados em RUNTIME por
+# nome CHATO (ex.: `import central_dados`, `import provisionamento`) após um sys.path.insert que
+# NÃO existe no app congelado — a análise estática a partir do launcher.py não os alcança, então
+# ficavam DE FORA do bundle: `OpenRotas.exe --central` fazia `import central_dados` falhar e, num
+# exe de janela (console=False), o fallback de texto imprimia no nada e o processo sumia ("a
+# Central de Dados não abre"). Correção: `desktop/resources` entra no pathex (abaixo) e cada módulo
+# é congelado pelos DOIS nomes — chato (central_dados) e de pacote (resources.central_dados).
+_RES_MODS = ["central_dados", "provisionamento", "downloader", "resource_manager", "painel", "notificacao"]
+hiddenimports += _RES_MODS + ["resources"] + ["resources.%s" % _m for _m in _RES_MODS]
 try:
     hiddenimports += collect_submodules("winotify")   # toast nativo do Windows (se instalado)
 except Exception:
@@ -203,7 +212,9 @@ a = Analysis(
     [os.path.join(REPO_ROOT, "desktop", "app", "launcher.py")],
     # pathex inclui desktop/ (pacote 'engines') e desktop/app (módulos soltos) além da raiz.
     pathex=[os.path.join(REPO_ROOT, "desktop"),
-            os.path.join(REPO_ROOT, "desktop", "app"), REPO_ROOT],
+            os.path.join(REPO_ROOT, "desktop", "app"),
+            os.path.join(REPO_ROOT, "desktop", "resources"),  # p/ os imports chatos da Central de Dados
+            REPO_ROOT],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
