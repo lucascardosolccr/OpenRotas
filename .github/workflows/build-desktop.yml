@@ -154,6 +154,34 @@ jobs:
             Write-Error "PyInstaller não gerou OpenRotas.exe (ver build_pyinstaller.log)"
           }
 
+      - name: Verificar MOTOR OSRM NATIVO no bundle final (sinal legível via API)
+        # O passo de download do motor é NÃO-FATAL (exit 0 se o asset não existir), então um
+        # "success" não prova que o osrm-routed.exe foi embarcado. Aqui conferimos o BUNDLE FINAL
+        # (procura recursiva) e escrevemos SIM/NÃO + versão no RESUMO do job — legível pela API sem
+        # baixar o log. Não-fatal: preserva a filosofia de zero-regressão (sem motor, o app cai no
+        # OSRM público), mas dá um sinal definitivo de que o turnkey nativo está no instalador.
+        if: always()
+        working-directory: desktop
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $exe = Get-ChildItem -Recurse -Filter osrm-routed.exe build/dist/OpenRotas -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($exe) {
+            $rel = $exe.FullName.Substring((Resolve-Path "build/dist/OpenRotas").Path.Length).TrimStart('\','/')
+            $dlls = (Get-ChildItem $exe.DirectoryName -Filter *.dll -ErrorAction SilentlyContinue).Count
+            $ver = ""
+            try { $ver = (& $exe.FullName --version 2>&1 | Select-Object -First 1) } catch { $ver = "(--version falhou)" }
+            "## Motor OSRM nativo: ✅ EMBARCADO" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+            "- caminho no bundle: ``$rel``" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+            "- DLLs ao lado: $dlls" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+            "- versão: ``$ver``" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+            Write-Host "OSRM NATIVO OK: $rel (DLLs=$dlls, ver=$ver)"
+          } else {
+            "## Motor OSRM nativo: ❌ AUSENTE do bundle" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+            "O instalador sairá SEM motor nativo — o app cairá no OSRM público (sem regressão, porém lento)." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+            Write-Warning "osrm-routed.exe AUSENTE do bundle final."
+          }
+
       - name: Log do PyInstaller (sempre, útil se falhar)
         if: always()
         continue-on-error: true   # diagnóstico: uma falha de upload (ex.: cota) NUNCA pode barrar o instalador
