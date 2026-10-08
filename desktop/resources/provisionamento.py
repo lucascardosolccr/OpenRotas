@@ -144,7 +144,10 @@ def baixar_grafo(progresso=None, conf: dict | None = None) -> dict:
         return {"ok": False, "caminho": None, "detalhe": "erro: %s" % e}
     if caminho and os.path.exists(caminho):
         return {"ok": True, "caminho": caminho, "detalhe": "grafo pronto em %s" % caminho}
-    return {"ok": False, "caminho": None, "detalhe": "não foi possível provisionar (verifique conexão)"}
+    return {"ok": False, "caminho": None,
+            "detalhe": ("não foi possível baixar/preparar o mapa. Verifique a conexão e o espaço em "
+                        "disco (~15 GB livres durante a instalação) e clique novamente — o download "
+                        "RETOMA de onde parou (as partes já baixadas são reaproveitadas).")}
 
 
 def _reassemblar_bigparts() -> dict:

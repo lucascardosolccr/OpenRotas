@@ -1452,6 +1452,27 @@ def test_downloader_sha256_rejeita(tmp_path):
     assert r["ok"] is False and not out.exists()           # hash errado → descartado, sem retry infinito
     assert r["tentativas"] == 1
 
+def test_downloader_eof_precoce_nao_finaliza_truncado(tmp_path):
+    # Regressão do "verifique conexão": um servidor/proxy que corta o stream SEM erro (read()
+    # devolve vazio antes do Content-Length) NÃO pode virar "download ok" — senão a parte truncada
+    # corromperia o grafo concatenado. Deve tratar como falha e RETOMAR (Range) até completar.
+    import io
+    from resources import downloader as dl
+    dados = b"Z" * 1000
+    estado = {"n": 0}
+    def abrir(url, inicio=0, timeout=120):
+        estado["n"] += 1
+        buf = dados[inicio:]
+        if estado["n"] == 1:
+            # declara o total cheio, mas entrega só 400 bytes e dá EOF (sem levantar)
+            return io.BytesIO(buf[:400]), len(buf), (inicio > 0)
+        return io.BytesIO(buf), len(buf), (inicio > 0)
+    out = tmp_path / "f.bin"
+    r = dl.baixar("http://x/f", out, abrir=abrir, dormir=lambda s: None, tentativas=4)
+    assert r["ok"] is True
+    assert out.read_bytes() == dados          # completou via retomada, sem truncar
+    assert estado["n"] >= 2                    # a 1ª (truncada) não foi aceita; retomou
+
 def test_downloader_sha256_aceita(tmp_path):
     import hashlib
     from resources import downloader as dl

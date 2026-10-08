@@ -141,6 +141,14 @@ def baixar(url, destino, progresso=None, sha256: str = "", tentativas: int = 4, 
                     fobj.close()
                 except Exception:
                     pass
+            # EOF PRECOCE sem erro: alguns servidores/proxies cortam o stream de um arquivo grande
+            # SEM levantar exceção — read() devolve vazio antes do fim. Se o Content-Length era
+            # conhecido e recebemos MENOS, NÃO é sucesso: renomear esse .part truncado para o
+            # destino faria o grafo concatenar lixo (extração falha → "verifique conexão"). Trata
+            # como falha transitória → a próxima tentativa RETOMA (Range) de onde parou.
+            if total_abs and baixado < total_abs:
+                raise IOError("transferência incompleta: %d de %d bytes (EOF precoce)"
+                              % (baixado, total_abs))
             # integridade (§20)
             if sha256:
                 got = _sha256(part)

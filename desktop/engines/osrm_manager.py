@@ -391,6 +391,16 @@ def _baixar_partes(url: str, destino_tar, progresso=None, sha256: str = "") -> b
             parte_url = "%s%02d" % (base, i)
             tmp_i = destino_tar.with_suffix(destino_tar.suffix + (".p%02d" % i))
 
+            # RETOMADA ENTRE CLIQUES: o downloader só renomeia para o nome FINAL da parte quando a
+            # transferência fecha por completo (ver a checagem de EOF precoce no downloader), então
+            # uma parte já presente é íntegra — reaproveita em vez de rebaixar ~2 GB. Assim um
+            # download de ~5 GB numa conexão instável conclui ao longo de vários cliques.
+            if tmp_i.exists() and tmp_i.stat().st_size > 0:
+                parts_tmp.append(tmp_i)
+                _emitir(progresso, fase="baixando", parte=i, parte_concluida=True)
+                logger.info("[OSRM] parte %02d já baixada — reaproveitando.", i)
+                continue
+
             def _prog(ev, _i=i):
                 _emitir(progresso, fase="baixando", parte=_i, bytes=ev.get("baixado"),
                         total_parte=ev.get("total"), velocidade_bps=ev.get("velocidade_bps"),
@@ -445,18 +455,20 @@ def _baixar_partes(url: str, destino_tar, progresso=None, sha256: str = "") -> b
     except Exception:
         logger.warning("[OSRM] falha ao baixar/concatenar partes do grafo.", exc_info=True)
         abortou = True
-    finally:
-        for tmp_i in parts_tmp:
-            try:
-                tmp_i.unlink()
-            except Exception:
-                pass
     if abortou or not parts_tmp:
+        # NÃO apaga as partes já baixadas: ficam em disco para o PRÓXIMO clique RETOMAR de onde
+        # parou (só o .tar.gz concatenado, que ficou incompleto, é descartado).
         try:
             destino_tar.unlink()
         except Exception:
             pass
         return False
+    # Sucesso: o tar concatenado está completo → agora sim libera as partes p/ recuperar espaço.
+    for tmp_i in parts_tmp:
+        try:
+            tmp_i.unlink()
+        except Exception:
+            pass
     return True
 
 
