@@ -72,7 +72,10 @@ def _osrm_cfg_efetivo(conf: dict | None = None) -> dict:
 def docker_disponivel() -> bool:
     """True se o Docker está instalado e rodando (necessário só para SERVIR o roteamento local)."""
     try:
-        import osrm_manager
+        try:
+            import osrm_manager
+        except ImportError:
+            from engines import osrm_manager   # app congelado: resolve pelo pacote
         return osrm_manager._docker_disponivel()
     except Exception:
         return False
@@ -125,7 +128,10 @@ def baixar_grafo(progresso=None, conf: dict | None = None) -> dict:
     Observação honesta: ter o grafo habilita o roteamento LOCAL/offline, mas SERVIR exige Docker
     (ver ativar_roteamento_local). Sem Docker, o grafo fica pronto e o app segue no OSRM público."""
     try:
-        import osrm_manager
+        try:
+            import osrm_manager
+        except ImportError:
+            from engines import osrm_manager   # app congelado: resolve pelo pacote
     except Exception as e:
         return {"ok": False, "caminho": None, "detalhe": "osrm_manager indisponível: %s" % e}
     oc = _osrm_cfg_efetivo(conf)
@@ -212,7 +218,10 @@ def reparar_bases(progresso=None, conf: dict | None = None) -> dict:
 def motor_nativo_disponivel() -> bool:
     """True se o app traz o motor NATIVO embarcado (osrm-routed) — serve o grafo local SEM Docker."""
     try:
-        import osrm_manager
+        try:
+            import osrm_manager
+        except ImportError:
+            from engines import osrm_manager   # app congelado: resolve pelo pacote
         return osrm_manager.motor_nativo_disponivel()
     except Exception:
         return False

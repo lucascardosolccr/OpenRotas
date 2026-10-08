@@ -79,6 +79,14 @@ hiddenimports += ["desktop_config", "diagnostics", "janela", "notificacao",
 # é congelado pelos DOIS nomes — chato (central_dados) e de pacote (resources.central_dados).
 _RES_MODS = ["central_dados", "provisionamento", "downloader", "resource_manager", "painel", "notificacao"]
 hiddenimports += _RES_MODS + ["resources"] + ["resources.%s" % _m for _m in _RES_MODS]
+# Mesma armadilha nos OUTROS diretórios do desktop: engines/ (osrm_manager, benchmark),
+# data_local/ (local_data), telemetry/ (exec_profile, ana_incremental) e app/ (app_update) são
+# importados por nome CHATO (ex.: `import osrm_manager`) em runtime — a Central de Dados caía em
+# "No module named 'osrm_manager'" ao baixar o mapa. Congela cada um pelo nome chato (os diretórios
+# entram no pathex abaixo) além do nome de pacote onde fizer sentido.
+_ENGINE_MODS = ["osrm_manager", "benchmark"]
+_OUTROS_MODS = ["local_data", "exec_profile", "ana_incremental", "app_update"]
+hiddenimports += _ENGINE_MODS + ["engines.%s" % _m for _m in _ENGINE_MODS] + _OUTROS_MODS
 try:
     hiddenimports += collect_submodules("winotify")   # toast nativo do Windows (se instalado)
 except Exception:
@@ -214,6 +222,9 @@ a = Analysis(
     pathex=[os.path.join(REPO_ROOT, "desktop"),
             os.path.join(REPO_ROOT, "desktop", "app"),
             os.path.join(REPO_ROOT, "desktop", "resources"),  # p/ os imports chatos da Central de Dados
+            os.path.join(REPO_ROOT, "desktop", "engines"),    # osrm_manager, benchmark (nome chato)
+            os.path.join(REPO_ROOT, "desktop", "data_local"), # local_data (nome chato)
+            os.path.join(REPO_ROOT, "desktop", "telemetry"),  # exec_profile, ana_incremental (nome chato)
             REPO_ROOT],
     binaries=binaries,
     datas=datas,
