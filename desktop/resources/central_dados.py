@@ -95,6 +95,7 @@ class _App:
         self.root = root
         self.fila: "queue.Queue" = queue.Queue()
         self._ocupado = False
+        self._ultimo_erro_grafo = ""     # motivo real da última falha de download (fase 'erro')
         root.title("OpenRotas — Central de Dados")
         root.geometry("640x460")
         root.minsize(560, 420)
@@ -176,6 +177,7 @@ class _App:
     def _on_baixar_grafo(self):
         if self._ocupado:
             return
+        self._ultimo_erro_grafo = ""     # zera o motivo da tentativa anterior
         self._travar(True)
         self.barra.config(mode="indeterminate")
         self.barra.start(12)
@@ -241,7 +243,12 @@ class _App:
                 if tipo == "grafo":
                     fase = (dado or {}).get("fase")
                     b = (dado or {}).get("bytes") or 0
-                    if fase == "extraindo":
+                    if fase == "erro":
+                        # MOTIVO REAL da falha (rede/TLS/servidor/integridade) — guarda para compor
+                        # a mensagem final em vez do texto genérico.
+                        self._ultimo_erro_grafo = (dado or {}).get("detalhe") or ""
+                        self._set_status("Problema no download: %s" % self._ultimo_erro_grafo, "#b42318")
+                    elif fase == "extraindo":
                         self._set_status("Extraindo o pacote do grafo...")
                     elif fase == "concatenando":
                         self._set_status("Concatenando %s parte(s)..." % (dado or {}).get("partes", "?"))
@@ -268,7 +275,12 @@ class _App:
                         except Exception:
                             self._set_status(dado.get("detalhe", "Mapa instalado ✓"), "#1a7f4b")
                     else:
-                        self._set_status(dado.get("detalhe", ""), "#b42318")
+                        # Junta o motivo REAL capturado durante o download (fase 'erro') à mensagem
+                        # final — assim o usuário (e o suporte) vê a causa, não só o texto genérico.
+                        _base = dado.get("detalhe", "")
+                        _causa = getattr(self, "_ultimo_erro_grafo", "")
+                        _msg = ("%s  [causa: %s]" % (_base, _causa)) if _causa else _base
+                        self._set_status(_msg, "#b42318")
                     self._travar(False)
                     self._atualizar_inventario()
                 elif tipo == "dossie_fim":

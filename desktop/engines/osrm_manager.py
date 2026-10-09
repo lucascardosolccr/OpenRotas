@@ -412,7 +412,11 @@ def _baixar_partes(url: str, destino_tar, progresso=None, sha256: str = "") -> b
                     # fim normal (parte inexistente) ou falha real?
                     if not _parte_existe(parte_url):
                         break
-                    logger.warning("[OSRM] parte %02d falhou de modo persistente; abortando.", i)
+                    _motivo = r.get("detalhe") or "falha ao baixar a parte"
+                    logger.warning("[OSRM] parte %02d falhou de modo persistente: %s", i, _motivo)
+                    # Surfacing: manda o MOTIVO REAL para a UI (status da Central de Dados) em vez da
+                    # mensagem genérica — sem isso, rede/TLS/antivírus viram só "verifique conexão".
+                    _emitir(progresso, fase="erro", parte=i, detalhe=_motivo)
                     abortou = True
                     break
             else:
@@ -428,6 +432,7 @@ def _baixar_partes(url: str, destino_tar, progresso=None, sha256: str = "") -> b
                 except Exception as e:
                     if _parte_ausente(e):
                         break
+                    _emitir(progresso, fase="erro", parte=i, detalhe="%s: %s" % (type(e).__name__, e))
                     abortou = True
                     break
             parts_tmp.append(tmp_i)
@@ -451,9 +456,11 @@ def _baixar_partes(url: str, destino_tar, progresso=None, sha256: str = "") -> b
                         h.update(b)
                 if h.hexdigest().lower() != str(sha256).lower():
                     logger.warning("[OSRM] sha256 do grafo concatenado não confere — descartando.")
+                    _emitir(progresso, fase="erro", detalhe="verificação de integridade (sha256) falhou")
                     abortou = True
-    except Exception:
+    except Exception as e:
         logger.warning("[OSRM] falha ao baixar/concatenar partes do grafo.", exc_info=True)
+        _emitir(progresso, fase="erro", detalhe="%s: %s" % (type(e).__name__, e))
         abortou = True
     if abortou or not parts_tmp:
         # NÃO apaga as partes já baixadas: ficam em disco para o PRÓXIMO clique RETOMAR de onde
@@ -527,6 +534,8 @@ def garantir_grafo(cfg_osrm: dict | None, destino_dir, progresso=None) -> str | 
             cand = next(staging.rglob("*.osrm"), None)
             if cand is None:
                 logger.warning("[OSRM] arquivo .osrm não encontrado no pacote; descartando.")
+                _emitir(progresso, fase="erro",
+                        detalhe="pacote do grafo sem arquivo .osrm (download corrompido — tente de novo)")
                 return gp or None
             # move todos os artefatos do grafo para o destino final. O padrão é DERIVADO do
             # arquivo base encontrado (cand.name == "<base>.osrm") — não um nome fixo — para
@@ -546,8 +555,9 @@ def garantir_grafo(cfg_osrm: dict | None, destino_dir, progresso=None) -> str | 
                 except Exception:
                     pass
             shutil.rmtree(staging, ignore_errors=True)
-    except Exception:
+    except Exception as e:
         logger.warning("[OSRM] falha ao provisionar o grafo.", exc_info=True)
+        _emitir(progresso, fase="erro", detalhe="%s: %s" % (type(e).__name__, e))
         return gp or None
 
 
