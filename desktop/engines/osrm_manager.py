@@ -409,10 +409,19 @@ def _baixar_partes(url: str, destino_tar, progresso=None, sha256: str = "") -> b
             if downloader is not None:
                 r = downloader.baixar(parte_url, tmp_i, progresso=_prog, tentativas=4, timeout=120)
                 if not r.get("ok"):
+                    _motivo = r.get("detalhe") or ("falha ao baixar a parte %02d" % i)
                     # fim normal (parte inexistente) ou falha real?
                     if not _parte_existe(parte_url):
+                        # 'parte inexistente' é fim normal SÓ se já baixamos alguma. Se NEM a 1ª
+                        # parte existe, NÃO é fim: a origem está inacessível (HTTP 403/404 — proxy,
+                        # firewall, antivírus ou rate-limit do GitHub bloqueando o download). Surface.
+                        if not parts_tmp:
+                            _emitir(progresso, fase="erro", parte=i,
+                                    detalhe=("a 1ª parte do mapa não ficou acessível (HTTP 403/404): "
+                                             "rede/proxy/firewall/antivírus pode estar bloqueando o "
+                                             "download do GitHub. Detalhe: %s" % _motivo))
+                            abortou = True
                         break
-                    _motivo = r.get("detalhe") or "falha ao baixar a parte"
                     logger.warning("[OSRM] parte %02d falhou de modo persistente: %s", i, _motivo)
                     # Surfacing: manda o MOTIVO REAL para a UI (status da Central de Dados) em vez da
                     # mensagem genérica — sem isso, rede/TLS/antivírus viram só "verifique conexão".
@@ -431,6 +440,12 @@ def _baixar_partes(url: str, destino_tar, progresso=None, sha256: str = "") -> b
                             out.write(b)
                 except Exception as e:
                     if _parte_ausente(e):
+                        if not parts_tmp:
+                            _emitir(progresso, fase="erro", parte=i,
+                                    detalhe=("a 1ª parte do mapa não ficou acessível (HTTP 403/404): "
+                                             "rede/proxy/firewall/antivírus pode estar bloqueando o "
+                                             "download do GitHub. Detalhe: %s: %s" % (type(e).__name__, e)))
+                            abortou = True
                         break
                     _emitir(progresso, fase="erro", parte=i, detalhe="%s: %s" % (type(e).__name__, e))
                     abortou = True
