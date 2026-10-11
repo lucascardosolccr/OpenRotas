@@ -106,6 +106,14 @@ class _App:
         ttk.Label(cab, text="Central de Dados", font=("Segoe UI", 16, "bold")).pack(anchor="w")
         ttk.Label(cab, text="Baixe e instale todo o conteúdo do Brasil direto na pasta do app.",
                   foreground="#5b6676").pack(anchor="w")
+        # Versão visível: confirma qual build está instalado (ajuda a descartar instalador em cache).
+        try:
+            import desktop_config as _dc
+            _ver = getattr(_dc, "APP_VERSION", "?")
+        except Exception:
+            _ver = "?"
+        ttk.Label(cab, text="versão %s" % _ver, foreground="#8a93a0",
+                  font=("Segoe UI", 8)).pack(anchor="w")
 
         self.resumo = ttk.Label(root, text="", justify="left", font=("Segoe UI", 10))
         self.resumo.pack(fill="x", **pad)
@@ -116,7 +124,19 @@ class _App:
         self.estado_grafo.pack(anchor="w", padx=12, pady=(8, 4))
         self.btn_baixar = ttk.Button(grafo, text="Baixar o mapa do Brasil (~6,7 GB)",
                                      command=self._on_baixar_grafo)
-        self.btn_baixar.pack(anchor="w", padx=12, pady=(0, 10))
+        self.btn_baixar.pack(anchor="w", padx=12, pady=(0, 6))
+        # ALTERNATIVA GARANTIDA: se o download dentro do app falhar (mas o navegador baixa normal),
+        # o usuário baixa as partes pelo navegador e aponta a pasta — montagem 100% offline.
+        alt = ttk.Frame(grafo)
+        alt.pack(fill="x", padx=12, pady=(0, 10))
+        ttk.Label(alt, text="Não baixou pelo app? Baixe pelo navegador e importe:",
+                  foreground="#5b6676").pack(anchor="w")
+        linha_alt = ttk.Frame(alt)
+        linha_alt.pack(fill="x", pady=(2, 0))
+        ttk.Button(linha_alt, text="Abrir página de download",
+                   command=self._on_abrir_pagina_download).pack(side="left")
+        ttk.Button(linha_alt, text="Importar mapa de uma pasta…",
+                   command=self._on_importar_local).pack(side="left", padx=8)
 
         # Dossiê de Rota por nome de cidade (integração total dos dados numa rota).
         dossie = ttk.LabelFrame(root, text="Dossiê de Rota (origem → destino, por cidade)")
@@ -188,6 +208,37 @@ class _App:
         def _prog(ev):
             self.fila.put(("grafo", ev))
         r = prov.baixar_grafo(progresso=_prog)
+        self.fila.put(("grafo_fim", r))
+
+    def _on_abrir_pagina_download(self):
+        """Abre, no navegador do sistema, a página de download das partes do mapa."""
+        try:
+            import webbrowser
+            webbrowser.open("https://github.com/lucascardosolccr/OpenRotas/releases/tag/osrm-brasil-latest")
+            self._set_status("Baixe no navegador os arquivos 'brazil-osrm-mld.tar.gz.part00/01/02' "
+                             "para uma pasta e use 'Importar mapa de uma pasta…'.")
+        except Exception as e:
+            self._set_status("Não consegui abrir o navegador: %s" % e, "#b42318")
+
+    def _on_importar_local(self):
+        """Pede uma pasta com as partes baixadas pelo navegador e monta o mapa offline (sem rede)."""
+        if self._ocupado:
+            return
+        from tkinter import filedialog
+        pasta = filedialog.askdirectory(title="Pasta com os arquivos do mapa (brazil-osrm-mld.tar.gz.part*)")
+        if not pasta:
+            return
+        self._ultimo_erro_grafo = ""
+        self._travar(True)
+        self.barra.config(mode="indeterminate")
+        self.barra.start(12)
+        self._set_status("Montando o mapa a partir da pasta (offline)...")
+        threading.Thread(target=self._thread_importar, args=(pasta,), daemon=True).start()
+
+    def _thread_importar(self, pasta):
+        def _prog(ev):
+            self.fila.put(("grafo", ev))
+        r = prov.importar_grafo_de_pasta(pasta, progresso=_prog)
         self.fila.put(("grafo_fim", r))
 
     def _on_reparar(self):

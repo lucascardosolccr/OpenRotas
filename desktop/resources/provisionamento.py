@@ -137,17 +137,70 @@ def baixar_grafo(progresso=None, conf: dict | None = None) -> dict:
     oc = _osrm_cfg_efetivo(conf)
     if not str(oc.get("graph_url", "")).strip():
         return {"ok": False, "caminho": None, "detalhe": "sem graph_url (nem padrão) — nada a baixar"}
+    # Captura o MOTIVO REAL (fase 'erro') aqui, independentemente da UI — assim ele SEMPRE entra na
+    # mensagem final E num arquivo de diagnóstico, mesmo que o evento não chegue à tela a tempo.
+    _capt = {"erro": ""}
+
+    def _wrap(ev):
+        try:
+            if (ev or {}).get("fase") == "erro" and (ev or {}).get("detalhe"):
+                _capt["erro"] = ev["detalhe"]
+        except Exception:
+            pass
+        if progresso is not None:
+            try:
+                progresso(ev)
+            except Exception:
+                pass
+
     try:
-        caminho = osrm_manager.garantir_grafo(oc, pasta_de_dados(), progresso=progresso)
+        caminho = osrm_manager.garantir_grafo(oc, pasta_de_dados(), progresso=_wrap)
     except Exception as e:
         logger.warning("[PROV] download do grafo falhou.", exc_info=True)
+        _escrever_diag("erro: %s" % e)
         return {"ok": False, "caminho": None, "detalhe": "erro: %s" % e}
     if caminho and os.path.exists(caminho):
         return {"ok": True, "caminho": caminho, "detalhe": "grafo pronto em %s" % caminho}
+    causa = _capt["erro"] or "sem detalhe (ver log openrotas-desktop.log)"
+    _escrever_diag(causa)
+    msg = ("não foi possível baixar/preparar o mapa. [causa: %s]. "
+           "Dica: se o navegador baixa as partes mas o app não, use 'Importar mapa baixado "
+           "pelo navegador' abaixo." % causa)
+    return {"ok": False, "caminho": None, "detalhe": msg}
+
+
+def _escrever_diag(causa: str) -> None:
+    """Grava a causa da última falha de download num arquivo fácil de achar, para suporte."""
+    try:
+        destino = pasta_de_dados()
+        destino.mkdir(parents=True, exist_ok=True)
+        import time as _t
+        (destino / "ultimo_erro_download.txt").write_text(
+            "OpenRotas — última falha ao baixar/preparar o mapa\n%s\n\ncausa: %s\n"
+            % (_t.strftime("%Y-%m-%d %H:%M:%S"), causa), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def importar_grafo_de_pasta(pasta, progresso=None) -> dict:
+    """Instala o mapa a partir de arquivos JÁ BAIXADOS (pelo navegador) numa pasta — SEM rede.
+    Caminho garantido quando o download dentro do app falha. Devolve {ok, caminho, detalhe}."""
+    try:
+        try:
+            import osrm_manager
+        except ImportError:
+            from engines import osrm_manager
+    except Exception as e:
+        return {"ok": False, "caminho": None, "detalhe": "osrm_manager indisponível: %s" % e}
+    try:
+        caminho = osrm_manager.instalar_grafo_de_partes_locais(pasta, pasta_de_dados(), progresso=progresso)
+    except Exception as e:
+        logger.warning("[PROV] import local do grafo falhou.", exc_info=True)
+        return {"ok": False, "caminho": None, "detalhe": "erro: %s" % e}
+    if caminho and os.path.exists(caminho):
+        return {"ok": True, "caminho": caminho, "detalhe": "mapa instalado de %s" % pasta}
     return {"ok": False, "caminho": None,
-            "detalhe": ("não foi possível baixar/preparar o mapa. Verifique a conexão e o espaço em "
-                        "disco (~15 GB livres durante a instalação) e clique novamente — o download "
-                        "RETOMA de onde parou (as partes já baixadas são reaproveitadas).")}
+            "detalhe": "não foi possível montar o mapa a partir da pasta (confira se baixou todas as partes)."}
 
 
 def _reassemblar_bigparts() -> dict:

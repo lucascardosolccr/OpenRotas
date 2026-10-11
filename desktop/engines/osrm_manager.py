@@ -607,6 +607,79 @@ def garantir_grafo(cfg_osrm: dict | None, destino_dir, progresso=None) -> str | 
         return gp or None
 
 
+def instalar_grafo_de_partes_locais(pasta, destino_dir, progresso=None) -> str | None:
+    """INSTALAÇÃO OFFLINE a partir de arquivos JÁ BAIXADOS (pelo navegador, p.ex.). Procura em
+    `pasta` os pedaços 'brazil-osrm-mld.tar.gz.part*' (ou um '.tar.gz' único), concatena na ordem,
+    extrai e promove para `destino_dir` — SEM rede. É o caminho garantido quando o download dentro
+    do app falha mas o navegador baixa normal. Devolve o caminho do .osrm, ou None. Não levanta."""
+    import tarfile, shutil
+    try:
+        p = Path(pasta)
+        if not p.is_dir():
+            _emitir(progresso, fase="erro", detalhe="pasta inválida: %s" % pasta)
+            return None
+        partes = sorted(p.glob("brazil-osrm-mld.tar.gz.part*"))
+        unico = sorted(p.glob("*.tar.gz"))
+        if not partes and not unico:
+            _emitir(progresso, fase="erro",
+                    detalhe=("nenhum arquivo do mapa encontrado na pasta (esperado "
+                             "'brazil-osrm-mld.tar.gz.part00', 'part01', ... ou um '.tar.gz')"))
+            return None
+        destino = Path(destino_dir)
+        destino.mkdir(parents=True, exist_ok=True)
+        tmp = destino / "_grafo_local.tar.gz"
+        staging = destino / "_staging"
+        try:
+            if partes:
+                _emitir(progresso, fase="concatenando", partes=len(partes))
+                with open(tmp, "wb") as out:
+                    for parte in partes:
+                        with open(parte, "rb") as f:
+                            while True:
+                                b = f.read(1024 * 1024)
+                                if not b:
+                                    break
+                                out.write(b)
+                origem_tar = tmp
+            else:
+                origem_tar = unico[0]
+            _emitir(progresso, fase="extraindo")
+            if staging.exists():
+                shutil.rmtree(staging, ignore_errors=True)
+            staging.mkdir(parents=True, exist_ok=True)
+            with tarfile.open(origem_tar, "r:gz") as t:
+                try:
+                    t.extractall(staging, filter="data")
+                except TypeError:
+                    t.extractall(staging)
+            cand = next(staging.rglob("*.osrm"), None)
+            if cand is None:
+                _emitir(progresso, fase="erro",
+                        detalhe="os arquivos não formam um grafo válido (.osrm não encontrado); "
+                                "confira se baixou TODAS as partes (part00, part01, part02).")
+                return None
+            for f in cand.parent.glob(cand.name + "*"):
+                destino_f = destino / f.name
+                if destino_f.exists():
+                    destino_f.unlink()
+                shutil.move(str(f), str(destino_f))
+            final = next(destino.glob("*.osrm"), None)
+            if final:
+                _emitir(progresso, fase="pronto", caminho=str(final))
+            return str(final) if final else None
+        finally:
+            try:
+                if tmp.exists():
+                    tmp.unlink()
+            except Exception:
+                pass
+            shutil.rmtree(staging, ignore_errors=True)
+    except Exception as e:
+        logger.warning("[OSRM] falha ao instalar grafo de partes locais.", exc_info=True)
+        _emitir(progresso, fase="erro", detalhe="%s: %s" % (type(e).__name__, e))
+        return None
+
+
 def encerrar(res: ResultadoMotor) -> None:
     """Encerra o OSRM que ESTE processo subiu. No-op caso contrário (não gerenciado). Dois casos:
       • motor NATIVO embarcado (sem container, res.nome vazio) → encerra o processo filho;

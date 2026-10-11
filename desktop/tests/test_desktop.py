@@ -161,6 +161,27 @@ def test_baixar_partes_sem_nenhuma_parte(tmp_path):
     assert osrm._baixar_partes(base, tmp_path / "out.tar.gz") is False
     assert not (tmp_path / "out.tar.gz").exists()
 
+def test_instalar_grafo_de_partes_locais(tmp_path):
+    # Caminho GARANTIDO (sem rede): usuário baixou as partes pelo navegador numa pasta.
+    import io, tarfile, gzip
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as t:
+        dado = b"GRAFO-OSRM-FAKE" * 5000
+        info = tarfile.TarInfo("brazil-latest.osrm"); info.size = len(dado)
+        t.addfile(info, io.BytesIO(dado))
+    targz = gzip.compress(buf.getvalue())
+    meio = len(targz) // 2
+    pasta = tmp_path / "baixados"; pasta.mkdir()
+    (pasta / "brazil-osrm-mld.tar.gz.part00").write_bytes(targz[:meio])
+    (pasta / "brazil-osrm-mld.tar.gz.part01").write_bytes(targz[meio:])
+    destino = tmp_path / "dados"
+    got = osrm.instalar_grafo_de_partes_locais(pasta, destino)
+    assert got == str(destino / "brazil-latest.osrm") and (destino / "brazil-latest.osrm").exists()
+
+def test_instalar_grafo_de_partes_locais_pasta_vazia(tmp_path):
+    vazia = tmp_path / "vazia"; vazia.mkdir()
+    assert osrm.instalar_grafo_de_partes_locais(vazia, tmp_path / "dados") is None
+
 def test_garantir_grafo_nome_base_diferente(tmp_path):
     # o move deve derivar o padrão do arquivo encontrado, não de 'brazil-latest' fixo.
     import io, tarfile, gzip
