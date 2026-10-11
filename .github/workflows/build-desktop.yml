@@ -237,12 +237,26 @@ jobs:
         working-directory: desktop
         shell: pwsh
         run: |
-          & "build/dist/OpenRotas/OpenRotas.exe" --preflight-download
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "Preflight do download do mapa FALHOU (exit $LASTEXITCODE) — não publicar este instalador."
+          # OpenRotas.exe é app de JANELA (console=False): com '& exe' o $LASTEXITCODE volta VAZIO
+          # (foi o que reprovou o build #36 por engano). Start-Process -Wait -PassThru dá o ExitCode
+          # real; e, por garantia, o preflight grava preflight_result.txt (portão confiável).
+          Remove-Item "preflight_result.txt","preflight_out.txt","preflight_err.txt" -ErrorAction SilentlyContinue
+          $p = Start-Process -FilePath "build/dist/OpenRotas/OpenRotas.exe" `
+                 -ArgumentList "--preflight-download" -Wait -PassThru -NoNewWindow `
+                 -RedirectStandardOutput "preflight_out.txt" -RedirectStandardError "preflight_err.txt"
+          if (Test-Path "preflight_out.txt") { Get-Content "preflight_out.txt" | Write-Host }
+          if (Test-Path "preflight_err.txt") { Get-Content "preflight_err.txt" | Write-Host }
+          $resultado = ""
+          if (Test-Path "preflight_result.txt") { $resultado = (Get-Content "preflight_result.txt" -Raw) }
+          Write-Host "ExitCode=$($p.ExitCode) ; result-file:"
+          Write-Host $resultado
+          # Portão: o arquivo precisa começar com OK. (ExitCode é checado só como reforço quando há arquivo.)
+          if ($resultado.TrimStart().StartsWith("OK")) {
+            Write-Host "Preflight do download do mapa: OK"
+          } else {
+            Write-Error "Preflight do download do mapa FALHOU — não publicar este instalador."
             exit 1
           }
-          Write-Host "Preflight do download do mapa: OK"
 
       - name: Gerar instalador (Inno Setup)
         working-directory: desktop

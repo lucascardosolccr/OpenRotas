@@ -60,3 +60,8 @@ Thumbs.db
 desktop/config/_config_padrao.ork
 # Motor OSRM nativo (osrm-routed + DLLs) baixado no CI; binário pesado, NUNCA commitar
 desktop/engines/bin/
+
+# Artefatos do preflight do download (gerados em runtime/CI)
+preflight_result.txt
+preflight_out.txt
+preflight_err.txt

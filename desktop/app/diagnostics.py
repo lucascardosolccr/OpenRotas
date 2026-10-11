@@ -113,6 +113,14 @@ def preflight_download(verbose: bool = True) -> int:
                 print("  x %s" % p)
         else:
             print("PREFLIGHT DO DOWNLOAD DO MAPA: OK (módulos + TLS + fetch do asset real)")
+    # Resultado também num ARQUIVO: OpenRotas.exe é app de janela (console=False) e o código de
+    # saída não é capturado de forma confiável por quem o invoca (o CI lia $LASTEXITCODE vazio).
+    # O CI lê este arquivo como portão confiável, independentemente do exit code.
+    try:
+        with open("preflight_result.txt", "w", encoding="utf-8") as f:
+            f.write("OK\n" if not probs else ("FALHOU\n" + "\n".join(probs) + "\n"))
+    except Exception:
+        pass
     return 0 if not probs else 2
 
 
