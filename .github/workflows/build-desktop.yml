@@ -228,6 +228,22 @@ jobs:
           & "build/dist/OpenRotas/OpenRotas.exe" --diagnostico --silencioso
           Write-Host "diagnóstico exit code: $LASTEXITCODE"
 
+      - name: Preflight do download do mapa (GUARDA ANTI-REGRESSÃO — REPROVA o build se quebrar)
+        # Roda o EXE EMPACOTADO exercitando os pontos que já quebraram o download do mapa na
+        # máquina do usuário (módulos da Central de Dados ausentes do bundle; certificado TLS
+        # recusado). Como os testes em Python rodam no código-fonte (Linux) e NUNCA pegavam isso,
+        # esta verificação no .exe real é a garantia de que um instalador que não baixaria o mapa
+        # NÃO é publicado. SEM continue-on-error: falha aqui = build vermelho.
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          & "build/dist/OpenRotas/OpenRotas.exe" --preflight-download
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Preflight do download do mapa FALHOU (exit $LASTEXITCODE) — não publicar este instalador."
+            exit 1
+          }
+          Write-Host "Preflight do download do mapa: OK"
+
       - name: Gerar instalador (Inno Setup)
         working-directory: desktop
         shell: pwsh

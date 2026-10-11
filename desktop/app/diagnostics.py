@@ -51,6 +51,71 @@ def _osrm_ok(url: str) -> bool:
         return False
 
 
+_UA_PF = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) OpenRotas-Desktop/1.0"
+
+
+def preflight_download(verbose: bool = True) -> int:
+    """GUARDA ANTI-REGRESSÃO do download do mapa — roda no EXE EMPACOTADO (no CI pós-build) e
+    exercita EXATAMENTE os pontos que já quebraram, para REPROVAR um instalador que não baixaria
+    o mapa:
+      1) os módulos da Central de Dados importam pelo nome usado em runtime (classe
+         'No module named osrm_manager' / central_dados ausentes do bundle);
+      2) o contexto TLS constrói E um GET de 1 byte do asset REAL do GitHub responde 200/206
+         (classe certificado/TLS recusado no app empacotado).
+    Devolve 0 se tudo OK; !=0 lista os problemas. Rede: pulada com OPENROTAS_NO_NET=1 (só imports).
+    """
+    import importlib
+    probs = []
+    # (1) módulos por nome "chato" + fallback de pacote
+    for mod in ("central_dados", "provisionamento", "downloader", "resource_manager", "osrm_manager"):
+        ok = False
+        for nome in (mod, "resources." + mod, "engines." + mod):
+            try:
+                importlib.import_module(nome)
+                ok = True
+                break
+            except Exception:
+                pass
+        if not ok:
+            probs.append("módulo '%s' não importa no bundle" % mod)
+    # (2) TLS + fetch real de 1 byte do part00 (verificação de certificado + conectividade)
+    if os.environ.get("OPENROTAS_NO_NET") != "1":
+        try:
+            try:
+                import downloader as _dl
+            except Exception:
+                from resources import downloader as _dl
+            url = cfg.url_grafo_padrao()
+            ctx = _dl.contexto_ssl()
+            ultimo = ""
+            okfetch = False
+            for _t in range(3):     # tolera soluço transitório de rede no runner
+                try:
+                    req = urllib.request.Request(url, headers={"User-Agent": _UA_PF, "Range": "bytes=0-0"})
+                    with (urllib.request.urlopen(req, timeout=30, context=ctx) if ctx
+                          else urllib.request.urlopen(req, timeout=30)) as r:
+                        code = getattr(r, "status", 0) or r.getcode()
+                        r.read(1)
+                    if code in (200, 206):
+                        okfetch = True
+                        break
+                    ultimo = "HTTP %s" % code
+                except Exception as e:
+                    ultimo = "%s: %s" % (type(e).__name__, e)
+            if not okfetch:
+                probs.append("GET do mapa (part00) falhou: %s" % ultimo)
+        except Exception as e:
+            probs.append("preflight de rede abortou: %s: %s" % (type(e).__name__, e))
+    if verbose:
+        if probs:
+            print("PREFLIGHT DO DOWNLOAD DO MAPA: FALHOU")
+            for p in probs:
+                print("  x %s" % p)
+        else:
+            print("PREFLIGHT DO DOWNLOAD DO MAPA: OK (módulos + TLS + fetch do asset real)")
+    return 0 if not probs else 2
+
+
 def executar(verbose: bool = True) -> int:
     paths = cfg.ensure_user_dirs()
     hw = cfg.detectar_hardware()

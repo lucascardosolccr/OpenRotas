@@ -542,6 +542,13 @@ def main() -> int:
         import diagnostics
         return diagnostics.executar(verbose=("--silencioso" not in sys.argv))
 
+    # Modo PREFLIGHT DO DOWNLOAD: guarda anti-regressão rodada no CI sobre o EXE empacotado —
+    # confirma que os módulos da Central de Dados importam e que o TLS + fetch do asset do GitHub
+    # funcionam. Sai com !=0 (reprova o build) se algo que quebraria o download do mapa estiver mal.
+    if "--preflight-download" in sys.argv:
+        import diagnostics
+        return diagnostics.preflight_download(verbose=True)
+
     # Modo RECURSOS: Gerenciador de Recursos. Texto no terminal; com --html gera e abre a
     # Central de Recursos (painel visual) no navegador.
     if "--recursos" in sys.argv:

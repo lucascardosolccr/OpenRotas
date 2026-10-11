@@ -528,6 +528,15 @@ def test_diagnostico_essencial_ok(capsys, monkeypatch):
     assert "tudo essencial OK" in out
     assert "Offline:" in out and "Perfil de desempenho:" in out
 
+def test_preflight_download_modulos_importam(capsys, monkeypatch):
+    # Guarda anti-regressão: todos os módulos da Central de Dados precisam importar (classe
+    # 'No module named osrm_manager'). Com NO_NET=1 pula o fetch e checa só os imports.
+    monkeypatch.setenv("OPENROTAS_NO_NET", "1")
+    rc = diagnostics.preflight_download(verbose=True)
+    out = capsys.readouterr().out
+    assert rc == 0, out
+    assert "PREFLIGHT DO DOWNLOAD DO MAPA: OK" in out
+
 
 # ----------------------------- app_update (§19) ------------------------------
 def test_update_versao_atual_casa_com_config():
