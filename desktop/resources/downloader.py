@@ -13,6 +13,7 @@ Range, queda no meio e retomada. Puro stdlib. Nunca levanta para o chamador."""
 from __future__ import annotations
 
 import os
+import ssl
 import time
 import hashlib
 import logging
@@ -23,6 +24,25 @@ from pathlib import Path
 logger = logging.getLogger("openrotas.desktop.downloader")
 
 _BLOCO = 1024 * 256
+
+# UA de navegador: alguns CDNs/limites tratam melhor um UA conhecido do que um genérico.
+_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) OpenRotas-Desktop/1.0"
+
+
+def contexto_ssl():
+    """Contexto TLS com uma loja de certificados CONFIÁVEL. Num app empacotado (PyInstaller) o
+    Python embarcado às vezes não acha os certificados do sistema e RECUSA todo HTTPS (o download
+    do GitHub falha enquanto o navegador baixa normal). Usar o CA bundle do `certifi` resolve isso
+    de forma portátil. Fallback: contexto padrão do SO (no Windows usa a loja do sistema). NUNCA
+    desliga a verificação."""
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        try:
+            return ssl.create_default_context()
+        except Exception:
+            return None
 
 
 def humano_bytes(n) -> str:
@@ -61,11 +81,13 @@ def humano_eta(seg) -> str:
 def _abrir_http(url, inicio=0, timeout=120):
     """Abre `url` a partir do byte `inicio` (Range). Devolve (fileobj, total_desta_resposta,
     range_ok). total_desta_resposta = bytes QUE ESTA resposta trará (Content-Length)."""
-    headers = {"User-Agent": "OpenRotas-Desktop"}
+    headers = {"User-Agent": _UA}
     if inicio > 0:
         headers["Range"] = "bytes=%d-" % inicio
     req = urllib.request.Request(url, headers=headers)
-    resp = urllib.request.urlopen(req, timeout=timeout)
+    _ctx = contexto_ssl()
+    resp = (urllib.request.urlopen(req, timeout=timeout, context=_ctx) if _ctx
+            else urllib.request.urlopen(req, timeout=timeout))
     code = getattr(resp, "status", None) or resp.getcode()
     range_ok = (code == 206)                  # 206 = Partial Content (servidor honrou o Range)
     try:

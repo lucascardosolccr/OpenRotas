@@ -355,12 +355,29 @@ def _emitir(progresso, **campos) -> None:
         pass
 
 
+def _ctx_ssl():
+    """Contexto TLS com CA bundle confiável (certifi) — mesmo do downloader. Evita que o probe
+    falhe por verificação de certificado no app empacotado. None em último caso."""
+    try:
+        try:
+            from resources import downloader as _dl
+        except Exception:
+            import downloader as _dl
+        return _dl.contexto_ssl()
+    except Exception:
+        return None
+
+
 def _parte_existe(url: str, timeout: int = 30) -> bool:
     """Probe barato: a parte existe? (pede 1 byte via Range). False em 403/404/416 (fim das
     partes); True se respondeu 200/206. Em erro transitório, assume que EXISTE (não trata fim)."""
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "OpenRotas-Desktop", "Range": "bytes=0-0"})
-        with urllib.request.urlopen(req, timeout=timeout):
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) OpenRotas-Desktop/1.0",
+            "Range": "bytes=0-0"})
+        _ctx = _ctx_ssl()
+        with (urllib.request.urlopen(req, timeout=timeout, context=_ctx) if _ctx
+              else urllib.request.urlopen(req, timeout=timeout)):
             return True
     except Exception as e:
         if _parte_ausente(e):
@@ -431,8 +448,12 @@ def _baixar_partes(url: str, destino_tar, progresso=None, sha256: str = "") -> b
             else:
                 # fallback stdlib (sem retomada) — mantém o comportamento mínimo.
                 try:
-                    req = urllib.request.Request(parte_url, headers={"User-Agent": "OpenRotas-Desktop"})
-                    with urllib.request.urlopen(req, timeout=120) as resp, open(tmp_i, "wb") as out:
+                    req = urllib.request.Request(parte_url, headers={
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) OpenRotas-Desktop/1.0"})
+                    _ctx = _ctx_ssl()
+                    _abre = (urllib.request.urlopen(req, timeout=120, context=_ctx) if _ctx
+                             else urllib.request.urlopen(req, timeout=120))
+                    with _abre as resp, open(tmp_i, "wb") as out:
                         while True:
                             b = resp.read(1024 * 256)
                             if not b:
@@ -534,7 +555,17 @@ def garantir_grafo(cfg_osrm: dict | None, destino_dir, progresso=None) -> str | 
             else:
                 logger.info("[OSRM] provisionando grafo (download único) de %s", url)
                 _emitir(progresso, fase="baixando", bytes=0)
-                urllib.request.urlretrieve(url, tmp)
+                _req = urllib.request.Request(url, headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) OpenRotas-Desktop/1.0"})
+                _ctx = _ctx_ssl()
+                _abre = (urllib.request.urlopen(_req, timeout=120, context=_ctx) if _ctx
+                         else urllib.request.urlopen(_req, timeout=120))
+                with _abre as _resp, open(tmp, "wb") as _out:
+                    while True:
+                        _b = _resp.read(1024 * 256)
+                        if not _b:
+                            break
+                        _out.write(_b)
             _emitir(progresso, fase="extraindo")
             # Extrai numa área de STAGING; só promove ao destino se der certo — evita deixar
             # um .osrm PARCIAL que o próximo run confundiria com 'já provisionado'.

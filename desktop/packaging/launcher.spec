@@ -36,6 +36,9 @@ _pacotes_coletar = [
     # pythonnet/clr. Coletar tudo.
     "webview", "proxy_tools", "bottle", "typing_extensions",
     "clr_loader", "pythonnet",
+    # [TLS] certifi traz o cacert.pem usado pelo downloader (contexto_ssl) — sem ele o Python
+    # embarcado pode recusar o HTTPS do GitHub (download do mapa falha, enquanto o navegador baixa).
+    "certifi",
 ]
 datas, binaries, hiddenimports = [], [], []
 for _pac in _pacotes_coletar:
