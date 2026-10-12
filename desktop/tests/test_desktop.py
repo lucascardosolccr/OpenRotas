@@ -161,6 +161,22 @@ def test_baixar_partes_sem_nenhuma_parte(tmp_path):
     assert osrm._baixar_partes(base, tmp_path / "out.tar.gz") is False
     assert not (tmp_path / "out.tar.gz").exists()
 
+def test_baixar_partes_rejeita_parte_com_tamanho_errado(tmp_path, monkeypatch):
+    # Correção do "pacote sem .osrm": uma parte corrompida (tamanho != publicado) deve ser
+    # DETECTADA, apagada e o download abortado — em vez de concatenar lixo.
+    srv = tmp_path / "srv"; srv.mkdir()
+    (srv / "brazil-osrm-mld.tar.gz.part00").write_bytes(b"A" * 1000)
+    (srv / "brazil-osrm-mld.tar.gz.part01").write_bytes(b"B" * 500)   # "corrompida": tamanho menor
+    base_uri = (srv / "brazil-osrm-mld.tar.gz.part").as_uri()
+    # tamanhos "publicados": part00 bate (1000); part01 deveria ter 777 (não bate com 500)
+    monkeypatch.setattr(osrm, "_tamanhos_esperados",
+                        lambda _u: {"brazil-osrm-mld.tar.gz.part00": 1000,
+                                    "brazil-osrm-mld.tar.gz.part01": 777})
+    out = tmp_path / "out.tar.gz"
+    ok = osrm._baixar_partes(base_uri, out, progresso=lambda ev: None)
+    assert ok is False                                   # abortou por integridade
+    assert not out.exists()                              # não concatenou lixo
+
 def test_instalar_grafo_de_partes_locais(tmp_path):
     # Caminho GARANTIDO (sem rede): usuário baixou as partes pelo navegador numa pasta.
     import io, tarfile, gzip

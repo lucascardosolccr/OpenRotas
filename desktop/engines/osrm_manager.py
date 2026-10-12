@@ -385,6 +385,32 @@ def _parte_existe(url: str, timeout: int = 30) -> bool:
         return True
 
 
+def _tamanhos_esperados(url: str) -> dict:
+    """Consulta a API do GitHub os TAMANHOS REAIS (bytes) dos assets da Release, para conferir a
+    integridade de cada parte baixada. Uma parte adulterada no caminho (conexão/antivírus) fica
+    com tamanho != o publicado — é assim que detectamos corrupção sem precisar de sha256 externo.
+    Best-effort: devolve {} se não der (então o download segue sem a conferência, como antes)."""
+    try:
+        import json as _json, re as _re
+        m = _re.match(r"https?://github\.com/([^/]+)/([^/]+)/releases/download/([^/]+)/", url)
+        if not m:
+            return {}
+        owner, repo, tag = m.group(1), m.group(2), m.group(3)
+        api = "https://api.github.com/repos/%s/%s/releases/tags/%s" % (owner, repo, tag)
+        req = urllib.request.Request(api, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) OpenRotas-Desktop/1.0",
+            "Accept": "application/vnd.github+json"})
+        _ctx = _ctx_ssl()
+        with (urllib.request.urlopen(req, timeout=30, context=_ctx) if _ctx
+              else urllib.request.urlopen(req, timeout=30)) as r:
+            dados = _json.loads(r.read().decode("utf-8", "replace"))
+        return {a.get("name"): int(a.get("size") or 0) for a in (dados.get("assets") or [])}
+    except Exception:
+        logger.info("[OSRM] não consegui obter os tamanhos esperados das partes (seguindo sem conferência).",
+                    exc_info=True)
+        return {}
+
+
 def _baixar_partes(url: str, destino_tar, progresso=None, sha256: str = "") -> bool:
     """Baixa as partes sequenciais (…part00, …part01, …) e as concatena em `destino_tar`
     (Release publica o grafo em partes). Cada parte usa o DOWNLOADER ROBUSTO (retomada por Range,
@@ -474,6 +500,35 @@ def _baixar_partes(url: str, destino_tar, progresso=None, sha256: str = "") -> b
             parts_tmp.append(tmp_i)
             _emitir(progresso, fase="baixando", parte=i, parte_concluida=True)
             logger.info("[OSRM] parte %02d do grafo pronta.", i)
+        # INTEGRIDADE POR PARTE (correção do "pacote sem .osrm"): confere o TAMANHO de cada parte
+        # contra o tamanho REAL publicado no GitHub. Uma parte adulterada no caminho
+        # (conexão/antivírus) tem tamanho != esperado — antes passava em silêncio e corrompia o
+        # grafo. Agora apaga a parte ruim (mantém as boas para retomar) e aborta com causa precisa.
+        if not abortou and parts_tmp:
+            esperados = _tamanhos_esperados(url)
+            if esperados:
+                base_nome = base.rsplit("/", 1)[-1]        # ex.: brazil-osrm-mld.tar.gz.part
+                for idx, tmp_i in enumerate(parts_tmp):
+                    nome = "%s%02d" % (base_nome, idx)
+                    exp = esperados.get(nome)
+                    try:
+                        real = tmp_i.stat().st_size
+                    except Exception:
+                        real = -1
+                    if exp and real != exp:
+                        logger.warning("[OSRM] parte %02d corrompida: %s de %s bytes — descartando.",
+                                       idx, real, exp)
+                        try:
+                            tmp_i.unlink()
+                        except Exception:
+                            pass
+                        _emitir(progresso, fase="erro", parte=idx,
+                                detalhe=("parte %02d veio corrompida (%s de %s bytes): a conexão/antivírus "
+                                         "alterou o download. Clique em 'Baixar o mapa' de novo para rebaixar "
+                                         "só essa parte; se repetir, use 'Importar mapa de uma pasta…' (baixe "
+                                         "as partes pelo navegador)." % (idx, real, exp)))
+                        abortou = True
+                        break
         if not abortou and parts_tmp:
             _emitir(progresso, fase="concatenando", partes=len(parts_tmp))
             with open(destino_tar, "wb") as out:
