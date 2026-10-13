@@ -213,6 +213,77 @@ def test_garantir_grafo_nome_base_diferente(tmp_path):
     assert got == str(destino / "brasil.osrm")
     assert (destino / "brasil.osrm.edges").exists()       # artefato irmão também foi movido
 
+def test_base_osrm_em_familia_sem_arquivo_base(tmp_path):
+    # CAUSA RAIZ: OSRM 5.x (MLD) não gera um '<base>.osrm' literal — só a família '<base>.osrm.*'.
+    # _base_osrm_em deve derivar o caminho-base a partir da família.
+    for suf in (".cells", ".mldgr"):
+        (tmp_path / ("brazil-latest.osrm" + suf)).write_bytes(b"x")
+    assert osrm._base_osrm_em(tmp_path) == tmp_path / "brazil-latest.osrm"
+    # com um arquivo-base AVULSO presente → devolve-o (compat com formatos antigos)
+    outro = tmp_path / "sub"; outro.mkdir()
+    (outro / "g.osrm").write_bytes(b"x")
+    assert osrm._base_osrm_em(outro) == outro / "g.osrm"
+    # pasta vazia / inexistente → None (não levanta)
+    vaz = tmp_path / "v"; vaz.mkdir()
+    assert osrm._base_osrm_em(vaz) is None
+    assert osrm._base_osrm_em(tmp_path / "nao_existe") is None
+
+def test_garantir_grafo_familia_mld_sem_arquivo_base(tmp_path):
+    # Caso REAL do grafo do Brasil: o pacote NÃO contém 'brazil-latest.osrm', só a família
+    # 'brazil-latest.osrm.*'. Antes da correção isso dava "pacote do grafo sem arquivo .osrm"
+    # em TODO download, mesmo íntegro. Agora deve provisionar e devolver o caminho-BASE.
+    import io, tarfile, gzip
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as t:
+        for suf in (".cells", ".mldgr", ".partition", ".properties"):
+            nome = "brazil-latest.osrm" + suf
+            dado = (nome + "-data").encode() * 50
+            info = tarfile.TarInfo(nome); info.size = len(dado)
+            t.addfile(info, io.BytesIO(dado))
+    (tmp_path / "g.tar.gz").write_bytes(gzip.compress(buf.getvalue()))
+    destino = tmp_path / "dl"
+    got = osrm.garantir_grafo({"graph_url": (tmp_path / "g.tar.gz").as_uri()}, destino)
+    assert got == str(destino / "brazil-latest.osrm")        # caminho-base (sem sufixo)
+    assert not (destino / "brazil-latest.osrm").exists()     # não existe como arquivo literal
+    assert (destino / "brazil-latest.osrm.mldgr").exists()   # a família inteira foi movida
+    assert (destino / "brazil-latest.osrm.cells").exists()
+    assert (destino / "brazil-latest.osrm.partition").exists()
+    # 2ª chamada reusa o já provisionado (reconhece a família, não rebaixa)
+    assert osrm.garantir_grafo({"graph_url": "http://x/inexistente.tar.gz"}, destino) == got
+
+def test_instalar_grafo_familia_mld_sem_arquivo_base(tmp_path):
+    # Mesmo caso REAL pelo caminho OFFLINE ("Importar mapa de uma pasta…").
+    import io, tarfile, gzip
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as t:
+        for suf in (".cells", ".mldgr", ".partition"):
+            nome = "brazil-latest.osrm" + suf
+            dado = (nome + "-data").encode() * 50
+            info = tarfile.TarInfo(nome); info.size = len(dado)
+            t.addfile(info, io.BytesIO(dado))
+    targz = gzip.compress(buf.getvalue())
+    meio = len(targz) // 2
+    pasta = tmp_path / "baixados"; pasta.mkdir()
+    (pasta / "brazil-osrm-mld.tar.gz.part00").write_bytes(targz[:meio])
+    (pasta / "brazil-osrm-mld.tar.gz.part01").write_bytes(targz[meio:])
+    destino = tmp_path / "dados"
+    got = osrm.instalar_grafo_de_partes_locais(pasta, destino)
+    assert got == str(destino / "brazil-latest.osrm")
+    assert (destino / "brazil-latest.osrm.mldgr").exists()
+
+def test_subir_local_aceita_grafo_familia_sem_arquivo_base(tmp_path, monkeypatch):
+    # O motor nativo deve ACEITAR o grafo pelo caminho-base quando só a família '<base>.osrm.*'
+    # existe (não rejeitar como 'grafo não encontrado'). Sem binário → cai no público, mas a
+    # mensagem prova que passou da checagem do grafo.
+    for suf in (".cells", ".mldgr", ".partition"):
+        (tmp_path / ("brazil-latest.osrm" + suf)).write_bytes(b"x")
+    base = tmp_path / "brazil-latest.osrm"                    # NÃO existe como arquivo
+    monkeypatch.setattr(osrm, "_bin_osrm_routed", lambda: None)
+    r = osrm._subir_local({"mode": "local", "graph_path": str(base)})
+    assert r.ativo is False
+    assert "grafo não encontrado" not in (r.detalhe or "")    # passou da checagem de grafo
+    assert "binário" in (r.detalhe or "")                     # parou na falta do binário
+
 def test_remover_container_retorna_bool():
     assert osrm._remover_container("") is False            # nome vazio
     assert isinstance(osrm._remover_container("openrotas-osrm-x"), bool)
@@ -246,6 +317,20 @@ def test_offline_pronto_estrutura(reg):
 
 def test_osrm_brasil_e_opcional_ausente(reg):
     assert reg.existe("osrm_brasil") is False
+
+def test_osrm_brasil_reconhecido_pela_familia_sem_arquivo_base(tmp_path):
+    # OSRM 5.x (MLD) não cria 'brazil-latest.osrm' literal — só a família '<base>.osrm.*'.
+    # existe()/legivel()/offline_pronto devem reconhecer o grafo pela FAMÍLIA (senão a Central
+    # de Dados reportaria "sem grafo" num grafo recém-instalado e íntegro).
+    r = local_data.LocalDataRegistry(cfg.app_root(), tmp_path / "data_local")
+    dl = tmp_path / "data_local"; dl.mkdir(parents=True, exist_ok=True)
+    assert r.existe("osrm_brasil") is False                   # nada ainda
+    for suf in (".cells", ".mldgr", ".partition"):
+        (dl / ("brazil-latest.osrm" + suf)).write_bytes(b"x")
+    assert not (dl / "brazil-latest.osrm").exists()           # sem arquivo-base literal
+    assert r.existe("osrm_brasil") is True                    # mas a família conta como instalado
+    assert r.legivel("osrm_brasil") is True
+    assert r.offline_pronto()["roteamento_local"] is True
 
 def test_legivel_base_valida(reg):
     assert reg.legivel("municipios") is True          # parquet real abre (lê só o schema)

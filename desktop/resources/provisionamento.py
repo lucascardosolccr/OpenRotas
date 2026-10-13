@@ -49,10 +49,15 @@ def pasta_de_dados() -> Path:
 
 
 def grafo_instalado() -> bool:
-    """True se já existe um grafo .osrm provisionado na pasta de dados do usuário."""
+    """True se já existe um grafo OSRM provisionado na pasta de dados do usuário.
+
+    O OSRM 5.x (MLD) não gera um arquivo-base literal '<base>.osrm' — só a família
+    '<base>.osrm.*' (.cells/.mldgr/.partition/...). Por isso aceitamos tanto um '*.osrm'
+    avulso quanto a família '*.osrm.*' (evita reportar 'sem grafo' num grafo íntegro)."""
     try:
         d = pasta_de_dados()
-        return d.exists() and next(d.glob("*.osrm"), None) is not None
+        return d.exists() and (next(d.glob("*.osrm"), None) is not None
+                               or next(d.glob("*.osrm.*"), None) is not None)
     except Exception:
         return False
 

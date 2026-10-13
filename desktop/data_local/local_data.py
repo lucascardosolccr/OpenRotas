@@ -107,7 +107,15 @@ class LocalDataRegistry:
 
     def existe(self, chave: str) -> bool:
         try:
-            return self.caminho(chave).exists()
+            p = self.caminho(chave)
+            if p.exists():
+                return True
+            # Grafo OSRM: o caminho-base '<base>.osrm' NÃO existe como arquivo no OSRM 5.x (MLD) —
+            # o grafo É a família '<base>.osrm.*'. Reconhece a família como "instalado".
+            d = _POR_CHAVE.get(chave)
+            if d is not None and d.formato == "osrm":
+                return any(p.parent.glob(p.name + ".*"))
+            return False
         except Exception:
             return False
 
@@ -159,6 +167,10 @@ class LocalDataRegistry:
             d = _POR_CHAVE[chave]
             p = self.caminho(chave)
             if not p.exists():
+                # grafo OSRM 5.x (MLD): o caminho-base não existe como arquivo; a família
+                # '<base>.osrm.*' é o grafo — e para osrm "existência basta".
+                if d.formato == "osrm" and any(p.parent.glob(p.name + ".*")):
+                    return True
                 return False
             fmt = d.formato
             if fmt == "parquet":

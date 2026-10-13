@@ -729,7 +729,8 @@ def main() -> int:
                 # 1º: grafo EMBUTIDO no bundle (instalador com embed_graph) em app_root/data_local.
                 if not _osrm_cfg.get("graph_path"):
                     _dl_app = cfg.app_root() / "data_local"
-                    _emb = next(_dl_app.glob("*.osrm"), None) if _dl_app.exists() else None
+                    # Aceita o arquivo-base avulso OU a família '<base>.osrm.*' (OSRM 5.x MLD).
+                    _emb = osrm._base_osrm_em(_dl_app) if _dl_app.exists() else None
                     if _emb is not None:
                         _osrm_cfg["graph_path"] = str(_emb)
                         log.info("[OSRM] grafo embutido no bundle: %s", _emb)

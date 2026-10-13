@@ -171,7 +171,13 @@ def _subir_local(cfg: dict) -> ResultadoMotor:
     algoritmo = str(cfg.get("algorithm", "mld"))
     url = cfg.get("url") or ("http://127.0.0.1:%d" % porta)
 
-    if not graph or not os.path.exists(graph):
+    # O grafo é VÁLIDO se o caminho-base existir como arquivo (formatos antigos) OU se a FAMÍLIA
+    # '<base>.osrm.*' estiver presente (OSRM 5.x MLD não gera um arquivo-base literal). osrm-routed
+    # recebe o caminho-base (sem sufixo) e carrega a família.
+    _gbase = Path(graph) if graph else None
+    _grafo_ok = bool(graph) and (os.path.exists(graph)
+                                 or (_gbase is not None and any(_gbase.parent.glob(_gbase.name + ".*"))))
+    if not _grafo_ok:
         return ResultadoMotor(url=None, modo="local", ativo=False,
                               detalhe="grafo não encontrado em graph_path: %r" % graph)
     binario = _bin_osrm_routed()
@@ -216,7 +222,11 @@ def _subir_docker(cfg: dict) -> ResultadoMotor:
     algoritmo = str(cfg.get("algorithm", "mld"))
     url = cfg.get("url") or ("http://localhost:%d" % porta)
 
-    if not graph or not os.path.exists(graph):
+    # Grafo válido = caminho-base existe OU a família '<base>.osrm.*' está presente (ver _subir_local).
+    _gbase = Path(graph) if graph else None
+    _grafo_ok = bool(graph) and (os.path.exists(graph)
+                                 or (_gbase is not None and any(_gbase.parent.glob(_gbase.name + ".*"))))
+    if not _grafo_ok:
         return ResultadoMotor(url=None, modo="docker", ativo=False,
                               detalhe="grafo não encontrado em graph_path: %r" % graph)
     if not _docker_disponivel():
@@ -570,6 +580,33 @@ def _baixar_partes(url: str, destino_tar, progresso=None, sha256: str = "") -> b
     return True
 
 
+def _base_osrm_em(pasta) -> "Path | None":
+    """Caminho-BASE do grafo OSRM dentro de `pasta` (ex.: <pasta>/brazil-latest.osrm), ou None.
+
+    CAUSA RAIZ do 'pacote do grafo sem arquivo .osrm': o OSRM 5.x (MLD) NÃO cria um arquivo
+    chamado exatamente '<base>.osrm' — gera só a FAMÍLIA '<base>.osrm.cells', '.mldgr',
+    '.partition', '.cell_metrics', '.geometry', etc. O osrm-routed recebe o caminho-BASE
+    (sem sufixo) e carrega a família. Procurar um '*.osrm' literal falhava em TODO download,
+    mesmo íntegro. Aqui aceitamos tanto um '*.osrm' avulso (compat com formatos antigos que o
+    geram) quanto a família '*.osrm.*', e devolvemos o caminho-base derivado. Nunca levanta."""
+    try:
+        base = Path(pasta)
+        if not base.is_dir():
+            return None
+        avulso = next(base.rglob("*.osrm"), None)       # compat: formatos que geram o arquivo-base
+        if avulso is not None:
+            return avulso
+        fam = next(base.rglob("*.osrm.*"), None)         # OSRM 5.x MLD: só a família '<base>.osrm.*'
+        if fam is not None:
+            nome = fam.name
+            corte = nome.find(".osrm")
+            if corte >= 0:
+                return fam.parent / nome[:corte + len(".osrm")]
+    except Exception:
+        pass
+    return None
+
+
 def garantir_grafo(cfg_osrm: dict | None, destino_dir, progresso=None) -> str | None:
     """[GRAFO COMO PRODUTO] Garante que o grafo OSRM do Brasil exista localmente e devolve o
     caminho do arquivo .osrm base. Ordem:
@@ -590,7 +627,7 @@ def garantir_grafo(cfg_osrm: dict | None, destino_dir, progresso=None) -> str | 
     try:
         destino = Path(destino_dir)
         destino.mkdir(parents=True, exist_ok=True)
-        ja = next(destino.glob("*.osrm"), None)       # já provisionado antes?
+        ja = _base_osrm_em(destino)                    # já provisionado antes? (base ou família)
         if ja is not None:
             _emitir(progresso, fase="pronto", caminho=str(ja))
             return str(ja)
@@ -632,11 +669,11 @@ def garantir_grafo(cfg_osrm: dict | None, destino_dir, progresso=None) -> str | 
                     t.extractall(staging, filter="data")   # py3.12+: extração segura
                 except TypeError:
                     t.extractall(staging)                  # fallback versões antigas
-            cand = next(staging.rglob("*.osrm"), None)
+            cand = _base_osrm_em(staging)
             if cand is None:
-                logger.warning("[OSRM] arquivo .osrm não encontrado no pacote; descartando.")
+                logger.warning("[OSRM] grafo OSRM (arquivos .osrm/.osrm.*) não encontrado no pacote; descartando.")
                 _emitir(progresso, fase="erro",
-                        detalhe="pacote do grafo sem arquivo .osrm (download corrompido — tente de novo)")
+                        detalhe="pacote do grafo não contém os arquivos do grafo OSRM (.osrm.*)")
                 return gp or None
             # move todos os artefatos do grafo para o destino final. O padrão é DERIVADO do
             # arquivo base encontrado (cand.name == "<base>.osrm") — não um nome fixo — para
@@ -646,7 +683,7 @@ def garantir_grafo(cfg_osrm: dict | None, destino_dir, progresso=None) -> str | 
                 if destino_f.exists():
                     destino_f.unlink()
                 shutil.move(str(f), str(destino_f))
-            final = next(destino.glob("*.osrm"), None)
+            final = _base_osrm_em(destino)
             return str(final) if final else (gp or None)
         finally:
             for p in (tmp,):
@@ -707,10 +744,10 @@ def instalar_grafo_de_partes_locais(pasta, destino_dir, progresso=None) -> str |
                     t.extractall(staging, filter="data")
                 except TypeError:
                     t.extractall(staging)
-            cand = next(staging.rglob("*.osrm"), None)
+            cand = _base_osrm_em(staging)
             if cand is None:
                 _emitir(progresso, fase="erro",
-                        detalhe="os arquivos não formam um grafo válido (.osrm não encontrado); "
+                        detalhe="os arquivos não formam um grafo OSRM válido (nenhum .osrm.* encontrado); "
                                 "confira se baixou TODAS as partes (part00, part01, part02).")
                 return None
             for f in cand.parent.glob(cand.name + "*"):
@@ -718,7 +755,7 @@ def instalar_grafo_de_partes_locais(pasta, destino_dir, progresso=None) -> str |
                 if destino_f.exists():
                     destino_f.unlink()
                 shutil.move(str(f), str(destino_f))
-            final = next(destino.glob("*.osrm"), None)
+            final = _base_osrm_em(destino)
             if final:
                 _emitir(progresso, fase="pronto", caminho=str(final))
             return str(final) if final else None
