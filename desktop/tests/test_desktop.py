@@ -213,6 +213,19 @@ def test_garantir_grafo_nome_base_diferente(tmp_path):
     assert got == str(destino / "brasil.osrm")
     assert (destino / "brasil.osrm.edges").exists()       # artefato irmão também foi movido
 
+def test_autoligar_se_tem_grafo(tmp_path):
+    # TURNKEY: modo desligado + grafo presente → 'auto'; sem grafo → mantém o modo.
+    vazia = tmp_path / "vazia"; vazia.mkdir()
+    com = tmp_path / "com"; com.mkdir()
+    (com / "brazil-latest.osrm.mldgr").write_bytes(b"x")     # família presente
+    assert osrm.autoligar_se_tem_grafo("off", vazia) == "off"
+    assert osrm.autoligar_se_tem_grafo("", vazia) == "off"
+    assert osrm.autoligar_se_tem_grafo("off", vazia, com) == "auto"   # acha em alguma pasta
+    assert osrm.autoligar_se_tem_grafo("", com) == "auto"
+    # respeita um modo já escolhido pelo usuário (não rebaixa nem sobrescreve)
+    assert osrm.autoligar_se_tem_grafo("local", vazia) == "local"
+    assert osrm.autoligar_se_tem_grafo("docker", com) == "docker"
+
 def test_base_osrm_em_familia_sem_arquivo_base(tmp_path):
     # CAUSA RAIZ: OSRM 5.x (MLD) não gera um '<base>.osrm' literal — só a família '<base>.osrm.*'.
     # _base_osrm_em deve derivar o caminho-base a partir da família.

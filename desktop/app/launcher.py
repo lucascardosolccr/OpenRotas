@@ -720,6 +720,18 @@ def main() -> int:
         import engines.osrm_manager as osrm  # desktop/engines (mesmo diretório-pai no path)
         _conf = cfg.carregar_config_usuario()
         _osrm_cfg = dict(_conf.get("osrm") or {})
+        # TURNKEY/AUTO-LIGA: se o mapa do Brasil JÁ está na máquina (perfil do usuário ou embarcado)
+        # mas o modo ainda está 'off'/vazio (padrão do desktop.json recém-criado), LIGA o roteamento
+        # local AUTOMATICAMENTE já NESTA sessão — sem o usuário abrir a Central de Dados nem
+        # reiniciar. Sem isto, um mapa baixado ficava ocioso e as rotas iam para o OSRM público
+        # (lento). Só promove se um grafo estiver presente; senão mantém 'off' (cai no público).
+        _modo_atual = str(_osrm_cfg.get("mode", "")).lower().strip()
+        _modo_efetivo = osrm.autoligar_se_tem_grafo(_modo_atual, paths["data_local"],
+                                                    cfg.app_root() / "data_local")
+        if _modo_efetivo != _modo_atual:
+            _osrm_cfg["mode"] = _modo_efetivo
+            log.info("[OSRM] mapa presente e modo estava '%s' → ativando roteamento local (%s) "
+                     "automaticamente nesta sessão.", _modo_atual or "vazio", _modo_efetivo)
         # [GRAFO COMO PRODUTO] Nos modos que SERVEM o grafo localmente (nativo embarcado 'local',
         # 'auto' ou 'docker'), garante o grafo do Brasil na máquina (usa o já instalado; senão baixa
         # uma vez de graph_url para o perfil do usuário). Injeta o caminho resolvido em graph_path.

@@ -607,6 +607,22 @@ def _base_osrm_em(pasta) -> "Path | None":
     return None
 
 
+def autoligar_se_tem_grafo(modo, *pastas) -> str:
+    """Decisão TURNKEY do modo OSRM no boot. Se `modo` está DESLIGADO ('off'/vazio/'none') mas há
+    um grafo presente em ALGUMA das `pastas` (perfil do usuário e/ou bundle embarcado), devolve
+    'auto' — liga o roteamento LOCAL automaticamente. Senão, devolve o modo recebido inalterado.
+    Assim um mapa já baixado nunca fica ocioso com as rotas indo para o OSRM público. Nunca levanta."""
+    m = str(modo or "").lower().strip()
+    if m in ("", "off", "none"):
+        for p in pastas:
+            try:
+                if p is not None and _base_osrm_em(p) is not None:
+                    return "auto"
+            except Exception:
+                pass
+    return m or "off"
+
+
 def garantir_grafo(cfg_osrm: dict | None, destino_dir, progresso=None) -> str | None:
     """[GRAFO COMO PRODUTO] Garante que o grafo OSRM do Brasil exista localmente e devolve o
     caminho do arquivo .osrm base. Ordem:
