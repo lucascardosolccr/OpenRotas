@@ -38,6 +38,23 @@ def _cfg():
     return cfg
 
 
+def _grafo_valido(caminho) -> bool:
+    """True se `caminho` aponta para um grafo OSRM utilizável. O OSRM 5.x (MLD) NÃO cria um
+    arquivo-base literal '<base>.osrm' — o grafo É a família '<base>.osrm.*'. Portanto o
+    caminho-base devolvido por garantir_grafo/instalar_grafo pode não existir como arquivo:
+    aceitamos o arquivo-base avulso OU a presença da família '<base>.osrm.*'. (Sem isto, um
+    download/extração BEM-SUCEDIDO era reportado como falha "sem detalhe".)"""
+    if not caminho:
+        return False
+    try:
+        if os.path.exists(caminho):
+            return True
+        b = Path(caminho)
+        return any(b.parent.glob(b.name + ".*"))
+    except Exception:
+        return False
+
+
 def pasta_de_dados() -> Path:
     """A PASTA que o app lê para dados grandes instalados à parte (grafo OSRM). É para cá que o
     download vai — 'direto para a pasta do software', como pedido. Fica no perfil do usuário, fora
@@ -164,7 +181,7 @@ def baixar_grafo(progresso=None, conf: dict | None = None) -> dict:
         logger.warning("[PROV] download do grafo falhou.", exc_info=True)
         _escrever_diag("erro: %s" % e)
         return {"ok": False, "caminho": None, "detalhe": "erro: %s" % e}
-    if caminho and os.path.exists(caminho):
+    if _grafo_valido(caminho):
         return {"ok": True, "caminho": caminho, "detalhe": "grafo pronto em %s" % caminho}
     causa = _capt["erro"] or "sem detalhe (ver log openrotas-desktop.log)"
     _escrever_diag(causa)
@@ -202,7 +219,7 @@ def importar_grafo_de_pasta(pasta, progresso=None) -> dict:
     except Exception as e:
         logger.warning("[PROV] import local do grafo falhou.", exc_info=True)
         return {"ok": False, "caminho": None, "detalhe": "erro: %s" % e}
-    if caminho and os.path.exists(caminho):
+    if _grafo_valido(caminho):
         return {"ok": True, "caminho": caminho, "detalhe": "mapa instalado de %s" % pasta}
     return {"ok": False, "caminho": None,
             "detalhe": "não foi possível montar o mapa a partir da pasta (confira se baixou todas as partes)."}

@@ -795,6 +795,41 @@ def test_prov_baixar_grafo_em_partes_para_a_pasta(tmp_path, monkeypatch):
     assert r["ok"] is True and (destino / "brazil-latest.osrm").exists()
     assert any(e.get("fase") in ("baixando", "extraindo") for e in eventos)
 
+def test_prov_baixar_grafo_familia_mld_reporta_sucesso(tmp_path, monkeypatch):
+    # REGRESSÃO do "[causa: sem detalhe]": com o grafo real (OSRM 5.x MLD), garantir_grafo
+    # devolve o CAMINHO-BASE 'brazil-latest.osrm' que NÃO existe como arquivo (só a família
+    # '.osrm.*'). O antigo gate os.path.exists(caminho) dava False → download bem-sucedido
+    # era reportado como falha "sem detalhe". Agora baixar_grafo deve reportar ok=True.
+    import io, tarfile, gzip
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as t:
+        for suf in (".cells", ".mldgr", ".partition", ".properties"):
+            nome = "brazil-latest.osrm" + suf
+            dado = (nome + "-data").encode() * 50
+            info = tarfile.TarInfo(nome); info.size = len(dado)
+            t.addfile(info, io.BytesIO(dado))
+    targz = gzip.compress(buf.getvalue())
+    srv = tmp_path / "srv"; srv.mkdir()
+    meio = len(targz) // 2
+    (srv / "brazil-osrm-mld.tar.gz.part00").write_bytes(targz[:meio])
+    (srv / "brazil-osrm-mld.tar.gz.part01").write_bytes(targz[meio:])
+    base = (srv / "brazil-osrm-mld.tar.gz.part").as_uri()
+    destino = tmp_path / "pasta_dados"
+    monkeypatch.setattr(prov, "pasta_de_dados", lambda: destino)
+    r = prov.baixar_grafo(conf={"osrm": {"graph_url": base}})
+    assert r["ok"] is True                                   # NÃO "sem detalhe"
+    assert r["caminho"] == str(destino / "brazil-latest.osrm")
+    assert not (destino / "brazil-latest.osrm").exists()     # base não existe como arquivo
+    assert (destino / "brazil-latest.osrm.mldgr").exists()   # a família está instalada
+
+def test_prov_grafo_valido_reconhece_familia(tmp_path):
+    assert prov._grafo_valido("") is False
+    assert prov._grafo_valido(str(tmp_path / "brazil-latest.osrm")) is False   # nada ainda
+    (tmp_path / "brazil-latest.osrm.cells").write_bytes(b"x")
+    assert prov._grafo_valido(str(tmp_path / "brazil-latest.osrm")) is True    # família conta
+    avulso = tmp_path / "g.osrm"; avulso.write_bytes(b"x")
+    assert prov._grafo_valido(str(avulso)) is True                             # avulso também
+
 def test_prov_baixar_grafo_sem_url_nao_quebra(monkeypatch):
     # força graph_url vazio e sem padrão → mensagem clara, sem levantar
     monkeypatch.setattr(cfg, "resolver_graph_url", lambda *a, **k: "")
