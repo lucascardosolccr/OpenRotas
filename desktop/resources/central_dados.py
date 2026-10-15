@@ -191,6 +191,18 @@ class _App:
         ttk.Button(rod, text="Diagnóstico completo", command=self._on_diagnostico).pack(side="left", padx=8)
         ttk.Button(rod, text="Fechar", command=root.destroy).pack(side="right")
 
+        # Segunda linha de utilidades: integridade das bases + atalhos para as pastas do app.
+        rod2 = ttk.Frame(root)
+        rod2.pack(fill="x", side="bottom", padx=16, pady=(0, 2))
+        ttk.Button(rod2, text="Verificar integridade das bases",
+                   command=self._on_verificar_integridade).pack(side="left")
+        ttk.Button(rod2, text="Abrir Downloads",
+                   command=lambda: self._on_abrir_pasta("downloads")).pack(side="left", padx=8)
+        ttk.Button(rod2, text="Abrir exports",
+                   command=lambda: self._on_abrir_pasta("exports")).pack(side="left")
+        ttk.Button(rod2, text="Abrir logs",
+                   command=lambda: self._on_abrir_pasta("logs")).pack(side="left", padx=8)
+
         self._atualizar_inventario()
         self.root.after(150, self._bombear_fila)
 
@@ -282,6 +294,25 @@ class _App:
             ttk.Button(top, text="Fechar", command=top.destroy).pack(pady=(0, 10))
         except Exception as e:
             self._set_status("Diagnóstico pronto, mas não consegui abrir a janela: %s" % e, "#b42318")
+
+    def _on_abrir_pasta(self, tipo):
+        try:
+            ok = prov.abrir_pasta_dados(prov.pasta_por_tipo(tipo))
+            if not ok:
+                self._set_status("Pasta: %s" % prov.pasta_por_tipo(tipo), "#5b6676")
+        except Exception as e:
+            self._set_status("Não consegui abrir a pasta: %s" % e, "#b42318")
+
+    def _on_verificar_integridade(self):
+        self._set_status("Verificando integridade das bases…")
+        threading.Thread(target=self._thread_integridade, daemon=True).start()
+
+    def _thread_integridade(self):
+        try:
+            r = prov.verificar_integridade()
+        except Exception as e:
+            r = {"ok": False, "detalhe": "falha: %s" % e}
+        self.fila.put(("integridade_fim", r))
 
     def _on_testar_motor(self):
         try:
@@ -477,6 +508,11 @@ class _App:
                             pass
                 elif tipo == "perf_status":
                     self.estado_perf.config(text=(dado or {}).get("texto", ""))
+                elif tipo == "integridade_fim":
+                    _ok = bool((dado or {}).get("ok"))
+                    self._set_status("Integridade: %s" % (dado or {}).get("detalhe", "?"),
+                                     "#1a7f4b" if _ok else "#9a6700")
+                    self._atualizar_inventario()
                 elif tipo == "diagnostico_fim":
                     self._set_status("Diagnóstico pronto.", "#1a7f4b")
                     self._mostrar_diagnostico(dado)

@@ -21,6 +21,7 @@ from __future__ import annotations
 import os
 import sys
 import json
+import shutil
 import logging
 import subprocess
 from pathlib import Path
@@ -70,6 +71,97 @@ def pasta_de_dados() -> Path:
 # evita (a) travar o botão 'Baixar o mapa' sobre uma extração incompleta e (b) ligar o
 # roteamento sobre um grafo quebrado.
 _MLD_SUF_ESSENCIAIS = (".mldgr", ".partition", ".cells", ".cell_metrics")
+
+
+def _registry():
+    """Devolve (módulo local_data, LocalDataRegistry) apontando para o app_root + o data_local do
+    perfil do usuário. Levanta se local_data/config indisponível — os chamadores tratam. (Antes
+    esta função era REFERENCIADA mas não existia: bases_ausentes caía sempre no except e retornava
+    [], nunca reportando base faltando — bug corrigido ao defini-la.)"""
+    cfg = _cfg()
+    import local_data
+    reg = local_data.LocalDataRegistry(cfg.app_root(), cfg.user_data_dir() / "data_local")
+    return local_data, reg
+
+
+# Espaço de disco necessário para BAIXAR + EXTRAIR o grafo com folga: partes (~6,7 GB) + tar
+# concatenado + família extraída coexistem por um instante. 16 GB é uma folga conservadora.
+_ESPACO_GRAFO_NECESSARIO = 16 * 1024 ** 3
+
+
+def espaco_livre_bytes(pasta=None) -> int:
+    """Bytes livres no volume da `pasta` (padrão: pasta de dados). 0 se não der para medir."""
+    try:
+        alvo = Path(pasta) if pasta else pasta_de_dados()
+        alvo.mkdir(parents=True, exist_ok=True)
+        return int(shutil.disk_usage(str(alvo)).free)
+    except Exception:
+        return 0
+
+
+def checar_espaco_para_grafo(pasta=None) -> dict:
+    """Verifica ANTES do download se há espaço para baixar+extrair o grafo. Evita gastar ~6,7 GB
+    de download para só então falhar na extração por falta de disco. {ok, livre, necessario,
+    detalhe}. Defensivo: se não medir o disco (livre=0), NÃO bloqueia (ok=True) para não dar falso
+    negativo — melhor tentar do que barrar por engano."""
+    livre = espaco_livre_bytes(pasta)
+    nec = _ESPACO_GRAFO_NECESSARIO
+    if livre <= 0:
+        return {"ok": True, "livre": 0, "necessario": nec,
+                "detalhe": "não foi possível medir o espaço livre; seguindo mesmo assim."}
+    ok = livre >= nec
+    if ok:
+        detalhe = "espaço suficiente (%s livres)." % humano_bytes(livre)
+    else:
+        detalhe = ("espaço insuficiente para baixar/extrair o mapa: %s livres, ~%s necessários. "
+                   "Libere espaço e tente de novo." % (humano_bytes(livre), humano_bytes(nec)))
+    return {"ok": ok, "livre": livre, "necessario": nec, "detalhe": detalhe}
+
+
+def verificar_integridade(conf: dict | None = None) -> dict:
+    """Verifica a INTEGRIDADE das bases instaladas (não só se existem: se ABREM no formato certo,
+    via local_data.legivel — rodapé do parquet / 1 KB do gzip / 1ª linha do csv). Detecta corrupção
+    que a checagem de existência não pega. Devolve {ok, corrompidas, faltantes_essenciais,
+    checadas, detalhe}. Nunca levanta."""
+    out = {"ok": True, "corrompidas": [], "faltantes_essenciais": [], "checadas": 0, "detalhe": ""}
+    try:
+        local_data, reg = _registry()
+    except Exception as e:
+        out["ok"] = False
+        out["detalhe"] = "verificação indisponível: %s" % e
+        return out
+    try:
+        for d in local_data.CATALOGO:
+            if getattr(d, "formato", "") == "osrm":
+                continue                                   # o grafo é tratado à parte
+            existe = reg.existe(d.chave)
+            if not existe:
+                if getattr(d, "essencial", False):
+                    out["faltantes_essenciais"].append(d.chave)
+                continue
+            out["checadas"] += 1
+            try:
+                if not reg.legivel(d.chave):
+                    out["corrompidas"].append(d.chave)
+            except Exception:
+                out["corrompidas"].append(d.chave)
+        out["ok"] = not out["corrompidas"] and not out["faltantes_essenciais"]
+        if out["ok"]:
+            out["detalhe"] = "todas as %s bases verificadas estão íntegras ✓" % out["checadas"]
+        else:
+            partes = []
+            if out["corrompidas"]:
+                partes.append("%d corrompida(s): %s" % (len(out["corrompidas"]),
+                                                        ", ".join(out["corrompidas"])))
+            if out["faltantes_essenciais"]:
+                partes.append("%d essencial(is) faltando: %s"
+                              % (len(out["faltantes_essenciais"]),
+                                 ", ".join(out["faltantes_essenciais"])))
+            out["detalhe"] = "; ".join(partes) + ". Use 'Reparar/instalar bases nacionais'."
+    except Exception as e:
+        out["ok"] = False
+        out["detalhe"] = "falha na verificação: %s" % e
+    return out
 
 
 def grafo_instalado() -> bool:
@@ -320,6 +412,13 @@ def baixar_grafo(progresso=None, conf: dict | None = None) -> dict:
     oc = _osrm_cfg_efetivo(conf)
     if not str(oc.get("graph_url", "")).strip():
         return {"ok": False, "caminho": None, "detalhe": "sem graph_url (nem padrão) — nada a baixar"}
+    # GUARDA DE DISCO: barra ANTES de gastar ~6,7 GB de download se não houver espaço para extrair.
+    # Só bloqueia quando o disco foi medido E está claramente insuficiente (evita falso negativo).
+    _disco = checar_espaco_para_grafo()
+    if not _disco["ok"]:
+        _escrever_diag(_disco["detalhe"])
+        return {"ok": False, "caminho": None,
+                "detalhe": "não foi possível baixar o mapa: %s" % _disco["detalhe"]}
     # Captura o MOTIVO REAL (fase 'erro') aqui, independentemente da UI — assim ele SEMPRE entra na
     # mensagem final E num arquivo de diagnóstico, mesmo que o evento não chegue à tela a tempo.
     _capt = {"erro": ""}
@@ -502,6 +601,24 @@ def ativar_roteamento_local(conf: dict | None = None) -> dict:
     except Exception as e:
         logger.warning("[PROV] ativação do roteamento local falhou.", exc_info=True)
         return {"ok": False, "nativo": False, "docker": False, "detalhe": "erro: %s" % e}
+
+
+def pasta_por_tipo(tipo: str) -> Path:
+    """Resolve a pasta de um 'tipo' para os atalhos da UI: 'dados' (grafo), 'exports' (dossiês),
+    'logs' (openrotas-desktop.log) e 'downloads' (downloads feitos pelo app). Nunca levanta."""
+    cfg = _cfg()
+    try:
+        base = cfg.user_data_dir()
+    except Exception:
+        base = pasta_de_dados().parent
+    t = str(tipo or "").strip().lower()
+    if t == "exports":
+        return base / "exports"
+    if t == "logs":
+        return base / "logs"
+    if t == "downloads":
+        return Path(os.path.join(os.path.expanduser("~"), "Downloads"))
+    return pasta_de_dados()          # 'dados' (padrão)
 
 
 def abrir_pasta_dados(caminho: Path | None = None) -> bool:

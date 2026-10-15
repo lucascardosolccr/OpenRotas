@@ -825,6 +825,58 @@ def test_prov_grafo_instalado_arquivo_base_avulso(tmp_path, monkeypatch):
     (d / "brazil-latest.osrm").write_bytes(b"x")
     assert prov.grafo_instalado() is True
 
+def test_prov_bases_ausentes_usa_registry(monkeypatch):
+    # Regressão do bug _registry() inexistente (bases_ausentes caía sempre no except → []).
+    # Com um registry que reporta "nada instalado", deve LISTAR as bases não-osrm faltando.
+    import local_data
+    class _RegVazio:
+        def existe(self, chave): return False
+    monkeypatch.setattr(prov, "_registry", lambda: (local_data, _RegVazio()))
+    faltam = prov.bases_ausentes()
+    nao_osrm = [d.chave for d in local_data.CATALOGO if d.formato != "osrm"]
+    assert faltam == nao_osrm and len(faltam) > 0              # agora lista de verdade
+    assert "osrm_brasil" not in faltam                         # o grafo é tratado à parte
+    # e _registry() de verdade existe e devolve (módulo, registry) — não mais NameError
+    _m, _r = prov._registry()
+    assert _m is local_data and hasattr(_r, "existe")
+
+def test_prov_checar_espaco_para_grafo(monkeypatch):
+    import shutil as _sh
+    from collections import namedtuple
+    DU = namedtuple("DU", "total used free")
+    # Disco cheio → bloqueia com mensagem clara.
+    monkeypatch.setattr(prov.shutil, "disk_usage", lambda *_a: DU(0, 0, 1 * 1024 ** 3))
+    r = prov.checar_espaco_para_grafo()
+    assert r["ok"] is False and "insuficiente" in r["detalhe"]
+    # Disco folgado → libera.
+    monkeypatch.setattr(prov.shutil, "disk_usage", lambda *_a: DU(0, 0, 50 * 1024 ** 3))
+    assert prov.checar_espaco_para_grafo()["ok"] is True
+    # Não mediu (exceção) → NÃO bloqueia (evita falso negativo).
+    def _boom(*_a): raise OSError("no disk")
+    monkeypatch.setattr(prov.shutil, "disk_usage", _boom)
+    assert prov.checar_espaco_para_grafo()["ok"] is True
+
+def test_prov_verificar_integridade_detecta_corrompida(monkeypatch, tmp_path):
+    # Uma base essencial "corrompida" (existe mas não abre) deve ser detectada.
+    monkeypatch.setattr(prov, "pasta_de_dados", lambda: tmp_path / "data_local")
+    import desktop_config as _cfg
+    monkeypatch.setattr(_cfg, "user_data_dir", lambda: tmp_path)
+    import local_data
+    _mod, reg = prov._registry()
+    # força: tudo "existe", mas 'municipios' não é legível (corrompida)
+    monkeypatch.setattr(type(reg), "existe", lambda self, chave: True)
+    monkeypatch.setattr(type(reg), "legivel", lambda self, chave: chave != "municipios")
+    monkeypatch.setattr(prov, "_registry", lambda: (local_data, reg))
+    r = prov.verificar_integridade()
+    assert r["ok"] is False and "municipios" in r["corrompidas"]
+
+def test_prov_pasta_por_tipo(monkeypatch, tmp_path):
+    import desktop_config as _cfg
+    monkeypatch.setattr(_cfg, "user_data_dir", lambda: tmp_path)
+    assert prov.pasta_por_tipo("exports") == tmp_path / "exports"
+    assert prov.pasta_por_tipo("logs") == tmp_path / "logs"
+    assert str(prov.pasta_por_tipo("downloads")).endswith("Downloads")
+
 def test_prov_checar_atualizacao_defensivo(monkeypatch):
     # Com app_update dizendo que há nova versão, o wrapper repassa fielmente.
     import app_update as _au
