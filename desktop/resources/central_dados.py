@@ -96,6 +96,7 @@ class _App:
         self.fila: "queue.Queue" = queue.Queue()
         self._ocupado = False
         self._ultimo_erro_grafo = ""     # motivo real da última falha de download (fase 'erro')
+        self._auto_ativado = False       # garante a auto-ativação do roteamento só uma vez
         root.title("OpenRotas — Central de Dados")
         root.geometry("640x460")
         root.minsize(560, 420)
@@ -179,8 +180,18 @@ class _App:
         self.resumo.config(text="Pasta de dados: %s\nRecursos: %s de %s instalados."
                            % (inv.get("pasta_dados", "?"), r.get("instalados", "?"), r.get("total", "?")))
         if inv.get("grafo_instalado"):
-            self.estado_grafo.config(text="Instalado ✓ — roteamento local disponível.")
+            # O mapa JÁ está na máquina → nada a baixar (botão desabilitado de propósito).
             self.btn_baixar.config(state="disabled")
+            if not self._auto_ativado and not prov.roteamento_local_ativo():
+                # TURNKEY/RECUPERAÇÃO: o grafo está presente mas o roteamento ficou 'off' (ex.: foi
+                # extraído num clique que um bug antigo reportou como falha, então a ativação
+                # automática nunca rodou). Liga sozinho — uma única vez — sem o usuário fazer nada.
+                self._auto_ativado = True
+                self.estado_grafo.config(text="Instalado ✓ — ligando o roteamento local…")
+                threading.Thread(target=self._thread_ativar_auto, daemon=True).start()
+            else:
+                self.estado_grafo.config(
+                    text="Instalado ✓ — roteamento local disponível (reabra o app para ativar).")
         else:
             self.estado_grafo.config(text="Ausente. Baixe uma vez para ter o Brasil inteiro offline.")
             self.btn_baixar.config(state=("disabled" if self._ocupado else "normal"))
@@ -209,6 +220,14 @@ class _App:
             self.fila.put(("grafo", ev))
         r = prov.baixar_grafo(progresso=_prog)
         self.fila.put(("grafo_fim", r))
+
+    def _thread_ativar_auto(self):
+        """Liga o roteamento local em segundo plano (não trava a janela). Resultado volta pela fila."""
+        try:
+            r = prov.ativar_roteamento_local()
+        except Exception as e:
+            r = {"ok": False, "detalhe": "erro: %s" % e}
+        self.fila.put(("auto_ativar_fim", r))
 
     def _on_abrir_pagina_download(self):
         """Abre, no navegador do sistema, a página de download das partes do mapa."""
@@ -334,6 +353,14 @@ class _App:
                         self._set_status(_msg, "#b42318")
                     self._travar(False)
                     self._atualizar_inventario()
+                elif tipo == "auto_ativar_fim":
+                    if dado.get("ok"):
+                        self.estado_grafo.config(
+                            text="Instalado ✓ — " + dado.get("detalhe", "roteamento local ligado."))
+                        self._set_status("Roteamento local ligado automaticamente. "
+                                         "Reabra o app para o motor local entrar no ar.", "#1a7f4b")
+                    else:
+                        self.estado_grafo.config(text="Instalado ✓ — roteamento local disponível.")
                 elif tipo == "dossie_fim":
                     if dado.get("ok"):
                         self._set_status("Dossiê gerado: %s" % dado.get("caminho", ""), "#1a7f4b")

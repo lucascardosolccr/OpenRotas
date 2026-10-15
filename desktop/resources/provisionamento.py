@@ -65,16 +65,41 @@ def pasta_de_dados() -> Path:
         return _cfg().user_data_dir() / "data_local"
 
 
-def grafo_instalado() -> bool:
-    """True se já existe um grafo OSRM provisionado na pasta de dados do usuário.
+# Arquivos essenciais de um grafo MLD SERVÍVEL (o osrm-routed --algorithm mld os exige). Uma
+# extração PARCIAL/interrompida não terá todos — e aí o grafo não serve. Checar o conjunto
+# evita (a) travar o botão 'Baixar o mapa' sobre uma extração incompleta e (b) ligar o
+# roteamento sobre um grafo quebrado.
+_MLD_SUF_ESSENCIAIS = (".mldgr", ".partition", ".cells", ".cell_metrics")
 
-    O OSRM 5.x (MLD) não gera um arquivo-base literal '<base>.osrm' — só a família
-    '<base>.osrm.*' (.cells/.mldgr/.partition/...). Por isso aceitamos tanto um '*.osrm'
-    avulso quanto a família '*.osrm.*' (evita reportar 'sem grafo' num grafo íntegro)."""
+
+def grafo_instalado() -> bool:
+    """True SÓ se há um grafo OSRM MLD COMPLETO na pasta de dados do usuário.
+
+    O OSRM 5.x (MLD) não gera um arquivo-base literal '<base>.osrm' — o grafo É a família
+    '<base>.osrm.*' (.cells/.mldgr/.partition/.cell_metrics/...). Exigimos os arquivos ESSENCIAIS
+    do MLD presentes para um mesmo prefixo '<base>.osrm' (um grafo íntegro sempre os tem; uma
+    extração parcial não). Compat: um arquivo-base '*.osrm' avulso (formatos antigos) também conta."""
     try:
         d = pasta_de_dados()
-        return d.exists() and (next(d.glob("*.osrm"), None) is not None
-                               or next(d.glob("*.osrm.*"), None) is not None)
+        if not d.exists():
+            return False
+        nomes = {p.name for p in d.glob("*.osrm.*")}
+        bases = {n[:n.index(".osrm") + len(".osrm")] for n in nomes if ".osrm" in n}
+        for b in bases:
+            if all((b + suf) in nomes for suf in _MLD_SUF_ESSENCIAIS):
+                return True
+        return next(d.glob("*.osrm"), None) is not None   # compat: arquivo-base avulso
+    except Exception:
+        return False
+
+
+def roteamento_local_ativo(conf: dict | None = None) -> bool:
+    """True se o desktop.json já está com o roteamento local ligado (osrm.mode em
+    local/auto/docker). Usado para LIGAR sozinho quando o mapa está presente mas o modo ficou
+    'off' (ex.: o grafo foi extraído num clique que, por um bug antigo, reportou falha)."""
+    try:
+        oc = _osrm_cfg_efetivo(conf)
+        return str(oc.get("mode", "")).strip().lower() in ("local", "auto", "docker")
     except Exception:
         return False
 

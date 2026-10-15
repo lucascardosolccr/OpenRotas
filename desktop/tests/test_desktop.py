@@ -774,6 +774,33 @@ def test_prov_inventario_estrutura():
 def test_prov_grafo_instalado_falso_aqui():
     assert prov.grafo_instalado() is False
 
+def test_prov_grafo_instalado_exige_familia_mld_completa(tmp_path, monkeypatch):
+    # Robustez: 'instalado' só é True com um grafo MLD COMPLETO. Uma extração PARCIAL não pode
+    # travar o botão 'Baixar o mapa' nem ligar o roteamento sobre um grafo quebrado.
+    d = tmp_path / "dados"; d.mkdir()
+    monkeypatch.setattr(prov, "pasta_de_dados", lambda: d)
+    # família incompleta (falta .cell_metrics) → NÃO instalado
+    for suf in (".mldgr", ".partition", ".cells"):
+        (d / ("brazil-latest.osrm" + suf)).write_bytes(b"x")
+    assert prov.grafo_instalado() is False
+    # completa os essenciais do MLD → instalado
+    (d / "brazil-latest.osrm.cell_metrics").write_bytes(b"x")
+    assert prov.grafo_instalado() is True
+    assert not (d / "brazil-latest.osrm").exists()        # sem arquivo-base literal, mesmo assim OK
+
+def test_prov_grafo_instalado_arquivo_base_avulso(tmp_path, monkeypatch):
+    # Compat: um '<x>.osrm' avulso (formatos antigos) conta como instalado.
+    d = tmp_path / "dados"; d.mkdir()
+    monkeypatch.setattr(prov, "pasta_de_dados", lambda: d)
+    (d / "brazil-latest.osrm").write_bytes(b"x")
+    assert prov.grafo_instalado() is True
+
+def test_prov_roteamento_local_ativo(tmp_path):
+    assert prov.roteamento_local_ativo(conf={"osrm": {"mode": "off"}}) is False
+    assert prov.roteamento_local_ativo(conf={"osrm": {}}) is False
+    assert prov.roteamento_local_ativo(conf={"osrm": {"mode": "auto"}}) is True
+    assert prov.roteamento_local_ativo(conf={"osrm": {"mode": "local"}}) is True
+
 def test_prov_baixar_grafo_em_partes_para_a_pasta(tmp_path, monkeypatch):
     import io, tarfile, gzip
     buf = io.BytesIO()
