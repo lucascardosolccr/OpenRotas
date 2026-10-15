@@ -42,6 +42,26 @@ MARCA = {
 TITULO = "OpenRotas — Motor Nacional de Inteligência Logística"
 
 
+def _pasta_downloads() -> str:
+    """Pasta onde os arquivos BAIXADOS de dentro do app (exportar estudo/relatório) são salvos.
+    Usa a pasta 'Downloads' do usuário (padrão do SO); se não der para resolver, cai em
+    ~/Downloads. Puro e testável — nunca levanta."""
+    pasta = ""
+    try:
+        from PySide6.QtCore import QStandardPaths
+        pasta = QStandardPaths.writableLocation(
+            QStandardPaths.StandardLocation.DownloadLocation) or ""
+    except Exception:
+        pasta = ""
+    if not pasta:
+        pasta = os.path.join(os.path.expanduser("~"), "Downloads")
+    try:
+        os.makedirs(pasta, exist_ok=True)
+    except Exception:
+        pass
+    return pasta
+
+
 def disponivel() -> bool:
     """True se o QtWebEngine (Chromium embarcado) pode ser importado neste ambiente."""
     try:
@@ -322,6 +342,39 @@ def abrir(url: str, icone: str | None = None, perfil_dir: str | None = None) -> 
                 _profile.setCachePath(perfil_dir)
             _profile.setPersistentCookiesPolicy(
                 QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies)
+
+            # DOWNLOADS: sem este handler, o QtWebEngine DESCARTA silenciosamente qualquer
+            # download disparado de dentro do app (exportar estudo/relatório via botão de
+            # download do Streamlit, <a download>, Excel/PDF/HTML). Aqui aceitamos o download e
+            # salvamos na pasta 'Downloads' do usuário, com o nome sugerido pela página.
+            def _ao_baixar(item):
+                try:
+                    pasta = _pasta_downloads()
+                    try:
+                        item.setDownloadDirectory(pasta)      # Qt6 (PySide6)
+                    except Exception:
+                        pass
+                    try:
+                        _nome = item.downloadFileName()
+                    except Exception:
+                        _nome = ""
+                    item.accept()
+                    logger.info("[DOWNLOAD] salvando '%s' em %s", _nome or "(arquivo)", pasta)
+                    def _fim(*_a):
+                        logger.info("[DOWNLOAD] concluído: %s", os.path.join(pasta, _nome or ""))
+                    for _sig in ("isFinishedChanged", "finished"):
+                        try:
+                            getattr(item, _sig).connect(_fim)
+                            break
+                        except Exception:
+                            pass
+                except Exception:
+                    logger.warning("[DOWNLOAD] falha ao tratar um download; ignorando.", exc_info=True)
+            try:
+                _profile.downloadRequested.connect(_ao_baixar)
+            except Exception:
+                logger.debug("Não foi possível instalar o handler de downloads.", exc_info=True)
+
             _pagina = _Pagina(_profile, view)
             view.setPage(_pagina)
         except Exception:

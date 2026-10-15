@@ -1735,6 +1735,14 @@ def test_osrm_baixar_partes_ainda_funciona_via_downloader(tmp_path):
 def test_janela_disponivel_e_booleano():
     assert isinstance(janela.disponivel(), bool)
 
+def test_janela_pasta_downloads_resolve_e_existe(monkeypatch, tmp_path):
+    # O destino dos downloads do app deve resolver para uma pasta real (nunca vazio/levanta).
+    p = janela._pasta_downloads()
+    assert isinstance(p, str) and p and os.path.isdir(p)
+    # Chamar de novo continua resolvendo para uma pasta real (idempotente, nunca levanta).
+    p2 = janela._pasta_downloads()
+    assert isinstance(p2, str) and os.path.isdir(p2)
+
 def test_janela_css_premium_tem_tokens_resolvidos():
     css = janela._css_premium()
     assert "@BRAND@" not in css and "@BG0@" not in css        # tokens substituídos
