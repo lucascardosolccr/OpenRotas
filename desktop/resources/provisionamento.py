@@ -104,6 +104,63 @@ def roteamento_local_ativo(conf: dict | None = None) -> bool:
         return False
 
 
+def status_motor_rotas(conf: dict | None = None) -> dict:
+    """Status AO VIVO do motor de rotas — não só o que está CONFIGURADO, mas se o motor local
+    está REALMENTE respondendo. Pinga o OSRM local (127.0.0.1) com uma rota curtíssima e diz se
+    as rotas estão indo pelo motor LOCAL (rápido/offline) ou caindo no OSRM PÚBLICO (lento). Torna
+    visível a falha silenciosa que já custou caro ('diz ativo, mas lento'). Nunca levanta.
+
+    Devolve: {grafo_instalado, motor_nativo_disponivel, modo, url_local, local_no_ar,
+              usando_publico, detalhe}."""
+    out = {"grafo_instalado": False, "motor_nativo_disponivel": False, "modo": "off",
+           "url_local": "", "local_no_ar": False, "usando_publico": True, "detalhe": ""}
+    try:
+        try:
+            import osrm_manager
+        except ImportError:
+            from engines import osrm_manager
+    except Exception as e:
+        out["detalhe"] = "motor indisponível: %s" % e
+        return out
+    try:
+        oc = _osrm_cfg_efetivo(conf)
+        modo = (str(oc.get("mode", "") or "").strip().lower() or "off")
+        try:
+            porta = int(oc.get("port", 5000) or 5000)
+        except Exception:
+            porta = 5000
+        url = str(oc.get("url") or ("http://127.0.0.1:%d" % porta))
+        out["modo"] = modo
+        out["url_local"] = url
+        out["grafo_instalado"] = grafo_instalado()
+        try:
+            out["motor_nativo_disponivel"] = bool(osrm_manager.motor_nativo_disponivel())
+        except Exception:
+            out["motor_nativo_disponivel"] = False
+        no_ar = False
+        try:
+            no_ar = bool(osrm_manager.health(url, timeout=3.0))
+        except Exception:
+            no_ar = False
+        out["local_no_ar"] = no_ar
+        out["usando_publico"] = not no_ar
+        if no_ar:
+            out["detalhe"] = "motor local NO AR em %s — rotas rápidas e offline ✓" % url
+        elif modo in ("local", "auto", "docker"):
+            if out["grafo_instalado"]:
+                out["detalhe"] = ("roteamento local ligado, mas o motor ainda não está respondendo "
+                                  "(ele sobe ao ABRIR o app; a 1ª rota 'aquece' o mapa). Até lá, as "
+                                  "rotas usam o OSRM público (online).")
+            else:
+                out["detalhe"] = ("roteamento local ligado, mas o mapa do Brasil não está instalado — "
+                                  "as rotas usam o OSRM público. Baixe o mapa para rotear offline.")
+        else:
+            out["detalhe"] = "roteamento local desligado — rotas usam o OSRM público (online)."
+    except Exception as e:
+        out["detalhe"] = "falha ao consultar o motor de rotas: %s" % e
+    return out
+
+
 def _osrm_cfg_efetivo(conf: dict | None = None) -> dict:
     """Bloco osrm do desktop.json COM o graph_url resolvido (configurado > padrão turnkey)."""
     cfg = _cfg()

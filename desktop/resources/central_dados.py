@@ -139,6 +139,16 @@ class _App:
         ttk.Button(linha_alt, text="Importar mapa de uma pasta…",
                    command=self._on_importar_local).pack(side="left", padx=8)
 
+        # STATUS AO VIVO DO MOTOR DE ROTAS: mostra se as rotas estão indo pelo motor LOCAL
+        # (rápido/offline) ou caindo no OSRM público (lento) — torna visível a falha silenciosa.
+        motor_box = ttk.Frame(grafo)
+        motor_box.pack(fill="x", padx=12, pady=(0, 10))
+        self.estado_motor = ttk.Label(motor_box, text="Motor de rotas: verificando…",
+                                      justify="left", foreground="#5b6676")
+        self.estado_motor.pack(anchor="w")
+        ttk.Button(motor_box, text="Testar motor de rotas",
+                   command=self._on_testar_motor).pack(anchor="w", pady=(4, 0))
+
         # Dossiê de Rota por nome de cidade (integração total dos dados numa rota).
         dossie = ttk.LabelFrame(root, text="Dossiê de Rota (origem → destino, por cidade)")
         dossie.pack(fill="x", **pad)
@@ -195,6 +205,22 @@ class _App:
         else:
             self.estado_grafo.config(text="Ausente. Baixe uma vez para ter o Brasil inteiro offline.")
             self.btn_baixar.config(state=("disabled" if self._ocupado else "normal"))
+        # Atualiza o status AO VIVO do motor de rotas (ping no 127.0.0.1) em segundo plano.
+        threading.Thread(target=self._thread_status_motor, daemon=True).start()
+
+    def _on_testar_motor(self):
+        try:
+            self.estado_motor.config(text="Motor de rotas: testando…", foreground="#5b6676")
+        except Exception:
+            pass
+        threading.Thread(target=self._thread_status_motor, daemon=True).start()
+
+    def _thread_status_motor(self):
+        try:
+            st = prov.status_motor_rotas()
+        except Exception as e:
+            st = {"local_no_ar": False, "detalhe": "falha ao testar: %s" % e}
+        self.fila.put(("motor_status", st))
 
     def _travar(self, travar: bool):
         self._ocupado = travar
@@ -353,6 +379,10 @@ class _App:
                         self._set_status(_msg, "#b42318")
                     self._travar(False)
                     self._atualizar_inventario()
+                elif tipo == "motor_status":
+                    _noar = bool((dado or {}).get("local_no_ar"))
+                    _txt = "Motor de rotas: %s" % (dado or {}).get("detalhe", "?")
+                    self.estado_motor.config(text=_txt, foreground=("#1a7f4b" if _noar else "#9a6700"))
                 elif tipo == "auto_ativar_fim":
                     if dado.get("ok"):
                         self.estado_grafo.config(

@@ -93,6 +93,43 @@ def _esperar_health(url: str, timeout_s: float = 60.0) -> bool:
     return False
 
 
+# Rotas de AQUECIMENTO: logo que o motor sobe, páginas do grafo (MLD, ~10 GB em mmap) ainda não
+# estão na RAM — a 1ª rota do usuário sairia lenta. Disparar algumas rotas representativas, em
+# regiões diferentes, "aquece" o cache do SO para que a 1ª rota REAL já saia rápida.
+_ROTAS_AQUECIMENTO = (
+    "-46.63,-23.55;-43.17,-22.91",   # São Paulo → Rio de Janeiro (Sudeste)
+    "-47.88,-15.79;-49.25,-16.68",   # Brasília → Goiânia (Centro-Oeste)
+    "-34.88,-8.05;-38.48,-12.97",    # Recife → Salvador (Nordeste)
+    "-51.23,-30.03;-49.27,-25.43",   # Porto Alegre → Curitiba (Sul)
+)
+
+
+def _aquecer_motor(url: str, rotas=None, timeout: float = 20.0) -> int:
+    """Faz requisições de rota BEST-EFFORT para paginar o grafo na RAM (1ª rota real mais rápida).
+    Devolve quantas aqueceram. Nunca levanta — é 100% opcional/oportunista."""
+    if not url:
+        return 0
+    ok = 0
+    for par in (rotas or _ROTAS_AQUECIMENTO):
+        try:
+            u = url.rstrip("/") + "/route/v1/driving/" + par + "?overview=false"
+            with urllib.request.urlopen(u, timeout=timeout) as r:
+                if b'"Ok"' in r.read(400):
+                    ok += 1
+        except Exception:
+            pass
+    return ok
+
+
+def _aquecer_em_background(url: str) -> None:
+    """Dispara o aquecimento numa thread daemon — não bloqueia a abertura do app. Best-effort."""
+    try:
+        import threading
+        threading.Thread(target=_aquecer_motor, args=(url,), daemon=True).start()
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # Docker — sobe o osrm-routed apontando para o grafo local.
 # ---------------------------------------------------------------------------
@@ -206,6 +243,7 @@ def _subir_local(cfg: dict) -> ResultadoMotor:
                               detalhe="falha ao iniciar o motor nativo: %s" % e)
     if _esperar_health(url, timeout_s=float(cfg.get("start_timeout_s", 90))):
         _telemetria("local_start", ok=True, ms=round((time.perf_counter() - _t0) * 1000.0, 1))
+        _aquecer_em_background(url)   # 1ª rota real mais rápida (paginação do grafo em background)
         return ResultadoMotor(url=url, modo="local", ativo=True, gerenciado=True, processo=proc,
                               detalhe="motor nativo embarcado no ar (sem Docker)")
     _telemetria("local_start", ok=False, ms=round((time.perf_counter() - _t0) * 1000.0, 1),
@@ -260,6 +298,7 @@ def _subir_docker(cfg: dict) -> ResultadoMotor:
                               detalhe="falha ao iniciar o Docker: %s" % e)
     if _esperar_health(url, timeout_s=float(cfg.get("start_timeout_s", 90))):
         _telemetria("docker_start", ok=True, ms=round((time.perf_counter() - _t0) * 1000.0, 1))
+        _aquecer_em_background(url)   # 1ª rota real mais rápida (paginação do grafo em background)
         return ResultadoMotor(url=url, modo="docker", ativo=True, gerenciado=True, processo=proc,
                               nome=CONTAINER_OSRM, detalhe="OSRM local no ar (gerenciado)")
     _telemetria("docker_start", ok=False, ms=round((time.perf_counter() - _t0) * 1000.0, 1),

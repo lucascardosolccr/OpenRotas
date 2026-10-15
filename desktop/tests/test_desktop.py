@@ -213,6 +213,23 @@ def test_garantir_grafo_nome_base_diferente(tmp_path):
     assert got == str(destino / "brasil.osrm")
     assert (destino / "brasil.osrm.edges").exists()       # artefato irmão também foi movido
 
+def test_aquecer_motor_best_effort_nao_levanta():
+    # Aquecimento é oportunista: URL vazia → 0; URL que recusa conexão → 0, sem levantar.
+    assert osrm._aquecer_motor("", timeout=1.0) == 0
+    assert osrm._aquecer_motor("http://127.0.0.1:1", rotas=("-46.6,-23.5;-43.1,-22.9",),
+                               timeout=1.0) == 0
+
+def test_aquecer_motor_conta_rotas_ok(monkeypatch):
+    # Com health/rota respondendo 'Ok', conta cada rota aquecida.
+    class _Resp:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self, *a): return b'{"code":"Ok"}'
+    monkeypatch.setattr(osrm.urllib.request, "urlopen", lambda *a, **k: _Resp())
+    n = osrm._aquecer_motor("http://127.0.0.1:5000",
+                            rotas=("-46.6,-23.5;-43.1,-22.9", "-47.9,-15.8;-49.2,-16.7"), timeout=1.0)
+    assert n == 2
+
 def test_autoligar_se_tem_grafo(tmp_path):
     # TURNKEY: modo desligado + grafo presente → 'auto'; sem grafo → mantém o modo.
     vazia = tmp_path / "vazia"; vazia.mkdir()
@@ -807,6 +824,35 @@ def test_prov_grafo_instalado_arquivo_base_avulso(tmp_path, monkeypatch):
     monkeypatch.setattr(prov, "pasta_de_dados", lambda: d)
     (d / "brazil-latest.osrm").write_bytes(b"x")
     assert prov.grafo_instalado() is True
+
+def _patch_health(monkeypatch, valor):
+    # status_motor_rotas resolve o osrm_manager por 'import osrm_manager' (plano); o teste importa
+    # 'engines.osrm_manager' — podem ser objetos distintos. Patcha health em AMBOS, defensivamente.
+    import sys as _sys
+    monkeypatch.setattr(osrm, "health", lambda *a, **k: valor)
+    try:
+        import osrm_manager as _flat
+        monkeypatch.setattr(_flat, "health", lambda *a, **k: valor)
+    except Exception:
+        pass
+    if "osrm_manager" in _sys.modules:
+        monkeypatch.setattr(_sys.modules["osrm_manager"], "health", lambda *a, **k: valor, raising=False)
+
+def test_prov_status_motor_rotas_local_no_ar(monkeypatch):
+    # Motor local respondendo ao health → status 'no ar', NÃO usando público.
+    _patch_health(monkeypatch, True)
+    st = prov.status_motor_rotas(conf={"osrm": {"mode": "auto", "port": 5000}})
+    assert st["local_no_ar"] is True and st["usando_publico"] is False
+    assert "NO AR" in st["detalhe"] and "127.0.0.1:5000" in st["url_local"]
+
+def test_prov_status_motor_rotas_cai_no_publico(monkeypatch):
+    # Motor NÃO responde → usando público; a mensagem explica (não é falha silenciosa).
+    _patch_health(monkeypatch, False)
+    st_off = prov.status_motor_rotas(conf={"osrm": {"mode": "off"}})
+    assert st_off["local_no_ar"] is False and st_off["usando_publico"] is True
+    assert "desligado" in st_off["detalhe"]
+    st_on = prov.status_motor_rotas(conf={"osrm": {"mode": "auto"}})
+    assert st_on["usando_publico"] is True and "público" in st_on["detalhe"]
 
 def test_prov_roteamento_local_ativo(tmp_path):
     assert prov.roteamento_local_ativo(conf={"osrm": {"mode": "off"}}) is False
