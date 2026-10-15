@@ -115,6 +115,16 @@ class _App:
             _ver = "?"
         ttk.Label(cab, text="versão %s" % _ver, foreground="#8a93a0",
                   font=("Segoe UI", 8)).pack(anchor="w")
+        # AVISO DE ATUALIZAÇÃO: aparece só quando há uma versão nova publicada (evita a confusão
+        # de ficar numa versão antiga/instalador em cache). Preenchido em segundo plano.
+        self.linha_update = ttk.Frame(cab)
+        self.linha_update.pack(anchor="w", fill="x", pady=(2, 0))
+        self.estado_update = ttk.Label(self.linha_update, text="", foreground="#1a7f4b")
+        self.estado_update.pack(side="left")
+        self.btn_update = ttk.Button(self.linha_update, text="Baixar atualização",
+                                     command=self._on_baixar_update)
+        # fica escondido até detectarmos nova versão (pack_forget)
+        self._update_url = ""
 
         self.resumo = ttk.Label(root, text="", justify="left", font=("Segoe UI", 10))
         self.resumo.pack(fill="x", **pad)
@@ -168,6 +178,9 @@ class _App:
         self.barra.pack(fill="x", **pad)
         self.status = ttk.Label(root, text="Pronto.", foreground="#5b6676")
         self.status.pack(fill="x", padx=16)
+        # DESEMPENHO LOCAL (telemetria): tempo médio/p95 por rota — mostra o ganho do motor local.
+        self.estado_perf = ttk.Label(root, text="", foreground="#5b6676", font=("Segoe UI", 8))
+        self.estado_perf.pack(fill="x", padx=16)
 
         rod = ttk.Frame(root)
         rod.pack(fill="x", side="bottom", **pad)
@@ -175,6 +188,7 @@ class _App:
         ttk.Button(rod, text="Abrir pasta de dados", command=self._on_abrir).pack(side="left", padx=8)
         ttk.Button(rod, text="Ativar roteamento local (rápido, sem Docker)",
                    command=self._on_ativar_local).pack(side="left")
+        ttk.Button(rod, text="Diagnóstico completo", command=self._on_diagnostico).pack(side="left", padx=8)
         ttk.Button(rod, text="Fechar", command=root.destroy).pack(side="right")
 
         self._atualizar_inventario()
@@ -207,6 +221,67 @@ class _App:
             self.btn_baixar.config(state=("disabled" if self._ocupado else "normal"))
         # Atualiza o status AO VIVO do motor de rotas (ping no 127.0.0.1) em segundo plano.
         threading.Thread(target=self._thread_status_motor, daemon=True).start()
+        # Checa atualização do app e o desempenho local — ambos em segundo plano (podem fazer rede).
+        threading.Thread(target=self._thread_update, daemon=True).start()
+        threading.Thread(target=self._thread_perf, daemon=True).start()
+
+    def _thread_update(self):
+        try:
+            u = prov.checar_atualizacao()
+        except Exception as e:
+            u = {"ha_atualizacao": False, "disponivel": False, "detalhe": "erro: %s" % e}
+        self.fila.put(("update_status", u))
+
+    def _thread_perf(self):
+        try:
+            p = prov.resumo_desempenho()
+        except Exception as e:
+            p = {"texto": "desempenho indisponível: %s" % e}
+        self.fila.put(("perf_status", p))
+
+    def _on_baixar_update(self):
+        """Abre o instalador/página da nova versão no navegador do sistema."""
+        import webbrowser
+        url = self._update_url or "https://github.com/lucascardosolccr/OpenRotas/releases/tag/desktop-latest"
+        try:
+            webbrowser.open(url)
+            self._set_status("Baixando a atualização pelo navegador… instale o .exe quando terminar.", "#1a7f4b")
+        except Exception as e:
+            self._set_status("Não consegui abrir o navegador: %s" % e, "#b42318")
+
+    def _on_diagnostico(self):
+        """Abre uma janela com o autodiagnóstico completo (bases, offline, motor, desempenho)."""
+        self._set_status("Gerando diagnóstico…")
+        threading.Thread(target=self._thread_diagnostico, daemon=True).start()
+
+    def _thread_diagnostico(self):
+        try:
+            txt = prov.relatorio_diagnostico()
+        except Exception as e:
+            txt = "Falha ao gerar o diagnóstico: %s" % e
+        self.fila.put(("diagnostico_fim", txt))
+
+    def _mostrar_diagnostico(self, texto):
+        """Janela de texto rolável (somente leitura) com o relatório de diagnóstico."""
+        try:
+            tk, ttk = self.tk, self.ttk
+            top = tk.Toplevel(self.root)
+            top.title("OpenRotas — Diagnóstico")
+            top.geometry("720x560")
+            quadro = ttk.Frame(top)
+            quadro.pack(fill="both", expand=True, padx=12, pady=12)
+            sb = ttk.Scrollbar(quadro, orient="vertical")
+            txt = tk.Text(quadro, wrap="word", yscrollcommand=sb.set,
+                          font=("Consolas", 9), background="#0E1117", foreground="#F9FAFB",
+                          insertbackground="#F9FAFB", relief="flat")
+            sb.config(command=txt.yview)
+            sb.pack(side="right", fill="y")
+            txt.pack(side="left", fill="both", expand=True)
+            txt.insert("1.0", texto or "(sem conteúdo)")
+            txt.config(state="disabled")
+            ttk.Button(top, text="Fechar", command=top.destroy).pack(pady=(0, 10))
+        except Exception as e:
+            self._set_status("Diagnóstico pronto, mas não consegui abrir a janela: %s" % e, "#b42318")
 
     def _on_testar_motor(self):
         try:
@@ -383,6 +458,28 @@ class _App:
                     _noar = bool((dado or {}).get("local_no_ar"))
                     _txt = "Motor de rotas: %s" % (dado or {}).get("detalhe", "?")
                     self.estado_motor.config(text=_txt, foreground=("#1a7f4b" if _noar else "#9a6700"))
+                elif tipo == "update_status":
+                    d = dado or {}
+                    if d.get("ha_atualizacao") and d.get("url_instalador"):
+                        self._update_url = d.get("url_instalador") or ""
+                        self.estado_update.config(
+                            text="↑ Nova versão %s disponível (você tem %s)."
+                                 % (d.get("remota", "?"), d.get("atual", "?")), foreground="#1a7f4b")
+                        try:
+                            self.btn_update.pack(side="left", padx=8)
+                        except Exception:
+                            pass
+                    else:
+                        self.estado_update.config(text="")
+                        try:
+                            self.btn_update.pack_forget()
+                        except Exception:
+                            pass
+                elif tipo == "perf_status":
+                    self.estado_perf.config(text=(dado or {}).get("texto", ""))
+                elif tipo == "diagnostico_fim":
+                    self._set_status("Diagnóstico pronto.", "#1a7f4b")
+                    self._mostrar_diagnostico(dado)
                 elif tipo == "auto_ativar_fim":
                     if dado.get("ok"):
                         self.estado_grafo.config(

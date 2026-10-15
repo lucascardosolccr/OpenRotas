@@ -161,6 +161,85 @@ def status_motor_rotas(conf: dict | None = None) -> dict:
     return out
 
 
+def checar_atualizacao() -> dict:
+    """Verifica se há uma versão NOVA do app publicada (app_update.verificar). Devolve
+    {atual, remota, ha_atualizacao, url_instalador, disponivel, detalhe}. Nunca levanta —
+    offline/sem release → disponivel=False."""
+    try:
+        import app_update
+    except Exception:
+        try:
+            sys.path.insert(0, str(_AQUI.parent / "app"))
+            import app_update
+        except Exception as e:
+            return {"atual": "", "remota": None, "ha_atualizacao": False, "url_instalador": None,
+                    "disponivel": False, "detalhe": "verificação indisponível: %s" % e}
+    try:
+        return app_update.verificar()
+    except Exception as e:
+        return {"atual": "", "remota": None, "ha_atualizacao": False, "url_instalador": None,
+                "disponivel": False, "detalhe": "erro: %s" % e}
+
+
+def resumo_desempenho() -> dict:
+    """Resumo do DESEMPENHO local das rotas a partir da telemetria (exec_profile). Devolve o dict
+    de resumo + uma linha humana 'texto' pronta para a UI. Nunca levanta; {} se não houver dados."""
+    base = {"total": 0, "ok": 0, "erro": 0, "tempos": {}, "texto": "Sem dados de desempenho ainda."}
+    try:
+        import exec_profile
+    except Exception:
+        try:
+            sys.path.insert(0, str(_AQUI.parent / "telemetry"))
+            import exec_profile
+        except Exception:
+            return base
+    try:
+        r = exec_profile.resumo() or {}
+    except Exception:
+        return base
+    r.setdefault("total", 0)
+    r.setdefault("ok", 0)
+    r.setdefault("erro", 0)
+    r.setdefault("tempos", {})
+    if not r.get("total"):
+        r["texto"] = "Sem dados de desempenho ainda (faça algumas rotas)."
+        return r
+    # escolhe o evento de rota mais frequente para a linha-resumo
+    tempos = r.get("tempos") or {}
+    alvo = None
+    for ev in ("rota", "route", "roteamento"):
+        if ev in tempos:
+            alvo = (ev, tempos[ev])
+            break
+    if alvo is None and tempos:
+        alvo = sorted(tempos.items(), key=lambda kv: -(kv[1] or {}).get("n", 0))[0]
+    if alvo:
+        ev, t = alvo
+        r["texto"] = ("Desempenho (%s): %s× · média %sms · p95 %sms (ok=%s, erro=%s)"
+                      % (ev, (t or {}).get("n", "?"), (t or {}).get("media_ms", "?"),
+                         (t or {}).get("p95_ms", "?"), r.get("ok", 0), r.get("erro", 0)))
+    else:
+        r["texto"] = "Eventos: %s (ok=%s, erro=%s)" % (r["total"], r["ok"], r["erro"])
+    return r
+
+
+def relatorio_diagnostico() -> str:
+    """Relatório de autodiagnóstico COMPLETO (diagnostics.relatorio_texto) para mostrar na UI.
+    Nunca levanta — devolve uma mensagem de erro legível em caso de falha."""
+    try:
+        import diagnostics
+    except Exception:
+        try:
+            sys.path.insert(0, str(_AQUI.parent / "app"))
+            import diagnostics
+        except Exception as e:
+            return "Diagnóstico indisponível: %s" % e
+    try:
+        return diagnostics.relatorio_texto()
+    except Exception as e:
+        return "Falha ao gerar o diagnóstico: %s: %s" % (type(e).__name__, e)
+
+
 def _osrm_cfg_efetivo(conf: dict | None = None) -> dict:
     """Bloco osrm do desktop.json COM o graph_url resolvido (configurado > padrão turnkey)."""
     cfg = _cfg()

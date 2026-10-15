@@ -64,6 +64,20 @@ def _configurar_logs(paths) -> None:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
                         handlers=handlers)
+    _silenciar_logs_sensiveis()
+
+
+def _silenciar_logs_sensiveis() -> None:
+    """PRIVACIDADE/DADOS EXPOSTOS: alguns clientes HTTP (httpx/urllib3) logam em INFO a URL
+    COMPLETA das requisições — incluindo o e-mail do usuário e tokens do Supabase em query
+    strings — que ficariam gravados no openrotas-desktop.log. Sobe esses loggers para WARNING
+    para que dados sensíveis não sejam persistidos no log. Não afeta a lógica do app, só o nível
+    de log. Best-effort."""
+    for nome in ("httpx", "httpcore", "urllib3", "urllib3.connectionpool", "hpack", "h2"):
+        try:
+            logging.getLogger(nome).setLevel(logging.WARNING)
+        except Exception:
+            pass
 
 
 log = logging.getLogger("openrotas.desktop.launcher")

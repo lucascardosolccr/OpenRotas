@@ -825,6 +825,47 @@ def test_prov_grafo_instalado_arquivo_base_avulso(tmp_path, monkeypatch):
     (d / "brazil-latest.osrm").write_bytes(b"x")
     assert prov.grafo_instalado() is True
 
+def test_prov_checar_atualizacao_defensivo(monkeypatch):
+    # Com app_update dizendo que há nova versão, o wrapper repassa fielmente.
+    import app_update as _au
+    monkeypatch.setattr(_au, "verificar", lambda *a, **k: {
+        "atual": "0.2.0", "remota": "0.3.0", "ha_atualizacao": True,
+        "url_instalador": "https://x/OpenRotas.Setup.exe", "disponivel": True, "detalhe": "nova"})
+    r = prov.checar_atualizacao()
+    assert r["ha_atualizacao"] is True and r["url_instalador"].endswith(".exe")
+    # Se app_update levanta, o wrapper não propaga (disponivel=False).
+    monkeypatch.setattr(_au, "verificar", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    r2 = prov.checar_atualizacao()
+    assert r2["disponivel"] is False and r2["ha_atualizacao"] is False
+
+def test_prov_resumo_desempenho_sem_dados(monkeypatch):
+    import exec_profile as _ep
+    monkeypatch.setattr(_ep, "resumo", lambda *a, **k: {"total": 0, "ok": 0, "erro": 0, "tempos": {}})
+    r = prov.resumo_desempenho()
+    assert r["total"] == 0 and "texto" in r and isinstance(r["texto"], str)
+
+def test_prov_resumo_desempenho_com_rota(monkeypatch):
+    import exec_profile as _ep
+    monkeypatch.setattr(_ep, "resumo", lambda *a, **k: {
+        "total": 10, "ok": 9, "erro": 1,
+        "tempos": {"rota": {"n": 8, "media_ms": 42, "p95_ms": 99}}})
+    r = prov.resumo_desempenho()
+    assert "média 42ms" in r["texto"] and "p95 99ms" in r["texto"]
+
+def test_prov_relatorio_diagnostico_e_texto():
+    txt = prov.relatorio_diagnostico()
+    assert isinstance(txt, str) and "OpenRotas" in txt and "Diagnóstico" in txt
+
+def test_launcher_silenciar_logs_sensiveis():
+    import logging as _lg
+    import launcher
+    # zera para um nível baixo e confirma que a higiene sobe para WARNING
+    for nome in ("httpx", "urllib3", "httpcore"):
+        _lg.getLogger(nome).setLevel(_lg.INFO)
+    launcher._silenciar_logs_sensiveis()
+    for nome in ("httpx", "urllib3", "httpcore"):
+        assert _lg.getLogger(nome).level == _lg.WARNING
+
 def _patch_health(monkeypatch, valor):
     # status_motor_rotas resolve o osrm_manager por 'import osrm_manager' (plano); o teste importa
     # 'engines.osrm_manager' — podem ser objetos distintos. Patcha health em AMBOS, defensivamente.

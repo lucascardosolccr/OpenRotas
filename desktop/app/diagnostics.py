@@ -124,6 +124,23 @@ def preflight_download(verbose: bool = True) -> int:
     return 0 if not probs else 2
 
 
+def relatorio_texto() -> str:
+    """Relatório de diagnóstico COMPLETO como texto (para exibir na Central de Dados). Reusa
+    executar() capturando a saída — sem duplicar a lógica. Nunca levanta."""
+    import io
+    import contextlib
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            executar(verbose=True)
+    except Exception as e:
+        try:
+            buf.write("\nFalha ao gerar o diagnóstico: %s: %s\n" % (type(e).__name__, e))
+        except Exception:
+            pass
+    return buf.getvalue()
+
+
 def executar(verbose: bool = True) -> int:
     paths = cfg.ensure_user_dirs()
     hw = cfg.detectar_hardware()
