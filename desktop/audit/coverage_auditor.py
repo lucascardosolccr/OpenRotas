@@ -152,7 +152,12 @@ def presenca_espacial_uf(reg, chave: str, bboxes: dict, amostra: int | None = No
         lon = df["lon"].to_numpy(dtype="float64", copy=False)
         lat = df["lat"].to_numpy(dtype="float64", copy=False)
         if amostra and len(lon) > amostra:
-            idx = np.linspace(0, len(lon) - 1, amostra).astype("int64")
+            # Amostra ALEATÓRIA uniforme (não np.linspace): as bases IBGE vêm ordenadas por
+            # geocódigo/UF, então índices igualmente espaçados podem SALTAR por cima de uma UF
+            # pequena/contígua (ex.: DF/SE/AP) e reportá-la como "sem presença espacial" por engano.
+            # Amostra aleatória cobre todas as regiões em probabilidade; semente fixa = reprodutível.
+            idx = np.random.default_rng(1234567).choice(len(lon), size=int(amostra), replace=False)
+            idx.sort()
             lon, lat = lon[idx], lat[idx]
         finito = np.isfinite(lon) & np.isfinite(lat)
         lon, lat = lon[finito], lat[finito]

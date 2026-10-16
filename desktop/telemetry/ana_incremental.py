@@ -42,6 +42,17 @@ def _base_padrao() -> Path:
         return Path.home() / ".openrotas" / "telemetry"
 
 
+def _ordem_ts(v):
+    """Chave de ordenação de watermark que respeita o TIPO do timestamp: numéricos (ids/epoch)
+    ordenam por VALOR; o resto (datas ISO 'YYYY-MM-DD…') ordena lexicograficamente — ambos
+    corretos. Evita o bug de comparar números como texto ('9' > '10'). Nunca levanta."""
+    s = str(v)
+    try:
+        return (0, float(s))       # numérico → ordena por valor
+    except (TypeError, ValueError):
+        return (1, s)              # texto/ISO → ordem lexicográfica (correta para ISO)
+
+
 def _chave_padrao(rec: dict) -> str:
     """Chave de dedup: 'codigo'/'id'/'estacao' + 'data' quando existirem; senão o JSON ordenado."""
     for k in ("codigo", "id", "estacao", "codigo_estacao"):
@@ -156,7 +167,9 @@ class TelemetryStore:
                     for r in novas:
                         f.write(json.dumps(r, ensure_ascii=False) + "\n")
             res["novos"] = len(novas)
-            res["total"] = self.contar(dataset)
+            # Total SEM reler o arquivo inteiro (evita O(n²) ao longo da vida de um store
+            # append-only): o arquivo é dedup'd, então nº de linhas == chaves únicas após o append.
+            res["total"] = len(existentes) + res["novos"]
         except Exception:
             logger.warning("[TEL] ingestão de %s falhou.", dataset, exc_info=True)
         return res
@@ -190,9 +203,12 @@ def atualizar_incremental(dataset: str, fetch_fn, store=None, chave_fn=None, cam
     try:
         tss = [rec.get(campo_ts) for rec in registros if rec.get(campo_ts) not in (None, "")]
         if tss:
-            novo = max(str(t) for t in tss)
-            if wm0 is None or str(novo) > str(wm0):
-                wm1 = novo
+            # Ordena pela CHAVE correta: timestamps numéricos (ids/epoch) por VALOR, demais
+            # (datas ISO) lexicograficamente. max() lexicográfico puro erra em numéricos ('9' > '10')
+            # e pode TRAVAR o watermark para sempre (nunca avança além de um valor "maior" textual).
+            novo = max(tss, key=_ordem_ts)
+            if wm0 is None or _ordem_ts(novo) > _ordem_ts(wm0):
+                wm1 = str(novo)
                 store.salvar_watermark(dataset, wm1)
     except Exception:
         pass

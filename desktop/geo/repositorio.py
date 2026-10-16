@@ -217,7 +217,7 @@ def render_inventario(inv: dict) -> str:
         L.append("  %s %-24s %-12s %10d feições" % (marca, c, info["classe"],
                                                     info["feicoes"] if info["instalado"] else 0))
     L.append("")
-    L.append("Classes multimodais presentes: %s" % ", ".join(inv.get("classes_presentes", [])) or "—")
+    L.append("Classes multimodais presentes: %s" % (", ".join(inv.get("classes_presentes", [])) or "—"))
     L.append("Total de feições (todos os modais): %d" % inv.get("total_feicoes", 0))
     L.append("Nota: 'arestas' = feições de cada modal; o grafo multimodal consulta estes modais de "
              "forma unificada (consultas on-route por corredor/bbox).")

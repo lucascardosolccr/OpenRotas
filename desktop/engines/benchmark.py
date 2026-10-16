@@ -28,6 +28,16 @@ AQUI = os.path.dirname(os.path.abspath(__file__))
 SAMPLE = os.path.join(AQUI, "sample_pairs.csv")
 
 
+def _idx_p95(n: int) -> int:
+    """Índice do p95 por rank-mais-próximo numa lista ORDENADA de tamanho n: ceil(0.95*n)-1,
+    preso a [0, n-1]. Evita o viés do antigo int(n*0.95)-1, que para n pequeno (ex.: n=2)
+    devolvia o MÍNIMO e reportava tail-latency enganosamente baixa."""
+    if n <= 0:
+        return 0
+    idx = (95 * n + 99) // 100 - 1          # = ceil(0.95*n) - 1, em aritmética inteira
+    return max(0, min(n - 1, idx))
+
+
 def registrar_telemetria(resultados) -> None:
     """Grava cada resultado do benchmark no perfil de execução local (§29/§42) — assim a
     EVIDÊNCIA do ganho (local × público) fica persistida e aparece no Diagnóstico. Import
@@ -103,7 +113,7 @@ def medir(url: str, rotulo: str, pares, pausa_s: float = 0.0):
         res.update({
             "lat_media_s": round(statistics.mean(lat_ok), 2),
             "lat_mediana_s": round(statistics.median(lat_ok), 2),
-            "lat_p95_s": round(lat_ok[max(0, int(len(lat_ok) * 0.95) - 1)], 2),
+            "lat_p95_s": round(lat_ok[_idx_p95(len(lat_ok))], 2),
             "vazao_rota_s": round(len(lat_ok) / sum(lat_ok), 2) if sum(lat_ok) else 0.0,
         })
     return res

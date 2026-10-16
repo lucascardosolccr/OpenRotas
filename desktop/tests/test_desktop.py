@@ -1612,6 +1612,60 @@ def test_telemetria_atualizar_incremental_so_novos(tmp_path):
     assert chamadas["wm"] == [None, "2026-10-02"]                      # 2ª busca partiu do watermark
     assert st.contar("serie") == 3
 
+def test_telemetria_watermark_numerico(tmp_path):
+    # Correção: timestamps NUMÉRICOS devem avançar por valor, não lexicograficamente ('9' vs '10').
+    from telemetry import ana_incremental as tel
+    st = tel.TelemetryStore(tmp_path / "telnum")
+    lote = [{"id": "a", "data": "9"}, {"id": "b", "data": "10"}, {"id": "c", "data": "100"}]
+    r = tel.atualizar_incremental("num", lambda wm: lote, store=st, campo_ts="data")
+    assert r["watermark_novo"] == "100"            # 100 é o maior por VALOR (não '9' por texto)
+    # e um batch com valor numérico maior avança o watermark (não trava)
+    r2 = tel.atualizar_incremental("num", lambda wm: [{"id": "d", "data": "250"}],
+                                   store=st, campo_ts="data")
+    assert r2["watermark_novo"] == "250"
+    assert tel._ordem_ts("100") > tel._ordem_ts("9")       # numérico por valor
+    assert tel._ordem_ts("2026-10-03") > tel._ordem_ts("2026-10-02")   # ISO lexicográfico
+
+def test_telemetria_total_sem_reler(tmp_path, monkeypatch):
+    # Correção O(n²): ingerir não deve reler o arquivo inteiro (contar) para o total.
+    from telemetry import ana_incremental as tel
+    st = tel.TelemetryStore(tmp_path / "tel2")
+    st.ingerir("s", [{"codigo": "1"}, {"codigo": "2"}])
+    def _boom(*a, **k):
+        raise AssertionError("contar() não deveria ser chamado em ingerir()")
+    monkeypatch.setattr(st, "contar", _boom)
+    r = st.ingerir("s", [{"codigo": "2"}, {"codigo": "3"}])   # 1 dup, 1 novo
+    assert r["novos"] == 1 and r["duplicados"] == 1 and r["total"] == 3
+
+def test_benchmark_idx_p95():
+    from engines import benchmark as bm
+    assert bm._idx_p95(2) == 1          # n=2 → o MAIOR (não o mínimo)
+    assert bm._idx_p95(1) == 0
+    assert bm._idx_p95(20) == 18        # ceil(0.95*20)-1
+    assert bm._idx_p95(100) == 94
+    assert bm._idx_p95(0) == 0
+
+def test_repo_render_inventario_traco_sem_classes():
+    # Correção de precedência: sem classes presentes, mostra '—' (não valor em branco).
+    from geo import repositorio
+    txt = repositorio.render_inventario({"camadas": {}, "classes_presentes": [], "total_feicoes": 0})
+    assert "Classes multimodais presentes: —" in txt
+
+def test_downloader_part_completo_recupera_em_416(tmp_path):
+    # Correção: .part completo (processo morreu antes do rename) → 416 na retomada deve FINALIZAR
+    # o arquivo, não falhar após N tentativas.
+    from resources import downloader as dl
+    import urllib.error
+    destino = tmp_path / "arq.bin"
+    part = tmp_path / "arq.bin.part"
+    part.write_bytes(b"CONTEUDO-COMPLETO")        # .part já inteiro, aguardando rename
+    def _abrir(url, inicio, timeout):
+        raise urllib.error.HTTPError(url, 416, "Range Not Satisfiable", None, None)
+    r = dl.baixar("http://x/arq.bin", destino, abrir=_abrir, tentativas=4,
+                  dormir=lambda *_a: None)
+    assert r["ok"] is True and destino.exists()
+    assert destino.read_bytes() == b"CONTEUDO-COMPLETO" and not part.exists()
+
 def test_telemetria_inventario(tmp_path):
     from telemetry import ana_incremental as tel
     st = tel.TelemetryStore(tmp_path / "tel")

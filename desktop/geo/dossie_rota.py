@@ -95,13 +95,17 @@ def resolver_local(texto, reg=None) -> dict:
         if not nome_q:
             return {"ok": False, "detalhe": "nome vazio"}
         df = reg.carregar_parquet("municipios", colunas=["lon", "lat", "nome", "geocodigo"])
-        # nomes normalizados (cache por id do df — carregar_parquet reusa o mesmo objeto).
-        chave = id(df)
-        norm = _NOME_NORM_CACHE.get(chave)
-        if norm is None:
+        # Nomes normalizados em cache PRESO AO PRÓPRIO df (df.attrs), não a id(df): após um
+        # liberar_memoria()+recarga, o CPython pode REUSAR o id do objeto liberado e um cache
+        # keyed-by-id devolveria uma Series velha (tamanho errado) — quebrando a resolução para
+        # sempre. df.attrs vive e morre com o df; valida também o tamanho por segurança.
+        norm = df.attrs.get("_ork_nome_norm")
+        if norm is None or len(norm) != len(df):
             norm = df["nome"].astype(str).map(_normalizar)
-            _NOME_NORM_CACHE.clear()               # mantém no máx. 1 entrada (base única)
-            _NOME_NORM_CACHE[chave] = norm
+            try:
+                df.attrs["_ork_nome_norm"] = norm
+            except Exception:
+                pass
         sub = df[norm.values == nome_q]
         if len(sub) == 0:
             return {"ok": False, "detalhe": "cidade não encontrada: %s" % texto, "candidatos": []}

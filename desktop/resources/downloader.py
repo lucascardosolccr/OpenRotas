@@ -189,6 +189,28 @@ def baixar(url, destino, progresso=None, sha256: str = "", tentativas: int = 4, 
             return {"ok": True, "caminho": str(destino), "bytes": tam,
                     "sha256": sha256 or "", "tentativas": tentativa, "detalhe": "ok"}
         except Exception as e:
+            # RECUPERAÇÃO DE .part COMPLETO: se o download já tinha terminado mas o processo morreu
+            # ANTES do os.replace, o .part fica com o tamanho final; a retomada pede Range no/após o
+            # EOF e o servidor responde HTTP 416 (Range Not Satisfiable). Isso NÃO é falha — o
+            # arquivo está inteiro. Finaliza (conferindo sha, se houver) em vez de re-tentar à toa.
+            if getattr(e, "code", None) == 416 and part.exists() and part.stat().st_size > 0:
+                if sha256:
+                    got = _sha256(part)
+                    if got.lower() != str(sha256).lower():
+                        try:
+                            part.unlink()
+                        except Exception:
+                            pass
+                        return {"ok": False, "caminho": None, "bytes": 0, "sha256": got,
+                                "tentativas": tentativa,
+                                "detalhe": "sha256 não confere (esperado %s, obtido %s)"
+                                           % (sha256[:12], got[:12])}
+                tam = part.stat().st_size
+                os.replace(str(part), str(destino))
+                _emitir(progresso, fase="concluido", baixado=tam, total=tam, pct=100.0)
+                return {"ok": True, "caminho": str(destino), "bytes": tam,
+                        "sha256": sha256 or "", "tentativas": tentativa,
+                        "detalhe": "já estava completo (HTTP 416 na retomada)"}
             ultimo_erro = "%s" % e
             logger.info("[DL] tentativa %d/%d falhou (%s); manterá .part para retomar.",
                         tentativa, tentativas, e)
