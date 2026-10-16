@@ -196,11 +196,21 @@ class LocalDataRegistry:
         suficiente para detectar troca de versão/corrupção sem ler o arquivo inteiro."""
         p = self.caminho(chave)
         try:
-            tam = p.stat().st_size
+            # O grafo OSRM 5.x (MLD) não tem o arquivo-base '<base>.osrm' — é a família
+            # '<base>.osrm.*'. Sem isto, assinatura() dava stat num caminho inexistente e
+            # devolvia bytes=0/existe=False, fazendo verificar()/status() marcarem um grafo
+            # ÍNTEGRO como corrompido/0 MB. Mede a família inteira (tamanho somado) e assina o
+            # 1º arquivo (1º+último MB) — barato e estável.
+            alvos = [p] if p.exists() else sorted(p.parent.glob(p.name + ".*"))
+            if not alvos:
+                return {"existe": False, "bytes": 0, "hash12": ""}
+            tam = sum(x.stat().st_size for x in alvos)
             h = hashlib.sha256()
-            with open(p, "rb") as f:
+            primeiro = alvos[0]
+            t0 = primeiro.stat().st_size
+            with open(primeiro, "rb") as f:
                 h.update(f.read(1024 * 1024))          # 1º MB
-                if tam > 2 * 1024 * 1024:
+                if t0 > 2 * 1024 * 1024:
                     f.seek(-1024 * 1024, os.SEEK_END)
                     h.update(f.read(1024 * 1024))      # último MB
             return {"existe": True, "bytes": tam, "hash12": h.hexdigest()[:12]}

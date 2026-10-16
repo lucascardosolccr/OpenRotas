@@ -348,6 +348,19 @@ def test_offline_pronto_estrutura(reg):
 def test_osrm_brasil_e_opcional_ausente(reg):
     assert reg.existe("osrm_brasil") is False
 
+def test_local_data_assinatura_familia_osrm(tmp_path):
+    # Correção: assinatura() deve medir a FAMÍLIA '<base>.osrm.*' (o MLD não tem arquivo-base),
+    # senão verificar()/status() marcam um grafo íntegro como corrompido/0 MB.
+    r = local_data.LocalDataRegistry(cfg.app_root(), tmp_path / "data_local")
+    dl = tmp_path / "data_local"; dl.mkdir(parents=True, exist_ok=True)
+    (dl / "brazil-latest.osrm.cells").write_bytes(b"A" * 2048)
+    (dl / "brazil-latest.osrm.mldgr").write_bytes(b"B" * 4096)
+    a = r.assinatura("osrm_brasil")
+    assert a["existe"] is True and a["bytes"] == 2048 + 4096 and a["hash12"]
+    # base genuinamente ausente (sem família) → existe False
+    r2 = local_data.LocalDataRegistry(cfg.app_root(), tmp_path / "vazio")
+    assert r2.assinatura("osrm_brasil")["existe"] is False
+
 def test_osrm_brasil_reconhecido_pela_familia_sem_arquivo_base(tmp_path):
     # OSRM 5.x (MLD) não cria 'brazil-latest.osrm' literal — só a família '<base>.osrm.*'.
     # existe()/legivel()/offline_pronto devem reconhecer o grafo pela FAMÍLIA (senão a Central
@@ -2134,6 +2147,21 @@ def test_osrm_resolver_local_sem_grafo_cai_no_publico(tmp_path, monkeypatch):
     monkeypatch.setenv("OSRM_ROUTED_BIN", str(fake))
     r = osrm.resolver({"mode": "local", "graph_path": str(tmp_path / "nao_existe.osrm")})
     assert r.modo == "local" and r.ativo is False and r.url is None
+
+def test_osrm_num_defensivo():
+    assert osrm._num(None, 5000) == 5000              # JSON null → default
+    assert osrm._num("", 5000) == 5000                # string vazia → default
+    assert osrm._num("8080", 5000) == 8080            # string numérica ok
+    assert osrm._num(90, 30, float) == 90.0
+    assert osrm._num("x", 90, float) == 90.0          # lixo → default
+
+def test_osrm_resolver_porta_invalida_nao_levanta(tmp_path, monkeypatch):
+    # osrm.port null/"" no desktop.json NÃO pode fazer resolver() levantar (perderia o fallback
+    # para o OSRM público). Deve devolver inativo, sem exceção.
+    monkeypatch.setattr(osrm, "_bin_osrm_routed", lambda: None)
+    for porta in (None, "", "abc"):
+        r = osrm.resolver({"mode": "local", "graph_path": str(tmp_path / "g.osrm"), "port": porta})
+        assert r.ativo is False and r.url is None      # sem levantar
 
 def test_osrm_resolver_auto_sem_motor_cai_no_publico(monkeypatch):
     # modo 'auto' sem binário nativo e sem Docker → inativo, público (nunca levanta)

@@ -78,6 +78,16 @@ def health(url: str, timeout: float = 4.0) -> bool:
         return False
 
 
+def _num(v, default, tipo=int):
+    """Conversão numérica DEFENSIVA de campos de config não-confiáveis (osrm.port pode vir null
+    ou string vazia no desktop.json). Nunca levanta — cai no default. Protege o contrato
+    'resolver() nunca levanta' (senão o app perderia o fallback para o OSRM público)."""
+    try:
+        return tipo(v)
+    except (TypeError, ValueError):
+        return tipo(default)
+
+
 def _porta_ocupada(host: str, porta: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(0.4)
@@ -204,7 +214,7 @@ def _subir_local(cfg: dict) -> ResultadoMotor:
     tiver outro serviço, ou se não subir a tempo, devolve inativo e o app cai no OSRM público
     (zero regressão). Nunca levanta."""
     graph = str(cfg.get("graph_path", "")).strip()
-    porta = int(cfg.get("port", 5000))
+    porta = _num(cfg.get("port", 5000), 5000)
     algoritmo = str(cfg.get("algorithm", "mld"))
     url = cfg.get("url") or ("http://127.0.0.1:%d" % porta)
 
@@ -241,7 +251,7 @@ def _subir_local(cfg: dict) -> ResultadoMotor:
         _telemetria("local_start", ok=False, detalhe="popen falhou")
         return ResultadoMotor(url=None, modo="local", ativo=False,
                               detalhe="falha ao iniciar o motor nativo: %s" % e)
-    if _esperar_health(url, timeout_s=float(cfg.get("start_timeout_s", 90))):
+    if _esperar_health(url, timeout_s=_num(cfg.get("start_timeout_s", 90), 90, float)):
         _telemetria("local_start", ok=True, ms=round((time.perf_counter() - _t0) * 1000.0, 1))
         _aquecer_em_background(url)   # 1ª rota real mais rápida (paginação do grafo em background)
         return ResultadoMotor(url=url, modo="local", ativo=True, gerenciado=True, processo=proc,
@@ -255,7 +265,7 @@ def _subir_local(cfg: dict) -> ResultadoMotor:
 
 def _subir_docker(cfg: dict) -> ResultadoMotor:
     graph = str(cfg.get("graph_path", "")).strip()
-    porta = int(cfg.get("port", 5000))
+    porta = _num(cfg.get("port", 5000), 5000)
     imagem = str(cfg.get("docker_image", "osrm/osrm-backend"))
     algoritmo = str(cfg.get("algorithm", "mld"))
     url = cfg.get("url") or ("http://localhost:%d" % porta)
@@ -296,7 +306,7 @@ def _subir_docker(cfg: dict) -> ResultadoMotor:
         _telemetria("docker_start", ok=False, detalhe="popen falhou")
         return ResultadoMotor(url=None, modo="docker", ativo=False,
                               detalhe="falha ao iniciar o Docker: %s" % e)
-    if _esperar_health(url, timeout_s=float(cfg.get("start_timeout_s", 90))):
+    if _esperar_health(url, timeout_s=_num(cfg.get("start_timeout_s", 90), 90, float)):
         _telemetria("docker_start", ok=True, ms=round((time.perf_counter() - _t0) * 1000.0, 1))
         _aquecer_em_background(url)   # 1ª rota real mais rápida (paginação do grafo em background)
         return ResultadoMotor(url=url, modo="docker", ativo=True, gerenciado=True, processo=proc,
@@ -521,20 +531,30 @@ def _baixar_partes(url: str, destino_tar, progresso=None, sha256: str = "") -> b
                     abortou = True
                     break
             else:
-                # fallback stdlib (sem retomada) — mantém o comportamento mínimo.
+                # fallback stdlib (sem retomada). Escreve num arquivo .inc e só RENOMEIA para o
+                # nome final da parte ao concluir — ATÔMICO: se a conexão cair no meio, sobra o
+                # .inc (descartado), nunca uma parte truncada que o reuso-entre-cliques trataria
+                # como completa e concatenaria como lixo.
+                _inc = tmp_i.with_suffix(tmp_i.suffix + ".inc")
                 try:
                     req = urllib.request.Request(parte_url, headers={
                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) OpenRotas-Desktop/1.0"})
                     _ctx = _ctx_ssl()
                     _abre = (urllib.request.urlopen(req, timeout=120, context=_ctx) if _ctx
                              else urllib.request.urlopen(req, timeout=120))
-                    with _abre as resp, open(tmp_i, "wb") as out:
+                    with _abre as resp, open(_inc, "wb") as out:
                         while True:
                             b = resp.read(1024 * 256)
                             if not b:
                                 break
                             out.write(b)
+                    os.replace(str(_inc), str(tmp_i))       # troca atômica só no sucesso
                 except Exception as e:
+                    try:
+                        if _inc.exists():
+                            _inc.unlink()                   # não deixa .inc órfão
+                    except Exception:
+                        pass
                     if _parte_ausente(e):
                         if not parts_tmp:
                             _emitir(progresso, fase="erro", parte=i,

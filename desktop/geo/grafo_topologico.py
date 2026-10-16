@@ -135,22 +135,15 @@ def construir(camada: str = "rodovias", precisao: int = 3, limite=None) -> dict:
         f = 10 ** precisao
         kx0 = np.rint(x0 * f).astype("int64"); ky0 = np.rint(y0 * f).astype("int64")
         kxe = np.rint(xe * f).astype("int64"); kye = np.rint(ye * f).astype("int64")
-        # ids de nó via dict de tuplas.
-        nodo = {}
-        def _id(kx, ky):
-            k = (int(kx), int(ky))
-            i = nodo.get(k)
-            if i is None:
-                i = len(nodo); nodo[k] = i
-            return i
-        a_ids = np.empty(m, dtype="int64"); b_ids = np.empty(m, dtype="int64")
-        grau = {}
-        for i in range(m):
-            ia = _id(kx0[i], ky0[i]); ib = _id(kxe[i], kye[i])
-            a_ids[i] = ia; b_ids[i] = ib
-            grau[ia] = grau.get(ia, 0) + 1
-            grau[ib] = grau.get(ib, 0) + 1
-        nnos = len(nodo)
+        # ids de nó e GRAUS vetorizados (np.unique/np.bincount) — substitui o laço Python por
+        # feição, que era pathológico na drenagem (~2,18 M trechos): minutos de CPU + dicts enormes.
+        ends = np.stack([np.concatenate([kx0, kxe]),
+                         np.concatenate([ky0, kye])], axis=1)          # (2m, 2) endpoints
+        _uniq, inv = np.unique(ends, axis=0, return_inverse=True)
+        inv = np.asarray(inv, dtype="int64").reshape(-1)               # id de nó por endpoint
+        a_ids = inv[:m]; b_ids = inv[m:]
+        nnos = int(len(_uniq))
+        grau_arr = np.bincount(inv, minlength=nnos)
         uf = _UF(nnos)
         for i in range(m):
             uf.union(int(a_ids[i]), int(b_ids[i]))
@@ -166,7 +159,7 @@ def construir(camada: str = "rodovias", precisao: int = 3, limite=None) -> dict:
             "maior_componente_nos": int(maior),
             "pct_maior": round(100.0 * maior / nnos, 2) if nnos else 0.0,
             "componentes_pequenos": int(sum(1 for t in tamanhos if t <= 2)),
-            "nos_grau1": int(sum(1 for g in grau.values() if g == 1)),
+            "nos_grau1": int((grau_arr == 1).sum()),
             "status": "OK",
         })
         return base
