@@ -98,72 +98,99 @@ class _App:
         self._ultimo_erro_grafo = ""     # motivo real da última falha de download (fase 'erro')
         self._auto_ativado = False       # garante a auto-ativação do roteamento só uma vez
         root.title("OpenRotas — Central de Dados")
-        root.geometry("640x460")
-        root.minsize(560, 420)
+        root.geometry("720x720")
+        root.minsize(600, 560)
 
-        pad = {"padx": 16, "pady": 8}
-        cab = ttk.Frame(root)
-        cab.pack(fill="x", **pad)
-        ttk.Label(cab, text="Central de Dados", font=("Segoe UI", 16, "bold")).pack(anchor="w")
-        ttk.Label(cab, text="Baixe e instale todo o conteúdo do Brasil direto na pasta do app.",
-                  foreground="#5b6676").pack(anchor="w")
-        # Versão visível: confirma qual build está instalado (ajuda a descartar instalador em cache).
         try:
             import desktop_config as _dc
             _ver = getattr(_dc, "APP_VERSION", "?")
         except Exception:
             _ver = "?"
-        ttk.Label(cab, text="versão %s" % _ver, foreground="#8a93a0",
-                  font=("Segoe UI", 8)).pack(anchor="w")
-        # AVISO DE ATUALIZAÇÃO: aparece só quando há uma versão nova publicada (evita a confusão
-        # de ficar numa versão antiga/instalador em cache). Preenchido em segundo plano.
+
+        # ------------------------------------------------------------------ cabeçalho
+        cab = ttk.Frame(root)
+        cab.pack(fill="x", padx=16, pady=(12, 4))
+        ttk.Label(cab, text="Central de Dados", font=("Segoe UI", 16, "bold")).pack(anchor="w")
+        ttk.Label(cab, text="Baixe, instale e verifique todo o conteúdo do Brasil — direto na pasta do app.",
+                  foreground="#5b6676").pack(anchor="w")
+        ttk.Label(cab, text="versão %s" % _ver, foreground="#8a93a0", font=("Segoe UI", 8)).pack(anchor="w")
+        # Aviso de atualização (aparece só quando há versão nova publicada).
         self.linha_update = ttk.Frame(cab)
         self.linha_update.pack(anchor="w", fill="x", pady=(2, 0))
         self.estado_update = ttk.Label(self.linha_update, text="", foreground="#1a7f4b")
         self.estado_update.pack(side="left")
         self.btn_update = ttk.Button(self.linha_update, text="Baixar atualização",
-                                     command=self._on_baixar_update)
-        # fica escondido até detectarmos nova versão (pack_forget)
+                                     command=self._on_baixar_update)   # exibido só quando há update
         self._update_url = ""
+        self.resumo = ttk.Label(cab, text="", justify="left", foreground="#5b6676",
+                                font=("Segoe UI", 9))
+        self.resumo.pack(anchor="w", fill="x", pady=(4, 0))
 
-        self.resumo = ttk.Label(root, text="", justify="left", font=("Segoe UI", 10))
-        self.resumo.pack(fill="x", **pad)
+        # ---------------------------------------------- rodapé FIXO (status + barra + fechar)
+        # Empacotado ANTES das seções, no bottom, para ficar sempre visível mesmo com a janela
+        # pequena; as seções ocupam o espaço restante acima.
+        rodape = ttk.Frame(root)
+        rodape.pack(side="bottom", fill="x", padx=16, pady=(4, 10))
+        fechar_row = ttk.Frame(rodape)
+        fechar_row.pack(fill="x", pady=(6, 0))
+        ttk.Button(fechar_row, text="Fechar", command=root.destroy).pack(side="right")
+        self.estado_perf = ttk.Label(rodape, text="", foreground="#5b6676", font=("Segoe UI", 8))
+        self.estado_perf.pack(fill="x")
+        self.status = ttk.Label(rodape, text="Pronto.", foreground="#5b6676")
+        self.status.pack(fill="x")
+        self.barra = ttk.Progressbar(rodape, mode="determinate", maximum=100)
+        self.barra.pack(fill="x")
 
-        grafo = ttk.LabelFrame(root, text="Mapa de rotas do Brasil (grafo OSRM — roteamento offline)")
-        grafo.pack(fill="x", **pad)
+        # ---------------------------------------------------- helpers de seção/linha de botões
+        def _secao(titulo, dica=""):
+            fr = ttk.LabelFrame(root, text=titulo)
+            fr.pack(fill="x", padx=16, pady=6)
+            if dica:
+                ttk.Label(fr, text=dica, foreground="#5b6676",
+                          wraplength=660, justify="left").pack(anchor="w", padx=12, pady=(6, 0))
+            return fr
+
+        def _linha(parent):
+            ln = ttk.Frame(parent)
+            ln.pack(anchor="w", fill="x", padx=12, pady=(6, 8))
+            return ln
+
+        # ------------------------------------------------------------------ SEÇÃO: mapa de rotas
+        grafo = _secao("Mapa de rotas do Brasil (roteamento local/offline)")
         self.estado_grafo = ttk.Label(grafo, text="", justify="left")
-        self.estado_grafo.pack(anchor="w", padx=12, pady=(8, 4))
-        self.btn_baixar = ttk.Button(grafo, text="Baixar o mapa do Brasil (~6,7 GB)",
-                                     command=self._on_baixar_grafo)
-        self.btn_baixar.pack(anchor="w", padx=12, pady=(0, 6))
-        # ALTERNATIVA GARANTIDA: se o download dentro do app falhar (mas o navegador baixa normal),
-        # o usuário baixa as partes pelo navegador e aponta a pasta — montagem 100% offline.
-        alt = ttk.Frame(grafo)
-        alt.pack(fill="x", padx=12, pady=(0, 10))
-        ttk.Label(alt, text="Não baixou pelo app? Baixe pelo navegador e importe:",
-                  foreground="#5b6676").pack(anchor="w")
-        linha_alt = ttk.Frame(alt)
-        linha_alt.pack(fill="x", pady=(2, 0))
-        ttk.Button(linha_alt, text="Abrir página de download",
-                   command=self._on_abrir_pagina_download).pack(side="left")
-        ttk.Button(linha_alt, text="Importar mapa de uma pasta…",
-                   command=self._on_importar_local).pack(side="left", padx=8)
-
-        # STATUS AO VIVO DO MOTOR DE ROTAS: mostra se as rotas estão indo pelo motor LOCAL
-        # (rápido/offline) ou caindo no OSRM público (lento) — torna visível a falha silenciosa.
-        motor_box = ttk.Frame(grafo)
-        motor_box.pack(fill="x", padx=12, pady=(0, 10))
-        self.estado_motor = ttk.Label(motor_box, text="Motor de rotas: verificando…",
+        self.estado_grafo.pack(anchor="w", padx=12, pady=(8, 2))
+        self.estado_motor = ttk.Label(grafo, text="Motor de rotas: verificando…",
                                       justify="left", foreground="#5b6676")
-        self.estado_motor.pack(anchor="w")
-        ttk.Button(motor_box, text="Testar motor de rotas",
-                   command=self._on_testar_motor).pack(anchor="w", pady=(4, 0))
+        self.estado_motor.pack(anchor="w", padx=12, pady=(0, 2))
+        lg = _linha(grafo)
+        self.btn_baixar = ttk.Button(lg, text="Baixar o mapa do Brasil (~6,7 GB)",
+                                     command=self._on_baixar_grafo)
+        self.btn_baixar.pack(side="left")
+        ttk.Button(lg, text="Testar motor de rotas", command=self._on_testar_motor).pack(side="left", padx=8)
+        ttk.Label(grafo, text="Não baixou pelo app? Baixe as partes pelo navegador e importe a pasta:",
+                  foreground="#5b6676").pack(anchor="w", padx=12)
+        lg2 = _linha(grafo)
+        ttk.Button(lg2, text="Abrir página de download",
+                   command=self._on_abrir_pagina_download).pack(side="left")
+        ttk.Button(lg2, text="Importar mapa de uma pasta…",
+                   command=self._on_importar_local).pack(side="left", padx=8)
+        ttk.Button(lg2, text="Ativar roteamento local",
+                   command=self._on_ativar_local).pack(side="left")
 
-        # Dossiê de Rota por nome de cidade (integração total dos dados numa rota).
-        dossie = ttk.LabelFrame(root, text="Dossiê de Rota (origem → destino, por cidade)")
-        dossie.pack(fill="x", **pad)
+        # ------------------------------------------------------------------ SEÇÃO: bases nacionais
+        bases = _secao("Bases nacionais do Brasil",
+                       dica="Municípios, hidrografia, rodovias e demais camadas que alimentam a "
+                            "geocodificação e a inteligência da rota.")
+        lb = _linha(bases)
+        ttk.Button(lb, text="Reparar/instalar bases nacionais",
+                   command=self._on_reparar).pack(side="left")
+        ttk.Button(lb, text="Verificar integridade das bases",
+                   command=self._on_verificar_integridade).pack(side="left", padx=8)
+
+        # ------------------------------------------------------------------ SEÇÃO: dossiê de rota
+        dossie = _secao("Dossiê de Rota (origem → destino)")
         linha = ttk.Frame(dossie)
-        linha.pack(fill="x", padx=12, pady=(8, 4))
+        linha.pack(fill="x", padx=12, pady=(8, 2))
         ttk.Label(linha, text="Origem:").pack(side="left")
         self.ent_origem = ttk.Entry(linha, width=22)
         self.ent_origem.insert(0, "São Paulo/SP")
@@ -172,42 +199,25 @@ class _App:
         self.ent_destino = ttk.Entry(linha, width=22)
         self.ent_destino.insert(0, "Rio de Janeiro/RJ")
         self.ent_destino.pack(side="left", padx=4)
-        linha_dossie = ttk.Frame(dossie)
-        linha_dossie.pack(anchor="w", fill="x", padx=12, pady=(0, 10))
-        ttk.Button(linha_dossie, text="Gerar dossiê (HTML)", command=self._on_dossie).pack(side="left")
-        ttk.Button(linha_dossie, text="Dossiê em lote (planilha)…",
+        ld = _linha(dossie)
+        ttk.Button(ld, text="Gerar dossiê (HTML)", command=self._on_dossie).pack(side="left")
+        ttk.Button(ld, text="Dossiê em lote (planilha)…",
                    command=self._on_dossie_lote).pack(side="left", padx=8)
 
-        self.barra = ttk.Progressbar(root, mode="determinate", maximum=100)
-        self.barra.pack(fill="x", **pad)
-        self.status = ttk.Label(root, text="Pronto.", foreground="#5b6676")
-        self.status.pack(fill="x", padx=16)
-        # DESEMPENHO LOCAL (telemetria): tempo médio/p95 por rota — mostra o ganho do motor local.
-        self.estado_perf = ttk.Label(root, text="", foreground="#5b6676", font=("Segoe UI", 8))
-        self.estado_perf.pack(fill="x", padx=16)
-
-        rod = ttk.Frame(root)
-        rod.pack(fill="x", side="bottom", **pad)
-        ttk.Button(rod, text="Reparar/instalar bases nacionais", command=self._on_reparar).pack(side="left")
-        ttk.Button(rod, text="Abrir pasta de dados", command=self._on_abrir).pack(side="left", padx=8)
-        ttk.Button(rod, text="Ativar roteamento local (rápido, sem Docker)",
-                   command=self._on_ativar_local).pack(side="left")
-        ttk.Button(rod, text="Diagnóstico completo", command=self._on_diagnostico).pack(side="left", padx=8)
-        ttk.Button(rod, text="Fechar", command=root.destroy).pack(side="right")
-
-        # Segunda linha de utilidades: integridade das bases + atalhos para as pastas do app.
-        rod2 = ttk.Frame(root)
-        rod2.pack(fill="x", side="bottom", padx=16, pady=(0, 2))
-        ttk.Button(rod2, text="Verificar integridade das bases",
-                   command=self._on_verificar_integridade).pack(side="left")
-        ttk.Button(rod2, text="Abrir Downloads",
+        # ------------------------------------------------------------- SEÇÃO: sistema / diagnóstico
+        sis = _secao("Sistema, diagnóstico e pastas")
+        ls1 = _linha(sis)
+        ttk.Button(ls1, text="Diagnóstico completo", command=self._on_diagnostico).pack(side="left")
+        ttk.Button(ls1, text="Saúde Nacional dos dados",
+                   command=self._on_saude_nacional).pack(side="left", padx=8)
+        ls2 = _linha(sis)
+        ttk.Button(ls2, text="Abrir pasta de dados", command=self._on_abrir).pack(side="left")
+        ttk.Button(ls2, text="Downloads",
                    command=lambda: self._on_abrir_pasta("downloads")).pack(side="left", padx=8)
-        ttk.Button(rod2, text="Abrir exports",
+        ttk.Button(ls2, text="Exports",
                    command=lambda: self._on_abrir_pasta("exports")).pack(side="left")
-        ttk.Button(rod2, text="Abrir logs",
+        ttk.Button(ls2, text="Logs",
                    command=lambda: self._on_abrir_pasta("logs")).pack(side="left", padx=8)
-        ttk.Button(rod2, text="Saúde Nacional dos dados",
-                   command=self._on_saude_nacional).pack(side="left")
 
         self._atualizar_inventario()
         self.root.after(150, self._bombear_fila)
