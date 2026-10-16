@@ -1720,6 +1720,18 @@ def test_dossie_estacao_proxima_do_store(tmp_path, monkeypatch):
     r = dossie_rota._estacao_proxima(-46.63, -23.55)
     assert r.get("estacao") == "Est. Tietê" and r.get("dist_km") is not None
 
+def test_dossie_estacao_no_equador_lat_zero(tmp_path, monkeypatch):
+    # Regressão: lat=0,0 (equador — cruza AP/PA/AM/RR) é falsy; `r.get("lat") or ...` a
+    # descartaria e a estação seria pulada. O dossiê deve resolver a estação no equador.
+    from telemetry import ana_incremental as tel
+    from geo import dossie_rota
+    import desktop_config as _cfg
+    monkeypatch.setattr(_cfg, "user_data_dir", lambda: tmp_path / "ud")
+    st = tel.TelemetryStore((tmp_path / "ud") / "telemetry")
+    st.ingerir("estacoes", [{"nome": "Est. Equador", "lat": 0.0, "lon": -50.0}])
+    r = dossie_rota._estacao_proxima(-50.0, 0.0)
+    assert r.get("estacao") == "Est. Equador" and r.get("dist_km") is not None
+
 
 # ============================================================================
 #  DOSSIÊ: exportação HTML/Excel + surfacing no painel (§11/§12 — camada desktop).

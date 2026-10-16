@@ -192,11 +192,20 @@ def _estacao_proxima(lon, lat) -> dict:
         regs = tel.TelemetryStore().listar("estacoes")
         if not regs:
             return {}
+        def _coord(d, *ks):
+            # Primeiro valor NÃO-None entre as chaves (lat/latitude). Usar `a or b` aqui
+            # descartaria 0.0 (falsy) — e a linha do equador CRUZA o Brasil (AP/PA/AM/RR),
+            # então uma estação em lat=0,0 seria pulada por engano. None/ausente → próxima chave.
+            for k in ks:
+                v = d.get(k)
+                if v is not None:
+                    return v
+            return None
         melhor, md = None, None
         for r in regs:
             try:
-                rlat = float(r.get("lat") or r.get("latitude"))
-                rlon = float(r.get("lon") or r.get("longitude"))
+                rlat = float(_coord(r, "lat", "latitude"))
+                rlon = float(_coord(r, "lon", "longitude"))
             except Exception:
                 continue
             d = (rlon - lon) ** 2 + (rlat - lat) ** 2
