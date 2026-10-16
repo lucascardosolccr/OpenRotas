@@ -202,6 +202,8 @@ class _App:
                    command=lambda: self._on_abrir_pasta("exports")).pack(side="left")
         ttk.Button(rod2, text="Abrir logs",
                    command=lambda: self._on_abrir_pasta("logs")).pack(side="left", padx=8)
+        ttk.Button(rod2, text="Saúde Nacional dos dados",
+                   command=self._on_saude_nacional).pack(side="left")
 
         self._atualizar_inventario()
         self.root.after(150, self._bombear_fila)
@@ -302,6 +304,17 @@ class _App:
                 self._set_status("Pasta: %s" % prov.pasta_por_tipo(tipo), "#5b6676")
         except Exception as e:
             self._set_status("Não consegui abrir a pasta: %s" % e, "#b42318")
+
+    def _on_saude_nacional(self):
+        self._set_status("Avaliando a saúde nacional dos dados…")
+        threading.Thread(target=self._thread_saude, daemon=True).start()
+
+    def _thread_saude(self):
+        try:
+            txt = prov.saude_nacional_texto(rapido=True)
+        except Exception as e:
+            txt = "Falha ao avaliar a saúde nacional: %s" % e
+        self.fila.put(("saude_fim", txt))
 
     def _on_verificar_integridade(self):
         self._set_status("Verificando integridade das bases…")
@@ -515,6 +528,9 @@ class _App:
                     self._atualizar_inventario()
                 elif tipo == "diagnostico_fim":
                     self._set_status("Diagnóstico pronto.", "#1a7f4b")
+                    self._mostrar_diagnostico(dado)
+                elif tipo == "saude_fim":
+                    self._set_status("Saúde nacional avaliada.", "#1a7f4b")
                     self._mostrar_diagnostico(dado)
                 elif tipo == "auto_ativar_fim":
                     if dado.get("ok"):

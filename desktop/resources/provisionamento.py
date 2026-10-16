@@ -332,6 +332,24 @@ def relatorio_diagnostico() -> str:
         return "Falha ao gerar o diagnóstico: %s: %s" % (type(e).__name__, e)
 
 
+def saude_nacional_texto(rapido: bool = True) -> str:
+    """Relatório de SAÚDE NACIONAL dos dados (audit.saude_nacional): cobertura/qualidade das bases
+    por área, como texto para a UI. `rapido=True` faz a checagem leve (schema/presença). Nunca
+    levanta — devolve mensagem de erro legível em caso de falha."""
+    try:
+        import saude_nacional
+    except Exception:
+        try:
+            sys.path.insert(0, str(_AQUI.parent / "audit"))
+            import saude_nacional
+        except Exception as e:
+            return "Saúde nacional indisponível: %s" % e
+    try:
+        return saude_nacional.render_texto(saude_nacional.diagnostico(rapido=rapido))
+    except Exception as e:
+        return "Falha ao avaliar a saúde nacional: %s: %s" % (type(e).__name__, e)
+
+
 def _osrm_cfg_efetivo(conf: dict | None = None) -> dict:
     """Bloco osrm do desktop.json COM o graph_url resolvido (configurado > padrão turnkey)."""
     cfg = _cfg()

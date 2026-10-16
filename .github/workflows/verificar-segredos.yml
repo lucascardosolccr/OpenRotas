@@ -1,0 +1,28 @@
+name: verificar-segredos
+
+# Trava de segurança (§SEC): falha o CI se uma CHAVE SECRETA real (service_role / sb_secret)
+# for versionada na edição desktop. Só a chave anon/sb_publishable pode ir ao cliente; chaves de
+# servidor vivem apenas em GitHub Secrets. O scanner detecta VALOR de chave (JWT service_role ou
+# sb_secret_<material>), não a mera menção da palavra — então não quebra o código de validação.
+
+on:
+  push:
+    branches: ["main", "claude/**"]
+    paths: ["desktop/**", ".github/workflows/verificar-segredos.yml"]
+  pull_request:
+    paths: ["desktop/**"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Varredura de segredos (desktop)
+        run: python desktop/installer/verificar_segredos.py desktop

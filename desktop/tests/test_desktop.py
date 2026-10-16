@@ -825,6 +825,48 @@ def test_prov_grafo_instalado_arquivo_base_avulso(tmp_path, monkeypatch):
     (d / "brazil-latest.osrm").write_bytes(b"x")
     assert prov.grafo_instalado() is True
 
+def _carregar_scanner_segredos():
+    import importlib.util, pathlib
+    p = pathlib.Path(__file__).resolve().parents[1] / "installer" / "verificar_segredos.py"
+    spec = importlib.util.spec_from_file_location("verificar_segredos", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+def _jwt_fake(role):
+    import base64 as _b64
+    h = _b64.urlsafe_b64encode(b'{"alg":"HS256","typ":"JWT"}').rstrip(b"=").decode()
+    pl = _b64.urlsafe_b64encode(('{"role":"%s","iss":"supabase"}' % role).encode()).rstrip(b"=").decode()
+    return h + "." + pl + ".assinaturafake123"
+
+def test_scanner_segredos_detecta_chave_real(tmp_path):
+    seg = _carregar_scanner_segredos()
+    # (1) JWT service_role e (2) sb_secret_<material> → DETECTADOS.
+    (tmp_path / "vaza1.json").write_text('{"SUPABASE_KEY": "%s"}' % _jwt_fake("service_role"),
+                                         encoding="utf-8")
+    (tmp_path / "vaza2.env").write_text("SB=" + "sb" + "_secret_" + "ABCDEFGHIJKLMNOP0123456789",
+                                        encoding="utf-8")
+    achados = seg.escanear_segredos([str(tmp_path)])
+    marcs = {a["marcador"] for a in achados}
+    assert "service_role JWT" in marcs and "sb_secret key" in marcs
+    assert seg.main([str(tmp_path)]) == 2
+
+def test_scanner_segredos_ignora_mencao_defensiva(tmp_path):
+    seg = _carregar_scanner_segredos()
+    # A PALAVRA em código de validação + um JWT 'anon' (role público) → NÃO é achado.
+    (tmp_path / "guard.py").write_text(
+        '# nunca embutir service_role no cliente\n'
+        'if "service_role" in chave: raise SystemExit("remova a service_role")\n'
+        'ANON = "%s"\n' % _jwt_fake("anon"), encoding="utf-8")
+    assert seg.escanear_segredos([str(tmp_path)]) == []
+    assert seg.main([str(tmp_path)]) == 0
+
+def test_scanner_segredos_ignora_dir_de_testes(tmp_path):
+    seg = _carregar_scanner_segredos()
+    d = tmp_path / "tests"; d.mkdir()
+    (d / "fixture.json").write_text('{"k":"%s"}' % _jwt_fake("service_role"), encoding="utf-8")
+    assert seg.escanear_segredos([str(tmp_path)]) == []   # dir 'tests' é ignorado
+
 def test_prov_bases_ausentes_usa_registry(monkeypatch):
     # Regressão do bug _registry() inexistente (bases_ausentes caía sempre no except → []).
     # Com um registry que reporta "nada instalado", deve LISTAR as bases não-osrm faltando.
@@ -907,6 +949,18 @@ def test_prov_resumo_desempenho_com_rota(monkeypatch):
 def test_prov_relatorio_diagnostico_e_texto():
     txt = prov.relatorio_diagnostico()
     assert isinstance(txt, str) and "OpenRotas" in txt and "Diagnóstico" in txt
+
+def test_prov_saude_nacional_texto(monkeypatch):
+    # Não depende de bases reais: monkeypatcha o módulo de auditoria e confirma o repasse.
+    import sys as _sys, pathlib as _pl
+    _sys.path.insert(0, str(_pl.Path(__file__).resolve().parents[1] / "audit"))
+    import saude_nacional as _sn
+    monkeypatch.setattr(_sn, "diagnostico", lambda rapido=True: {"itens": [], "ok": True})
+    monkeypatch.setattr(_sn, "render_texto", lambda d: "SAÚDE NACIONAL: ok")
+    assert prov.saude_nacional_texto() == "SAÚDE NACIONAL: ok"
+    # Se o módulo levanta, o wrapper devolve mensagem legível (não propaga).
+    monkeypatch.setattr(_sn, "diagnostico", lambda rapido=True: (_ for _ in ()).throw(RuntimeError("x")))
+    assert "Falha ao avaliar" in prov.saude_nacional_texto()
 
 def test_launcher_silenciar_logs_sensiveis():
     import logging as _lg
