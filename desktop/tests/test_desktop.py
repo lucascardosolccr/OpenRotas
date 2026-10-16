@@ -932,6 +932,50 @@ def test_prov_checar_atualizacao_defensivo(monkeypatch):
     r2 = prov.checar_atualizacao()
     assert r2["disponivel"] is False and r2["ha_atualizacao"] is False
 
+def test_dossie_lote_progresso(monkeypatch, tmp_path):
+    # Novo callback de progresso do lote: emite feito/total por par (motor mockado, sem rede).
+    import sys as _sys, pathlib as _pl
+    _sys.path.insert(0, str(_pl.Path(__file__).resolve().parents[1]))
+    from geo import dossie_lote, dossie_rota
+    monkeypatch.setattr(dossie_lote, "ler_pares",
+                        lambda _c: [("-46.6,-23.5", "-43.2,-22.9"), ("-47.9,-15.8", "-49.2,-16.7")])
+    monkeypatch.setattr(dossie_rota, "dossie", lambda pts, **k: {"distancia_km": 1.0})
+    eventos = []
+    r = dossie_lote.processar_lote("x.csv", caminho_out=str(tmp_path / "out.xlsx"),
+                                   progresso=lambda ev: eventos.append(ev))
+    assert [e["feito"] for e in eventos] == [1, 2] and eventos[0]["total"] == 2
+    assert r["linhas"] == 2                       # 2 pares processados (grava depende de openpyxl)
+
+def test_prov_processar_dossie_lote_grava_em_exports(monkeypatch, tmp_path):
+    import sys as _sys, pathlib as _pl
+    _sys.path.insert(0, str(_pl.Path(__file__).resolve().parents[1]))
+    from geo import dossie_lote
+    monkeypatch.setattr(prov, "pasta_por_tipo", lambda tipo: tmp_path / tipo)
+    capt = {}
+    def _fake(cin, caminho_out=None, usar_osrm=False, progresso=None, **k):
+        capt["out"] = caminho_out
+        return {"ok": True, "linhas": 3, "erros": 0, "saida": caminho_out}
+    monkeypatch.setattr(dossie_lote, "processar_lote", _fake)
+    r = prov.processar_dossie_lote("planilha.csv")
+    assert r["ok"] is True and r["linhas"] == 3
+    assert "exports" in capt["out"] and capt["out"].endswith(".xlsx")
+
+def test_prov_baixar_atualizacao(monkeypatch):
+    import app_update as _au
+    # há atualização → baixa e repassa o caminho
+    monkeypatch.setattr(prov, "checar_atualizacao", lambda: {
+        "disponivel": True, "ha_atualizacao": True,
+        "url_instalador": "https://x/OpenRotas.Setup.exe", "remota": "0.3.0"})
+    monkeypatch.setattr(_au, "baixar_instalador",
+                        lambda url, *a, **k: {"ok": True, "caminho": r"C:\up\OpenRotas.Setup.exe",
+                                             "detalhe": "ok"})
+    r = prov.baixar_atualizacao()
+    assert r["ok"] is True and r["caminho"].endswith("OpenRotas.Setup.exe") and r["versao"] == "0.3.0"
+    # sem atualização → não baixa
+    monkeypatch.setattr(prov, "checar_atualizacao", lambda: {
+        "disponivel": True, "ha_atualizacao": False, "url_instalador": None})
+    assert prov.baixar_atualizacao()["ok"] is False
+
 def test_prov_resumo_desempenho_sem_dados(monkeypatch):
     import exec_profile as _ep
     monkeypatch.setattr(_ep, "resumo", lambda *a, **k: {"total": 0, "ok": 0, "erro": 0, "tempos": {}})

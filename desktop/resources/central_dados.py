@@ -172,7 +172,11 @@ class _App:
         self.ent_destino = ttk.Entry(linha, width=22)
         self.ent_destino.insert(0, "Rio de Janeiro/RJ")
         self.ent_destino.pack(side="left", padx=4)
-        ttk.Button(dossie, text="Gerar dossiê (HTML)", command=self._on_dossie).pack(anchor="w", padx=12, pady=(0, 10))
+        linha_dossie = ttk.Frame(dossie)
+        linha_dossie.pack(anchor="w", fill="x", padx=12, pady=(0, 10))
+        ttk.Button(linha_dossie, text="Gerar dossiê (HTML)", command=self._on_dossie).pack(side="left")
+        ttk.Button(linha_dossie, text="Dossiê em lote (planilha)…",
+                   command=self._on_dossie_lote).pack(side="left", padx=8)
 
         self.barra = ttk.Progressbar(root, mode="determinate", maximum=100)
         self.barra.pack(fill="x", **pad)
@@ -254,14 +258,22 @@ class _App:
         self.fila.put(("perf_status", p))
 
     def _on_baixar_update(self):
-        """Abre o instalador/página da nova versão no navegador do sistema."""
-        import webbrowser
-        url = self._update_url or "https://github.com/lucascardosolccr/OpenRotas/releases/tag/desktop-latest"
+        """Baixa a atualização DENTRO do app (para a pasta updates) com barra; ao terminar, abre a
+        pasta. Se o download no app falhar, cai no navegador (robusto)."""
+        if self._ocupado:
+            return
+        self._travar(True)
+        self.barra.config(mode="indeterminate")
+        self.barra.start(12)
+        self._set_status("Baixando a atualização (pode levar alguns minutos)…")
+        threading.Thread(target=self._thread_baixar_update, daemon=True).start()
+
+    def _thread_baixar_update(self):
         try:
-            webbrowser.open(url)
-            self._set_status("Baixando a atualização pelo navegador… instale o .exe quando terminar.", "#1a7f4b")
+            r = prov.baixar_atualizacao()
         except Exception as e:
-            self._set_status("Não consegui abrir o navegador: %s" % e, "#b42318")
+            r = {"ok": False, "detalhe": "erro: %s" % e}
+        self.fila.put(("update_fim", r))
 
     def _on_diagnostico(self):
         """Abre uma janela com o autodiagnóstico completo (bases, offline, motor, desempenho)."""
@@ -304,6 +316,30 @@ class _App:
                 self._set_status("Pasta: %s" % prov.pasta_por_tipo(tipo), "#5b6676")
         except Exception as e:
             self._set_status("Não consegui abrir a pasta: %s" % e, "#b42318")
+
+    def _on_dossie_lote(self):
+        """Escolhe uma planilha de pares (CSV/XLSX) e gera o dossiê consolidado em exports/."""
+        if self._ocupado:
+            return
+        from tkinter import filedialog
+        caminho = filedialog.askopenfilename(
+            title="Planilha de pares origem→destino (CSV ou XLSX)",
+            filetypes=[("Planilhas", "*.csv *.xlsx *.xls"), ("Todos", "*.*")])
+        if not caminho:
+            return
+        self._travar(True)
+        self.barra.config(mode="determinate", value=0, maximum=100)
+        self._set_status("Processando dossiê em lote…")
+        threading.Thread(target=self._thread_dossie_lote, args=(caminho,), daemon=True).start()
+
+    def _thread_dossie_lote(self, caminho):
+        def _prog(ev):
+            self.fila.put(("lote_prog", ev))
+        try:
+            r = prov.processar_dossie_lote(caminho, progresso=_prog)
+        except Exception as e:
+            r = {"ok": False, "detalhe": "erro: %s" % e}
+        self.fila.put(("lote_fim", r))
 
     def _on_saude_nacional(self):
         self._set_status("Avaliando a saúde nacional dos dados…")
@@ -521,6 +557,29 @@ class _App:
                             pass
                 elif tipo == "perf_status":
                     self.estado_perf.config(text=(dado or {}).get("texto", ""))
+                elif tipo == "update_fim":
+                    self.barra.stop()
+                    self.barra.config(mode="determinate", value=0)
+                    self._travar(False)
+                    d = dado or {}
+                    if d.get("ok") and d.get("caminho"):
+                        import os as _os
+                        self._set_status("Atualização baixada ✓ — abra o instalador em: %s"
+                                         % d.get("caminho"), "#1a7f4b")
+                        try:
+                            prov.abrir_pasta_dados(_os.path.dirname(d["caminho"]))
+                        except Exception:
+                            pass
+                    else:
+                        # fallback: navegador
+                        import webbrowser
+                        url = self._update_url or "https://github.com/lucascardosolccr/OpenRotas/releases/tag/desktop-latest"
+                        try:
+                            webbrowser.open(url)
+                            self._set_status("Baixando a atualização pelo navegador (o download no "
+                                             "app falhou: %s)." % d.get("detalhe", ""), "#9a6700")
+                        except Exception as e:
+                            self._set_status("Não consegui baixar a atualização: %s" % e, "#b42318")
                 elif tipo == "integridade_fim":
                     _ok = bool((dado or {}).get("ok"))
                     self._set_status("Integridade: %s" % (dado or {}).get("detalhe", "?"),
@@ -546,6 +605,22 @@ class _App:
                     else:
                         self._set_status("Dossiê: %s" % dado.get("detalhe", "falha"), "#b42318")
                     self._travar(False)
+                elif tipo == "lote_prog":
+                    d = dado or {}
+                    tot = d.get("total") or 0
+                    if tot:
+                        self.barra.config(value=int(100 * (d.get("feito", 0) / tot)))
+                    self._set_status("Dossiê em lote: %s/%s — %s → %s"
+                                     % (d.get("feito", "?"), tot, d.get("origem", ""), d.get("destino", "")))
+                elif tipo == "lote_fim":
+                    self._travar(False)
+                    self.barra.config(value=100 if dado.get("ok") else 0)
+                    if dado.get("ok"):
+                        self._set_status("Dossiê em lote pronto ✓ — %s linha(s), %s erro(s): %s"
+                                         % (dado.get("linhas", "?"), dado.get("erros", 0),
+                                            dado.get("saida", "")), "#1a7f4b")
+                    else:
+                        self._set_status("Dossiê em lote: %s" % dado.get("detalhe", "falha"), "#b42318")
                 elif tipo == "reparo_fim":
                     ok = bool((dado or {}).get("ok"))
                     self._set_status("Bases: %s" % ("tudo OK ✓" if ok else "ver detalhes/log"),

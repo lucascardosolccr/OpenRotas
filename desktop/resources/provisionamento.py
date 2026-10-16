@@ -273,6 +273,36 @@ def checar_atualizacao() -> dict:
                 "disponivel": False, "detalhe": "erro: %s" % e}
 
 
+def baixar_atualizacao(progresso=None) -> dict:
+    """Baixa o instalador da NOVA versão para %LOCALAPPDATA%\\OpenRotas\\updates (download atômico
+    via app_update/resource_manager). O usuário roda o .exe depois. Devolve {ok, caminho, detalhe}.
+    Nunca levanta. Só baixa se houver atualização publicada."""
+    info = checar_atualizacao()
+    if not info.get("disponivel"):
+        return {"ok": False, "caminho": None, "detalhe": "verificação de atualização indisponível (offline?)"}
+    if not info.get("ha_atualizacao") or not info.get("url_instalador"):
+        return {"ok": False, "caminho": None, "detalhe": "você já está na versão mais recente"}
+    try:
+        import app_update
+    except Exception:
+        try:
+            sys.path.insert(0, str(_AQUI.parent / "app"))
+            import app_update
+        except Exception as e:
+            return {"ok": False, "caminho": None, "detalhe": "atualização indisponível: %s" % e}
+    try:
+        if progresso is not None:
+            try:
+                progresso({"fase": "baixando", "versao": info.get("remota")})
+            except Exception:
+                pass
+        r = app_update.baixar_instalador(info["url_instalador"])
+        return {"ok": bool(r.get("ok")), "caminho": r.get("caminho"),
+                "detalhe": r.get("detalhe", ""), "versao": info.get("remota")}
+    except Exception as e:
+        return {"ok": False, "caminho": None, "detalhe": "erro: %s" % e}
+
+
 def resumo_desempenho() -> dict:
     """Resumo do DESEMPENHO local das rotas a partir da telemetria (exec_profile). Devolve o dict
     de resumo + uma linha humana 'texto' pronta para a UI. Nunca levanta; {} se não houver dados."""
@@ -330,6 +360,30 @@ def relatorio_diagnostico() -> str:
         return diagnostics.relatorio_texto()
     except Exception as e:
         return "Falha ao gerar o diagnóstico: %s: %s" % (type(e).__name__, e)
+
+
+def processar_dossie_lote(caminho_in, progresso=None, usar_osrm: bool = False) -> dict:
+    """Processa uma PLANILHA de pares origem→destino (CSV/XLSX) e grava um dossiê consolidado em
+    exports/. Repassa `progresso` (por par). Devolve {ok, linhas, erros, saida, detalhe}. Nunca
+    levanta."""
+    try:
+        from geo import dossie_lote
+    except Exception:
+        try:
+            sys.path.insert(0, str(_AQUI.parent))
+            from geo import dossie_lote
+        except Exception as e:
+            return {"ok": False, "linhas": 0, "erros": 0, "saida": None,
+                    "detalhe": "dossiê em lote indisponível: %s" % e}
+    try:
+        import time as _t
+        destino = pasta_por_tipo("exports")
+        destino.mkdir(parents=True, exist_ok=True)
+        saida = destino / ("dossies_lote_%s.xlsx" % _t.strftime("%Y%m%d_%H%M%S"))
+        return dossie_lote.processar_lote(caminho_in, caminho_out=str(saida), usar_osrm=usar_osrm,
+                                          progresso=progresso)
+    except Exception as e:
+        return {"ok": False, "linhas": 0, "erros": 0, "saida": None, "detalhe": "erro: %s" % e}
 
 
 def saude_nacional_texto(rapido: bool = True) -> str:

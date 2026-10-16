@@ -97,14 +97,23 @@ def _resumo_linha(origem, destino, dd) -> dict:
     }
 
 
-def processar_lote(caminho_in, caminho_out=None, folga_km: float = 3.0, usar_osrm: bool = False) -> dict:
-    """Processa todos os pares e grava o Excel consolidado. {ok, linhas, erros, saida}. Não levanta."""
+def processar_lote(caminho_in, caminho_out=None, folga_km: float = 3.0, usar_osrm: bool = False,
+                   progresso=None) -> dict:
+    """Processa todos os pares e grava o Excel consolidado. {ok, linhas, erros, saida}. Não levanta.
+    `progresso` (opcional): callback chamado por par com {feito, total, origem, destino} — a UI usa
+    para a barra de progresso do lote."""
     from geo import dossie_rota as dr
     pares = ler_pares(caminho_in)
     if not pares:
         return {"ok": False, "linhas": 0, "erros": 0, "saida": None, "detalhe": "planilha sem pares válidos"}
     linhas, erros = [], 0
-    for origem, destino in pares:
+    total = len(pares)
+    for _i, (origem, destino) in enumerate(pares, 1):
+        if progresso is not None:
+            try:
+                progresso({"feito": _i, "total": total, "origem": origem, "destino": destino})
+            except Exception:
+                pass
         try:
             co, cd = _coords_de(origem), _coords_de(destino)
             if co and cd:
