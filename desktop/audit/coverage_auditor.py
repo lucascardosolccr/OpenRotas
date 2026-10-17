@@ -99,6 +99,53 @@ def pontos_municipios(reg=None):
         return [], [], []
 
 
+def _convex_hull(points):
+    """Envoltória convexa (monotone chain de Andrew) de pontos (x,y). Devolve o polígono como
+    lista de vértices (sem repetir o 1º). Pura stdlib; [] se degenerado."""
+    pts = sorted(set((round(float(x), 6), round(float(y), 6)) for x, y in points))
+    if len(pts) <= 2:
+        return pts
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    lower = []
+    for p in pts:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    upper = []
+    for p in reversed(pts):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    return lower[:-1] + upper[:-1]
+
+
+def hulls_uf(reg=None, min_pts: int = 3) -> dict:
+    """Contorno APROXIMADO de cada UF = envoltória convexa dos centroides municipais reais (para o
+    mapa coroplético). Devolve {uf: [(lon,lat),...]}. {} em falha. Nunca levanta. Honesto: é a
+    envoltória dos municípios, não a fronteira político-administrativa oficial."""
+    try:
+        lons, lats, ufs = pontos_municipios(reg)
+        if not lons:
+            return {}
+        por_uf: dict = {}
+        for x, y, u in zip(lons, lats, ufs):
+            if not u:
+                continue
+            por_uf.setdefault(u, []).append((float(x), float(y)))
+        out = {}
+        for u, pts in por_uf.items():
+            h = _convex_hull(pts)
+            if len(h) >= max(3, min_pts):
+                out[u] = h
+        return out
+    except Exception:
+        logger.warning("[AUDIT] falha ao montar envoltórias por UF.", exc_info=True)
+        return {}
+
+
 def _bboxes_uf(reg) -> dict:
     """Caixa envolvente (xmin,ymin,xmax,ymax) de cada UF, agregada das bboxes municipais da base
     de municípios. Base para a verificação de presença espacial das camadas de rede. {} em falha."""

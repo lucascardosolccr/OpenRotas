@@ -271,6 +271,7 @@ def construir_html(osrm_cfg=None) -> str:
         "<section class='card'><h2>Perfil de execução (local)</h2>", _bloco_telemetria(), "</section>",
         "<section class='card'><h2>Configuração</h2>", _bloco_config(), "</section>",
         "<footer>Dados locais — nada sai do seu computador.</footer>",
+        (tema.ui_js() if tema else ""),
         "</div></body></html>",
     ]
     return "".join(partes)

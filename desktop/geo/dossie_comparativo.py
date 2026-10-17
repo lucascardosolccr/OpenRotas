@@ -264,7 +264,8 @@ def gerar_html(cmp: dict, caminho) -> str | None:
                  "balsa %.0f · transição de UF %.0f · rio navegável %.0f · ponte %.0f · trecho de rio %.2f</div></section>"
                  % (cr.get("travessias", 0), cr.get("transicoes_uf", 0), cr.get("rios_navegaveis", 0),
                     cr.get("pontes", 0), cr.get("trechos_rio", 0)))
-        P.append("<footer>%s</footer></div></body></html>" % html.escape(cmp.get("nota", "")))
+        P.append("<footer>%s</footer>%s</div></body></html>"
+                 % (html.escape(cmp.get("nota", "")), (tema.ui_js() if tema else "")))
         pth = Path(caminho)
         pth.parent.mkdir(parents=True, exist_ok=True)
         pth.write_text("".join(P), encoding="utf-8")

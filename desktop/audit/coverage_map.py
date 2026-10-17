@@ -134,14 +134,24 @@ def construir_html(rapido: bool = False, rota=None) -> str:
                          html.escape(str(d.get("nome", "?"))), html.escape(str(d.get("uf", "?"))),
                          ", ".join(sorted(ufs_rota)) or "—", h.get("trechos", 0),
                          dd_rota.get("camadas", {}).get("pontes", {}).get("feicoes", 0)))
-    # Mapa NACIONAL por dispersão (municípios reais) — hero visual acima da matriz. Quando há uma
-    # rota sobreposta, tinge as UFs atravessadas e desenha o corredor origem→destino.
+    # Mapa NACIONAL COROPLÉTICO por UF (contorno ≈ envoltória dos municípios reais) — hero visual
+    # acima da matriz. Com rota sobreposta: UFs atravessadas em teal + corredor; senão, por
+    # presença de malha rodoviária (presente=teal, ausente=vermelho).
     if tema is not None:
         try:
             from audit import coverage_auditor as _ca
-            lons, lats, ufs = _ca.pontos_municipios()
-            if lons:
-                classes = (["teal" if (u in ufs_rota) else None for u in ufs]) if ufs_rota else None
+            hulls = _ca.hulls_uf()
+            if hulls:
+                rod = set((laudo.get("camadas", {}).get("rodovias", {}) or {}).get("ufs_presentes") or [])
+                polis = []
+                for uf, pts in hulls.items():
+                    if ufs_rota:
+                        cls = "teal" if uf in ufs_rota else "accent"
+                        dica = "%s — %s" % (uf, "na rota" if uf in ufs_rota else "fora da rota")
+                    else:
+                        cls = "teal" if uf in rod else "bad"
+                        dica = "%s — malha rodoviária %s" % (uf, "presente" if uf in rod else "ausente")
+                    polis.append({"uf": uf, "pts": pts, "classe": cls, "dica": dica})
                 rota_pts = None
                 if dd_rota and not dd_rota.get("erro"):
                     o = dd_rota.get("origem", {}) or {}
@@ -149,16 +159,16 @@ def construir_html(rapido: bool = False, rota=None) -> str:
                     if o.get("lon") is not None and d.get("lon") is not None:
                         rota_pts = [(o["lon"], o["lat"]), (d["lon"], d["lat"])]
                 leg = ([{"rotulo": "UF atravessada pela rota", "cor": "var(--teal)"},
-                        {"rotulo": "demais municípios", "cor": "var(--muted)"}] if ufs_rota else None)
-                _m = tema.mapa_dispersao(lons, lats, classes=classes, rota=rota_pts,
-                                         titulo="MAPA NACIONAL — %s MUNICÍPIOS INSTALADOS"
-                                                % "{:,}".format(len(lons)).replace(",", "."),
-                                         legenda=leg)
+                        {"rotulo": "demais UFs", "cor": "var(--accent)"}] if ufs_rota
+                       else [{"rotulo": "com malha rodoviária", "cor": "var(--teal)"},
+                             {"rotulo": "sem presença detectada", "cor": "var(--bad)"}])
+                _m = tema.mapa_coropletico(polis, titulo="MAPA NACIONAL POR UF (contorno ≈ municípios)",
+                                           legenda=leg, rota=rota_pts)
                 if _m:
-                    partes.append("<div class='card'><h2>Mapa nacional</h2>%s"
-                                  "<p class='empty' style='margin:8px 2px 0'>Cada ponto é um município real "
-                                  "(centroide IBGE); a forma do Brasil emerge dos dados instalados. "
-                                  "Projeção equirretangular aproximada.</p></div>" % _m)
+                    partes.append("<div class='card'><h2>Mapa nacional por UF</h2>%s"
+                                  "<p class='empty' style='margin:8px 2px 0'>Contorno de cada UF = envoltória "
+                                  "convexa dos municípios reais (IBGE), aproximada — não é a fronteira oficial. "
+                                  "Projeção equirretangular.</p></div>" % _m)
         except Exception:
             pass
     presentes = {ch: set((laudo.get("camadas", {}).get(ch, {}) or {}).get("ufs_presentes") or [])

@@ -167,6 +167,28 @@ footer::before{content:"\\25CF ";color:var(--accent)}
 .ork-mapa .pt.accent{fill:var(--accent);opacity:.7}
 .ork-mapa .rota{fill:none;stroke:var(--accent);stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
 .ork-mapa .wp{fill:var(--accent);stroke:var(--surface);stroke-width:1.6}
+.ork-mapa .uf{stroke:var(--surface);stroke-width:1;vector-effect:non-scaling-stroke}
+.ork-mapa .uf.teal{fill:var(--teal);fill-opacity:.22;stroke:var(--teal)}
+.ork-mapa .uf.bad{fill:var(--bad);fill-opacity:.16;stroke:var(--bad)}
+.ork-mapa .uf.accent{fill:var(--accent);fill-opacity:.18;stroke:var(--accent)}
+.ork-mapa .uf-lbl{fill:var(--ink-soft);font-size:10px;font-weight:700;text-anchor:middle;pointer-events:none}
+/* Alternador de tema (claro/escuro) ---------------------------------------- */
+.ork-theme-toggle{position:fixed;top:12px;right:14px;z-index:70;cursor:pointer;
+  background:var(--surface);color:var(--ink-soft);border:1px solid var(--line-2);
+  border-radius:999px;padding:6px 12px;font:600 .78rem/1 system-ui,-apple-system,sans-serif;
+  box-shadow:var(--shadow)}
+.ork-theme-toggle:hover{border-color:var(--accent);color:var(--accent-ink)}
+@media print{.ork-theme-toggle{display:none}}
+/* Animações de entrada (a partir de estado visível; desligadas em reduced-motion) ---- */
+@keyframes ork-grow{from{transform:scaleX(.5)}to{transform:scaleX(1)}}
+@keyframes ork-fade{from{opacity:0}to{opacity:1}}
+@keyframes ork-draw{to{stroke-dashoffset:0}}
+@media (prefers-reduced-motion:no-preference){
+  .ork-chart.barras .bar{transform-box:fill-box;transform-origin:left center;
+    animation:ork-grow .55s cubic-bezier(.2,.8,.2,1) both}
+  .ork-mapa{animation:ork-fade .5s ease both}
+  .ork-mapa .rota{stroke-dasharray:2400;stroke-dashoffset:2400;animation:ork-draw 1.2s ease .2s forwards}
+}
 @media (max-width:520px){.wrap{padding:28px 16px 48px}.kpi{flex-basis:calc(50% - 6px)}}
 @media (prefers-reduced-motion:no-preference){
   .card,.dim{transition:box-shadow .18s ease, transform .18s ease}
@@ -212,8 +234,8 @@ def documento(titulo: str, subtitulo: str = "", corpo: str = "", rodape: str = "
         return ("<!doctype html><html lang='%s'><head><meta charset='utf-8'>"
                 "<meta name='viewport' content='width=device-width,initial-scale=1'>"
                 "<title>%s — %s</title><style>%s</style></head><body><div class='wrap'>"
-                "%s%s%s</div></body></html>"
-                % (lang, titulo, MARCA, css(), cabecalho(titulo, subtitulo), corpo, rod))
+                "%s%s%s</div>%s</body></html>"
+                % (lang, titulo, MARCA, css(), cabecalho(titulo, subtitulo), corpo, rod, _ui_js()))
     except Exception:
         return "<!doctype html><html><head><meta charset='utf-8'></head><body>%s</body></html>" % corpo
 
@@ -237,12 +259,16 @@ def _trunc(s: str, n: int) -> str:
     return s if len(s) <= n else (s[: n - 1] + "…")
 
 
-def _tooltip_js() -> str:
-    """Script IDEMPOTENTE (guarda window.__orkTip) que mostra um tooltip dinâmico sobre qualquer
-    elemento com [data-ork-tip]. Seguro repetir em vários gráficos: só o 1º vincula. Offline."""
-    return ("<script>(function(){if(window.__orkTip)return;window.__orkTip=1;"
-            "var t=document.createElement('div');t.className='ork-tip';"
-            "if(document.body)document.body.appendChild(t);else return;"
+def _ui_js() -> str:
+    """Script de UI IDEMPOTENTE (guarda window.__orkUI): (1) restaura o tema salvo (localStorage);
+    (2) tooltip dinâmico sobre [data-ork-tip]; (3) botão flutuante de alternância claro/escuro que
+    grava a preferência. Seguro repetir em vários gráficos/relatórios: só o 1º vincula. Offline,
+    defensivo (tudo em try/catch; localStorage pode falhar em modo restrito)."""
+    return ("<script>(function(){if(window.__orkUI)return;window.__orkUI=1;"
+            "try{var s=localStorage.getItem('ork-theme');if(s==='dark'||s==='light')"
+            "document.documentElement.setAttribute('data-theme',s);}catch(e){}"
+            "function boot(){"
+            "var t=document.createElement('div');t.className='ork-tip';document.body.appendChild(t);"
             "function mv(e){t.style.left=Math.min(window.innerWidth-270,e.clientX+14)+'px';"
             "t.style.top=(e.clientY+16)+'px';}"
             "document.addEventListener('pointerover',function(e){var el=e.target.closest&&"
@@ -250,7 +276,25 @@ def _tooltip_js() -> str:
             "el.getAttribute('data-ork-tip');t.style.opacity='1';mv(e);});"
             "document.addEventListener('pointermove',function(e){if(t.style.opacity==='1')mv(e);});"
             "document.addEventListener('pointerout',function(e){var el=e.target.closest&&"
-            "e.target.closest('[data-ork-tip]');if(el)t.style.opacity='0';});})();</script>")
+            "e.target.closest('[data-ork-tip]');if(el)t.style.opacity='0';});"
+            "function cur(){var e=document.documentElement.getAttribute('data-theme');if(e)return e;"
+            "return (window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?"
+            "'dark':'light';}"
+            "var b=document.createElement('button');b.className='ork-theme-toggle';b.type='button';"
+            "b.setAttribute('aria-label','Alternar tema claro/escuro');"
+            "function lbl(){b.textContent=cur()==='dark'?'\\u2600 Claro':'\\u263E Escuro';}"
+            "lbl();b.addEventListener('click',function(){var n=cur()==='dark'?'light':'dark';"
+            "document.documentElement.setAttribute('data-theme',n);"
+            "try{localStorage.setItem('ork-theme',n);}catch(e){}lbl();});"
+            "document.body.appendChild(b);}"
+            "if(document.body)boot();else document.addEventListener('DOMContentLoaded',boot);"
+            "})();</script>")
+
+
+def ui_js() -> str:
+    """Igual a _ui_js(): exposto para os relatórios anexarem o comportamento de UI (tema+tooltip)
+    mesmo quando não têm gráfico/mapa. Idempotente — pode coexistir com os gráficos."""
+    return _ui_js()
 
 
 def grafico_barras(itens, unidade: str = "", max_valor=None, titulo: str = "",
@@ -273,7 +317,7 @@ def grafico_barras(itens, unidade: str = "", max_valor=None, titulo: str = "",
         H = top + rowh * len(itens) + 4
         x0 = LBL
         barw = W - LBL - PADR
-        P = ["<svg class='ork-chart' viewBox='0 0 %d %d' preserveAspectRatio='xMinYMin meet' "
+        P = ["<svg class='ork-chart barras' viewBox='0 0 %d %d' preserveAspectRatio='xMinYMin meet' "
              "role='img' style='max-height:%dpx'>" % (W, H, H + 8)]
         if titulo:
             P.append("<text class='cap' x='0' y='13'>%s</text>" % html.escape(titulo))
@@ -295,7 +339,7 @@ def grafico_barras(itens, unidade: str = "", max_valor=None, titulo: str = "",
                 P.append("<text class='val' x='%.1f' y='%d'>%s</text>"
                          % (min(x0 + w + 6, W - PADR + 2), y + BH - 6, html.escape(vtxt)))
         P.append("</svg>")
-        return "".join(P) + _tooltip_js()
+        return "".join(P) + _ui_js()
     except Exception:
         return ""
 
@@ -336,7 +380,7 @@ def barra_proporcao(segmentos, titulo: str = "") -> str:
             P.append("<span><i style='background:%s'></i>%s · %s</span>"
                      % (cor, html.escape(str(s.get("rotulo", ""))), _fmt(float(s["valor"]))))
         P.append("</div>")
-        return "".join(P) + _tooltip_js()
+        return "".join(P) + _ui_js()
     except Exception:
         return ""
 
@@ -404,7 +448,84 @@ def mapa_dispersao(xs, ys, classes=None, rota=None, titulo: str = "", legenda=No
                          % (it.get("cor", "var(--accent)"), html.escape(str(it.get("rotulo", "")))))
             L.append("</div>")
             out += "".join(L)
-        return out
+        return out + _ui_js()
+    except Exception:
+        return ""
+
+
+def mapa_coropletico(poligonos, titulo: str = "", legenda=None, rota=None) -> str:
+    """Mapa COROPLÉTICO por UF em SVG: cada UF é um polígono (contorno) preenchido conforme seu
+    estado. `poligonos`: lista de dicts {uf, pts:[(lon,lat),...], classe?('teal'|'bad'|'accent'),
+    rotulo?, dica?}. Opcional: `rota` (polilinha) por cima. Projeção equirretangular com correção
+    por cos(lat). Puro; '' se vazio. Nunca levanta. Honesto: os contornos são ENVOLTÓRIAS dos
+    municípios reais (aproximação), não a fronteira oficial."""
+    try:
+        polis = [p for p in (poligonos or []) if isinstance(p, dict) and len(p.get("pts") or []) >= 3]
+        if not polis:
+            return ""
+        allx, ally = [], []
+        for p in polis:
+            for (x, y) in p["pts"]:
+                allx.append(float(x)); ally.append(float(y))
+        rota = [q for q in (rota or []) if q is not None]
+        allx += [float(q[0]) for q in rota]
+        ally += [float(q[1]) for q in rota]
+        minx, maxx, miny, maxy = min(allx), max(allx), min(ally), max(ally)
+        if maxx - minx < 1e-6:
+            maxx = minx + 1e-6
+        if maxy - miny < 1e-6:
+            maxy = miny + 1e-6
+        kx = math.cos(math.radians((miny + maxy) / 2.0)) or 1.0
+        W, pad = 680.0, 12.0
+        spanx, spany = (maxx - minx) * kx, (maxy - miny)
+        innerW = W - 2 * pad
+        innerH = max(150.0, min(innerW * (spany / spanx) if spanx > 0 else innerW, 580.0))
+        top = 24 if titulo else 6
+        H = innerH + 2 * pad + top
+
+        def X(x):
+            return pad + ((x - minx) * kx) / spanx * innerW
+
+        def Y(y):
+            return top + pad + (1 - (y - miny) / spany) * innerH
+
+        P = ["<svg class='ork-mapa' viewBox='0 0 %d %d' preserveAspectRatio='xMidYMid meet' "
+             "role='img' aria-label='Mapa coroplético por UF'>" % (int(W), int(H + 2))]
+        if titulo:
+            P.append("<text class='cap' x='0' y='13'>%s</text>" % html.escape(titulo))
+        # Desenha as MAIORES primeiro (área da bbox) → menores por cima, reduzindo oclusão.
+        def _area(p):
+            xs = [c[0] for c in p["pts"]]; ys = [c[1] for c in p["pts"]]
+            return (max(xs) - min(xs)) * (max(ys) - min(ys))
+        labels = []
+        for p in sorted(polis, key=_area, reverse=True):
+            cl = p.get("classe") if p.get("classe") in ("teal", "bad", "accent", "warn", "ok") else "accent"
+            d = " ".join("%.1f,%.1f" % (X(float(x)), Y(float(y))) for (x, y) in p["pts"])
+            dica = html.escape(str(p.get("dica") or p.get("uf") or ""))
+            P.append("<polygon class='uf %s' points='%s' data-ork-tip=\"%s\"><title>%s</title></polygon>"
+                     % (cl, d, dica, dica))
+            cx = sum(float(c[0]) for c in p["pts"]) / len(p["pts"])
+            cy = sum(float(c[1]) for c in p["pts"]) / len(p["pts"])
+            labels.append((X(cx), Y(cy), html.escape(str(p.get("uf") or ""))))
+        for (lx, ly, uf) in labels:
+            P.append("<text class='uf-lbl' x='%.1f' y='%.1f'>%s</text>" % (lx, ly + 3, uf))
+        if rota:
+            if len(rota) >= 2:
+                pts = " ".join("%.1f,%.1f" % (X(float(q[0])), Y(float(q[1]))) for q in rota)
+                P.append("<polyline class='rota' points='%s'/>" % pts)
+            for j, q in enumerate(rota):
+                r = 4.4 if (j == 0 or j == len(rota) - 1) else 2.4
+                P.append("<circle class='wp' cx='%.1f' cy='%.1f' r='%.1f'/>" % (X(float(q[0])), Y(float(q[1])), r))
+        P.append("</svg>")
+        out = "".join(P)
+        if legenda:
+            L = ["<div class='ork-leg'>"]
+            for it in legenda:
+                L.append("<span><i style='background:%s'></i>%s</span>"
+                         % (it.get("cor", "var(--accent)"), html.escape(str(it.get("rotulo", "")))))
+            L.append("</div>")
+            out += "".join(L)
+        return out + _ui_js()
     except Exception:
         return ""
 

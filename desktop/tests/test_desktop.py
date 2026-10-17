@@ -1917,7 +1917,7 @@ def test_tema_grafico_barras_e_proporcao():
     from resources import tema
     g = tema.grafico_barras([{"rotulo": "A", "valor": 3},
                              {"rotulo": "B", "valor": 9, "classe": "ok"}], unidade="ms", titulo="T")
-    assert "<svg class='ork-chart'" in g and "data-ork-tip" in g
+    assert "<svg class='ork-chart barras'" in g and "data-ork-tip" in g
     assert "class='bar ok'" in g and "ork-tip" in g      # série colorida por estado + tooltip JS
     assert tema.grafico_barras([]) == "" and tema.grafico_barras(None) == ""
     p = tema.barra_proporcao([{"rotulo": "OK", "valor": 5, "classe": "ok"},
@@ -1988,6 +1988,49 @@ def test_make_icon_render_marca_de_rota():
         pytest.skip("Pillow ausente")
     img = make_icon._render(64)
     assert img.size == (64, 64) and img.mode == "RGBA"
+
+
+# ============================================================================
+#  POLIMENTO: alternador de tema, animações de entrada e mapa coroplético por UF.
+# ============================================================================
+def test_tema_ui_js_toggle():
+    from resources import tema
+    j = tema.ui_js()
+    assert "<script>" in j and "ork-theme-toggle" in j and "localStorage" in j and "data-theme" in j
+
+def test_tema_css_toggle_e_animacoes():
+    from resources import tema
+    c = tema.css()
+    assert ".ork-theme-toggle" in c
+    assert "@keyframes ork-grow" in c and "@keyframes ork-draw" in c and "@keyframes ork-fade" in c
+    assert "prefers-reduced-motion:no-preference" in c          # animações só quando permitido
+
+def test_tema_mapa_coropletico():
+    from resources import tema
+    polis = [{"uf": "SP", "pts": [(-53, -25), (-44, -20), (-48, -19), (-50, -24)], "classe": "teal", "dica": "SP"},
+             {"uf": "RJ", "pts": [(-44, -23), (-41, -21), (-43, -22)], "classe": "bad"}]
+    m = tema.mapa_coropletico(polis, titulo="UF", rota=[(-46, -23), (-43, -22)],
+                              legenda=[{"rotulo": "x", "cor": "var(--teal)"}])
+    assert "<svg class='ork-mapa'" in m and "class='uf teal'" in m and "uf-lbl" in m
+    assert "class='rota'" in m and "ork-leg" in m and "ork-theme-toggle" in m
+    assert tema.mapa_coropletico([]) == "" and tema.mapa_coropletico(None) == ""
+
+def test_coverage_hulls_uf():
+    from audit import coverage_auditor as ca
+    h = ca.hulls_uf()
+    assert isinstance(h, dict) and len(h) >= 20            # maioria das 27 UFs
+    assert "SP" in h and all(len(v) >= 3 for v in h.values())
+
+def test_coverage_map_choropleth_por_uf():
+    from audit import coverage_map as cm
+    h = cm.construir_html(rapido=True)
+    assert "MAPA NACIONAL POR UF" in h and "class='uf " in h and "ork-mapa" in h
+
+def test_relatorios_tem_alternador_de_tema():
+    from audit import saude_nacional as sn
+    from resources import painel
+    assert "ork-theme-toggle" in sn.construir_html(rapido=True)
+    assert "ork-theme-toggle" in painel.construir_html()
 
 
 # ============================================================================
