@@ -1762,6 +1762,109 @@ def test_dossie_export_erro_nao_quebra(tmp_path):
 def test_painel_tem_bloco_dossie():
     h = painel.construir_html()
     assert "Dossiê de Rota (integração total)" in h and "--dossie" in h
+    assert "Comparação de Rotas" in h and "--comparar" in h   # nova capacidade surfaçada no painel
+
+
+# ============================================================================
+#  COMPARAÇÃO DE ROTAS — ranqueia rotas candidatas por complexidade logística (desktop).
+# ============================================================================
+def _dd_cmp(travessias=0, pontes=0, trechos=0, naveg=0, ufs=("SP",), o="A", d="B", erro=False):
+    """Dossiê SINTÉTICO (sem tocar nas bases) para testar a pontuação/ranking de forma determinística."""
+    if erro:
+        return {"erro": "x"}
+    return {
+        "origem": {"municipio": {"nome": o, "uf": (ufs[0] if ufs else "?")}},
+        "destino": {"municipio": {"nome": d, "uf": (ufs[-1] if ufs else "?")}},
+        "camadas": {"travessias": {"feicoes": travessias}, "pontes": {"feicoes": pontes}},
+        "hidrografia": {"trechos": trechos, "navegaveis": naveg},
+        "travessia_territorial": {"ufs": list(ufs)},
+        "pontos": 2,
+    }
+
+def test_comparar_pontuar_formula_e_erro():
+    from geo import dossie_comparativo as dc
+    s, c = dc.pontuar(_dd_cmp(travessias=1, pontes=2, trechos=100, naveg=3, ufs=("SP", "MG", "RJ")))
+    assert c == {"travessias": 1, "transicoes_uf": 2, "rios_navegaveis": 3, "pontes": 2, "trechos_rio": 100}
+    # 10*1 + 3*2 + 2*3 + 1*2 + 0.05*100 = 29.0
+    assert s == round(10 * 1 + 3 * 2 + 2 * 3 + 1 * 2 + 0.05 * 100, 2)
+    assert dc.pontuar({"erro": "x"}) == (None, {})
+    assert dc.pontuar({}) == (None, {})
+
+def test_comparar_ranqueia_e_recomenda(monkeypatch):
+    from geo import dossie_rota, dossie_comparativo as dc
+    fila = [
+        _dd_cmp(travessias=2, naveg=1, ufs=("SP", "MG", "RJ"), o="SP", d="RJ"),   # complexa
+        _dd_cmp(travessias=0, naveg=0, ufs=("SP",), o="SP", d="Campinas"),        # simples
+    ]
+    estado = {"i": 0}
+    def _fake(coords, **k):
+        r = fila[estado["i"]]
+        estado["i"] += 1
+        return r
+    monkeypatch.setattr(dossie_rota, "dossie", _fake)
+    cmp = dc.comparar([[(0, 0), (1, 1)], [(0, 0), (0.1, 0.1)]], nomes=["Rota longa", "Rota curta"])
+    assert cmp["total"] == 2 and cmp["validas"] == 2
+    # a rota mais simples (menor score) vai para o 1º lugar e é a recomendada
+    assert cmp["rotas"][0]["componentes"]["travessias"] == 0
+    assert cmp["rotas"][0]["score"] < cmp["rotas"][1]["score"]
+    assert "Campinas" in cmp["recomendada"]
+    txt = dc.render_texto(cmp)
+    assert "COMPARAÇÃO DE ROTAS" in txt and "RECOMENDADA" in txt
+
+def test_comparar_rota_invalida_sai_do_ranking(monkeypatch):
+    from geo import dossie_rota, dossie_comparativo as dc
+    fila = [_dd_cmp(erro=True), _dd_cmp(travessias=1, ufs=("BA",), o="X", d="Y")]
+    estado = {"i": 0}
+    monkeypatch.setattr(dossie_rota, "dossie", lambda c, **k: fila[estado.__setitem__("i", estado["i"] + 1) or estado["i"] - 1])
+    cmp = dc.comparar([[(0, 0), (1, 1)], [(2, 2), (3, 3)]])
+    assert cmp["total"] == 2 and cmp["validas"] == 1
+    # a válida vem primeiro; a inválida fica por último e sem score
+    assert cmp["rotas"][0]["ok"] is True and cmp["rotas"][-1]["ok"] is False
+    assert cmp["rotas"][-1]["score"] is None
+
+def test_comparar_html_e_excel(tmp_path, monkeypatch):
+    import openpyxl
+    from geo import dossie_rota, dossie_comparativo as dc
+    fila = [_dd_cmp(travessias=0, ufs=("SP",), o="SP", d="Campinas"),
+            _dd_cmp(travessias=2, ufs=("SP", "RJ"), o="SP", d="RJ")]
+    estado = {"i": 0}
+    monkeypatch.setattr(dossie_rota, "dossie", lambda c, **k: fila[estado.__setitem__("i", estado["i"] + 1) or estado["i"] - 1])
+    cmp = dc.comparar([[(0, 0), (1, 1)], [(0, 0), (2, 2)]])
+    h = dc.gerar_html(cmp, tmp_path / "cmp.html")
+    assert h == str(tmp_path / "cmp.html") and (tmp_path / "cmp.html").exists()
+    c = (tmp_path / "cmp.html").read_text(encoding="utf-8")
+    assert c.startswith("<!doctype html>") and "Comparação de Rotas" in c
+    assert "prefers-color-scheme" in c and "RECOMENDADA" in c
+    x = dc.exportar_excel(cmp, tmp_path / "cmp.xlsx")
+    assert x == str(tmp_path / "cmp.xlsx") and (tmp_path / "cmp.xlsx").exists()
+    wb = openpyxl.load_workbook(tmp_path / "cmp.xlsx")
+    assert "Comparacao" in wb.sheetnames
+
+def test_prov_comparar_rotas_grava_exports(monkeypatch, tmp_path):
+    import sys as _sys, pathlib as _pl
+    _sys.path.insert(0, str(_pl.Path(__file__).resolve().parents[1]))
+    from geo import dossie_rota
+    monkeypatch.setattr(prov, "pasta_por_tipo", lambda tipo: tmp_path / tipo)
+    fila = [_dd_cmp(travessias=0, ufs=("SP",)), _dd_cmp(travessias=3, ufs=("SP", "RJ"))]
+    estado = {"i": 0}
+    monkeypatch.setattr(dossie_rota, "dossie", lambda c, **k: fila[estado.__setitem__("i", estado["i"] + 1) or estado["i"] - 1])
+    r = prov.comparar_rotas([[(0, 0), (1, 1)], [(0, 0), (2, 2)]])
+    assert r["ok"] is True and r["validas"] == 2
+    assert r["html"] and "exports" in r["html"] and r["html"].endswith(".html")
+    assert r["excel"] and r["excel"].endswith(".xlsx")
+
+def test_comparar_cli_coords(monkeypatch, capsys):
+    from geo import dossie_rota, dossie_comparativo as dc
+    fila = [_dd_cmp(travessias=0, ufs=("SP",), o="SP", d="Campinas"),
+            _dd_cmp(travessias=2, ufs=("SP", "RJ"), o="SP", d="RJ")]
+    estado = {"i": 0}
+    monkeypatch.setattr(dossie_rota, "dossie", lambda c, **k: fila[estado.__setitem__("i", estado["i"] + 1) or estado["i"] - 1])
+    rc = dc._cli(["-46.6,-23.5;-47.0,-22.9 || -46.6,-23.5;-43.2,-22.9"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "COMPARAÇÃO DE ROTAS" in out
+    # menos de 2 rotas → uso/erro
+    assert dc._cli(["-46.6,-23.5;-47.0,-22.9"]) == 2
 
 
 # ============================================================================

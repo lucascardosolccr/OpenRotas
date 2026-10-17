@@ -386,6 +386,36 @@ def processar_dossie_lote(caminho_in, progresso=None, usar_osrm: bool = False) -
         return {"ok": False, "linhas": 0, "erros": 0, "saida": None, "detalhe": "erro: %s" % e}
 
 
+def comparar_rotas(rotas, nomes=None, usar_osrm: bool = False) -> dict:
+    """Compara rotas candidatas (cada item = coords [(lon,lat),...] OU 'Cidade/UF;Cidade/UF') por
+    complexidade logística e grava HTML + Excel em exports/ com timestamp. Devolve
+    {ok, recomendada, validas, total, html, excel, detalhe}. Nunca levanta."""
+    try:
+        from geo import dossie_comparativo as dc
+    except Exception:
+        try:
+            sys.path.insert(0, str(_AQUI.parent))
+            from geo import dossie_comparativo as dc
+        except Exception as e:
+            return {"ok": False, "recomendada": None, "validas": 0, "total": 0,
+                    "html": None, "excel": None, "detalhe": "comparação indisponível: %s" % e}
+    try:
+        import time as _t
+        cmp = dc.comparar(rotas, nomes=nomes, usar_osrm=usar_osrm)
+        destino = pasta_por_tipo("exports")
+        destino.mkdir(parents=True, exist_ok=True)
+        carimbo = _t.strftime("%Y%m%d_%H%M%S")
+        h = dc.gerar_html(cmp, destino / ("comparacao_rotas_%s.html" % carimbo))
+        x = dc.exportar_excel(cmp, destino / ("comparacao_rotas_%s.xlsx" % carimbo))
+        return {"ok": cmp.get("validas", 0) >= 1, "recomendada": cmp.get("recomendada"),
+                "validas": cmp.get("validas", 0), "total": cmp.get("total", 0),
+                "html": h, "excel": x,
+                "detalhe": "recomendada: %s" % (cmp.get("recomendada") or "—")}
+    except Exception as e:
+        return {"ok": False, "recomendada": None, "validas": 0, "total": 0,
+                "html": None, "excel": None, "detalhe": "erro: %s" % e}
+
+
 def saude_nacional_texto(rapido: bool = True) -> str:
     """Relatório de SAÚDE NACIONAL dos dados (audit.saude_nacional): cobertura/qualidade das bases
     por área, como texto para a UI. `rapido=True` faz a checagem leve (schema/presença). Nunca

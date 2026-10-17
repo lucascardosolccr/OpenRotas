@@ -200,7 +200,13 @@ def _bloco_dossie() -> str:
             '<p class="empty">Gere pela linha de comando: '
             '<code>OpenRotas.exe --dossie "lon,lat;lon,lat" --html --excel</code> '
             '(salva HTML e planilha em exports/). Grafo/conectividade: '
-            '<code>--conectividade</code>; telemetria: <code>--telemetria-ana</code>.</p>')
+            '<code>--conectividade</code>; telemetria: <code>--telemetria-ana</code>.</p>'
+            '<p>Tem mais de um traçado possível para o mesmo trajeto? A <b>Comparação de Rotas</b> '
+            'analisa cada candidata com todos os dados nacionais e ranqueia por <b>complexidade '
+            'logística</b> (balsas, transições de UF, rios navegáveis, pontes), apontando a mais '
+            'simples de operar — é um auxílio de planejamento; não substitui a decisão de rota do app.</p>'
+            '<p class="empty">Compare pela linha de comando: '
+            '<code>OpenRotas.exe --comparar "lon,lat;lon,lat || lon,lat;lon,lat" --html --excel</code>.</p>')
 
 
 def _bloco_config() -> str:

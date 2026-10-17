@@ -394,6 +394,7 @@ _AJUDA = """OpenRotas Desktop — uso:
   OpenRotas.exe --integridade   audita defeitos geométricos das camadas (inválidas/fora do Brasil)
   OpenRotas.exe --dossie "lon,lat;lon,lat" [--html] [--excel]   dossiê completo da rota (todos os dados)
   OpenRotas.exe --dossie --rota-nomes "São Paulo/SP;Rio de Janeiro/RJ" [--html] [--excel]   dossiê por cidade
+  OpenRotas.exe --comparar "lon,lat;lon,lat || lon,lat;lon,lat" [--html] [--excel]   compara rotas candidatas (complexidade logística)
   OpenRotas.exe --conectividade [rodovias|ferrovias|drenagem]   grafo topológico e componentes (§43)
   OpenRotas.exe --telemetria-ana [--atualizar]   telemetria local + atualização incremental (§35)
   OpenRotas.exe --auditoria --relatorio   salva o Relatório de Cobertura Nacional (.md) em exports/
@@ -678,6 +679,15 @@ def main() -> int:
             return dossie_rota._cli([a for a in sys.argv[1:] if a != "--dossie"])
         except Exception as e:
             print("Dossiê de rota indisponível: %s" % e)
+            return 1
+
+    # Modo COMPARAÇÃO DE ROTAS (desktop): ranqueia rotas candidatas por complexidade logística. Sai.
+    if "--comparar" in sys.argv:
+        try:
+            from geo import dossie_comparativo
+            return dossie_comparativo._cli([a for a in sys.argv[1:] if a != "--comparar"])
+        except Exception as e:
+            print("Comparação de rotas indisponível: %s" % e)
             return 1
 
     # Modo CONECTIVIDADE (§43): grafo topológico de uma malha (rodovias por padrão) e componentes. Sai.
