@@ -42,6 +42,15 @@ COLUNAS = [
     ("sinalizacao", "Sinaliz."),
 ]
 
+try:
+    from resources import tema
+except Exception:
+    try:
+        import tema
+    except Exception:
+        tema = None
+
+# CSS da marca vem do tema compartilhado; o bloco abaixo é FALLBACK defensivo.
 _CSS = """
 :root{--bg:#f6f7f9;--card:#fff;--ink:#1a2230;--muted:#5b6676;--line:#e6e9ef;
   --ok:#1a7f4b;--okbg:#e6f4ec;--bad:#b42318;--badbg:#fbeae8;--chip:#eef2f7;--accent:#1f6feb}
@@ -105,7 +114,7 @@ def construir_html(rapido: bool = False, rota=None) -> str:
     ufs_rota = set((dd_rota.get("travessia_territorial", {}) or {}).get("ufs") or []) if dd_rota else set()
     partes = ["<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'>",
               "<meta name='viewport' content='width=device-width,initial-scale=1'>",
-              "<title>Mapa de Cobertura Nacional — OpenRotas</title><style>", _CSS,
+              "<title>Mapa de Cobertura Nacional — OpenRotas</title><style>", (tema.css() if tema else _CSS),
               "</style></head><body><div class='wrap'>",
               "<h1>Mapa de Cobertura Nacional</h1>",
               "<p class='sub'>Presença por UF × camada (números reais; presença espacial por bbox, "

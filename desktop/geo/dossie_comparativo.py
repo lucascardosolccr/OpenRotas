@@ -174,6 +174,15 @@ def render_texto(cmp: dict) -> str:
     return "\n".join(L)
 
 
+try:
+    from resources import tema
+except Exception:
+    try:
+        import tema
+    except Exception:
+        tema = None
+
+# CSS da marca vem do tema compartilhado; o bloco abaixo é FALLBACK defensivo.
 _CSS = """
 :root{--bg:#f6f7f9;--card:#fff;--ink:#1a2230;--muted:#5b6676;--line:#e6e9ef;--accent:#1f6feb;
   --ok:#1a7f4b;--okbg:#e6f4ec;--warn:#9a6700;--chip:#eef2f7}
@@ -211,7 +220,7 @@ def gerar_html(cmp: dict, caminho) -> str | None:
         rotas = cmp.get("rotas", [])
         P = ["<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'>",
              "<meta name='viewport' content='width=device-width,initial-scale=1'>",
-             "<title>Comparação de Rotas — OpenRotas</title><style>", _CSS,
+             "<title>Comparação de Rotas — OpenRotas</title><style>", (tema.css() if tema else _CSS),
              "</style></head><body><div class='wrap'>",
              "<h1>Comparação de Rotas</h1>",
              "<p class='sub'>%d rota(s) candidata(s) · %d válida(s) · gerado em %s</p>"

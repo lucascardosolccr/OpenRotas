@@ -26,6 +26,16 @@ sys.path.insert(0, str(_AQUI.parent / "data_local"))
 sys.path.insert(0, str(_AQUI.parent / "telemetry"))
 
 
+try:
+    from resources import tema
+except Exception:
+    try:
+        import tema
+    except Exception:
+        tema = None
+
+# CSS da marca vem do tema compartilhado (resources/tema.py); o bloco abaixo é só FALLBACK
+# defensivo caso o módulo de tema não esteja presente no bundle.
 _CSS = """
 :root{
   --bg:#f6f7f9; --card:#ffffff; --ink:#1a2230; --muted:#5b6676; --line:#e6e9ef;
@@ -238,7 +248,7 @@ def construir_html(osrm_cfg=None) -> str:
     partes = [
         "<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'>",
         "<meta name='viewport' content='width=device-width,initial-scale=1'>",
-        "<title>Central de Recursos — OpenRotas</title><style>", _CSS, "</style></head><body><div class='wrap'>",
+        "<title>Central de Recursos — OpenRotas</title><style>", (tema.css() if tema else _CSS), "</style></head><body><div class='wrap'>",
         "<h1>Central de Recursos</h1>",
         "<p class='sub'>OpenRotas Desktop%s · gerado em %s</p>" % (
             (" v" + html.escape(str(versao))) if versao else "", html.escape(quando)),

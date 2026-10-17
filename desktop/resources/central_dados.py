@@ -101,6 +101,21 @@ class _App:
         root.geometry("720x720")
         root.minsize(600, 560)
 
+        # Identidade visual da marca (tema compartilhado) — só estilo, nenhum handler muda. No-op
+        # defensivo se o módulo de tema não estiver presente.
+        try:
+            from resources import tema as _tema
+        except Exception:
+            try:
+                import tema as _tema
+            except Exception:
+                _tema = None
+        if _tema is not None:
+            try:
+                _tema.aplicar_tema_tk(root)
+            except Exception:
+                pass
+
         try:
             import desktop_config as _dc
             _ver = getattr(_dc, "APP_VERSION", "?")

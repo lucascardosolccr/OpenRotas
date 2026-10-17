@@ -439,6 +439,15 @@ def render_texto(dd: dict) -> str:
     return "\n".join(L)
 
 
+try:
+    from resources import tema
+except Exception:
+    try:
+        import tema
+    except Exception:
+        tema = None
+
+# CSS da marca vem do tema compartilhado; o bloco abaixo é FALLBACK defensivo.
 _CSS_DOSSIE = """
 :root{--bg:#f6f7f9;--card:#fff;--ink:#1a2230;--muted:#5b6676;--line:#e6e9ef;--accent:#1f6feb;
   --ok:#1a7f4b;--warn:#9a6700;--chip:#eef2f7}
@@ -498,7 +507,7 @@ def gerar_html(dd: dict, caminho) -> str | None:
         tt = dd.get("travessia_territorial", {})
         P = ["<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'>",
              "<meta name='viewport' content='width=device-width,initial-scale=1'>",
-             "<title>Dossiê da Rota — OpenRotas</title><style>", _CSS_DOSSIE, "</style></head><body><div class='wrap'>",
+             "<title>Dossiê da Rota — OpenRotas</title><style>", (tema.css() if tema else _CSS_DOSSIE), "</style></head><body><div class='wrap'>",
              "<h1>Dossiê da Rota</h1><p class='sub'>Integração nacional de dados · gerado em %s</p>"
              % html.escape(dd.get("gerado_em", "")),
              "<div class='rota'>%s/%s <span class='seta'>→</span> %s/%s</div>"

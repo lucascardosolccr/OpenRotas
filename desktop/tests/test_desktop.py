@@ -1868,6 +1868,53 @@ def test_comparar_cli_coords(monkeypatch, capsys):
 
 
 # ============================================================================
+#  TEMA DA MARCA — sistema de design único dos relatórios + janela (visual coeso).
+# ============================================================================
+def test_tema_css_tem_tokens_e_dois_temas():
+    from resources import tema
+    c = tema.css()
+    # tokens da marca e os DOIS temas (3 estados) presentes
+    assert "--accent" in c and "--teal" in c and "--surface" in c
+    assert "prefers-color-scheme:dark" in c
+    assert ':root:not([data-theme="light"])' in c and ':root[data-theme="dark"]' in c
+    # offline-first: nada de fontes/recursos externos
+    assert "fonts.googleapis" not in c and "http://" not in c and "https://" not in c
+
+def test_tema_logo_e_documento():
+    from resources import tema
+    assert tema.logo_svg().startswith("<svg") and "</svg>" in tema.logo_svg()
+    doc = tema.documento("Título X", "sub", "<p>corpo</p>", rodape="rod")
+    assert doc.startswith("<!doctype html>") and "Título X" in doc and tema.MARCA in doc
+    assert "corpo" in doc and "prefers-color-scheme" in doc
+
+def test_tema_tk_defensivo_nao_levanta():
+    from resources import tema
+    # root inválido → cai no except e devolve False, sem levantar (contrato "nunca quebra")
+    assert tema.aplicar_tema_tk(object()) is False
+
+def test_relatorios_usam_tema_compartilhado(tmp_path, monkeypatch, dossie_sp_rio):
+    # Todos os relatórios devem embutir o tema da marca (token --teal só existe no tema novo,
+    # não nos CSS de fallback antigos) — prova visual de que a identidade única está aplicada.
+    from resources import painel
+    from audit import saude_nacional as sn
+    from audit import coverage_map as cm
+    from geo import dossie_rota, dossie_comparativo as dc
+    assert "--teal" in painel.construir_html()
+    assert "--teal" in sn.construir_html(rapido=True)
+    assert "--teal" in cm.construir_html(rapido=True)
+    out = tmp_path / "d.html"
+    dossie_rota.gerar_html(dossie_sp_rio, out)
+    assert "--teal" in out.read_text(encoding="utf-8")
+    from geo import dossie_rota as _dr
+    fila = [_dd_cmp(travessias=0, ufs=("SP",)), _dd_cmp(travessias=2, ufs=("SP", "RJ"))]
+    estado = {"i": 0}
+    monkeypatch.setattr(_dr, "dossie", lambda c, **k: fila[estado.__setitem__("i", estado["i"] + 1) or estado["i"] - 1])
+    cmp = dc.comparar([[(0, 0), (1, 1)], [(0, 0), (2, 2)]])
+    dc.gerar_html(cmp, tmp_path / "c.html")
+    assert "--teal" in (tmp_path / "c.html").read_text(encoding="utf-8")
+
+
+# ============================================================================
 #  DOSSIÊ POR NOME DE CIDADE (desktop) — resolução via índice de municípios IBGE.
 # ============================================================================
 def test_resolver_local_parse():

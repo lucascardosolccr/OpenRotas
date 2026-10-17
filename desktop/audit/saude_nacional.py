@@ -129,6 +129,15 @@ def render_texto(d: dict) -> str:
     return "\n".join(L)
 
 
+try:
+    from resources import tema
+except Exception:
+    try:
+        import tema
+    except Exception:
+        tema = None
+
+# CSS da marca vem do tema compartilhado; o bloco abaixo é FALLBACK defensivo.
 _CSS = """
 :root{--bg:#f6f7f9;--card:#fff;--ink:#1a2230;--muted:#5b6676;--line:#e6e9ef;
   --ok:#1a7f4b;--okbg:#e6f4ec;--warn:#9a6700;--warnbg:#fdf4e3;--bad:#b42318;--badbg:#fbeae8}
@@ -167,7 +176,7 @@ def construir_html(rapido: bool = True) -> str:
     bcl = {"OK": "b-ok", "PARCIAL": "b-parcial", "AUSENTE": "b-ausente"}
     P = ["<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'>",
          "<meta name='viewport' content='width=device-width,initial-scale=1'>",
-         "<title>Saúde dos Dados Nacionais — OpenRotas</title><style>", _CSS,
+         "<title>Saúde dos Dados Nacionais — OpenRotas</title><style>", (tema.css() if tema else _CSS),
          "</style></head><body><div class='wrap'>",
          "<h1>Saúde dos Dados Nacionais</h1>",
          "<p class='sub'>Estado consolidado da infraestrutura de dados · gerado em %s</p>"
