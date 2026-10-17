@@ -2056,6 +2056,34 @@ def test_painel_executivo_gera(tmp_path):
 
 
 # ============================================================================
+#  CONECTIVIDADE MULTIMODAL REAL (§8) — nós compartilhados entre modais (por célula).
+# ============================================================================
+def test_multimodal_analisar():
+    import itertools
+    from geo import multimodal
+    g = multimodal.analisar(precisao=1)
+    assert g["status"] == "OK" and "rodoviario" in g["classes"]
+    assert g["total_celulas"] > 0 and g["hubs"] >= 0 and g["hubs3"] >= 0
+    # diagonal (células próprias) >= qualquer co-ocorrência da linha; matriz simétrica
+    for a in g["classes"]:
+        assert g["matriz"][a][a] >= max(g["matriz"][a][b] for b in g["classes"])
+    for a, b in itertools.combinations(g["classes"], 2):
+        assert g["matriz"][a][b] == g["matriz"][b][a]
+    # transposições, quando presentes, têm pct coerente (0..100)
+    for t in g["transposicoes"].values():
+        assert 0 <= t["conecta"] <= t["total"] and 0.0 <= t["pct"] <= 100.0
+    assert "CONECTIVIDADE MULTIMODAL" in multimodal.render_texto(g)
+
+def test_multimodal_html_e_gera(tmp_path):
+    from geo import multimodal
+    h = multimodal.construir_html()
+    assert h.startswith("<!doctype html>") and "Conectividade Multimodal" in h
+    assert "Hubs multimodais" in h and "ork-theme-toggle" in h
+    out = tmp_path / "mm.html"
+    assert multimodal.gerar(out) == str(out) and out.exists()
+
+
+# ============================================================================
 #  DOSSIÊ POR NOME DE CIDADE (desktop) — resolução via índice de municípios IBGE.
 # ============================================================================
 def test_resolver_local_parse():
