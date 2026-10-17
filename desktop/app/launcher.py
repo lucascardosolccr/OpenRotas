@@ -395,6 +395,7 @@ _AJUDA = """OpenRotas Desktop — uso:
   OpenRotas.exe --dossie "lon,lat;lon,lat" [--html] [--excel]   dossiê completo da rota (todos os dados)
   OpenRotas.exe --dossie --rota-nomes "São Paulo/SP;Rio de Janeiro/RJ" [--html] [--excel]   dossiê por cidade
   OpenRotas.exe --comparar "lon,lat;lon,lat || lon,lat;lon,lat" [--html] [--excel]   compara rotas candidatas (complexidade logística)
+  OpenRotas.exe --painel-executivo   painel executivo (visão única: mapa + KPIs + saúde + modais)
   OpenRotas.exe --conectividade [rodovias|ferrovias|drenagem]   grafo topológico e componentes (§43)
   OpenRotas.exe --telemetria-ana [--atualizar]   telemetria local + atualização incremental (§35)
   OpenRotas.exe --auditoria --relatorio   salva o Relatório de Cobertura Nacional (.md) em exports/
@@ -679,6 +680,15 @@ def main() -> int:
             return dossie_rota._cli([a for a in sys.argv[1:] if a != "--dossie"])
         except Exception as e:
             print("Dossiê de rota indisponível: %s" % e)
+            return 1
+
+    # Modo PAINEL EXECUTIVO (desktop): visão única consolidada (mapa + KPIs + saúde + modais). Sai.
+    if "--painel-executivo" in sys.argv:
+        try:
+            from resources import painel_executivo
+            return painel_executivo._cli([a for a in sys.argv[1:] if a != "--painel-executivo"])
+        except Exception as e:
+            print("Painel Executivo indisponível: %s" % e)
             return 1
 
     # Modo COMPARAÇÃO DE ROTAS (desktop): ranqueia rotas candidatas por complexidade logística. Sai.

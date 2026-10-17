@@ -178,7 +178,16 @@ footer::before{content:"\\25CF ";color:var(--accent)}
   border-radius:999px;padding:6px 12px;font:600 .78rem/1 system-ui,-apple-system,sans-serif;
   box-shadow:var(--shadow)}
 .ork-theme-toggle:hover{border-color:var(--accent);color:var(--accent-ink)}
-@media print{.ork-theme-toggle{display:none}}
+/* Impressão / exportação para PDF — limpo e econômico (o Dossiê imprime→PDF) --------- */
+@media print{
+  :root{--bg:#fff;--surface:#fff}
+  body{background:#fff}
+  body::before{display:none}
+  .ork-theme-toggle{display:none}
+  .card,.dim{box-shadow:none;break-inside:avoid;page-break-inside:avoid}
+  a{color:inherit}
+  .ork-chart,.ork-mapa{break-inside:avoid}
+}
 /* Animações de entrada (a partir de estado visível; desligadas em reduced-motion) ---- */
 @keyframes ork-grow{from{transform:scaleX(.5)}to{transform:scaleX(1)}}
 @keyframes ork-fade{from{opacity:0}to{opacity:1}}
@@ -268,6 +277,13 @@ def _ui_js() -> str:
             "try{var s=localStorage.getItem('ork-theme');if(s==='dark'||s==='light')"
             "document.documentElement.setAttribute('data-theme',s);}catch(e){}"
             "function boot(){"
+            "try{if(!document.querySelector('link[rel=\"icon\"]')){var lk=document.createElement('link');"
+            "lk.rel='icon';lk.href='data:image/svg+xml,'+encodeURIComponent("
+            "\"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'>\"+"
+            "\"<rect width='28' height='28' rx='6' fill='#3b82f6'/>\"+"
+            "\"<path d='M6 20 C 13 16, 12 10, 20 8' stroke='#fff' stroke-width='2.4' fill='none' stroke-linecap='round'/>\"+"
+            "\"<circle cx='6' cy='20' r='3.4' fill='#fff'/><circle cx='21' cy='8' r='3.4' fill='#fff'/></svg>\");"
+            "document.head.appendChild(lk);}}catch(e){}"
             "var t=document.createElement('div');t.className='ork-tip';document.body.appendChild(t);"
             "function mv(e){t.style.left=Math.min(window.innerWidth-270,e.clientX+14)+'px';"
             "t.style.top=(e.clientY+16)+'px';}"

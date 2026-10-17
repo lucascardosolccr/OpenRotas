@@ -2032,6 +2032,28 @@ def test_relatorios_tem_alternador_de_tema():
     assert "ork-theme-toggle" in sn.construir_html(rapido=True)
     assert "ork-theme-toggle" in painel.construir_html()
 
+def test_tema_favicon_e_print():
+    from resources import tema
+    j = tema.ui_js()
+    assert "rel='icon'" in j or "rel=\\\"icon\\\"" in j or "link" in j
+    assert "image/svg" in j                         # favicon da marca (data-URI)
+    assert "@media print" in tema.css()             # estilo de impressão/PDF
+
+def test_painel_executivo_html():
+    from resources import painel_executivo as pe
+    from resources import tema
+    h = pe.construir_html()
+    assert h.startswith("<!doctype html>") and "Painel Executivo" in h and tema.MARCA in h
+    assert "Estados (UFs)" in h and "Feições multimodais" in h
+    assert "COBERTURA NACIONAL POR UF" in h          # mapa coroplético embutido
+    assert "ork-theme-toggle" in h and "prefers-color-scheme" in h
+
+def test_painel_executivo_gera(tmp_path):
+    from resources import painel_executivo as pe
+    out = tmp_path / "pe.html"
+    assert pe.gerar(out) == str(out) and out.exists()
+    assert out.read_text(encoding="utf-8").startswith("<!doctype html>")
+
 
 # ============================================================================
 #  DOSSIÊ POR NOME DE CIDADE (desktop) — resolução via índice de municípios IBGE.
