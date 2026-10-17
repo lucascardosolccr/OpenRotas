@@ -186,18 +186,72 @@ def _wkb_e_shape(shape, kind, max_pts):
         rings = [r for r in rings if r]
         if not rings:
             return None, None
-        allpts = [p for r in rings for p in r]
-        return _wkb_polygon(rings), _ponto_repr(allpts)
+        return _wkb_polygon(rings), _ponto_repr_poligono(rings)
     raise ValueError(kind)
 
 
 def _ponto_repr(pts):
-    """Ponto representativo: vértice mais próximo do centro do bbox da geometria."""
+    """Ponto representativo: vértice mais próximo do centro do bbox da geometria.
+    (Usado para LINHAS; para POLÍGONOS use _ponto_repr_poligono — robusto a ilhas.)"""
     xs = [p[0] for p in pts]
     ys = [p[1] for p in pts]
     cx, cy = (min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0
     best = min(range(len(pts)), key=lambda i: (pts[i][0] - cx) ** 2 + (pts[i][1] - cy) ** 2)
     return (float(xs[best]), float(ys[best]))
+
+
+def _area_anel(r):
+    """Área (shoelace, valor absoluto) de um anel [(x,y),...]."""
+    n = len(r)
+    a = 0.0
+    for i in range(n):
+        x0, y0 = r[i]
+        x1, y1 = r[(i + 1) % n]
+        a += x0 * y1 - x1 * y0
+    return abs(a) * 0.5
+
+
+def _centroide_anel(r):
+    """Centróide (fórmula do polígono) de um anel; cai na média dos vértices se degenerado."""
+    n = len(r)
+    if n == 0:
+        return None
+    if n < 3:
+        return (sum(p[0] for p in r) / n, sum(p[1] for p in r) / n)
+    A = 0.0
+    cx = 0.0
+    cy = 0.0
+    for i in range(n):
+        x0, y0 = r[i]
+        x1, y1 = r[(i + 1) % n]
+        cross = x0 * y1 - x1 * y0
+        A += cross
+        cx += (x0 + x1) * cross
+        cy += (y0 + y1) * cross
+    if abs(A) < 1e-12:
+        return (sum(p[0] for p in r) / n, sum(p[1] for p in r) / n)
+    A *= 0.5
+    return (cx / (6.0 * A), cy / (6.0 * A))
+
+
+def _ponto_repr_poligono(rings):
+    """Ponto representativo ROBUSTO para polígonos: centróide do MAIOR anel por área (o
+    continente). Evita que o ponto derive para ILHAS OCEÂNICAS distantes que pertencem ao
+    município (ex.: Trindade/Martim Vaz em Vitória/ES) — o que jogava a coordenada no Atlântico."""
+    melhor = None
+    melhor_a = -1.0
+    for r in rings:
+        if len(r) < 3:
+            continue
+        a = _area_anel(r)
+        if a > melhor_a:
+            melhor_a = a
+            melhor = r
+    if melhor is None:
+        allpts = [p for r in rings for p in r]
+        return _ponto_repr(allpts) if allpts else (0.0, 0.0)
+    c = _centroide_anel(melhor)
+    return (float(c[0]), float(c[1]))
 
 
 def _norm_attr(v, is_num):
