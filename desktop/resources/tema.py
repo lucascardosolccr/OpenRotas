@@ -1,63 +1,65 @@
 # -*- coding: utf-8 -*-
 """OpenRotas Desktop — SISTEMA DE DESIGN DA MARCA (tema visual único).
 
-Fonte ÚNICA do visual do desktop: paleta, tipografia e componentes usados por TODOS os
-relatórios HTML (Central de Recursos, Saúde Nacional, Mapa de Cobertura, Dossiê, Comparação) e
-pela janela Tkinter (Central de Dados). Antes cada relatório carregava um CSS próprio, duplicado
-e utilitário; agora todos herdam uma identidade coesa e polida.
+Fonte ÚNICA do visual do desktop: paleta, tipografia, componentes e GRÁFICOS usados por TODOS os
+relatórios HTML (Central de Recursos, Saúde Nacional, Mapa de Cobertura, Dossiê, Comparação), pela
+janela Tkinter (Central de Dados) e em harmonia com a janela nativa (app/janela.py) e o app web.
+Antes cada relatório carregava um CSS próprio, duplicado e utilitário; agora todos herdam UMA
+identidade coesa e polida.
 
 Princípios (desktop é OFFLINE-first — §31/§32): NADA de CDN/Google Fonts (quebraria sem rede);
-usamos uma pilha de fontes de sistema e um design próprio, inline e autossuficiente. Tema claro
-E escuro pelo padrão de 3 estados (prefers-color-scheme + data-theme). Puro/defensivo: nunca
-levanta; `aplicar_tema_tk` degrada para no-op se o Tkinter/ttk não cooperar.
+pilha de fontes de sistema e design próprio, inline e autossuficiente. Tema claro E escuro pelo
+padrão de 3 estados (prefers-color-scheme + data-theme). Gráficos em SVG inline (sem bibliotecas)
+com tooltip dinâmico por JS leve e realce no hover. Puro/defensivo: nunca levanta.
 
-Identidade: logística/roteamento nacional. Acento "sinal" azul (rota) + teal (hidrografia),
-neutros com leve viés frio (escolhidos, não herdados), cartões com profundidade sutil, títulos
-marcados por um "waypoint" (ponto de rota). Mesmo acento nos dois temas (marca constante)."""
+Identidade: logística/roteamento nacional, alinhada à marca do app (azul #3B82F6 + ciano/teal).
+Mesma cor de acento nos dois temas (marca constante). Títulos marcados por um "waypoint"."""
 from __future__ import annotations
 
+import html
+
 MARCA = "OpenRotas"
-_VERSAO_TEMA = "1"
+_VERSAO_TEMA = "2"
 
-# Acento da marca — CONSTANTE nos dois temas (identidade estável). Baked no glifo do título.
-ACENTO = "#2f6bff"
-ACENTO_FORTE = "#1e4fd0"
-TEAL = "#0e9aa7"
+# Acento da marca — alinhado ao app (web/janela nativa): azul #3B82F6. CONSTANTE nos dois temas.
+ACENTO = "#3b82f6"
+ACENTO_FORTE = "#2563eb"
+TEAL = "#0891b2"
 
-# Paleta Tkinter (janela clara, coesa com o tema claro do HTML).
+# Paleta Tkinter (janela clara da Central de Dados, coesa com o tema claro do HTML).
 TK = {
-    "bg": "#eef1f8", "surface": "#ffffff", "ink": "#15203a", "ink_soft": "#3b4660",
+    "bg": "#eef2fb", "surface": "#ffffff", "ink": "#15203a", "ink_soft": "#3b4660",
     "muted": "#5a6681", "line": "#dbe2f0", "line_forte": "#c6d1e8",
-    "accent": ACENTO, "accent_forte": ACENTO_FORTE, "accent_bg": "#eaf0ff",
+    "accent": ACENTO, "accent_forte": ACENTO_FORTE, "accent_bg": "#e8f0ff",
     "ok": "#138a52", "warn": "#b9771c", "bad": "#c0392b", "chip": "#eef2fb", "disabled": "#aab2c5",
 }
 
 
 def css() -> str:
-    """Folha de estilo COMPLETA e coesa da marca (string, sem a tag <style>). Define todos os
-    componentes usados pelos relatórios: cartões, KPIs, tabelas, badges, matriz de cobertura,
-    dimensões, rota/alertas, recomendação, legenda. Tema claro/escuro em 3 estados."""
+    """Folha de estilo COMPLETA e coesa da marca (string, sem a tag <style>): cartões, KPIs,
+    tabelas, badges, matriz de cobertura, dimensões, rota/alertas, recomendação, legenda E
+    gráficos SVG. Tema claro/escuro em 3 estados."""
     return """
 :root{
-  --bg:#eef1f8; --bg-deco:#e4e9f6; --surface:#ffffff; --surface-2:#f5f8ff; --ink:#141b2e;
-  --ink-soft:#3b4660; --muted:#67718a; --line:#e2e7f1; --line-2:#d6ddec;
-  --accent:#2f6bff; --accent-ink:#1e4fd0; --teal:#0e9aa7;
+  --bg:#eef2fb; --bg-deco:#e3eaf8; --surface:#ffffff; --surface-2:#f5f8ff; --ink:#111a2e;
+  --ink-soft:#394563; --muted:#64708c; --line:#e2e8f4; --line-2:#d5def0;
+  --accent:#3b82f6; --accent-ink:#2563eb; --teal:#0891b2;
   --ok:#138a52; --okbg:#e4f5ec; --warn:#b9771c; --warnbg:#fbf1dd; --bad:#c0392b; --badbg:#fae9e6;
-  --chip:#eef2fb; --shadow:0 1px 2px rgba(20,27,46,.05), 0 10px 26px -14px rgba(20,27,46,.28);
+  --chip:#eef2fb; --shadow:0 1px 2px rgba(17,26,46,.05), 0 10px 26px -14px rgba(17,26,46,.30);
   --radius:16px;
 }
 :root:not([data-theme="light"]){}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --bg:#0a0f1e; --bg-deco:#111a30; --surface:#121a30; --surface-2:#0f1728; --ink:#e9eefb;
-  --ink-soft:#c3cce1; --muted:#8b97b4; --line:#243049; --line-2:#2c3a57;
-  --accent:#5b8cff; --accent-ink:#9db9ff; --teal:#2bc4d4;
+  --bg:#0b0f1a; --bg-deco:#111a30; --surface:#141b2b; --surface-2:#0f1625; --ink:#eaf0fb;
+  --ink-soft:#c3cce1; --muted:#8a97b4; --line:#242f45; --line-2:#2d3a55;
+  --accent:#60a5fa; --accent-ink:#9dc0ff; --teal:#22d3ee;
   --ok:#3fce84; --okbg:#0f2a1c; --warn:#e4ad48; --warnbg:#2a1f07; --bad:#ff7a6b; --badbg:#2d1512;
   --chip:#18223c; --shadow:0 1px 2px rgba(0,0,0,.4), 0 16px 34px -16px rgba(0,0,0,.7);
 }}
 :root[data-theme="dark"]{
-  --bg:#0a0f1e; --bg-deco:#111a30; --surface:#121a30; --surface-2:#0f1728; --ink:#e9eefb;
-  --ink-soft:#c3cce1; --muted:#8b97b4; --line:#243049; --line-2:#2c3a57;
-  --accent:#5b8cff; --accent-ink:#9db9ff; --teal:#2bc4d4;
+  --bg:#0b0f1a; --bg-deco:#111a30; --surface:#141b2b; --surface-2:#0f1625; --ink:#eaf0fb;
+  --ink-soft:#c3cce1; --muted:#8a97b4; --line:#242f45; --line-2:#2d3a55;
+  --accent:#60a5fa; --accent-ink:#9dc0ff; --teal:#22d3ee;
   --ok:#3fce84; --okbg:#0f2a1c; --warn:#e4ad48; --warnbg:#2a1f07; --bad:#ff7a6b; --badbg:#2d1512;
   --chip:#18223c; --shadow:0 1px 2px rgba(0,0,0,.4), 0 16px 34px -16px rgba(0,0,0,.7);
 }
@@ -78,7 +80,7 @@ body::before{content:"";position:fixed;inset:0 0 auto 0;height:4px;z-index:2;
 h1{font-size:clamp(1.4rem,1.1rem + 1.4vw,1.75rem);line-height:1.15;margin:0 0 6px;
   letter-spacing:-.02em;text-wrap:balance;display:flex;align-items:center;gap:12px}
 h1::before{content:"";flex:0 0 auto;width:13px;height:13px;border-radius:50%;
-  background:var(--accent);box-shadow:0 0 0 4px rgba(47,107,255,.20)}
+  background:var(--accent);box-shadow:0 0 0 4px rgba(59,130,246,.20)}
 h2{font-size:1.06rem;margin:0 0 12px;letter-spacing:-.01em}
 .sub{color:var(--muted);margin:0 0 26px;font-size:.92rem;max-width:68ch}
 a{color:var(--accent-ink);text-underline-offset:2px}
@@ -139,18 +141,35 @@ details summary{cursor:pointer;color:var(--accent-ink);font-weight:600}
 tr.best td{background:var(--okbg)}
 .empty{color:var(--muted);font-style:italic}
 footer{color:var(--muted);font-size:.78rem;margin-top:18px;text-align:center}
-footer::before{content:"● ";color:var(--accent)}
+footer::before{content:"\\25CF ";color:var(--accent)}
+/* Gráficos (SVG inline) ---------------------------------------------------- */
+.ork-chart{width:100%;height:auto;display:block;margin:4px 0 2px;overflow:visible}
+.ork-chart .track{fill:var(--chip)}
+.ork-chart .bar{fill:var(--accent)}
+.ork-chart .bar.ok{fill:var(--ok)} .ork-chart .bar.warn{fill:var(--warn)}
+.ork-chart .bar.bad{fill:var(--bad)} .ork-chart .bar.teal{fill:var(--teal)}
+.ork-chart .lbl{fill:var(--ink-soft);font-size:12px}
+.ork-chart .val{fill:var(--ink);font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
+.ork-chart .cap{fill:var(--muted);font-size:11px;letter-spacing:.02em}
+.ork-chart .bar{cursor:default}
+.ork-chart:hover .bar{opacity:.5} .ork-chart .bar:hover{opacity:1}
+.ork-leg{display:flex;flex-wrap:wrap;gap:14px;margin:8px 2px 0;color:var(--muted);font-size:.82rem}
+.ork-leg i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.ork-tip{position:fixed;z-index:60;pointer-events:none;opacity:0;background:var(--ink);
+  color:var(--surface);font-size:.78rem;padding:6px 9px;border-radius:8px;box-shadow:var(--shadow);
+  max-width:260px;line-height:1.35;transition:opacity .12s ease}
 @media (max-width:520px){.wrap{padding:28px 16px 48px}.kpi{flex-basis:calc(50% - 6px)}}
 @media (prefers-reduced-motion:no-preference){
   .card,.dim{transition:box-shadow .18s ease, transform .18s ease}
   .card:hover{transform:translateY(-1px)}
+  .ork-chart .bar{transition:opacity .15s ease}
 }
 """
 
 
 def logo_svg(altura: int = 26) -> str:
-    """Logo/marca inline (SVG, sem dependências): dois waypoints ligados por uma rota curva.
-    Usa currentColor — herda a cor do contexto (funciona em tema claro/escuro)."""
+    """Logo/marca inline (SVG): dois waypoints ligados por uma rota curva. Usa currentColor —
+    herda a cor do contexto (claro/escuro). É o mesmo motivo do 'waypoint' dos títulos."""
     try:
         h = int(altura)
     except Exception:
@@ -167,8 +186,7 @@ def logo_svg(altura: int = 26) -> str:
 
 
 def cabecalho(titulo: str, subtitulo: str = "") -> str:
-    """Cabeçalho de marca (logo + wordmark + título + subtítulo) para o topo de um relatório.
-    HTML puro; escapar fica a cargo do chamador quando o conteúdo não for confiável."""
+    """Cabeçalho de marca (logo + wordmark + título + subtítulo) para o topo de um relatório."""
     sub = ("<p class='sub'>%s</p>" % subtitulo) if subtitulo else ""
     return ("<header class='ork-hero'>"
             "<div class='ork-brand' style='display:flex;align-items:center;gap:9px;color:var(--accent);"
@@ -179,8 +197,7 @@ def cabecalho(titulo: str, subtitulo: str = "") -> str:
 
 def documento(titulo: str, subtitulo: str = "", corpo: str = "", rodape: str = "",
               lang: str = "pt-BR") -> str:
-    """Documento HTML COMPLETO e autossuficiente com a identidade da marca: <!doctype> + <head>
-    (charset/viewport/title + CSS embutido) + cabeçalho de marca + `corpo` + rodapé. Nunca levanta."""
+    """Documento HTML COMPLETO e autossuficiente com a identidade da marca. Nunca levanta."""
     try:
         rod = ("<footer>%s</footer>" % rodape) if rodape else ""
         return ("<!doctype html><html lang='%s'><head><meta charset='utf-8'>"
@@ -190,6 +207,129 @@ def documento(titulo: str, subtitulo: str = "", corpo: str = "", rodape: str = "
                 % (lang, titulo, MARCA, css(), cabecalho(titulo, subtitulo), corpo, rod))
     except Exception:
         return "<!doctype html><html><head><meta charset='utf-8'></head><body>%s</body></html>" % corpo
+
+
+# ---------------------------------------------------------------------------
+# GRÁFICOS — SVG inline (sem bibliotecas, offline), temáticos e interativos.
+# ---------------------------------------------------------------------------
+def _fmt(v) -> str:
+    """Número legível em pt-BR: inteiro quando for inteiro, senão 1 casa com vírgula."""
+    try:
+        f = float(v)
+    except Exception:
+        return str(v)
+    if abs(f - round(f)) < 1e-9:
+        return "{:,}".format(int(round(f))).replace(",", ".")
+    return ("%.1f" % f).replace(".", ",")
+
+
+def _trunc(s: str, n: int) -> str:
+    s = str(s)
+    return s if len(s) <= n else (s[: n - 1] + "…")
+
+
+def _tooltip_js() -> str:
+    """Script IDEMPOTENTE (guarda window.__orkTip) que mostra um tooltip dinâmico sobre qualquer
+    elemento com [data-ork-tip]. Seguro repetir em vários gráficos: só o 1º vincula. Offline."""
+    return ("<script>(function(){if(window.__orkTip)return;window.__orkTip=1;"
+            "var t=document.createElement('div');t.className='ork-tip';"
+            "if(document.body)document.body.appendChild(t);else return;"
+            "function mv(e){t.style.left=Math.min(window.innerWidth-270,e.clientX+14)+'px';"
+            "t.style.top=(e.clientY+16)+'px';}"
+            "document.addEventListener('pointerover',function(e){var el=e.target.closest&&"
+            "e.target.closest('[data-ork-tip]');if(!el)return;t.textContent="
+            "el.getAttribute('data-ork-tip');t.style.opacity='1';mv(e);});"
+            "document.addEventListener('pointermove',function(e){if(t.style.opacity==='1')mv(e);});"
+            "document.addEventListener('pointerout',function(e){var el=e.target.closest&&"
+            "e.target.closest('[data-ork-tip]');if(el)t.style.opacity='0';});})();</script>")
+
+
+def grafico_barras(itens, unidade: str = "", max_valor=None, titulo: str = "",
+                   mostrar_valor: bool = True) -> str:
+    """Gráfico de BARRAS horizontais (uma série = magnitude). `itens`: lista de dicts
+    {rotulo, valor, classe?('ok'|'warn'|'bad'|'teal'), dica?}. Rótulo à esquerda, barra com ponta
+    arredondada ancorada na base, valor na ponta; tooltip nativo (<title>) + dinâmico (data-ork-tip)
+    e realce no hover. Puro; devolve '' se não houver itens. Nunca levanta."""
+    try:
+        itens = [i for i in (itens or []) if isinstance(i, dict)]
+        if not itens:
+            return ""
+        vals = [float(i.get("valor") or 0) for i in itens]
+        vmax = float(max_valor) if max_valor else max(vals + [1e-9])
+        if vmax <= 0:
+            vmax = 1e-9
+        W, LBL, PADR, GAP, BH = 680, 190, 58, 12, 22
+        top = 24 if titulo else 6
+        rowh = BH + GAP
+        H = top + rowh * len(itens) + 4
+        x0 = LBL
+        barw = W - LBL - PADR
+        P = ["<svg class='ork-chart' viewBox='0 0 %d %d' preserveAspectRatio='xMinYMin meet' "
+             "role='img' style='max-height:%dpx'>" % (W, H, H + 8)]
+        if titulo:
+            P.append("<text class='cap' x='0' y='13'>%s</text>" % html.escape(titulo))
+        for k, it in enumerate(itens):
+            y = top + k * rowh
+            v = float(it.get("valor") or 0)
+            w = max(3.0, barw * (v / vmax))
+            cls = "bar " + it["classe"] if it.get("classe") in ("ok", "warn", "bad", "teal") else "bar"
+            rot = str(it.get("rotulo", ""))
+            vtxt = _fmt(v) + ((" " + unidade) if unidade else "")
+            dica = html.escape(str(it.get("dica") or ("%s: %s" % (rot, vtxt))))
+            P.append("<rect class='track' x='%d' y='%d' width='%d' height='%d' rx='%d'/>"
+                     % (x0, y, barw, BH, BH // 2))
+            P.append("<rect class='%s' x='%d' y='%d' width='%.1f' height='%d' rx='%d' "
+                     "data-ork-tip=\"%s\"><title>%s</title></rect>"
+                     % (cls, x0, y, w, BH, BH // 2, dica, dica))
+            P.append("<text class='lbl' x='0' y='%d'>%s</text>" % (y + BH - 6, html.escape(_trunc(rot, 26))))
+            if mostrar_valor:
+                P.append("<text class='val' x='%.1f' y='%d'>%s</text>"
+                         % (min(x0 + w + 6, W - PADR + 2), y + BH - 6, html.escape(vtxt)))
+        P.append("</svg>")
+        return "".join(P) + _tooltip_js()
+    except Exception:
+        return ""
+
+
+_CORES_SEG = {"ok": "var(--ok)", "warn": "var(--warn)", "bad": "var(--bad)",
+              "teal": "var(--teal)", "": "var(--accent)"}
+
+
+def barra_proporcao(segmentos, titulo: str = "") -> str:
+    """Barra de PROPORÇÃO (100% empilhada) + legenda com rótulos (identidade nunca só por cor).
+    `segmentos`: dicts {rotulo, valor, classe?}. Puro; '' se vazio. Nunca levanta."""
+    try:
+        segs = [s for s in (segmentos or []) if isinstance(s, dict) and float(s.get("valor") or 0) > 0]
+        if not segs:
+            return ""
+        total = sum(float(s["valor"]) for s in segs)
+        W, BH, gap = 680, 20, 3
+        top = 22 if titulo else 0
+        H = top + BH
+        usable = W - gap * (len(segs) - 1)
+        cx = 0.0
+        P = ["<svg class='ork-chart' viewBox='0 0 %d %d' preserveAspectRatio='none' role='img' "
+             "style='height:%dpx'>" % (W, H, H)]
+        if titulo:
+            P.append("<text class='cap' x='0' y='13'>%s</text>" % html.escape(titulo))
+        for s in segs:
+            v = float(s["valor"])
+            w = max(2.0, usable * (v / total))
+            cl = s.get("classe") if s.get("classe") in ("ok", "warn", "bad", "teal") else ""
+            dica = html.escape("%s: %s (%.0f%%)" % (s.get("rotulo", ""), _fmt(v), 100 * v / total))
+            P.append("<rect class='bar %s' x='%.1f' y='%d' width='%.1f' height='%d' rx='6' "
+                     "data-ork-tip=\"%s\"><title>%s</title></rect>"
+                     % (cl, cx, top, w, BH, dica, dica))
+            cx += w + gap
+        P.append("</svg><div class='ork-leg'>")
+        for s in segs:
+            cor = _CORES_SEG.get(s.get("classe", ""), "var(--accent)")
+            P.append("<span><i style='background:%s'></i>%s · %s</span>"
+                     % (cor, html.escape(str(s.get("rotulo", ""))), _fmt(float(s["valor"]))))
+        P.append("</div>")
+        return "".join(P) + _tooltip_js()
+    except Exception:
+        return ""
 
 
 def aplicar_tema_tk(root) -> bool:
@@ -216,7 +356,6 @@ def aplicar_tema_tk(root) -> bool:
                         relief="solid", borderwidth=1, padding=10)
         style.configure("TLabelframe.Label", background=c["bg"], foreground=c["ink_soft"],
                         font=(fonte, 10, "bold"))
-        # Botões sutis (superfície + borda + texto de acento); hover com leve tinta de acento.
         style.configure("TButton", background=c["surface"], foreground=c["accent_forte"],
                         bordercolor=c["line_forte"], borderwidth=1, relief="flat",
                         padding=(13, 7), font=(fonte, 10))

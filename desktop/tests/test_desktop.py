@@ -1913,6 +1913,40 @@ def test_relatorios_usam_tema_compartilhado(tmp_path, monkeypatch, dossie_sp_rio
     dc.gerar_html(cmp, tmp_path / "c.html")
     assert "--teal" in (tmp_path / "c.html").read_text(encoding="utf-8")
 
+def test_tema_grafico_barras_e_proporcao():
+    from resources import tema
+    g = tema.grafico_barras([{"rotulo": "A", "valor": 3},
+                             {"rotulo": "B", "valor": 9, "classe": "ok"}], unidade="ms", titulo="T")
+    assert "<svg class='ork-chart'" in g and "data-ork-tip" in g
+    assert "class='bar ok'" in g and "ork-tip" in g      # série colorida por estado + tooltip JS
+    assert tema.grafico_barras([]) == "" and tema.grafico_barras(None) == ""
+    p = tema.barra_proporcao([{"rotulo": "OK", "valor": 5, "classe": "ok"},
+                              {"rotulo": "Ruim", "valor": 2, "classe": "bad"}], titulo="P")
+    assert "ork-chart" in p and "ork-leg" in p and "data-ork-tip" in p
+    assert tema.barra_proporcao([]) == ""
+
+def test_comparar_html_tem_grafico(tmp_path, monkeypatch):
+    from geo import dossie_rota, dossie_comparativo as dc
+    fila = [_dd_cmp(travessias=0, ufs=("SP",), o="SP", d="Campinas"),
+            _dd_cmp(travessias=2, ufs=("SP", "RJ"), o="SP", d="RJ")]
+    estado = {"i": 0}
+    monkeypatch.setattr(dossie_rota, "dossie", lambda c, **k: fila[estado.__setitem__("i", estado["i"] + 1) or estado["i"] - 1])
+    cmp = dc.comparar([[(0, 0), (1, 1)], [(0, 0), (2, 2)]])
+    dc.gerar_html(cmp, tmp_path / "c.html")
+    h = (tmp_path / "c.html").read_text(encoding="utf-8")
+    assert "ork-chart" in h and "data-ork-tip" in h and "Ranking de complexidade" in h
+
+def test_dossie_html_tem_grafico(tmp_path, dossie_sp_rio):
+    from geo import dossie_rota
+    dossie_rota.gerar_html(dossie_sp_rio, tmp_path / "d.html")
+    h = (tmp_path / "d.html").read_text(encoding="utf-8")
+    assert "ork-chart" in h and "FEIÇÕES POR CAMADA" in h
+
+def test_saude_html_tem_grafico_proporcao():
+    from audit import saude_nacional as sn
+    h = sn.construir_html(rapido=True)
+    assert "ork-chart" in h and "ork-leg" in h and "DIMENSÕES POR ESTADO" in h
+
 
 # ============================================================================
 #  DOSSIÊ POR NOME DE CIDADE (desktop) — resolução via índice de municípios IBGE.

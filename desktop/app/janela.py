@@ -232,11 +232,12 @@ def _html_splash() -> str:
   }
   .mark { display:inline-flex; align-items:center; gap:18px; }
   .orb {
-    width:54px; height:54px; border-radius:16px;
+    width:58px; height:58px; border-radius:18px; display:flex; align-items:center; justify-content:center;
+    color:#fff;
     background: conic-gradient(from 210deg, @BRAND@, @BRAND2@, #22d3ee, @BRAND@);
     box-shadow: 0 10px 40px rgba(59,130,246,0.45), inset 0 0 18px rgba(255,255,255,0.25);
-    animation: spin 5.5s linear infinite;
   }
+  .orb svg { filter: drop-shadow(0 2px 6px rgba(0,0,0,0.28)); }
   @keyframes spin { to { transform: rotate(360deg); } }
   .tag { margin-top:18px; color:@TEXTO2@; font-size:16px; letter-spacing:0.02em; font-weight:500; }
   .bar { margin:34px auto 0; width:320px; height:6px; border-radius:999px;
@@ -252,7 +253,7 @@ def _html_splash() -> str:
 </style></head>
 <body>
   <div class="wrap">
-    <div class="mark"><div class="orb"></div><div class="logo">OpenRotas</div></div>
+    <div class="mark"><div class="orb"><svg width="36" height="36" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6 20 C 13 16, 12 10, 20 8" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" fill="none" opacity="0.7"/><circle cx="6" cy="20" r="3.6" fill="#ffffff"/><circle cx="21" cy="8" r="3.6" fill="#ffffff"/></svg></div><div class="logo">OpenRotas</div></div>
     <div class="tag">Motor Nacional de Inteligência Logística</div>
     <div class="bar"><i></i></div>
     <div class="status" id="s">Preparando o ambiente…</div>

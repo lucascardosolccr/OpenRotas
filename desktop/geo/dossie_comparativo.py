@@ -230,6 +230,17 @@ def gerar_html(cmp: dict, caminho) -> str | None:
             P.append("<section class='card reco'><div class='rt'>%s<span class='badge'>RECOMENDADA</span></div>"
                      "<div class='score'>Menor complexidade logística entre as rotas comparadas.</div></section>"
                      % html.escape(str(reco)))
+        # Gráfico de ranking (barras): score por rota (menor = mais simples); a 1ª (recomendada)
+        # em verde. Didático e interativo (tooltip no hover).
+        if tema is not None:
+            ok = [it for it in rotas if it.get("ok")]
+            itens = [{"rotulo": it["rotulo"], "valor": it["score"],
+                      "classe": "ok" if pos == 0 else None,
+                      "dica": "%s — score %s (menor é mais simples)" % (it["rotulo"], it["score"])}
+                     for pos, it in enumerate(ok)]
+            g = tema.grafico_barras(itens, titulo="COMPLEXIDADE LOGÍSTICA POR ROTA (menor é melhor)")
+            if g:
+                P.append("<section class='card'><h2>Ranking de complexidade</h2>%s</section>" % g)
         P.append("<section class='card'><table><thead><tr>"
                  "<th>#</th><th>Rota</th><th class='num'>Score</th><th class='num'>Balsas</th>"
                  "<th class='num'>UFs↹</th><th class='num'>Rios naveg.</th><th class='num'>Pontes</th>"

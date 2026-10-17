@@ -138,6 +138,17 @@ def _bloco_telemetria() -> str:
     out.append('<div class="kpi"><div class="v">%s</div><div class="l">Erros</div></div>' % r["erro"])
     out.append("</div>")
     tempos = r.get("tempos") or {}
+    # Gráfico de barras do tempo médio por evento (didático + tooltip no hover); tabela abaixo
+    # permanece como "table view" (acessibilidade).
+    if tempos and tema is not None:
+        _top = sorted(tempos.items(), key=lambda kv: -kv[1]["n"])[:6]
+        _itens = [{"rotulo": ev, "valor": t.get("media_ms", 0),
+                   "dica": "%s — média %s ms · p95 %s ms · máx %s ms (%s×)"
+                           % (ev, t.get("media_ms"), t.get("p95_ms"), t.get("max_ms"), t.get("n"))}
+                  for ev, t in _top]
+        _g = tema.grafico_barras(_itens, unidade="ms", titulo="TEMPO MÉDIO POR EVENTO")
+        if _g:
+            out.append(_g)
     if tempos:
         out.append('<table><thead><tr><th>Evento</th><th class="num">N</th><th class="num">Média (ms)</th>'
                    '<th class="num">p95 (ms)</th><th class="num">Máx (ms)</th></tr></thead><tbody>')

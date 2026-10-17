@@ -531,8 +531,18 @@ def gerar_html(dd: dict, caminho) -> str | None:
             P.append("</tbody></table>")
         P.append("</section>")
         # Camadas no corredor
-        P.append("<section class='card'><h2>Feições no corredor</h2>"
-                 "<table><thead><tr><th>Camada</th><th class='num'>feições</th></tr></thead><tbody>")
+        P.append("<section class='card'><h2>Feições no corredor</h2>")
+        # Gráfico de barras (feições por camada disponível) — leitura rápida e interativa.
+        if tema is not None:
+            _itens = [{"rotulo": ch, "valor": int(info.get("feicoes", 0) or 0),
+                       "dica": "%s: %s feição(ões) no corredor" % (ch, info.get("feicoes", 0))}
+                      for ch, info in cam.items()
+                      if info.get("disponivel") and int(info.get("feicoes", 0) or 0) > 0]
+            _itens.sort(key=lambda d: -d["valor"])
+            _g = tema.grafico_barras(_itens, titulo="FEIÇÕES POR CAMADA NO CORREDOR") if _itens else ""
+            if _g:
+                P.append(_g)
+        P.append("<table><thead><tr><th>Camada</th><th class='num'>feições</th></tr></thead><tbody>")
         for ch, info in cam.items():
             P.append("<tr><td>%s</td><td class='num'>%s</td></tr>"
                      % (html.escape(ch), info.get("feicoes", 0) if info.get("disponivel") else "—"))

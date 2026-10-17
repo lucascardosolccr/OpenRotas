@@ -186,6 +186,14 @@ def construir_html(rapido: bool = True) -> str:
          "<div class='kpi'><div class='v'>%s</div><div class='l'>Parciais</div></div>" % r.get("parciais", 0),
          "<div class='kpi'><div class='v'>%s</div><div class='l'>Ausentes</div></div>" % r.get("ausentes", 0),
          "</div>"]
+    # Barra de proporção das dimensões por estado (OK/Parcial/Ausente) — panorama imediato.
+    if tema is not None:
+        _segs = [{"rotulo": "OK", "valor": r.get("ok", 0), "classe": "ok"},
+                 {"rotulo": "Parciais", "valor": r.get("parciais", 0), "classe": "warn"},
+                 {"rotulo": "Ausentes", "valor": r.get("ausentes", 0), "classe": "bad"}]
+        _g = tema.barra_proporcao(_segs, titulo="DIMENSÕES POR ESTADO")
+        if _g:
+            P.append("<section class='card'>%s</section>" % _g)
     for x in d.get("dimensoes", []):
         P.append("<section class='dim %s'><h2>%s <span class='badge %s'>%s</span></h2>"
                  "<div class='resumo'>%s</div>%s</section>"
