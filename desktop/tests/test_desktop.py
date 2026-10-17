@@ -2120,6 +2120,49 @@ def test_isocronas_html_e_gera(tmp_path):
 
 
 # ============================================================================
+#  MATRIZ ORIGEM↔DESTINO (§29) — distâncias entre vários centros.
+# ============================================================================
+def test_matriz_calcular_geodesico():
+    from geo import matriz_od
+    r = matriz_od.calcular([(-46.63, -23.55), (-43.20, -22.90), (-47.88, -15.79)])
+    assert r["ok"] and r["modo"] == "geodesico" and len(r["pontos"]) == 3
+    M = r["matriz"]
+    assert len(M) == 3 and all(len(row) == 3 for row in M)
+    for i in range(3):
+        assert M[i][i] == 0.0
+        for j in range(3):
+            assert abs(M[i][j] - M[j][i]) < 0.2            # simétrica
+    rs = r["resumo"]
+    assert rs["par_distante"]["km"] >= rs["par_proximo"]["km"] > 0
+    assert rs["diametro_km"] == rs["par_distante"]["km"]
+    assert "MATRIZ ORIGEM" in matriz_od.render_texto(r)
+
+def test_matriz_menos_de_2_pontos():
+    from geo import matriz_od
+    assert matriz_od.calcular([(-46.63, -23.55)])["ok"] is False
+
+def test_matriz_osrm_cai_em_geodesico_sem_rede(monkeypatch):
+    monkeypatch.setenv("OPENROTAS_NO_NET", "1")
+    from geo import matriz_od
+    r = matriz_od.calcular([(-46.63, -23.55), (-43.20, -22.90)], usar_osrm=True)
+    assert r["ok"] and r["modo"] == "geodesico"
+
+def test_matriz_html_e_excel(tmp_path):
+    import openpyxl
+    from geo import matriz_od
+    r = matriz_od.calcular("São Paulo/SP;Rio de Janeiro/RJ;Curitiba/PR")
+    assert r["ok"] and len(r["pontos"]) == 3
+    h = matriz_od.construir_html(r)
+    assert h.startswith("<!doctype html>") and "Matriz Origem" in h
+    assert "ork-theme-toggle" in h and "Matriz de distâncias" in h
+    out = tmp_path / "m.html"
+    assert matriz_od.gerar(out, r) == str(out) and out.exists()
+    xo = tmp_path / "m.xlsx"
+    assert matriz_od.exportar_excel(r, xo) == str(xo) and xo.exists()
+    assert "Matriz_km" in openpyxl.load_workbook(xo).sheetnames
+
+
+# ============================================================================
 #  DOSSIÊ POR NOME DE CIDADE (desktop) — resolução via índice de municípios IBGE.
 # ============================================================================
 def test_resolver_local_parse():

@@ -399,6 +399,7 @@ _AJUDA = """OpenRotas Desktop — uso:
   OpenRotas.exe --conectividade [rodovias|ferrovias|drenagem]   grafo topológico e componentes (§43)
   OpenRotas.exe --grafo-multimodal [--html]   conectividade entre modais (hubs + transposições + matriz)
   OpenRotas.exe --isocronas "Cidade/UF" [--faixas=100,300,600,1000] [--html]   alcance por faixas de distância
+  OpenRotas.exe --matriz "Cidade/UF;Cidade/UF;..." [--html] [--excel]   matriz de distâncias origem↔destino
   OpenRotas.exe --telemetria-ana [--atualizar]   telemetria local + atualização incremental (§35)
   OpenRotas.exe --auditoria --relatorio   salva o Relatório de Cobertura Nacional (.md) em exports/
   OpenRotas.exe --recursos      status dos recursos (Gerenciador de Recursos)
@@ -727,6 +728,15 @@ def main() -> int:
             return isocronas._cli([a for a in sys.argv[1:] if a != "--isocronas"])
         except Exception as e:
             print("Isócronas indisponíveis: %s" % e)
+            return 1
+
+    # Modo MATRIZ O↔D (§29): matriz de distâncias entre vários centros. Sai.
+    if "--matriz" in sys.argv:
+        try:
+            from geo import matriz_od
+            return matriz_od._cli([a for a in sys.argv[1:] if a != "--matriz"])
+        except Exception as e:
+            print("Matriz origem↔destino indisponível: %s" % e)
             return 1
 
     # Modo TELEMETRIA ANA (§11/§35): inventário local + atualização incremental (--atualizar online). Sai.
