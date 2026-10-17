@@ -13,7 +13,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-ACCENT = (31, 111, 235)      # azul de destaque (mesmo tom do painel)
+ACCENT = (59, 130, 246)      # azul da marca (#3B82F6) — mesmo tom do tema/janela/app
+ACCENT2 = (96, 165, 250)     # #60A5FA (clareamento do gradiente)
 INK = (255, 255, 255)
 TAMANHOS = [16, 24, 32, 48, 64, 128, 256]
 
@@ -34,19 +35,44 @@ def _fonte(px: int):
 
 
 def _render(tamanho: int):
+    """Ícone da marca: quadrado arredondado com GRADIENTE da marca e o monograma de ROTA —
+    dois 'waypoints' ligados por uma curva (o mesmo motivo do logo/splash/relatórios). Sem texto."""
     from PIL import Image, ImageDraw
-    img = Image.new("RGBA", (tamanho, tamanho), (0, 0, 0, 0))
+    S = tamanho
+    # Gradiente diagonal (canto inferior-esquerdo ACCENT → superior-direito ACCENT2).
+    g = Image.new("RGB", (S, S), ACCENT)
+    px = g.load()
+    for y in range(S):
+        for x in range(S):
+            t = (x + (S - 1 - y)) / (2.0 * max(1, S - 1))
+            px[x, y] = (int(ACCENT[0] + (ACCENT2[0] - ACCENT[0]) * t),
+                        int(ACCENT[1] + (ACCENT2[1] - ACCENT[1]) * t),
+                        int(ACCENT[2] + (ACCENT2[2] - ACCENT[2]) * t))
+    # Clipe em quadrado arredondado.
+    raio = max(2, int(S * 0.22))
+    mask = Image.new("L", (S, S), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, S - 1, S - 1], radius=raio, fill=255)
+    img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    img.paste(g, (0, 0), mask)
     d = ImageDraw.Draw(img)
-    raio = max(2, tamanho // 5)
-    d.rounded_rectangle([0, 0, tamanho - 1, tamanho - 1], radius=raio, fill=ACCENT)
-    texto = "OR"
-    fnt = _fonte(int(tamanho * 0.52))
+    # Monograma de rota: curva de Bézier entre dois waypoints (branco).
+    p1 = (S * 0.30, S * 0.72)
+    p2 = (S * 0.70, S * 0.30)
+    ctrl = (S * 0.40, S * 0.40)
+    pts = []
+    for i in range(0, 25):
+        t = i / 24.0
+        x = (1 - t) ** 2 * p1[0] + 2 * (1 - t) * t * ctrl[0] + t * t * p2[0]
+        y = (1 - t) ** 2 * p1[1] + 2 * (1 - t) * t * ctrl[1] + t * t * p2[1]
+        pts.append((x, y))
+    lw = max(2, int(S * 0.075))
     try:
-        cx0, cy0, cx1, cy1 = d.textbbox((0, 0), texto, font=fnt)
-        tw, th = cx1 - cx0, cy1 - cy0
-        d.text(((tamanho - tw) / 2 - cx0, (tamanho - th) / 2 - cy0), texto, font=fnt, fill=INK)
+        d.line(pts, fill=(255, 255, 255, 220), width=lw, joint="curve")
     except Exception:
-        d.text((tamanho * 0.22, tamanho * 0.2), texto, fill=INK)
+        d.line(pts, fill=(255, 255, 255, 220), width=lw)
+    r = max(3, int(S * 0.115))
+    for p in (p1, p2):
+        d.ellipse([p[0] - r, p[1] - r, p[0] + r, p[1] + r], fill=INK)
     return img
 
 

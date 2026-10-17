@@ -1949,6 +1949,48 @@ def test_saude_html_tem_grafico_proporcao():
 
 
 # ============================================================================
+#  MAPA NACIONAL (dispersão de municípios, SVG) — relatórios + ícone da marca.
+# ============================================================================
+def test_tema_mapa_dispersao():
+    from resources import tema
+    xs = [-46, -43, -60, -38]
+    ys = [-23, -22, -3, -8]
+    m = tema.mapa_dispersao(xs, ys, classes=["teal", None, "bad", None],
+                            rota=[(-46, -23), (-43, -22)], titulo="MAPA",
+                            legenda=[{"rotulo": "x", "cor": "var(--teal)"}])
+    assert "<svg class='ork-mapa'" in m and "class='pt teal'" in m and "class='pt bad'" in m
+    assert "class='rota'" in m and "class='wp'" in m and "ork-leg" in m
+    assert tema.mapa_dispersao([], []) == "" and tema.mapa_dispersao(None, None) == ""
+
+def test_coverage_pontos_municipios():
+    from audit import coverage_auditor as ca
+    lons, lats, ufs = ca.pontos_municipios()
+    assert len(lons) == len(lats) == len(ufs) and len(lons) > 0
+    assert any(u in ("SP", "RJ", "AM", "BA") for u in ufs if u)   # UFs reais presentes
+
+def test_coverage_map_tem_mapa_nacional():
+    from audit import coverage_map as cm
+    h = cm.construir_html(rapido=True)
+    assert "ork-mapa" in h and "MAPA NACIONAL" in h
+
+def test_dossie_html_tem_mapa_nacional(tmp_path, dossie_sp_rio):
+    from geo import dossie_rota
+    dossie_rota.gerar_html(dossie_sp_rio, tmp_path / "dm.html")
+    h = (tmp_path / "dm.html").read_text(encoding="utf-8")
+    assert "ork-mapa" in h and "LOCALIZAÇÃO DA ROTA" in h and "class='rota'" in h
+
+def test_make_icon_render_marca_de_rota():
+    import make_icon
+    try:
+        from PIL import Image  # noqa: F401
+    except Exception:
+        import pytest
+        pytest.skip("Pillow ausente")
+    img = make_icon._render(64)
+    assert img.size == (64, 64) and img.mode == "RGBA"
+
+
+# ============================================================================
 #  DOSSIÊ POR NOME DE CIDADE (desktop) — resolução via índice de municípios IBGE.
 # ============================================================================
 def test_resolver_local_parse():

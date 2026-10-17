@@ -80,6 +80,25 @@ def _uf_do_geocodigo(serie):
     return pref.map(UF_POR_CODIGO)
 
 
+def pontos_municipios(reg=None):
+    """Pontos (lon, lat, uf) dos municípios instalados — para o MAPA NACIONAL por dispersão.
+    Devolve (lons, lats, ufs) como listas paralelas (uf pode ser None). ([],[],[]) em falha;
+    nunca levanta."""
+    try:
+        reg = reg or _registry()
+        if not reg.existe("municipios"):
+            return [], [], []
+        df = reg.carregar_parquet("municipios", colunas=["lon", "lat", "geocodigo"])
+        ufs_serie = _uf_do_geocodigo(df["geocodigo"])
+        lons = [float(v) for v in df["lon"].tolist()]
+        lats = [float(v) for v in df["lat"].tolist()]
+        ufs = [None if (u is None or u != u) else str(u) for u in ufs_serie.tolist()]
+        return lons, lats, ufs
+    except Exception:
+        logger.warning("[AUDIT] falha ao obter pontos municipais.", exc_info=True)
+        return [], [], []
+
+
 def _bboxes_uf(reg) -> dict:
     """Caixa envolvente (xmin,ymin,xmax,ymax) de cada UF, agregada das bboxes municipais da base
     de municípios. Base para a verificação de presença espacial das camadas de rede. {} em falha."""

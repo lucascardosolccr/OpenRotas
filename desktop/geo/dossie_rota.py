@@ -519,6 +519,20 @@ def gerar_html(dd: dict, caminho) -> str | None:
             P.append("<p class='sub'>Corredor atravessa %s (%d municípios).</p>"
                      % (", ".join(tt["ufs"]), tt.get("n_municipios", 0)))
         P.append("</section>")
+        # Mapa nacional com o corredor origem→destino sobreposto (onde a rota está no Brasil).
+        if tema is not None:
+            try:
+                from audit import coverage_auditor as _ca
+                _lons, _lats, _u = _ca.pontos_municipios()
+                if _lons and o.get("lon") is not None and d.get("lon") is not None:
+                    _m = tema.mapa_dispersao(_lons, _lats, rota=[(o["lon"], o["lat"]), (d["lon"], d["lat"])],
+                                             titulo="LOCALIZAÇÃO DA ROTA NO BRASIL")
+                    if _m:
+                        P.append("<section class='card'><h2>Rota no mapa nacional</h2>%s"
+                                 "<p class='empty' style='margin:8px 2px 0'>Corredor origem→destino sobre "
+                                 "os municípios reais do Brasil (centroides IBGE).</p></section>" % _m)
+            except Exception:
+                pass
         # Hidrografia
         P.append("<section class='card'><h2>Hidrografia</h2><div class='kpis'>"
                  "<div class='kpi'><div class='v'>%d</div><div class='l'>trechos de rio</div></div>"

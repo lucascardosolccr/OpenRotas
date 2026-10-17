@@ -17,6 +17,7 @@ Mesma cor de acento nos dois temas (marca constante). Títulos marcados por um "
 from __future__ import annotations
 
 import html
+import math
 
 MARCA = "OpenRotas"
 _VERSAO_TEMA = "2"
@@ -158,6 +159,14 @@ footer::before{content:"\\25CF ";color:var(--accent)}
 .ork-tip{position:fixed;z-index:60;pointer-events:none;opacity:0;background:var(--ink);
   color:var(--surface);font-size:.78rem;padding:6px 9px;border-radius:8px;box-shadow:var(--shadow);
   max-width:260px;line-height:1.35;transition:opacity .12s ease}
+/* Mapa nacional (dispersão de municípios, SVG) ----------------------------- */
+.ork-mapa{width:100%;height:auto;display:block;margin:4px 0 2px;max-height:600px}
+.ork-mapa .pt{fill:var(--muted);opacity:.5}
+.ork-mapa .pt.teal,.ork-mapa .pt.ok{fill:var(--teal);opacity:.8}
+.ork-mapa .pt.bad{fill:var(--bad);opacity:.85} .ork-mapa .pt.warn{fill:var(--warn);opacity:.85}
+.ork-mapa .pt.accent{fill:var(--accent);opacity:.7}
+.ork-mapa .rota{fill:none;stroke:var(--accent);stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.ork-mapa .wp{fill:var(--accent);stroke:var(--surface);stroke-width:1.6}
 @media (max-width:520px){.wrap{padding:28px 16px 48px}.kpi{flex-basis:calc(50% - 6px)}}
 @media (prefers-reduced-motion:no-preference){
   .card,.dim{transition:box-shadow .18s ease, transform .18s ease}
@@ -328,6 +337,74 @@ def barra_proporcao(segmentos, titulo: str = "") -> str:
                      % (cor, html.escape(str(s.get("rotulo", ""))), _fmt(float(s["valor"]))))
         P.append("</div>")
         return "".join(P) + _tooltip_js()
+    except Exception:
+        return ""
+
+
+def mapa_dispersao(xs, ys, classes=None, rota=None, titulo: str = "", legenda=None,
+                   cap: int = 4500) -> str:
+    """Mapa NACIONAL por dispersão de pontos (lon/lat) em SVG — desenha a forma do Brasil a partir
+    de dados REAIS (ex.: os ~5.570 municípios). Projeção equirretangular com correção de longitude
+    por cos(lat). `classes`: lista paralela com 'ok'|'teal'|'bad'|'warn'|'accent'|None (cor do ponto).
+    `rota`: polilinha [(lon,lat),...] desenhada por cima com waypoints nas pontas. `legenda`: lista
+    de {rotulo, cor}. Puro; '' se vazio. Downsample até `cap` pontos (tamanho do arquivo). Nunca levanta."""
+    try:
+        xs = [float(v) for v in (xs or [])]
+        ys = [float(v) for v in (ys or [])]
+        n = min(len(xs), len(ys))
+        if n == 0:
+            return ""
+        xs, ys = xs[:n], ys[:n]
+        cls = list(classes or [])
+        rota = [p for p in (rota or []) if p is not None]
+        rx = [float(p[0]) for p in rota]
+        ry = [float(p[1]) for p in rota]
+        minx, maxx = min(xs + rx), max(xs + rx)
+        miny, maxy = min(ys + ry), max(ys + ry)
+        if maxx - minx < 1e-6:
+            maxx = minx + 1e-6
+        if maxy - miny < 1e-6:
+            maxy = miny + 1e-6
+        kx = math.cos(math.radians((miny + maxy) / 2.0)) or 1.0
+        W, pad = 680.0, 12.0
+        spanx, spany = (maxx - minx) * kx, (maxy - miny)
+        innerW = W - 2 * pad
+        innerH = max(150.0, min(innerW * (spany / spanx) if spanx > 0 else innerW, 560.0))
+        top = 24 if titulo else 6
+        H = innerH + 2 * pad + top
+
+        def X(x):
+            return pad + ((x - minx) * kx) / spanx * innerW if spanx > 0 else pad + innerW / 2
+
+        def Y(y):
+            return top + pad + (1 - (y - miny) / spany) * innerH if spany > 0 else top + pad + innerH / 2
+
+        step = max(1, int(math.ceil(n / float(max(1, cap)))))
+        P = ["<svg class='ork-mapa' viewBox='0 0 %d %d' preserveAspectRatio='xMidYMid meet' "
+             "role='img' aria-label='Mapa nacional de municípios'>" % (int(W), int(H + 2))]
+        if titulo:
+            P.append("<text class='cap' x='0' y='13'>%s</text>" % html.escape(titulo))
+        for i in range(0, n, step):
+            c = cls[i] if i < len(cls) else None
+            kls = "pt " + c if c in ("ok", "teal", "bad", "warn", "accent") else "pt"
+            P.append("<circle class='%s' cx='%.1f' cy='%.1f' r='1.1'/>" % (kls, X(xs[i]), Y(ys[i])))
+        if rota:
+            if len(rota) >= 2:
+                pts = " ".join("%.1f,%.1f" % (X(float(p[0])), Y(float(p[1]))) for p in rota)
+                P.append("<polyline class='rota' points='%s'/>" % pts)
+            for j, p in enumerate(rota):
+                r = 4.4 if (j == 0 or j == len(rota) - 1) else 2.4
+                P.append("<circle class='wp' cx='%.1f' cy='%.1f' r='%.1f'/>" % (X(float(p[0])), Y(float(p[1])), r))
+        P.append("</svg>")
+        out = "".join(P)
+        if legenda:
+            L = ["<div class='ork-leg'>"]
+            for it in legenda:
+                L.append("<span><i style='background:%s'></i>%s</span>"
+                         % (it.get("cor", "var(--accent)"), html.escape(str(it.get("rotulo", "")))))
+            L.append("</div>")
+            out += "".join(L)
+        return out
     except Exception:
         return ""
 
