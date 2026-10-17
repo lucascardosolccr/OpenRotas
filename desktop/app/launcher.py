@@ -398,6 +398,7 @@ _AJUDA = """OpenRotas Desktop — uso:
   OpenRotas.exe --painel-executivo   painel executivo (visão única: mapa + KPIs + saúde + modais)
   OpenRotas.exe --conectividade [rodovias|ferrovias|drenagem]   grafo topológico e componentes (§43)
   OpenRotas.exe --grafo-multimodal [--html]   conectividade entre modais (hubs + transposições + matriz)
+  OpenRotas.exe --isocronas "Cidade/UF" [--faixas=100,300,600,1000] [--html]   alcance por faixas de distância
   OpenRotas.exe --telemetria-ana [--atualizar]   telemetria local + atualização incremental (§35)
   OpenRotas.exe --auditoria --relatorio   salva o Relatório de Cobertura Nacional (.md) em exports/
   OpenRotas.exe --recursos      status dos recursos (Gerenciador de Recursos)
@@ -717,6 +718,15 @@ def main() -> int:
             return multimodal._cli([a for a in sys.argv[1:] if a != "--grafo-multimodal"])
         except Exception as e:
             print("Grafo multimodal indisponível: %s" % e)
+            return 1
+
+    # Modo ISÓCRONAS (§29): alcance por faixas de distância a partir de um centro. Sai.
+    if "--isocronas" in sys.argv:
+        try:
+            from geo import isocronas
+            return isocronas._cli([a for a in sys.argv[1:] if a != "--isocronas"])
+        except Exception as e:
+            print("Isócronas indisponíveis: %s" % e)
             return 1
 
     # Modo TELEMETRIA ANA (§11/§35): inventário local + atualização incremental (--atualizar online). Sai.

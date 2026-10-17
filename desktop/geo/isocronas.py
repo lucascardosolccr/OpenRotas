@@ -1,0 +1,310 @@
+# -*- coding: utf-8 -*-
+"""OpenRotas Desktop — ISÓCRONAS DE ALCANCE (§29): o que é atingível a partir de um centro.
+
+Dado um ponto de origem (cidade/UF ou lon,lat), classifica TODOS os municípios reais do Brasil em
+FAIXAS de distância (ex.: ≤100, ≤300, ≤600, ≤1000 km) — respondendo "o que alcanço a partir daqui".
+
+Alcance por padrão GEODÉSICO (haversine, linha reta) — honesto e 100% offline, dos centroides
+municipais já instalados. Quando há um MOTOR OSRM local/externo, refina as distâncias dos
+candidatos para distância RODOVIÁRIA real (melhor-esforço, em lotes), degradando para o geodésico
+se o motor não responder. Entrega dict + texto + HTML (mapa nacional colorido por faixa + barras).
+
+Honesto (§71): sem motor, é distância em LINHA RETA (não rodoviária) — declarado no resultado.
+Puro/defensivo (numpy + stdlib): nunca levanta."""
+from __future__ import annotations
+
+import sys
+import html
+import logging
+from pathlib import Path
+
+_AQUI = Path(__file__).resolve().parent
+for _p in (_AQUI, _AQUI.parent, _AQUI.parent / "app", _AQUI.parent / "data_local"):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
+
+logger = logging.getLogger("openrotas.desktop.geo.isocronas")
+
+_R_KM = 6371.0
+_FAIXAS_PADRAO = (100, 300, 600, 1000)
+# Cores (sequencial, do mais perto ao mais longe) — classes aceitas por tema.mapa_dispersao.
+_CLASSES_FAIXA = ["teal", "accent", "warn", "bad"]
+
+
+def _reg():
+    import desktop_config as cfg
+    import local_data
+    return local_data.LocalDataRegistry(cfg.app_root(), cfg.user_data_dir() / "data_local")
+
+
+def _haversine_km(lon0, lat0, lons, lats):
+    import numpy as np
+    la1 = np.radians(float(lat0))
+    la2 = np.radians(lats)
+    dla = la2 - la1
+    dlo = np.radians(lons - float(lon0))
+    a = np.sin(dla / 2.0) ** 2 + np.cos(la1) * np.cos(la2) * np.sin(dlo / 2.0) ** 2
+    return 2.0 * _R_KM * np.arcsin(np.sqrt(np.clip(a, 0.0, 1.0)))
+
+
+def _resolver_origem(origem, reg):
+    """Aceita (lon,lat) | 'lon,lat' | 'Cidade/UF'. Devolve {ok,lon,lat,nome,uf} ou {ok:False}."""
+    try:
+        if isinstance(origem, (tuple, list)) and len(origem) >= 2:
+            return {"ok": True, "lon": float(origem[0]), "lat": float(origem[1]),
+                    "nome": "(%.4f, %.4f)" % (float(origem[0]), float(origem[1])), "uf": ""}
+        s = str(origem or "").strip()
+        # "lon,lat" numérico?
+        if "," in s and "/" not in s:
+            try:
+                a, b = s.split(",", 1)
+                return {"ok": True, "lon": float(a), "lat": float(b),
+                        "nome": "(%.4f, %.4f)" % (float(a), float(b)), "uf": ""}
+            except Exception:
+                pass
+        from geo import dossie_rota
+        r = dossie_rota.resolver_local(s, reg=reg)
+        if r.get("ok"):
+            return {"ok": True, "lon": r["lon"], "lat": r["lat"], "nome": r.get("nome", s),
+                    "uf": r.get("uf", "")}
+        return {"ok": False, "detalhe": r.get("detalhe", "origem não resolvida")}
+    except Exception:
+        return {"ok": False, "detalhe": "erro ao resolver origem"}
+
+
+def _distancias_osrm(olon, olat, lons, lats, url, cap=1500, chunk=90, timeout=20):
+    """Melhor-esforço: distância RODOVIÁRIA (km) origem→cada destino via OSRM /table, em lotes.
+    Só os `cap` destinos mais próximos (geodésico) são refinados. Devolve array (km, NaN onde não
+    refinado) ou None se o motor não responder. Respeita OPENROTAS_NO_NET. Nunca levanta."""
+    import os as _os
+    if _os.environ.get("OPENROTAS_NO_NET"):
+        return None
+    if not url:
+        return None
+    try:
+        import numpy as np
+        import json
+        import urllib.request
+        n = len(lons)
+        out = np.full(n, np.nan, dtype="float64")
+        geod = _haversine_km(olon, olat, lons, lats)
+        ordem = np.argsort(geod)[:min(cap, n)]
+        base = url.rstrip("/")
+        ok_any = False
+        for i0 in range(0, len(ordem), chunk):
+            ids = ordem[i0:i0 + chunk]
+            coords = "%s,%s" % (olon, olat) + "".join(";%s,%s" % (lons[j], lats[j]) for j in ids)
+            full = "%s/table/v1/driving/%s?sources=0&annotations=distance" % (base, coords)
+            req = urllib.request.Request(full, headers={"User-Agent": "OpenRotas-Desktop"})
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                d = json.loads(r.read().decode("utf-8", "replace"))
+            if str(d.get("code")) != "Ok":
+                return None
+            linha = (d.get("distances") or [[]])[0]
+            vals = linha[1:] if linha else []
+            for k, j in enumerate(ids):
+                if k < len(vals) and vals[k] is not None:
+                    out[j] = float(vals[k]) / 1000.0
+                    ok_any = True
+        return out if ok_any else None
+    except Exception:
+        logger.info("[ISOCRONAS] OSRM /table indisponível; usando geodésico.", exc_info=True)
+        return None
+
+
+def calcular(origem, faixas_km=_FAIXAS_PADRAO, usar_osrm: bool = False, osrm_url=None, reg=None) -> dict:
+    """Classifica os municípios do Brasil em faixas de distância a partir de `origem`. Devolve
+    {ok, origem, modo, faixas_km, bandas:[{ate_km, municipios, ufs, cumulativo, exemplos}],
+    total_municipios, alcancados, nota}. Nunca levanta."""
+    base = {"ok": False, "origem": None, "modo": "geodesico", "faixas_km": list(faixas_km),
+            "bandas": [], "total_municipios": 0, "alcancados": 0, "nota": ""}
+    try:
+        import numpy as np
+        from audit import coverage_auditor as ca
+        reg = reg or _reg()
+        o = _resolver_origem(origem, reg)
+        if not o.get("ok"):
+            base["detalhe"] = o.get("detalhe", "origem inválida")
+            return base
+        if not reg.existe("municipios"):
+            base["detalhe"] = "base de municípios ausente"
+            return base
+        df = reg.carregar_parquet("municipios", colunas=["lon", "lat", "nome", "geocodigo"])
+        lons = df["lon"].to_numpy(dtype="float64")
+        lats = df["lat"].to_numpy(dtype="float64")
+        nomes = df["nome"].astype(str).tolist()
+        ufs = ca._uf_do_geocodigo(df["geocodigo"]).tolist()
+        faixas = sorted(float(f) for f in faixas_km if float(f) > 0)
+        if not faixas:
+            faixas = list(_FAIXAS_PADRAO)
+        modo = "geodesico"
+        dist = _haversine_km(o["lon"], o["lat"], lons, lats)
+        if usar_osrm:
+            ref = _distancias_osrm(o["lon"], o["lat"], lons, lats, osrm_url or _osrm_url())
+            if ref is not None:
+                m = ~np.isnan(ref)
+                dist = np.where(m, ref, dist)       # rodoviário onde refinado; geodésico no resto
+                modo = "rodoviario-parcial"
+        idx = np.searchsorted(np.array(faixas), dist, side="left")   # 0..len-1 = faixa; len = fora
+        bandas = []
+        for i, ate in enumerate(faixas):
+            sel = np.nonzero(idx == i)[0]
+            ufset = sorted({ufs[j] for j in sel.tolist() if isinstance(ufs[j], str)})
+            ordem = sel[np.argsort(dist[sel])] if sel.size else sel
+            exemplos = ["%s/%s" % (nomes[j], ufs[j] if isinstance(ufs[j], str) else "?")
+                        for j in ordem[:5].tolist()]
+            bandas.append({"ate_km": int(ate), "municipios": int(sel.size),
+                           "ufs": ufset, "cumulativo": int(np.count_nonzero(idx <= i)),
+                           "exemplos": exemplos})
+        alcancados = int(np.count_nonzero(idx < len(faixas)))
+        base.update({
+            "ok": True, "origem": o, "modo": modo, "faixas_km": [int(f) for f in faixas],
+            "bandas": bandas, "total_municipios": int(len(lons)), "alcancados": alcancados,
+            "_dist": dist, "_idx": idx, "_lons": lons, "_lats": lats,   # internos p/ o mapa
+            "nota": ("Distância %s a partir de %s%s."
+                     % ("rodoviária (parcial, OSRM) + geodésica" if modo != "geodesico"
+                        else "geodésica (linha reta)", o["nome"],
+                        ("/" + o["uf"]) if o.get("uf") else "")),
+        })
+        return base
+    except Exception:
+        logger.warning("[ISOCRONAS] cálculo falhou.", exc_info=True)
+        return base
+
+
+def _osrm_url():
+    try:
+        from geo import dossie_rota
+        return dossie_rota._osrm_url()
+    except Exception:
+        return None
+
+
+def render_texto(r: dict) -> str:
+    if not r.get("ok"):
+        return "Isócronas indisponíveis: %s" % r.get("detalhe", "erro")
+    o = r["origem"]
+    L = ["ISÓCRONAS DE ALCANCE — OpenRotas", "=" * 56,
+         "origem: %s%s  (%.4f, %.4f)" % (o["nome"], ("/" + o["uf"]) if o.get("uf") else "",
+                                         o["lon"], o["lat"]),
+         "modo: %s · municípios no país: %d · alcançados (≤%d km): %d" %
+         (r["modo"], r["total_municipios"], r["faixas_km"][-1], r["alcancados"]), ""]
+    for b in r["bandas"]:
+        L.append("  ≤ %-5d km: %5d municípios · %2d UFs · acum. %d"
+                 % (b["ate_km"], b["municipios"], len(b["ufs"]), b["cumulativo"]))
+        if b["exemplos"]:
+            L.append("        mais próximos: %s" % ", ".join(b["exemplos"]))
+    L.append("")
+    L.append(r["nota"])
+    return "\n".join(L)
+
+
+def construir_html(r: dict) -> str:
+    try:
+        from resources import tema
+    except Exception:
+        try:
+            import tema
+        except Exception:
+            tema = None
+    if not r.get("ok"):
+        txt = render_texto(r)
+        if tema is None:
+            return "<!doctype html><html><head><meta charset='utf-8'></head><body><pre>%s</pre></body></html>" % html.escape(txt)
+        return tema.documento("Isócronas de Alcance", "", "<p class='empty'>%s</p>" % html.escape(txt))
+    o = r["origem"]
+    corpo = ["<section class='card'><h2>Alcance a partir de %s%s</h2><div class='kpis'>"
+             % (html.escape(str(o["nome"])), html.escape(("/" + o["uf"]) if o.get("uf") else "")),
+             "<div class='kpi'><div class='v'>%d</div><div class='l'>Municípios ≤ %d km</div></div>"
+             % (r["alcancados"], r["faixas_km"][-1]),
+             "<div class='kpi'><div class='v'>%d</div><div class='l'>Total no país</div></div>" % r["total_municipios"],
+             "<div class='kpi'><div class='v'>%s</div><div class='l'>Modo</div></div>"
+             % ("rodoviário+geo" if r["modo"] != "geodesico" else "geodésico"),
+             "</div></section>"]
+    if tema is not None:
+        # Mapa nacional colorido por faixa (anéis de alcance) + origem como waypoint.
+        try:
+            import numpy as np
+            lons = r.get("_lons"); lats = r.get("_lats"); idx = r.get("_idx")
+            if lons is not None and idx is not None:
+                nf = len(r["faixas_km"])
+                cls = []
+                for v in idx.tolist():
+                    cls.append(_CLASSES_FAIXA[v] if v < nf and v < len(_CLASSES_FAIXA) else None)
+                leg = [{"rotulo": "≤ %d km" % r["faixas_km"][i],
+                        "cor": {"teal": "var(--teal)", "accent": "var(--accent)",
+                                "warn": "var(--warn)", "bad": "var(--bad)"}.get(
+                            _CLASSES_FAIXA[i] if i < len(_CLASSES_FAIXA) else "", "var(--muted)")}
+                       for i in range(min(nf, len(_CLASSES_FAIXA)))]
+                leg.append({"rotulo": "além", "cor": "var(--muted)"})
+                m = tema.mapa_dispersao(list(lons), list(lats), classes=cls,
+                                        rota=[(o["lon"], o["lat"])],
+                                        titulo="ISÓCRONAS — ALCANCE POR FAIXA", legenda=leg)
+                if m:
+                    corpo.append("<section class='card'><h2>Mapa de alcance</h2>%s</section>" % m)
+        except Exception:
+            pass
+        # Barras: municípios por faixa.
+        itens = [{"rotulo": "≤ %d km" % b["ate_km"], "valor": b["municipios"],
+                  "classe": _CLASSES_FAIXA[i] if i < len(_CLASSES_FAIXA) else None,
+                  "dica": "≤ %d km: %d municípios em %d UFs (acum. %d)"
+                          % (b["ate_km"], b["municipios"], len(b["ufs"]), b["cumulativo"])}
+                 for i, b in enumerate(r["bandas"])]
+        ch = tema.grafico_barras(itens, titulo="MUNICÍPIOS POR FAIXA DE DISTÂNCIA")
+        if ch:
+            corpo.append("<section class='card'><h2>Municípios por faixa</h2>%s</section>" % ch)
+    if tema is None:
+        return ("<!doctype html><html><head><meta charset='utf-8'><title>Isócronas — OpenRotas"
+                "</title></head><body><pre>%s</pre></body></html>" % html.escape(render_texto(r)))
+    return tema.documento("Isócronas de Alcance", r["nota"], "".join(corpo),
+                          "Alcance a partir de centroides municipais reais · dados locais.")
+
+
+def gerar(caminho, r: dict) -> str | None:
+    try:
+        p = Path(caminho)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(construir_html(r), encoding="utf-8")
+        return str(p)
+    except Exception:
+        logger.warning("[ISOCRONAS] falha ao gerar HTML.", exc_info=True)
+        return None
+
+
+def _cli(argv=None) -> int:
+    argv = argv if argv is not None else sys.argv[1:]
+    usar_osrm = "--osrm" in argv
+    faixas = _FAIXAS_PADRAO
+    origem = None
+    for a in argv:
+        if a.startswith("--faixas="):
+            try:
+                faixas = tuple(int(x) for x in a.split("=", 1)[1].split(",") if x.strip())
+            except Exception:
+                pass
+        elif not a.startswith("--"):
+            origem = a
+    if not origem:
+        print('uso: --isocronas "Cidade/UF" | "lon,lat" [--faixas=100,300,600,1000] [--osrm] [--html]')
+        return 2
+    r = calcular(origem, faixas_km=faixas, usar_osrm=usar_osrm)
+    print(render_texto(r))
+    if r.get("ok") and "--html" in argv:
+        try:
+            import desktop_config as cfg
+            destino = cfg.ensure_user_dirs()["exports"] / "isocronas.html"
+        except Exception:
+            destino = Path("isocronas.html")
+        got = gerar(destino, r)
+        if got:
+            print("\nHTML: %s" % got)
+            try:
+                import webbrowser
+                webbrowser.open(Path(got).as_uri())
+            except Exception:
+                pass
+    return 0 if r.get("ok") else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(_cli())

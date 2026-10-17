@@ -2084,6 +2084,42 @@ def test_multimodal_html_e_gera(tmp_path):
 
 
 # ============================================================================
+#  ISÓCRONAS DE ALCANCE (§29) — municípios atingíveis por faixa de distância.
+# ============================================================================
+def test_isocronas_calcular_geodesico():
+    from geo import isocronas
+    r = isocronas.calcular((-46.63, -23.55), faixas_km=(100, 300, 600, 1000))
+    assert r["ok"] and r["modo"] == "geodesico"
+    assert len(r["bandas"]) == 4 and r["total_municipios"] > 0
+    cums = [b["cumulativo"] for b in r["bandas"]]
+    assert cums == sorted(cums)                                   # cumulativo monotônico
+    assert sum(b["municipios"] for b in r["bandas"]) == r["alcancados"] == cums[-1]
+    assert r["alcancados"] <= r["total_municipios"]
+    assert r["bandas"][0]["municipios"] > 0                       # vizinhos imediatos de SP
+    assert "ISÓCRONAS" in isocronas.render_texto(r)
+
+def test_isocronas_osrm_cai_em_geodesico_sem_rede(monkeypatch):
+    monkeypatch.setenv("OPENROTAS_NO_NET", "1")
+    from geo import isocronas
+    r = isocronas.calcular((-46.63, -23.55), usar_osrm=True)
+    assert r["ok"] and r["modo"] == "geodesico"                   # OSRM pulado sem rede
+
+def test_isocronas_origem_por_nome():
+    from geo import isocronas
+    r = isocronas.calcular("São Paulo/SP", faixas_km=(100, 300))
+    assert r["ok"] and r["origem"]["uf"] == "SP" and len(r["bandas"]) == 2
+
+def test_isocronas_html_e_gera(tmp_path):
+    from geo import isocronas
+    r = isocronas.calcular((-47.88, -15.79))                      # Brasília
+    h = isocronas.construir_html(r)
+    assert h.startswith("<!doctype html>") and "Isócronas de Alcance" in h
+    assert "ork-mapa" in h and "ork-theme-toggle" in h and "MUNICÍPIOS POR FAIXA" in h
+    out = tmp_path / "iso.html"
+    assert isocronas.gerar(out, r) == str(out) and out.exists()
+
+
+# ============================================================================
 #  DOSSIÊ POR NOME DE CIDADE (desktop) — resolução via índice de municípios IBGE.
 # ============================================================================
 def test_resolver_local_parse():
