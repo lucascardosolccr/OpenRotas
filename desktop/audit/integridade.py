@@ -91,13 +91,24 @@ def auditar(camadas=None) -> dict:
     linhas = [checar_camada(repo, c) for c in camadas]
     inst = [l for l in linhas if l["instalado"]]
     defeituosas = [l for l in inst if l["status"] != OK]
-    return {"camadas": linhas,
+    # Guarda de qualidade das COORDENADAS municipais (ponto representativo fora do corpo principal
+    # — classe do defeito Brasília/Vitória). Degrada sozinho se indisponível.
+    coord = {"total": 0, "suspeitos": [], "status": OK}
+    try:
+        from audit import coverage_auditor as _ca
+        coord = _ca.auditar_coordenadas()
+    except Exception:
+        pass
+    susp = coord.get("suspeitos", [])
+    ok_geral = (not defeituosas) and not susp
+    return {"camadas": linhas, "coordenadas": coord,
             "resumo": {"instaladas": len(inst),
                        "limpas": sum(1 for l in inst if l["status"] == OK),
                        "com_defeito": len(defeituosas),
                        "total_invalidas": sum(l["invalidas"] for l in inst),
                        "total_fora_brasil": sum(l["fora_brasil"] for l in inst),
-                       "status": OK if not defeituosas else PARCIAL}}
+                       "coordenadas_suspeitas": len(susp),
+                       "status": OK if ok_geral else PARCIAL}}
 
 
 def render_texto(aud: dict) -> str:
@@ -114,6 +125,14 @@ def render_texto(aud: dict) -> str:
     L.append("Resumo: %s/%s camadas limpas · %d inválidas · %d fora do Brasil (%s)"
              % (r.get("limpas", 0), r.get("instaladas", 0), r.get("total_invalidas", 0),
                 r.get("total_fora_brasil", 0), r.get("status", "?")))
+    coord = aud.get("coordenadas", {})
+    ns = len(coord.get("suspeitos", []))
+    if ns:
+        exemplos = ", ".join("%s/%s (%d km)" % (s["nome"], s["uf"], s["dist_km"])
+                             for s in coord["suspeitos"][:3])
+        L.append("Coordenadas municipais suspeitas (ponto fora do corpo principal): %d — %s" % (ns, exemplos))
+    else:
+        L.append("Coordenadas municipais: ponto representativo dentro do corpo principal ✓")
     L.append("Escopo: integridade de bbox/ponto. Conectividade topológica (nós/arestas) é passo seguinte.")
     return "\n".join(L)
 

@@ -2163,6 +2163,51 @@ def test_matriz_html_e_excel(tmp_path):
 
 
 # ============================================================================
+#  QUALIDADE DE COORDENADAS — guarda anti-regressão do defeito Brasília/Vitória.
+# ============================================================================
+def test_coverage_ponto_no_corpo_helper():
+    import struct
+    from audit import coverage_auditor as ca
+    ring = [(-47, -16), (-47, -15), (-46, -15), (-46, -16), (-47, -16)]
+    wkb = struct.pack(">BII", 0, 3, 1) + struct.pack(">I", len(ring)) + \
+        b"".join(struct.pack(">dd", x, y) for x, y in ring)
+    assert ca.ponto_no_corpo(-46.5, -15.5, wkb) is True       # dentro do corpo
+    assert ca.ponto_no_corpo(-46.05, -15.5, wkb) is True      # perto da borda
+    assert ca.ponto_no_corpo(-33.8, -3.9, wkb) is False       # no oceano, longe → suspeito
+    assert ca.ponto_no_corpo(-46.5, -15.5, b"lixo") is True   # WKB inválido → não julga
+
+def test_coverage_auditar_coordenadas_limpo_pos_correcao():
+    from audit import coverage_auditor as ca
+    r = ca.auditar_coordenadas()
+    # após a correção de Brasília/Vitória, nenhum município deve estar fora do corpo principal
+    assert r["total"] > 5000 and r["status"] == "OK" and r["suspeitos"] == []
+
+def test_integridade_reporta_coordenadas():
+    from audit import integridade as ig
+    aud = ig.auditar()
+    assert "coordenadas" in aud and aud["resumo"].get("coordenadas_suspeitas") == 0
+    assert "Coordenadas municipais" in ig.render_texto(aud)
+
+
+# ============================================================================
+#  BOTÕES DA CENTRAL DE DADOS — wrappers que geram cada análise avançada (HTML).
+# ============================================================================
+def test_prov_wrappers_analises_avancadas(monkeypatch, tmp_path):
+    import sys as _sys, pathlib as _pl
+    _sys.path.insert(0, str(_pl.Path(__file__).resolve().parents[1]))
+    monkeypatch.setattr(prov, "pasta_por_tipo", lambda tipo: tmp_path / tipo)
+    for fn in (prov.gerar_painel_executivo, prov.gerar_mapa_cobertura,
+               prov.gerar_conectividade_multimodal):
+        p = fn()
+        assert p and _pl.Path(p).exists() and _pl.Path(p).read_text(encoding="utf-8").startswith("<!doctype html>")
+    pi = prov.gerar_isocronas("São Paulo/SP")
+    assert pi and _pl.Path(pi).exists()
+    pm = prov.gerar_matriz_od("São Paulo/SP;Rio de Janeiro/RJ;Brasília/DF")
+    assert pm and _pl.Path(pm).exists()
+    assert prov.gerar_isocronas("ZzzCidadeInexistenteQqq") is None      # origem não resolve → None
+
+
+# ============================================================================
 #  DOSSIÊ POR NOME DE CIDADE (desktop) — resolução via índice de municípios IBGE.
 # ============================================================================
 def test_resolver_local_parse():

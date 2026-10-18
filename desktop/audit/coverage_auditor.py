@@ -26,7 +26,9 @@ from __future__ import annotations
 
 import os
 import sys
+import math
 import time
+import struct
 import logging
 from pathlib import Path
 
@@ -144,6 +146,152 @@ def hulls_uf(reg=None, min_pts: int = 3) -> dict:
     except Exception:
         logger.warning("[AUDIT] falha ao montar envoltórias por UF.", exc_info=True)
         return {}
+
+
+def _rings_wkb(b):
+    """Anéis [(x,y),...] de um WKB Polygon(3)/MultiPolygon(6). [] se não for polígono. Nunca levanta."""
+    try:
+        b = bytes(b)
+        order = "<" if b[0] == 1 else ">"
+        gt = struct.unpack(order + "I", b[1:5])[0]
+        pos = 5
+        rings = []
+        if gt == 3:
+            nr = struct.unpack(order + "I", b[pos:pos + 4])[0]; pos += 4
+            for _ in range(nr):
+                n = struct.unpack(order + "I", b[pos:pos + 4])[0]; pos += 4
+                r = []
+                for _ in range(n):
+                    x, y = struct.unpack(order + "dd", b[pos:pos + 16]); pos += 16
+                    r.append((x, y))
+                rings.append(r)
+            return rings
+        if gt == 6:
+            npoly = struct.unpack(order + "I", b[pos:pos + 4])[0]; pos += 4
+            for _ in range(npoly):
+                o2 = "<" if b[pos] == 1 else ">"; pos += 1; pos += 4
+                nr = struct.unpack(o2 + "I", b[pos:pos + 4])[0]; pos += 4
+                for _ in range(nr):
+                    n = struct.unpack(o2 + "I", b[pos:pos + 4])[0]; pos += 4
+                    r = []
+                    for _ in range(n):
+                        x, y = struct.unpack(o2 + "dd", b[pos:pos + 16]); pos += 16
+                        r.append((x, y))
+                    rings.append(r)
+            return rings
+    except Exception:
+        return []
+    return []
+
+
+def _maior_anel(rings):
+    """Maior anel por |área| (shoelace) — o corpo principal (continente). None se não houver."""
+    melhor = None
+    melhor_a = -1.0
+    for r in rings:
+        if len(r) < 3:
+            continue
+        a = 0.0
+        for i in range(len(r)):
+            x0, y0 = r[i]
+            x1, y1 = r[(i + 1) % len(r)]
+            a += x0 * y1 - x1 * y0
+        a = abs(a) * 0.5
+        if a > melhor_a:
+            melhor_a = a
+            melhor = r
+    return melhor
+
+
+def _ponto_em_anel(lon, lat, anel) -> bool:
+    """Ray casting: True se (lon,lat) está DENTRO do anel. Robusto a concavidades."""
+    dentro = False
+    n = len(anel)
+    j = n - 1
+    for i in range(n):
+        xi, yi = anel[i]
+        xj, yj = anel[j]
+        if ((yi > lat) != (yj > lat)) and (lon < (xj - xi) * (lat - yi) / ((yj - yi) or 1e-15) + xi):
+            dentro = not dentro
+        j = i
+    return dentro
+
+
+def _dist_borda_km(lon, lat, anel) -> float:
+    """Menor distância (km, planar escalado por cos(lat)) de (lon,lat) às ARESTAS do anel."""
+    kx = 111.0 * math.cos(math.radians(lat))
+    ky = 111.0
+    px, py = lon * kx, lat * ky
+    melhor = 1e18
+    n = len(anel)
+    for i in range(n):
+        ax, ay = anel[i]
+        bx, by = anel[(i + 1) % n]
+        ax *= kx; ay *= ky; bx *= kx; by *= ky
+        dx, dy = bx - ax, by - ay
+        l2 = dx * dx + dy * dy
+        t = 0.0 if l2 == 0 else max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / l2))
+        cx, cy = ax + t * dx, ay + t * dy
+        d = ((px - cx) ** 2 + (py - cy) ** 2) ** 0.5
+        if d < melhor:
+            melhor = d
+    return melhor
+
+
+def _dist_ao_corpo_km(lon, lat, anel) -> float:
+    """0 se o ponto está DENTRO do corpo principal; senão a distância (km) à sua borda."""
+    if _ponto_em_anel(lon, lat, anel):
+        return 0.0
+    return _dist_borda_km(lon, lat, anel)
+
+
+def ponto_no_corpo(lon, lat, wkb, limiar_km: float = 25.0) -> bool:
+    """True se (lon,lat) está DENTRO (ou a ≤ limiar da borda) do CORPO PRINCIPAL (maior anel) da
+    geometria. Sem polígono → True (não há como julgar). Puro; nunca levanta. Detecta o ponto
+    representativo deslocado para o oceano/ilha distante (classe do defeito Brasília/Vitória)."""
+    try:
+        anel = _maior_anel(_rings_wkb(wkb))
+        if not anel:
+            return True
+        return _dist_ao_corpo_km(lon, lat, anel) <= limiar_km
+    except Exception:
+        return True
+
+
+def auditar_coordenadas(reg=None, limiar_km: float = 25.0) -> dict:
+    """Audita o PONTO REPRESENTATIVO de cada município: sinaliza os que caem FORA do corpo
+    principal (no oceano/ilha distante), p.ex. por geometria com ilhas. Devolve {total, suspeitos:
+    [{nome,uf,geocodigo,lon,lat,dist_km}], limiar_km, status}. Guarda anti-regressão do defeito
+    Brasília/Vitória. Nunca levanta."""
+    base = {"total": 0, "suspeitos": [], "limiar_km": limiar_km, "status": AUSENTE}
+    try:
+        reg = reg or _registry()
+        if not reg.existe("municipios"):
+            return base
+        df = reg.carregar_parquet("municipios",
+                                  colunas=["lon", "lat", "nome", "geocodigo", "geometry_wkb"])
+        ufs = _uf_do_geocodigo(df["geocodigo"]).tolist()
+        lon = df["lon"].tolist(); lat = df["lat"].tolist()
+        nm = df["nome"].astype(str).tolist(); gcs = df["geocodigo"].astype(str).tolist()
+        wkb = df["geometry_wkb"].tolist()
+        susp = []
+        for i in range(len(wkb)):
+            if lon[i] is None or lat[i] is None:
+                continue
+            anel = _maior_anel(_rings_wkb(wkb[i]))
+            if not anel:
+                continue
+            d = _dist_ao_corpo_km(lon[i], lat[i], anel)
+            if d > limiar_km:
+                susp.append({"nome": nm[i], "uf": ufs[i] if isinstance(ufs[i], str) else "?",
+                             "geocodigo": gcs[i], "lon": round(lon[i], 4), "lat": round(lat[i], 4),
+                             "dist_km": round(d)})
+        susp.sort(key=lambda s: -s["dist_km"])
+        return {"total": len(wkb), "suspeitos": susp, "limiar_km": limiar_km,
+                "status": OK if not susp else PARCIAL}
+    except Exception:
+        logger.warning("[AUDIT] auditoria de coordenadas falhou.", exc_info=True)
+        return base
 
 
 def _bboxes_uf(reg) -> dict:

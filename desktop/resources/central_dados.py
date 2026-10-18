@@ -219,6 +219,22 @@ class _App:
         ttk.Button(ld, text="Dossiê em lote (planilha)…",
                    command=self._on_dossie_lote).pack(side="left", padx=8)
 
+        # ------------------------------------------------------------- SEÇÃO: análises avançadas
+        ana = _secao("Análises avançadas (abrem no navegador)",
+                     dica="Painéis e estudos gerados a partir das bases nacionais instaladas.")
+        la1 = _linha(ana)
+        ttk.Button(la1, text="Painel Executivo",
+                   command=lambda: self._analise("Painel Executivo", prov.gerar_painel_executivo)).pack(side="left")
+        ttk.Button(la1, text="Mapa de Cobertura",
+                   command=lambda: self._analise("Mapa de Cobertura", prov.gerar_mapa_cobertura)).pack(side="left", padx=8)
+        ttk.Button(la1, text="Conectividade Multimodal",
+                   command=lambda: self._analise("Conectividade Multimodal",
+                                                 prov.gerar_conectividade_multimodal)).pack(side="left")
+        la2 = _linha(ana)
+        ttk.Button(la2, text="Isócronas (alcance)…", command=self._on_isocronas).pack(side="left")
+        ttk.Button(la2, text="Matriz origem↔destino…", command=self._on_matriz).pack(side="left", padx=8)
+        ttk.Button(la2, text="Comparar rotas…", command=self._on_comparar).pack(side="left")
+
         # ------------------------------------------------------------- SEÇÃO: sistema / diagnóstico
         sis = _secao("Sistema, diagnóstico e pastas")
         ls1 = _linha(sis)
@@ -387,6 +403,44 @@ class _App:
         except Exception as e:
             r = {"ok": False, "detalhe": "falha: %s" % e}
         self.fila.put(("integridade_fim", r))
+
+    # ---- análises avançadas (geram HTML e abrem no navegador) ----
+    def _analise(self, label, func):
+        self._set_status("Gerando %s…" % label)
+
+        def _t():
+            try:
+                cam = func()
+            except Exception:
+                cam = None
+            self.fila.put(("analise_fim", {"label": label, "caminho": cam}))
+        threading.Thread(target=_t, daemon=True).start()
+
+    def _on_isocronas(self):
+        from tkinter import simpledialog
+        o = simpledialog.askstring("Isócronas de alcance", "Origem (Cidade/UF ou lon,lat):",
+                                   initialvalue="Brasília/DF", parent=self.root)
+        if o:
+            self._analise("Isócronas", lambda oo=o: prov.gerar_isocronas(oo))
+
+    def _on_matriz(self):
+        from tkinter import simpledialog
+        s = simpledialog.askstring("Matriz origem↔destino", "Locais separados por ; (Cidade/UF):",
+                                   initialvalue="São Paulo/SP;Rio de Janeiro/RJ;Brasília/DF",
+                                   parent=self.root)
+        if s:
+            self._analise("Matriz O↔D", lambda ss=s: prov.gerar_matriz_od(ss))
+
+    def _on_comparar(self):
+        from tkinter import simpledialog
+        s = simpledialog.askstring("Comparar rotas",
+                                   "Rotas separadas por || (ex.: A/UF;B/UF || A/UF;C/UF):",
+                                   initialvalue="São Paulo/SP;Rio de Janeiro/RJ || São Paulo/SP;Curitiba/PR",
+                                   parent=self.root)
+        if s:
+            rotas = [p.strip() for p in s.split("||") if p.strip()]
+            self._analise("Comparação de Rotas",
+                          lambda rr=rotas: (prov.comparar_rotas(rr) or {}).get("html"))
 
     def _on_testar_motor(self):
         try:
@@ -610,6 +664,20 @@ class _App:
                     self._set_status("Integridade: %s" % (dado or {}).get("detalhe", "?"),
                                      "#1a7f4b" if _ok else "#9a6700")
                     self._atualizar_inventario()
+                elif tipo == "analise_fim":
+                    _cam = (dado or {}).get("caminho")
+                    _lbl = (dado or {}).get("label", "Análise")
+                    if _cam:
+                        self._set_status("%s pronto ✓ — %s" % (_lbl, _cam), "#1a7f4b")
+                        try:
+                            import webbrowser
+                            from pathlib import Path as _P
+                            webbrowser.open(_P(_cam).as_uri())
+                        except Exception:
+                            pass
+                    else:
+                        self._set_status("%s: não foi possível gerar (bases ausentes ou entrada "
+                                         "inválida)." % _lbl, "#9a6700")
                 elif tipo == "diagnostico_fim":
                     self._set_status("Diagnóstico pronto.", "#1a7f4b")
                     self._mostrar_diagnostico(dado)

@@ -416,6 +416,76 @@ def comparar_rotas(rotas, nomes=None, usar_osrm: bool = False) -> dict:
                 "html": None, "excel": None, "detalhe": "erro: %s" % e}
 
 
+def _pasta_saida(tipo: str = "cache"):
+    try:
+        d = pasta_por_tipo(tipo)
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+    except Exception:
+        return _AQUI
+
+
+def gerar_painel_executivo() -> str | None:
+    """Gera o Painel Executivo (HTML) em cache/ e devolve o caminho. Nunca levanta."""
+    try:
+        from resources import painel_executivo
+    except Exception:
+        try:
+            sys.path.insert(0, str(_AQUI.parent)); from resources import painel_executivo
+        except Exception:
+            return None
+    try:
+        return painel_executivo.gerar(_pasta_saida("cache") / "painel_executivo.html")
+    except Exception:
+        return None
+
+
+def gerar_mapa_cobertura(rapido: bool = True) -> str | None:
+    """Gera o Mapa de Cobertura (HTML coroplético por UF) em cache/. Nunca levanta."""
+    try:
+        sys.path.insert(0, str(_AQUI.parent))
+        from audit import coverage_map
+        return coverage_map.gerar(_pasta_saida("cache") / "mapa_cobertura.html", rapido=rapido)
+    except Exception:
+        return None
+
+
+def gerar_conectividade_multimodal() -> str | None:
+    """Gera o painel de Conectividade Multimodal (HTML) em cache/. Nunca levanta."""
+    try:
+        sys.path.insert(0, str(_AQUI.parent))
+        from geo import multimodal
+        return multimodal.gerar(_pasta_saida("cache") / "conectividade_multimodal.html")
+    except Exception:
+        return None
+
+
+def gerar_isocronas(origem, faixas_km=(100, 300, 600, 1000)) -> str | None:
+    """Gera o painel de Isócronas (HTML) de `origem` em exports/. None se a origem não resolver."""
+    try:
+        sys.path.insert(0, str(_AQUI.parent))
+        from geo import isocronas
+        r = isocronas.calcular(origem, faixas_km=faixas_km)
+        if not r.get("ok"):
+            return None
+        return isocronas.gerar(_pasta_saida("exports") / "isocronas.html", r)
+    except Exception:
+        return None
+
+
+def gerar_matriz_od(locais) -> str | None:
+    """Gera a Matriz Origem↔Destino (HTML) de `locais` em exports/. None se <2 locais resolvem."""
+    try:
+        sys.path.insert(0, str(_AQUI.parent))
+        from geo import matriz_od
+        r = matriz_od.calcular(locais)
+        if not r.get("ok"):
+            return None
+        return matriz_od.gerar(_pasta_saida("exports") / "matriz_od.html", r)
+    except Exception:
+        return None
+
+
 def saude_nacional_texto(rapido: bool = True) -> str:
     """Relatório de SAÚDE NACIONAL dos dados (audit.saude_nacional): cobertura/qualidade das bases
     por área, como texto para a UI. `rapido=True` faz a checagem leve (schema/presença). Nunca
