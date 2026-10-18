@@ -84,21 +84,26 @@ def checar_camada(repo, chave: str) -> dict:
     return res
 
 
-def auditar(camadas=None) -> dict:
-    """Audita a integridade de todas as camadas. {camadas:[...], resumo:{...}}. Nunca levanta."""
+def auditar(camadas=None, coordenadas: bool = True) -> dict:
+    """Audita a integridade de todas as camadas. {camadas:[...], coordenadas:{...}, resumo:{...}}.
+    `coordenadas`=True (padrão) roda também a guarda do ponto representativo municipal (varre a
+    geometria de ~5.570 municípios, ~segundos); chamadores que só querem o resumo geométrico das
+    camadas (ex.: Saúde Nacional) passam coordenadas=False para evitar esse custo. Nunca levanta."""
     repo = _repo()
     camadas = camadas or CAMADAS
     linhas = [checar_camada(repo, c) for c in camadas]
     inst = [l for l in linhas if l["instalado"]]
     defeituosas = [l for l in inst if l["status"] != OK]
     # Guarda de qualidade das COORDENADAS municipais (ponto representativo fora do corpo principal
-    # — classe do defeito Brasília/Vitória). Degrada sozinho se indisponível.
-    coord = {"total": 0, "suspeitos": [], "status": OK}
-    try:
-        from audit import coverage_auditor as _ca
-        coord = _ca.auditar_coordenadas()
-    except Exception:
-        pass
+    # — classe do defeito Brasília/Vitória). Opcional: pesada, degrada sozinho se indisponível.
+    coord = {"total": 0, "suspeitos": [], "status": OK, "checado": False}
+    if coordenadas:
+        try:
+            from audit import coverage_auditor as _ca
+            coord = _ca.auditar_coordenadas()
+            coord["checado"] = True
+        except Exception:
+            pass
     susp = coord.get("suspeitos", [])
     ok_geral = (not defeituosas) and not susp
     return {"camadas": linhas, "coordenadas": coord,
@@ -126,13 +131,14 @@ def render_texto(aud: dict) -> str:
              % (r.get("limpas", 0), r.get("instaladas", 0), r.get("total_invalidas", 0),
                 r.get("total_fora_brasil", 0), r.get("status", "?")))
     coord = aud.get("coordenadas", {})
-    ns = len(coord.get("suspeitos", []))
-    if ns:
-        exemplos = ", ".join("%s/%s (%d km)" % (s["nome"], s["uf"], s["dist_km"])
-                             for s in coord["suspeitos"][:3])
-        L.append("Coordenadas municipais suspeitas (ponto fora do corpo principal): %d — %s" % (ns, exemplos))
-    else:
-        L.append("Coordenadas municipais: ponto representativo dentro do corpo principal ✓")
+    if coord.get("checado"):
+        ns = len(coord.get("suspeitos", []))
+        if ns:
+            exemplos = ", ".join("%s/%s (%d km)" % (s["nome"], s["uf"], s["dist_km"])
+                                 for s in coord["suspeitos"][:3])
+            L.append("Coordenadas municipais suspeitas (ponto fora do corpo principal): %d — %s" % (ns, exemplos))
+        else:
+            L.append("Coordenadas municipais: ponto representativo dentro do corpo principal ✓")
     L.append("Escopo: integridade de bbox/ponto. Conectividade topológica (nós/arestas) é passo seguinte.")
     return "\n".join(L)
 

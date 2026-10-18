@@ -57,7 +57,7 @@ def diagnostico(rapido: bool = True) -> dict:
     # 2) Integridade geométrica
     try:
         from audit import integridade as ig
-        aud = ig.auditar()
+        aud = ig.auditar(coordenadas=False)   # resumo geométrico; a guarda de coordenadas (pesada) fica no relatório dedicado
         r = aud.get("resumo", {})
         st = OK if r.get("status") == "OK" else PARCIAL
         _add("Integridade geométrica", st,

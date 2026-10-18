@@ -2186,7 +2186,15 @@ def test_integridade_reporta_coordenadas():
     from audit import integridade as ig
     aud = ig.auditar()
     assert "coordenadas" in aud and aud["resumo"].get("coordenadas_suspeitas") == 0
+    assert aud["coordenadas"].get("checado") is True
     assert "Coordenadas municipais" in ig.render_texto(aud)
+
+def test_integridade_coordenadas_opcional():
+    # coordenadas=False pula a varredura pesada (usado pela Saúde Nacional) e NÃO alega ter checado
+    from audit import integridade as ig
+    r = ig.auditar(coordenadas=False)
+    assert r["coordenadas"]["checado"] is False and r["resumo"]["coordenadas_suspeitas"] == 0
+    assert "Coordenadas municipais" not in ig.render_texto(r)
 
 
 # ============================================================================
