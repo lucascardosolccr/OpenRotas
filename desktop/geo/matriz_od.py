@@ -47,8 +47,14 @@ def _resolver_ponto(tok, reg):
         from geo import dossie_rota
         r = dossie_rota.resolver_local(s, reg=reg)
         if r.get("ok"):
+            # HONESTIDADE: homônimos (mesmo nome em várias UFs) sem UF informada → resolver_local
+            # escolhe o 1º e marca ambiguo. Propagamos o aviso para o relatório não computar uma
+            # matriz inteira para a cidade errada em silêncio; o usuário vê e pode especificar a UF.
+            amb = bool(r.get("ambiguo"))
+            ufs_alt = sorted({c.get("uf") for c in r.get("candidatos", []) if c.get("uf")}) if amb else []
             return {"ok": True, "lon": r["lon"], "lat": r["lat"],
-                    "nome": r.get("nome", s), "uf": r.get("uf", "")}
+                    "nome": r.get("nome", s), "uf": r.get("uf", ""),
+                    "ambiguo": amb, "ufs_alt": ufs_alt}
         return {"ok": False, "consulta": s, "detalhe": r.get("detalhe", "não resolvido")}
     except Exception:
         return {"ok": False, "consulta": str(tok), "detalhe": "erro"}
@@ -130,11 +136,13 @@ def calcular(locais, usar_osrm: bool = False, osrm_url=None, reg=None) -> dict:
             return {"de": pts[i]["nome"], "para": pts[j]["nome"], "km": round(pr[0], 1)}
         base.update({
             "ok": True,
-            "pontos": [{"nome": p["nome"], "uf": p.get("uf", ""), "lon": p["lon"], "lat": p["lat"]} for p in pts],
+            "pontos": [{"nome": p["nome"], "uf": p.get("uf", ""), "lon": p["lon"], "lat": p["lat"],
+                        "ambiguo": bool(p.get("ambiguo")), "ufs_alt": p.get("ufs_alt", [])} for p in pts],
             "matriz": M, "modo": modo,
             "resumo": {"n": n, "par_distante": _par(maxv), "par_proximo": _par(minv),
                        "media_km": round(soma / cnt, 1) if cnt else 0.0,
-                       "diametro_km": round(maxv[0], 1) if maxv[1] else 0.0},
+                       "diametro_km": round(maxv[0], 1) if maxv[1] else 0.0,
+                       "ambiguos": sum(1 for p in pts if p.get("ambiguo"))},
             "nota": ("Distância %s entre %d pontos."
                      % ("rodoviária (OSRM)" if modo == "rodoviario" else "geodésica (linha reta)", n)),
         })
@@ -164,8 +172,13 @@ def render_texto(r: dict) -> str:
     pts = r["pontos"]; M = r["matriz"]
     L = ["MATRIZ ORIGEM↔DESTINO — OpenRotas", "=" * 60, "modo: %s · %d pontos" % (r["modo"], len(pts)), ""]
     for i, p in enumerate(pts):
-        L.append("%2d. %s" % (i + 1, _rotulo(p)))
+        marca = "  ⚠ ambígua (há homônimas em %s)" % ", ".join(p.get("ufs_alt", [])) if p.get("ambiguo") else ""
+        L.append("%2d. %s%s" % (i + 1, _rotulo(p), marca))
     L.append("")
+    if r.get("resumo", {}).get("ambiguos"):
+        L.append("⚠ %d cidade(s) ambígua(s): resolvida(s) pela 1ª homônima — especifique a UF "
+                 "(ex.: \"Cidade/UF\") para fixar a correta." % r["resumo"]["ambiguos"])
+        L.append("")
     cab = "      " + "".join("%8d" % (j + 1) for j in range(len(pts)))
     L.append(cab)
     for i in range(len(pts)):
@@ -234,6 +247,14 @@ def construir_html(r: dict) -> str:
                      "mais próximo: <b>%s ↔ %s</b> (%.0f km).</p>"
                      % (html.escape(pd["de"]), html.escape(pd["para"]), pd["km"],
                         html.escape(pp["de"]), html.escape(pp["para"]), pp["km"]))
+    ambs = [p for p in r["pontos"] if p.get("ambiguo")]
+    if ambs:
+        itens = "; ".join("<b>%s</b> (também em %s)" % (html.escape(_rotulo(p)),
+                          html.escape(", ".join(p.get("ufs_alt", []))) or "outras UFs") for p in ambs)
+        corpo.append("<p class='sub' style='margin:10px 2px 0;color:var(--warn,#b45309)'>"
+                     "⚠ %d cidade(s) ambígua(s), resolvida(s) pela 1ª homônima: %s. "
+                     "Especifique a UF (ex.: \"Cidade/UF\") para fixar a correta.</p>"
+                     % (len(ambs), itens))
     corpo.append("</section>")
     if tema is not None:
         # Mapa: os pontos como corredor/waypoints sobre o Brasil.

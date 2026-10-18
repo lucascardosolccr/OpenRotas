@@ -65,8 +65,13 @@ def _resolver_origem(origem, reg):
         from geo import dossie_rota
         r = dossie_rota.resolver_local(s, reg=reg)
         if r.get("ok"):
+            # HONESTIDADE: origem homônima (mesmo nome em várias UFs) sem UF → resolver_local pega
+            # a 1ª e marca ambiguo. Propagamos para o relatório avisar, em vez de calcular o alcance
+            # inteiro a partir da cidade errada em silêncio.
+            amb = bool(r.get("ambiguo"))
+            ufs_alt = sorted({c.get("uf") for c in r.get("candidatos", []) if c.get("uf")}) if amb else []
             return {"ok": True, "lon": r["lon"], "lat": r["lat"], "nome": r.get("nome", s),
-                    "uf": r.get("uf", "")}
+                    "uf": r.get("uf", ""), "ambiguo": amb, "ufs_alt": ufs_alt}
         return {"ok": False, "detalhe": r.get("detalhe", "origem não resolvida")}
     except Exception:
         return {"ok": False, "detalhe": "erro ao resolver origem"}
@@ -189,6 +194,10 @@ def render_texto(r: dict) -> str:
                                          o["lon"], o["lat"]),
          "modo: %s · municípios no país: %d · alcançados (≤%d km): %d" %
          (r["modo"], r["total_municipios"], r["faixas_km"][-1], r["alcancados"]), ""]
+    if o.get("ambiguo"):
+        L.append("⚠ origem ambígua: há homônimas em %s — usada a 1ª. Especifique a UF "
+                 "(ex.: \"Cidade/UF\") para fixar a correta." % ", ".join(o.get("ufs_alt", [])))
+        L.append("")
     for b in r["bandas"]:
         L.append("  ≤ %-5d km: %5d municípios · %2d UFs · acum. %d"
                  % (b["ate_km"], b["municipios"], len(b["ufs"]), b["cumulativo"]))
@@ -220,7 +229,13 @@ def construir_html(r: dict) -> str:
              "<div class='kpi'><div class='v'>%d</div><div class='l'>Total no país</div></div>" % r["total_municipios"],
              "<div class='kpi'><div class='v'>%s</div><div class='l'>Modo</div></div>"
              % ("rodoviário+geo" if r["modo"] != "geodesico" else "geodésico"),
-             "</div></section>"]
+             "</div>"]
+    if o.get("ambiguo"):
+        corpo.append("<p class='sub' style='margin:10px 2px 0;color:var(--warn,#b45309)'>"
+                     "⚠ Origem ambígua: há homônimas em %s — usada a 1ª. "
+                     "Especifique a UF (ex.: \"Cidade/UF\") para fixar a correta.</p>"
+                     % html.escape(", ".join(o.get("ufs_alt", [])) or "outras UFs"))
+    corpo.append("</section>")
     if tema is not None:
         # Mapa nacional colorido por faixa (anéis de alcance) + origem como waypoint.
         try:

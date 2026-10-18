@@ -2118,6 +2118,15 @@ def test_isocronas_html_e_gera(tmp_path):
     out = tmp_path / "iso.html"
     assert isocronas.gerar(out, r) == str(out) and out.exists()
 
+def test_isocronas_origem_ambigua_avisa():
+    # Origem homônima sem UF ('Bom Jesus') → calcula a partir da 1ª, mas avisa (texto e HTML).
+    from geo import isocronas
+    r = isocronas.calcular("Bom Jesus", faixas_km=(100, 300))
+    assert r["ok"] and r["origem"].get("ambiguo") and len(r["origem"].get("ufs_alt", [])) >= 2
+    assert "⚠" in isocronas.render_texto(r) and "ambígua" in isocronas.construir_html(r)
+    r2 = isocronas.calcular("Bom Jesus/PI", faixas_km=(100, 300))
+    assert not r2["origem"].get("ambiguo") and "⚠" not in isocronas.render_texto(r2)
+
 
 # ============================================================================
 #  MATRIZ ORIGEM↔DESTINO (§29) — distâncias entre vários centros.
@@ -2160,6 +2169,19 @@ def test_matriz_html_e_excel(tmp_path):
     xo = tmp_path / "m.xlsx"
     assert matriz_od.exportar_excel(r, xo) == str(xo) and xo.exists()
     assert "Matriz_km" in openpyxl.load_workbook(xo).sheetnames
+
+def test_matriz_cidade_ambigua_avisa():
+    # HONESTIDADE: 'Bom Jesus' sem UF é homônima em 5 UFs — a matriz resolve pela 1ª, mas o relatório
+    # DEVE avisar (texto e HTML) para o usuário não computar a matriz da cidade errada em silêncio.
+    from geo import matriz_od
+    r = matriz_od.calcular("Bom Jesus;São Paulo/SP")
+    assert r["ok"] and r["resumo"]["ambiguos"] == 1
+    amb = [p for p in r["pontos"] if p.get("ambiguo")]
+    assert len(amb) == 1 and len(amb[0]["ufs_alt"]) >= 2
+    assert "⚠" in matriz_od.render_texto(r) and "ambígua" in matriz_od.construir_html(r)
+    # com UF explícita não há ambiguidade nem aviso.
+    r2 = matriz_od.calcular("Bom Jesus/PI;São Paulo/SP")
+    assert r2["resumo"]["ambiguos"] == 0 and "⚠" not in matriz_od.render_texto(r2)
 
 
 # ============================================================================
