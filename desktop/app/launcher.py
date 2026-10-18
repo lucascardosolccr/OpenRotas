@@ -525,6 +525,16 @@ def _reparar() -> int:
     return 0 if rel["ok"] else 1
 
 
+def _flags_nao_reconhecidas(argv) -> list:
+    """Flags que SOBRARAM ao chegar na abertura da janela. Todos os modos CLI (--diagnostico,
+    --dossie, --matriz, ...) consomem seu argumento e RETORNAM antes daqui; a abertura da janela
+    não aceita flag nenhuma. Logo, qualquer token iniciado por '-' que chega aqui é um engano —
+    um modo digitado errado ('--isocrona' por '--isocronas') ou uma flag auxiliar solta ('--html'
+    sem um modo). Isso evita subir o app inteiro (processo pesado) em silêncio para uma opção que
+    o usuário acha que vai fazer outra coisa. (A flag interna do processo-servidor é ignorada.)"""
+    return [a for a in argv if a.startswith("-") and a != _SERVIDOR_FLAG]
+
+
 def main() -> int:
     if "--help" in sys.argv or "-h" in sys.argv:
         print(_AJUDA)
@@ -772,6 +782,18 @@ def main() -> int:
         except Exception as e:
             print("Perfil de execução indisponível: %s" % e)
             return 1
+
+    # GUARDA DE OPÇÃO DESCONHECIDA: nenhum modo CLI reconheceu o argumento e chegamos à abertura
+    # da JANELA. Se ainda há alguma flag (modo digitado errado ou flag auxiliar solta), avisa e sai
+    # em vez de subir o app inteiro silenciosamente — o usuário veria "nada acontecer". O exe é de
+    # janela (console oculto), então mostra também um diálogo nativo visível, além do print (CLI/dev).
+    _soltas = _flags_nao_reconhecidas(sys.argv[1:])
+    if _soltas:
+        msg = ("Opção não reconhecida: %s\n\nVeja as opções disponíveis com:\n  OpenRotas.exe --help\n\n"
+               "(Sem nenhuma opção, o OpenRotas abre a janela do aplicativo.)" % " ".join(_soltas))
+        print(msg)
+        _mostrar_erro_nativo("OpenRotas — opção não reconhecida", msg)
+        return 2
 
     _t_inicio = time.perf_counter()
     log.info("OpenRotas Desktop iniciando. Config: %s", cfg.resumo_config())

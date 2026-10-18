@@ -514,6 +514,16 @@ def test_launcher_tel_nunca_quebra():
     # helper defensivo de telemetria do launcher: não deve levantar
     launcher._tel("teste_launcher", ok=True, ms=2.0)
 
+def test_launcher_flags_nao_reconhecidas():
+    import launcher
+    # sem flag (abertura normal da janela) → nada a sinalizar
+    assert launcher._flags_nao_reconhecidas([]) == []
+    # a flag interna do processo-servidor é ignorada (não é "desconhecida")
+    assert launcher._flags_nao_reconhecidas([launcher._SERVIDOR_FLAG]) == []
+    # modo digitado errado ou flag auxiliar solta → sinalizadas (para avisar em vez de subir o app)
+    assert launcher._flags_nao_reconhecidas(["--isocrona"]) == ["--isocrona"]
+    assert launcher._flags_nao_reconhecidas(["--html", "--xyz"]) == ["--html", "--xyz"]
+
 
 # ------------------------------- benchmark (§9/§29) --------------------------
 def test_benchmark_exporta_json(tmp_path):
