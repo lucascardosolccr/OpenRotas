@@ -405,6 +405,21 @@ def dossie(coords, folga_km: float = 3.0, usar_osrm: bool = False, osrm_url=None
     return dd
 
 
+def _locais_ambiguos(dd: dict) -> list:
+    """Nomes de cidade AMBÍGUOS (homônimos em várias UFs) resolvidos pela 1ª opção, no dossiê por
+    NOMES. Cada item: 'consulta → usada Nome/UF'. Vazio no dossiê por coordenadas (sem 'locais').
+    Permite que o relatório (texto e HTML) avise, em vez de só a CLI — o usuário que gera pela GUI
+    ou abre o HTML também precisa saber que uma cidade homônima foi resolvida arbitrariamente."""
+    out = []
+    for l in dd.get("locais", []) or []:
+        if l.get("ok") and l.get("ambiguo"):
+            res = l.get("resolvido") or (None, None)
+            nome, uf = (res[0], res[1]) if isinstance(res, (list, tuple)) and len(res) >= 2 else (None, None)
+            alvo = ("%s/%s" % (nome, uf)) if nome else "a 1ª opção"
+            out.append("%s → usada %s" % (l.get("consulta") or "?", alvo))
+    return out
+
+
 def render_texto(dd: dict) -> str:
     if dd.get("erro"):
         return "Dossiê indisponível: %s" % dd["erro"]
@@ -432,6 +447,10 @@ def render_texto(dd: dict) -> str:
         L.append("Alertas:")
         for a in dd["alertas"]:
             L.append("  • " + a)
+    amb = _locais_ambiguos(dd)
+    if amb:
+        L.append("")
+        L.append("⚠ Cidade(s) ambígua(s) (homônimas; qualifique com /UF): " + "; ".join(amb))
     L.append("")
     via = ("rota real OSRM, %d pontos" % dd.get("rota_pontos_osrm", 0)) if dd.get("rota_real") \
         else "corredor reta origem→destino (sem OSRM)"
@@ -519,6 +538,13 @@ def gerar_html(dd: dict, caminho) -> str | None:
             P.append("<p class='sub'>Corredor atravessa %s (%d municípios).</p>"
                      % (", ".join(tt["ufs"]), tt.get("n_municipios", 0)))
         P.append("</section>")
+        # Aviso de cidade ambígua (homônima) no dossiê por nomes — mesma honestidade da matriz/isócronas.
+        _amb = _locais_ambiguos(dd)
+        if _amb:
+            P.append("<section class='card'><h2>Atenção: cidade ambígua</h2>"
+                     "<div class='alerta'>⚠ Nome(s) de cidade com homônimas em várias UFs, resolvido(s) "
+                     "pela 1ª opção: %s. Qualifique com /UF (ex.: \"Cidade/UF\") para fixar a correta.</div>"
+                     "</section>" % html.escape("; ".join(_amb)))
         # Mapa nacional com o corredor origem→destino sobreposto (onde a rota está no Brasil).
         if tema is not None:
             try:

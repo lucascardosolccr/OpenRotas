@@ -2288,6 +2288,22 @@ def test_dossie_por_nomes_nenhuma_resolvida():
     dd, resol = dr.dossie_por_nomes("Xyzabc123;Qwerty999")
     assert dd.get("erro") and all(not r["ok"] for r in resol)
 
+def test_dossie_por_nomes_cidade_ambigua_avisa(tmp_path):
+    # Mesma honestidade da matriz/isócronas: 'Bom Jesus' (homônima em várias UFs) é resolvida pela
+    # 1ª opção, mas o RELATÓRIO (texto e HTML, usados pela GUI e pelos exports) DEVE avisar — não só
+    # a CLI. Dossiê por coordenadas e nomes com /UF não geram aviso.
+    from geo import dossie_rota as dr
+    dd, _ = dr.dossie_por_nomes("Bom Jesus;São Paulo/SP")
+    assert not dd.get("erro")
+    amb = dr._locais_ambiguos(dd)
+    assert len(amb) == 1 and "Bom Jesus" in amb[0]
+    assert "⚠" in dr.render_texto(dd)
+    h = dr.gerar_html(dd, tmp_path / "d.html")
+    assert h and "ambígua" in open(h, encoding="utf-8").read()
+    # com /UF explícita → sem ambiguidade nem aviso
+    dd2, _ = dr.dossie_por_nomes("Bom Jesus/PI;São Paulo/SP")
+    assert dr._locais_ambiguos(dd2) == [] and "⚠ Cidade" not in dr.render_texto(dd2)
+
 
 # ============================================================================
 #  ROTA REAL OSRM + LOTE + SOBREPOSIÇÃO NO MAPA (desktop).
