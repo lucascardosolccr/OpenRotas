@@ -420,6 +420,12 @@ def _locais_ambiguos(dd: dict) -> list:
     return out
 
 
+def _locais_nao_resolvidos(dd: dict) -> list:
+    """Consultas de cidade que NÃO resolveram no dossiê por nomes (ficaram de fora). Vazio no dossiê
+    por coordenadas. Permite o relatório avisar que um nome foi ignorado, como já faz a CLI."""
+    return [str(l.get("consulta") or "?") for l in dd.get("locais", []) or [] if not l.get("ok")]
+
+
 def render_texto(dd: dict) -> str:
     if dd.get("erro"):
         return "Dossiê indisponível: %s" % dd["erro"]
@@ -451,6 +457,10 @@ def render_texto(dd: dict) -> str:
     if amb:
         L.append("")
         L.append("⚠ Cidade(s) ambígua(s) (homônimas; qualifique com /UF): " + "; ".join(amb))
+    nr = _locais_nao_resolvidos(dd)
+    if nr:
+        L.append("")
+        L.append("⚠ Local(is) não resolvido(s) e fora do dossiê: " + ", ".join(nr))
     L.append("")
     via = ("rota real OSRM, %d pontos" % dd.get("rota_pontos_osrm", 0)) if dd.get("rota_real") \
         else "corredor reta origem→destino (sem OSRM)"
@@ -545,6 +555,11 @@ def gerar_html(dd: dict, caminho) -> str | None:
                      "<div class='alerta'>⚠ Nome(s) de cidade com homônimas em várias UFs, resolvido(s) "
                      "pela 1ª opção: %s. Qualifique com /UF (ex.: \"Cidade/UF\") para fixar a correta.</div>"
                      "</section>" % html.escape("; ".join(_amb)))
+        _nr = _locais_nao_resolvidos(dd)
+        if _nr:
+            P.append("<section class='card'><h2>Atenção: local não resolvido</h2>"
+                     "<div class='alerta'>⚠ Nome(s) de cidade não encontrado(s) e fora do dossiê: %s.</div>"
+                     "</section>" % html.escape(", ".join(_nr)))
         # Mapa nacional com o corredor origem→destino sobreposto (onde a rota está no Brasil).
         if tema is not None:
             try:

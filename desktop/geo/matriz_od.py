@@ -179,6 +179,10 @@ def render_texto(r: dict) -> str:
         L.append("⚠ %d cidade(s) ambígua(s): resolvida(s) pela 1ª homônima — especifique a UF "
                  "(ex.: \"Cidade/UF\") para fixar a correta." % r["resumo"]["ambiguos"])
         L.append("")
+    nr = r.get("nao_resolvidos") or []
+    if nr:
+        L.append("⚠ %d local(is) não resolvido(s) e FORA da matriz: %s" % (len(nr), ", ".join(str(x) for x in nr)))
+        L.append("")
     cab = "      " + "".join("%8d" % (j + 1) for j in range(len(pts)))
     L.append(cab)
     for i in range(len(pts)):
@@ -255,6 +259,11 @@ def construir_html(r: dict) -> str:
                      "⚠ %d cidade(s) ambígua(s), resolvida(s) pela 1ª homônima: %s. "
                      "Especifique a UF (ex.: \"Cidade/UF\") para fixar a correta.</p>"
                      % (len(ambs), itens))
+    nr = r.get("nao_resolvidos") or []
+    if nr:
+        corpo.append("<p class='sub' style='margin:10px 2px 0;color:var(--warn,#b45309)'>"
+                     "⚠ %d local(is) não resolvido(s) e fora da matriz: %s.</p>"
+                     % (len(nr), html.escape(", ".join(str(x) for x in nr))))
     corpo.append("</section>")
     if tema is not None:
         # Mapa: os pontos como corredor/waypoints sobre o Brasil.

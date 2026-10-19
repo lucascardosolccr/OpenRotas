@@ -2193,6 +2193,17 @@ def test_matriz_cidade_ambigua_avisa():
     r2 = matriz_od.calcular("Bom Jesus/PI;São Paulo/SP")
     assert r2["resumo"]["ambiguos"] == 0 and "⚠" not in matriz_od.render_texto(r2)
 
+def test_matriz_local_nao_resolvido_avisa():
+    # Honestidade: um local que não resolve é DROPADO da matriz — o relatório deve dizer, não omitir.
+    from geo import matriz_od
+    r = matriz_od.calcular("São Paulo/SP;CidadeInexistenteZZZ;Rio de Janeiro/RJ")
+    assert r["ok"] and len(r["pontos"]) == 2 and r["nao_resolvidos"] == ["CidadeInexistenteZZZ"]
+    assert "não resolv" in matriz_od.render_texto(r).lower()
+    assert "não resolv" in matriz_od.construir_html(r).lower()
+    # tudo resolvido → sem aviso de não resolvido.
+    r2 = matriz_od.calcular("São Paulo/SP;Rio de Janeiro/RJ")
+    assert not r2.get("nao_resolvidos") and "não resolv" not in matriz_od.render_texto(r2).lower()
+
 
 # ============================================================================
 #  QUALIDADE DE COORDENADAS — guarda anti-regressão do defeito Brasília/Vitória.
@@ -2303,6 +2314,19 @@ def test_dossie_por_nomes_cidade_ambigua_avisa(tmp_path):
     # com /UF explícita → sem ambiguidade nem aviso
     dd2, _ = dr.dossie_por_nomes("Bom Jesus/PI;São Paulo/SP")
     assert dr._locais_ambiguos(dd2) == [] and "⚠ Cidade" not in dr.render_texto(dd2)
+
+def test_dossie_por_nomes_local_nao_resolvido_avisa(tmp_path):
+    # Um nome não encontrado fica de fora do dossiê — relatório (texto e HTML) deve avisar, não só a CLI.
+    from geo import dossie_rota as dr
+    dd, _ = dr.dossie_por_nomes("São Paulo/SP;CidadeInexistenteZZZ;Rio de Janeiro/RJ")
+    assert not dd.get("erro")
+    assert dr._locais_nao_resolvidos(dd) == ["CidadeInexistenteZZZ"]
+    assert "não resolv" in dr.render_texto(dd).lower()
+    h = dr.gerar_html(dd, tmp_path / "d.html")
+    assert h and "não resolv" in open(h, encoding="utf-8").read().lower()
+    # todas resolvidas → sem aviso
+    dd2, _ = dr.dossie_por_nomes("São Paulo/SP;Rio de Janeiro/RJ")
+    assert dr._locais_nao_resolvidos(dd2) == [] and "não resolv" not in dr.render_texto(dd2).lower()
 
 
 # ============================================================================
