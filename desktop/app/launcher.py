@@ -400,7 +400,7 @@ _AJUDA = """OpenRotas Desktop — uso:
   OpenRotas.exe --grafo-multimodal [--html]   conectividade entre modais (hubs + transposições + matriz)
   OpenRotas.exe --isocronas "Cidade/UF" [--faixas=100,300,600,1000] [--html]   alcance por faixas de distância
   OpenRotas.exe --matriz "Cidade/UF;Cidade/UF;..." [--html] [--excel]   matriz de distâncias origem↔destino
-  OpenRotas.exe --centro "Cand/UF;Cand/UF;..." [--destinos "Dest/UF;..."] [--html] [--excel]   melhor ponto de apoio (menor distância total / pior caso)
+  OpenRotas.exe --centro "Cand/UF;Cand/UF;..." [--destinos "Dest/UF;..."] [--k N] [--html] [--excel]   melhor ponto de apoio (--k N = N hubs, p-mediana/p-centro)
   OpenRotas.exe --telemetria-ana [--atualizar]   telemetria local + atualização incremental (§35)
   OpenRotas.exe --auditoria --relatorio   salva o Relatório de Cobertura Nacional (.md) em exports/
   OpenRotas.exe --recursos      status dos recursos (Gerenciador de Recursos)

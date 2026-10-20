@@ -445,8 +445,11 @@ class _App:
                                       "Destinos separados por ; (vazio = usar os candidatos):",
                                       initialvalue="",
                                       parent=self.root)
+        kk = simpledialog.askinteger("Centro ótimo — nº de hubs",
+                                     "Quantos centros de apoio (hubs)? 1 = um único centro:",
+                                     initialvalue=1, minvalue=1, maxvalue=50, parent=self.root)
         self._analise("Centro Ótimo",
-                      lambda c=cand, d=(dest or None): prov.gerar_centro_otimo(c, destinos=d))
+                      lambda c=cand, d=(dest or None), k=kk: prov.gerar_centro_otimo(c, destinos=d, k=k))
 
     def _on_comparar(self):
         from tkinter import simpledialog

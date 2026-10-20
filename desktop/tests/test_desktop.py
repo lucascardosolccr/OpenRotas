@@ -2269,6 +2269,62 @@ def test_provisionamento_gera_centro_otimo(tmp_path, monkeypatch):
     assert h and os.path.exists(h)
     assert prov.gerar_centro_otimo("ZzzCidadeInexistenteQqq") is None
 
+def test_centro_k_hubs_exato():
+    from geo import centro_otimo as co
+    cands = "Goiânia/GO;São Paulo/SP;Recife/PE;Manaus/AM;Porto Alegre/RS"
+    dests = "Belém/PA;Fortaleza/CE;Rio de Janeiro/RJ;Curitiba/PR;Salvador/BA;Brasília/DF;Manaus/AM"
+    r = co.calcular_k(cands, destinos=dests, k=2)
+    assert r["ok"] and r["k"] == 2 and r["metodo"] == "exato"
+    assert len(r["solucao_soma"]["hubs"]) == 2 and len(r["solucao_max"]["hubs"]) == 2
+    # cada destino atribuído exatamente uma vez
+    assert len(r["solucao_soma"]["atribuicao"]) == 7
+    # mais hubs não pioram a soma (k=2 <= k=1)
+    r1 = co.calcular_k(cands, destinos=dests, k=1)
+    assert r["solucao_soma"]["total_km"] <= r1["solucao_soma"]["total_km"] + 1e-6
+    # p-centro otimiza o pior caso: seu máx <= máx da solução p-mediana
+    assert r["solucao_max"]["max_km"] <= r["solucao_soma"]["max_km"] + 1e-6
+    assert "HUBS" in co.render_texto(r) and "p-mediana" in co.render_texto(r)
+
+def test_centro_k_cap_e_k_maior_que_candidatos():
+    # k não pode exceder o nº de candidatos — é limitado a C (sem quebrar).
+    from geo import centro_otimo as co
+    r = co.calcular_k("São Paulo/SP;Rio de Janeiro/RJ", destinos="Curitiba/PR;Belém/PA", k=5)
+    assert r["ok"] and r["k"] == 2 and len(r["solucao_soma"]["hubs"]) == 2
+
+def test_centro_k_guloso_para_muitos_candidatos():
+    # C > 22 → cai no método guloso (aproximação declarada), sem enumerar combinações demais.
+    from geo import centro_otimo as co
+    caps = ["São Paulo/SP", "Rio de Janeiro/RJ", "Belo Horizonte/MG", "Curitiba/PR", "Porto Alegre/RS",
+            "Salvador/BA", "Recife/PE", "Fortaleza/CE", "Belém/PA", "Manaus/AM", "Goiânia/GO",
+            "Brasília/DF", "Cuiabá/MT", "Campo Grande/MS", "Vitória/ES", "Natal/RN", "João Pessoa/PB",
+            "Maceió/AL", "Aracaju/SE", "Teresina/PI", "São Luís/MA", "Palmas/TO", "Porto Velho/RO",
+            "Rio Branco/AC", "Boa Vista/RR"]
+    r = co.calcular_k(";".join(caps), destinos="Belém/PA;Rio de Janeiro/RJ;Fortaleza/CE;Manaus/AM", k=3)
+    assert r["ok"] and r["metodo"] == "guloso" and len(r["solucao_soma"]["hubs"]) == 3
+
+def test_centro_k_html_e_excel(tmp_path):
+    import openpyxl
+    from geo import centro_otimo as co
+    r = co.calcular_k("Goiânia/GO;São Paulo/SP;Manaus/AM;Recife/PE",
+                      destinos="Belém/PA;Rio de Janeiro/RJ;Fortaleza/CE;Curitiba/PR", k=2)
+    assert r["ok"]
+    h = co.construir_html(r)
+    assert h.startswith("<!doctype html>") and "hubs" in h.lower() and "ork-theme-toggle" in h
+    out = tmp_path / "k.html"
+    assert co.gerar(out, r) == str(out) and out.exists()
+    xo = tmp_path / "k.xlsx"
+    assert co.exportar_excel(r, xo) == str(xo) and xo.exists()
+    nomes = openpyxl.load_workbook(xo).sheetnames
+    assert "Hubs" in nomes and "Atribuicao_pmediana" in nomes
+
+def test_centro_k_via_wrapper(tmp_path):
+    import sys as _sys
+    _sys.path.insert(0, "resources")
+    import provisionamento as prov
+    h = prov.gerar_centro_otimo("Goiânia/GO;São Paulo/SP;Manaus/AM",
+                                destinos="Belém/PA;Rio de Janeiro/RJ;Fortaleza/CE", k=2)
+    assert h and os.path.exists(h)
+
 
 # ============================================================================
 #  QUALIDADE DE COORDENADAS — guarda anti-regressão do defeito Brasília/Vitória.

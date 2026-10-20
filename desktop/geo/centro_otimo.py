@@ -166,9 +166,233 @@ def _avisos_texto(r: dict, L: list) -> None:
         L.append("⚠ Destino(s) não resolvido(s) e fora da análise: %s" % ", ".join(str(x) for x in nrd))
 
 
+# ----------------------------------------------------------------------------
+#  K HUBS — múltiplos centros de apoio (p-mediana / p-centro). Cada destino é
+#  atendido pelo hub escolhido MAIS PRÓXIMO; escolhemos o conjunto de k hubs que
+#  minimiza a soma (p-mediana) ou o pior caso (p-centro). Exato por enumeração
+#  quando viável (C pequeno), guloso (aproximação declarada) caso contrário.
+# ----------------------------------------------------------------------------
+def _dist_cd(cand, dest, usar_osrm, osrm_url):
+    """Matriz candidato×destino (km) como list[C][D] + modo. Geodésico (haversine) ou OSRM."""
+    import numpy as np
+    from geo import isocronas
+    d_lons = np.array([p["lon"] for p in dest], dtype="float64")
+    d_lats = np.array([p["lat"] for p in dest], dtype="float64")
+    linhas = [[float(v) for v in isocronas._haversine_km(c["lon"], c["lat"], d_lons, d_lats)] for c in cand]
+    modo = "geodesico"
+    if usar_osrm:
+        rod = _matriz_osrm_cd(cand, dest, osrm_url or _osrm_url())
+        if rod is not None:
+            linhas = [[float(v) for v in row] for row in rod]
+            modo = "rodoviario"
+    return linhas, modo
+
+
+def _aval_subset(D, S, nd):
+    """Para o conjunto de hubs S (índices de candidatos), atribui cada destino ao hub mais próximo.
+    Devolve (total, pior_caso, atribuicao=[(destino_idx, hub_idx, km)])."""
+    total = 0.0
+    mx = 0.0
+    atrib = []
+    for j in range(nd):
+        best = None
+        bc = None
+        for c in S:
+            v = D[c][j]
+            if best is None or v < best:
+                best = v
+                bc = c
+        total += best
+        if best > mx:
+            mx = best
+        atrib.append((j, bc, best))
+    return total, mx, atrib
+
+
+def _val(D, S, nd, criterio):
+    total, mx, _ = _aval_subset(D, S, nd)
+    return total if criterio == "soma" else mx
+
+
+def _exato(D, C, nd, k, criterio):
+    from itertools import combinations
+    melhor_S = None
+    melhor = None
+    for S in combinations(range(C), k):
+        v = _val(D, S, nd, criterio)
+        if melhor is None or v < melhor - 1e-9:
+            melhor = v
+            melhor_S = list(S)
+    return melhor_S
+
+
+def _guloso(D, C, nd, k, criterio):
+    """Guloso: adiciona a cada passo o candidato que mais reduz o critério. Aproximação (declarada)."""
+    chosen = []
+    remaining = set(range(C))
+    while len(chosen) < k and remaining:
+        best_add = None
+        best = None
+        for c in remaining:
+            v = _val(D, chosen + [c], nd, criterio)
+            if best is None or v < best - 1e-9:
+                best = v
+                best_add = c
+        chosen.append(best_add)
+        remaining.discard(best_add)
+    return chosen
+
+
+def _montar_solucao(S, cand, dest, D):
+    nd = len(dest)
+    total, mx, atrib = _aval_subset(D, S, nd)
+    S = list(S)
+    hubs = [{"nome": cand[i]["nome"], "uf": cand[i].get("uf", ""),
+             "lon": cand[i]["lon"], "lat": cand[i]["lat"]} for i in S]
+    atribuicao = [{"destino": _rotulo(dest[j]), "hub": _rotulo(cand[c]),
+                   "hub_pos": S.index(c), "km": round(km, 1)} for (j, c, km) in atrib]
+    return {"hub_idx": S, "hubs": hubs, "total_km": round(total, 1),
+            "max_km": round(mx, 1), "atribuicao": atribuicao}
+
+
+def calcular_k(candidatos, destinos=None, k: int = 2, usar_osrm: bool = False, osrm_url=None, reg=None) -> dict:
+    """Escolhe k hubs (dentre os candidatos) atendendo cada destino pelo hub mais próximo. Devolve
+    {ok, k, modo, metodo('exato'|'guloso'), candidatos, destinos, solucao_soma, solucao_max,
+    nao_resolvidos_*}. solucao_soma minimiza a SOMA (p-mediana); solucao_max minimiza o PIOR CASO
+    (p-centro). Sem destinos, usa os candidatos. Nunca levanta."""
+    base = {"ok": False, "k": int(k or 0), "modo": "geodesico"}
+    try:
+        reg = reg or _reg()
+        cand, nao_c = _resolver_lista(candidatos, reg)
+        self_dest = destinos is None or (isinstance(destinos, str) and not destinos.strip()) \
+            or (isinstance(destinos, (list, tuple)) and len(destinos) == 0)
+        if self_dest:
+            dest, nao_d = list(cand), []
+        else:
+            dest, nao_d = _resolver_lista(destinos, reg)
+        base["nao_resolvidos_candidatos"] = nao_c
+        base["nao_resolvidos_destinos"] = nao_d
+        C, nd = len(cand), len(dest)
+        k = int(k)
+        if C < 1 or nd < 1:
+            base["detalhe"] = "informe ao menos 1 candidato e 1 destino resolvíveis"
+            return base
+        if k < 1:
+            base["detalhe"] = "k deve ser >= 1"
+            return base
+        k = min(k, C)   # não há como escolher mais hubs do que candidatos disponíveis
+        D, modo = _dist_cd(cand, dest, usar_osrm, osrm_url)
+        from math import comb
+        exato = (C <= 22 and comb(C, k) <= 50000)
+        metodo = "exato" if exato else "guloso"
+        if exato:
+            S_soma = _exato(D, C, nd, k, "soma")
+            S_max = _exato(D, C, nd, k, "max")
+        else:
+            S_soma = _guloso(D, C, nd, k, "soma")
+            S_max = _guloso(D, C, nd, k, "max")
+        base.update({
+            "ok": True, "k": k, "modo": modo, "metodo": metodo, "self_dest": self_dest,
+            "candidatos": [{"nome": c["nome"], "uf": c.get("uf", ""), "lon": c["lon"], "lat": c["lat"],
+                            "ambiguo": bool(c.get("ambiguo")), "ufs_alt": c.get("ufs_alt", [])} for c in cand],
+            "destinos": [{"nome": p["nome"], "uf": p.get("uf", ""), "lon": p["lon"], "lat": p["lat"]} for p in dest],
+            "solucao_soma": _montar_solucao(S_soma, cand, dest, D),
+            "solucao_max": _montar_solucao(S_max, cand, dest, D),
+            "nota": ("%d hub(s) por %s, distância %s, atendendo %d destino(s) pelo hub mais próximo%s."
+                     % (k, "enumeração exata" if exato else "aproximação gulosa",
+                        "rodoviária (OSRM)" if modo == "rodoviario" else "geodésica (linha reta)",
+                        nd, " (destinos = candidatos)" if self_dest else "")),
+        })
+        return base
+    except Exception:
+        logger.warning("[CENTRO] cálculo de k hubs falhou.", exc_info=True)
+        return base
+
+
+def _texto_k(r: dict) -> str:
+    L = ["CENTRO ÓTIMO — %d HUBS — OpenRotas" % r["k"], "=" * 60,
+         "modo: %s · método: %s · %d candidato(s) · %d destino(s)"
+         % (r["modo"], r["metodo"], len(r["candidatos"]), len(r["destinos"])), ""]
+    for titulo, chave, met in (("MENOR DISTÂNCIA TOTAL (p-mediana)", "solucao_soma", "total_km"),
+                               ("MENOR PIOR CASO (p-centro)", "solucao_max", "max_km")):
+        s = r[chave]
+        hubs = ", ".join("%s%s" % (h["nome"], ("/" + h["uf"]) if h.get("uf") else "") for h in s["hubs"])
+        L.append("★ %s" % titulo)
+        L.append("    hubs: %s" % hubs)
+        L.append("    total %.0f km · pior caso %.0f km" % (s["total_km"], s["max_km"]))
+        L.append("")
+    # Atribuição da solução p-mediana (a mais usada para planejamento agregado).
+    L.append("Atribuição (p-mediana) — cada destino ao hub mais próximo:")
+    for a in r["solucao_soma"]["atribuicao"]:
+        L.append("  %-26s → %-20s %7.0f km" % (a["destino"], a["hub"], a["km"]))
+    L.append("")
+    avisos = []
+    _avisos_texto(r, avisos)
+    L.extend(avisos)
+    L.append(r["nota"] + " (valores em km)")
+    return "\n".join(L)
+
+
+def _html_k(r: dict, tema) -> str:
+    ss, sm = r["solucao_soma"], r["solucao_max"]
+    hubs_soma = ", ".join(html.escape("%s%s" % (h["nome"], ("/" + h["uf"]) if h.get("uf") else "")) for h in ss["hubs"])
+    hubs_max = ", ".join(html.escape("%s%s" % (h["nome"], ("/" + h["uf"]) if h.get("uf") else "")) for h in sm["hubs"])
+    corpo = ["<section class='card'><h2>%d hubs — melhor conjunto</h2><div class='kpis'>" % r["k"],
+             "<div class='kpi'><div class='v'>%.0f km</div><div class='l'>Total (p-mediana)</div></div>" % ss["total_km"],
+             "<div class='kpi'><div class='v'>%.0f km</div><div class='l'>Pior caso (p-centro)</div></div>" % sm["max_km"],
+             "<div class='kpi'><div class='v'>%d</div><div class='l'>Hubs</div></div>" % r["k"],
+             "<div class='kpi'><div class='v'>%s</div><div class='l'>Método</div></div>"
+             % ("exato" if r["metodo"] == "exato" else "guloso (aprox.)"),
+             "<div class='kpi'><div class='v'>%s</div><div class='l'>Modo</div></div>"
+             % ("rodoviário" if r["modo"] == "rodoviario" else "geodésico"),
+             "</div>",
+             "<p class='sub' style='margin:10px 2px 0'>Hubs por menor distância <b>total</b>: %s.</p>" % hubs_soma,
+             "<p class='sub' style='margin:4px 2px 0'>Hubs por menor <b>pior caso</b>: %s.</p>" % hubs_max]
+    avisos = []
+    _avisos_texto(r, avisos)
+    for a in avisos:
+        corpo.append("<p class='sub' style='margin:8px 2px 0;color:var(--warn,#b45309)'>%s</p>" % html.escape(a))
+    corpo.append("</section>")
+    # Mapa: raios de cada hub (p-mediana) aos seus destinos atribuídos, sobre os municípios.
+    try:
+        from audit import coverage_auditor as ca
+        lons, lats, _u = ca.pontos_municipios()
+        # Agrupa destinos por hub e desenha ida-e-volta ao hub (as linhas só tocam os hubs).
+        porhub = {}
+        for a in ss["atribuicao"]:
+            porhub.setdefault(a["hub_pos"], []).append(a["destino"])
+        dest_por_rotulo = {_rotulo(d): (d["lon"], d["lat"]) for d in r["destinos"]}
+        estrela = []
+        for pos, h in enumerate(ss["hubs"]):
+            hc = (h["lon"], h["lat"])
+            for drot in porhub.get(pos, []):
+                dc = dest_por_rotulo.get(drot)
+                if dc:
+                    estrela.extend([hc, dc, hc])
+        m = tema.mapa_dispersao(lons, lats, rota=estrela,
+                                titulo="%d HUBS (p-mediana) → DESTINOS ATRIBUÍDOS" % r["k"]) if lons and estrela else ""
+        if m:
+            corpo.append("<section class='card'><h2>Hubs e atribuição no mapa</h2>%s"
+                         "<p class='empty' style='margin:8px 2px 0'>Cada destino ligado ao seu hub mais "
+                         "próximo (solução de menor distância total), sobre os municípios do Brasil.</p></section>" % m)
+    except Exception:
+        pass
+    # Tabela de atribuição (p-mediana).
+    corpo.append("<section class='card'><h2>Atribuição (p-mediana)</h2>"
+                 "<table><thead><tr><th>Destino</th><th>Hub mais próximo</th><th class='num'>km</th></tr></thead><tbody>")
+    for a in sorted(ss["atribuicao"], key=lambda x: (x["hub"], -x["km"])):
+        corpo.append("<tr><td>%s</td><td>%s</td><td class='num'>%.0f</td></tr>"
+                     % (html.escape(a["destino"]), html.escape(a["hub"]), a["km"]))
+    corpo.append("</tbody></table></section>")
+    return tema.documento("Centro Ótimo — %d hubs" % r["k"], r["nota"], "".join(corpo),
+                          "Destinos: " + " · ".join(_rotulo(d) for d in r["destinos"]))
+
+
 def render_texto(r: dict) -> str:
     if not r.get("ok"):
         return "Centro ótimo indisponível: %s" % r.get("detalhe", "erro")
+    if r.get("solucao_soma") is not None and "k" in r:
+        return _texto_k(r)
     L = ["CENTRO ÓTIMO — OpenRotas", "=" * 60, "modo: %s · %d candidato(s) · %d destino(s)"
          % (r["modo"], len(r["candidatos"]), len(r["destinos"])), ""]
     ms, mm = r["melhor_soma"], r["melhor_max"]
@@ -201,6 +425,10 @@ def construir_html(r: dict) -> str:
         if tema is None:
             return "<!doctype html><html><head><meta charset='utf-8'></head><body><pre>%s</pre></body></html>" % html.escape(txt)
         return tema.documento("Centro Ótimo", "", "<p class='empty'>%s</p>" % html.escape(txt))
+    if r.get("solucao_soma") is not None and "k" in r:
+        if tema is None:
+            return "<!doctype html><html><head><meta charset='utf-8'><title>Centro Ótimo — OpenRotas</title></head><body><pre>%s</pre></body></html>" % html.escape(render_texto(r))
+        return _html_k(r, tema)
     ms, mm = r["melhor_soma"], r["melhor_max"]
     corpo = ["<section class='card'><h2>Melhor ponto de apoio</h2><div class='kpis'>",
              "<div class='kpi'><div class='v'>%s%s</div><div class='l'>Menor distância total</div></div>"
@@ -262,11 +490,34 @@ def construir_html(r: dict) -> str:
                           "Destinos: " + " · ".join(_rotulo(d) for d in r["destinos"]))
 
 
+def _excel_k(r: dict, caminho) -> str | None:
+    try:
+        import pandas as pd
+        def _hubs_rows(sol, criterio):
+            return [{"criterio": criterio, "hub": "%s%s" % (h["nome"], ("/" + h["uf"]) if h.get("uf") else ""),
+                     "total_km": sol["total_km"], "pior_caso_km": sol["max_km"]} for h in sol["hubs"]]
+        hubs = pd.DataFrame(_hubs_rows(r["solucao_soma"], "menor_total")
+                            + _hubs_rows(r["solucao_max"], "menor_pior_caso"))
+        atrib = pd.DataFrame([{"destino": a["destino"], "hub": a["hub"], "km": a["km"]}
+                             for a in r["solucao_soma"]["atribuicao"]])
+        pth = Path(caminho)
+        pth.parent.mkdir(parents=True, exist_ok=True)
+        with pd.ExcelWriter(str(pth), engine="openpyxl") as xw:
+            hubs.to_excel(xw, sheet_name="Hubs", index=False)
+            atrib.to_excel(xw, sheet_name="Atribuicao_pmediana", index=False)
+        return str(pth)
+    except Exception:
+        logger.warning("[CENTRO] falha ao exportar Excel (k hubs).", exc_info=True)
+        return None
+
+
 def exportar_excel(r: dict, caminho) -> str | None:
     try:
         if not r.get("ok"):
             return None
         import pandas as pd
+        if r.get("solucao_soma") is not None and "k" in r:
+            return _excel_k(r, caminho)
         rows = [{"candidato": _rotulo(c), "total_km": c["soma_km"], "pior_caso_km": c["max_km"],
                  "media_km": c["media_km"]} for c in sorted(r["candidatos"], key=lambda x: x["soma_km"])]
         df = pd.DataFrame(rows)
@@ -303,19 +554,30 @@ def _cli(argv=None) -> int:
     if "--destinos" in argv:
         j = argv.index("--destinos")
         destinos = argv[j + 1] if j + 1 < len(argv) else None
+    k_val = None
+    if "--k" in argv:
+        j = argv.index("--k")
+        kv = argv[j + 1] if j + 1 < len(argv) else None
+        try:
+            k_val = int(kv)
+        except Exception:
+            k_val = None
     candidatos = None
     for i, a in enumerate(argv):
         if a.startswith("--"):
             continue
-        if a == destinos:
+        if a == destinos:          # não confunde a lista de destinos com a de candidatos
             continue
         if ";" in a:
             candidatos = a
             break
     if not candidatos:
-        print('uso: --centro "Cand/UF;Cand/UF;..." [--destinos "Dest/UF;Dest/UF;..."] [--osrm] [--html] [--excel]')
+        print('uso: --centro "Cand/UF;Cand/UF;..." [--destinos "Dest/UF;..."] [--k N] [--osrm] [--html] [--excel]')
         return 2
-    r = calcular(candidatos, destinos=destinos, usar_osrm=usar_osrm)
+    if k_val and k_val >= 2:
+        r = calcular_k(candidatos, destinos=destinos, k=k_val, usar_osrm=usar_osrm)
+    else:
+        r = calcular(candidatos, destinos=destinos, usar_osrm=usar_osrm)
     print(render_texto(r))
     if r.get("ok") and ("--html" in argv or "--excel" in argv):
         try:

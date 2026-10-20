@@ -486,13 +486,21 @@ def gerar_matriz_od(locais) -> str | None:
         return None
 
 
-def gerar_centro_otimo(candidatos, destinos=None) -> str | None:
-    """Gera o painel Centro Ótimo (HTML) em exports/ — melhor candidato por distância total e por
-    pior caso aos destinos (sem destinos, usa os próprios candidatos). None se nada resolve."""
+def gerar_centro_otimo(candidatos, destinos=None, k=None) -> str | None:
+    """Gera o painel Centro Ótimo (HTML) em exports/. Com k>=2, escolhe k hubs (p-mediana / p-centro,
+    cada destino atendido pelo hub mais próximo); senão, o melhor candidato único (total / pior caso).
+    Sem destinos, usa os próprios candidatos. None se nada resolve."""
     try:
         sys.path.insert(0, str(_AQUI.parent))
         from geo import centro_otimo
-        r = centro_otimo.calcular(candidatos, destinos=destinos)
+        try:
+            kk = int(k) if k is not None else None
+        except Exception:
+            kk = None
+        if kk and kk >= 2:
+            r = centro_otimo.calcular_k(candidatos, destinos=destinos, k=kk)
+        else:
+            r = centro_otimo.calcular(candidatos, destinos=destinos)
         if not r.get("ok"):
             return None
         return centro_otimo.gerar(_pasta_saida("exports") / "centro_otimo.html", r)
