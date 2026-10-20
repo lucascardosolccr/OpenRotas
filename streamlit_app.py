@@ -21789,6 +21789,27 @@ def _exemplo_planilha_saida():
 
 
 
+def _ref_distancia_impossivel(l) -> bool:
+    """[COMPARA-JUSTA] True quando a distância da REFERÊNCIA nesta linha é FISICAMENTE IMPOSSÍVEL
+    (menor que a linha reta geodésica — nenhuma estrada é mais curta que o 'voo de pássaro') ou já foi
+    marcada inválida por _comparar_alocacoes. Reusa os rótulos por linha ('Vitoria por Ref Invalida' /
+    'Ref Distancia Invalida') e cai para o piso geodésico ('Linha Reta Referencia (km)') como rede de
+    segurança. PURO. Serve para TIRAR números bogus do confronto de deslocamento total: deixá-los decidir
+    o veredito seria o espelho do erro que o app já evita POR LINHA (a economia contra um número impossível
+    já é neutralizada em _comparar_alocacoes). Um estudo não 'reduz deslocamento' com uma distância que
+    nenhuma estrada percorre."""
+    try:
+        if str(l.get("Vitoria por Ref Invalida", "") or "").strip().lower() == "sim":
+            return True
+        if str(l.get("Ref Distancia Invalida", "") or "").strip():
+            return True
+        _dr = _num_seguro(l.get("Distancia Referencia"))
+        _rt = _num_seguro(l.get("Linha Reta Referencia (km)"))
+        return bool(_dr is not None and _rt is not None and _rt > 0 and _dr < _rt - 0.5)
+    except Exception:
+        return False
+
+
 def _perfil_estudo(linhas, lado="app", parse_tempo=None):
     """[PERFIL - 166ª geração] PERFIL AUTÔNOMO de um estudo — como se ele existisse sozinho.
 
@@ -21991,12 +22012,35 @@ def _diagnostico_imparcial(linhas):
     # ---- quem reduz mais o quê ----
     _resp = []
     if _app and _ref:
-        _q1 = ("A NOSSA aplicação" if _app["km_candidato_total"] < _ref["km_candidato_total"]
-               else "O ESTUDO CONCORRENTE")
-        _dif = abs(_app["km_candidato_total"] - _ref["km_candidato_total"])
+        # [COMPARA-JUSTA] O confronto de DESLOCAMENTO TOTAL soma distância×candidatos. Se a referência
+        # reportou distâncias FISICAMENTE IMPOSSÍVEIS (menores que a linha reta), somá-las deixaria um
+        # número bogus decidir o veredito — o espelho do erro que o app já neutraliza POR LINHA. Então o
+        # total de CADA estudo é somado SÓ nas linhas com distância de referência válida (o MESMO conjunto
+        # para os dois → apples-to-apples). As linhas inválidas já são vitória da app, contadas à parte.
+        _ok_rv = [l for l in _ok if not _ref_distancia_impossivel(l)]
+        _n_rinv = len(_ok) - len(_ok_rv)
+
+        def _kmcand(_linhas, _campo):
+            _s = 0.0
+            for _l in _linhas:
+                _d = _num_seguro(_l.get(_campo))
+                _i = _num_seguro(_l.get("Inscritos")) or 0.0
+                if _d is not None and _d > 0:
+                    _s += _d * max(_i, 1.0)
+            return _s
+        _tot_app = _kmcand(_ok_rv, "Distancia Aplicacao")
+        _tot_ref = _kmcand(_ok_rv, "Distancia Referencia")
+        _q1 = "A NOSSA aplicação" if _tot_app <= _tot_ref else "O ESTUDO CONCORRENTE"
+        _dif = abs(_tot_app - _tot_ref)
+        _base1 = ("Soma de (distância × candidatos) nos municípios com distância de referência "
+                  "fisicamente válida")
+        if _n_rinv:
+            _base1 += (f"; {_n_rinv} município(s) fora do confronto porque a referência reportou distância "
+                       f"menor que a linha reta geodésica (impossível por estrada) — essas já são vitória "
+                       f"da aplicação, contadas à parte")
         _resp.append({"Pergunta": "Qual estudo reduz mais o DESLOCAMENTO total?",
                       "Resposta": f"{_q1} — diferença de {_dif:,.0f} km-candidato.".replace(",", "."),
-                      "Base": "Soma de (distância × candidatos) nos municípios comparáveis."})
+                      "Base": _base1 + "."})
         if _app.get("tempo_medio_min") and _ref.get("tempo_medio_min"):
             _q2 = ("A NOSSA aplicação" if _app["tempo_medio_min"] < _ref["tempo_medio_min"]
                    else "O ESTUDO CONCORRENTE")
