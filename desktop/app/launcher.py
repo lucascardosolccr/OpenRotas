@@ -400,6 +400,7 @@ _AJUDA = """OpenRotas Desktop — uso:
   OpenRotas.exe --grafo-multimodal [--html]   conectividade entre modais (hubs + transposições + matriz)
   OpenRotas.exe --isocronas "Cidade/UF" [--faixas=100,300,600,1000] [--html]   alcance por faixas de distância
   OpenRotas.exe --matriz "Cidade/UF;Cidade/UF;..." [--html] [--excel]   matriz de distâncias origem↔destino
+  OpenRotas.exe --centro "Cand/UF;Cand/UF;..." [--destinos "Dest/UF;..."] [--html] [--excel]   melhor ponto de apoio (menor distância total / pior caso)
   OpenRotas.exe --telemetria-ana [--atualizar]   telemetria local + atualização incremental (§35)
   OpenRotas.exe --auditoria --relatorio   salva o Relatório de Cobertura Nacional (.md) em exports/
   OpenRotas.exe --recursos      status dos recursos (Gerenciador de Recursos)
@@ -747,6 +748,15 @@ def main() -> int:
             return matriz_od._cli([a for a in sys.argv[1:] if a != "--matriz"])
         except Exception as e:
             print("Matriz origem↔destino indisponível: %s" % e)
+            return 1
+
+    # Modo CENTRO ÓTIMO (§29): melhor candidato (menor distância total / menor pior caso) aos destinos. Sai.
+    if "--centro" in sys.argv:
+        try:
+            from geo import centro_otimo
+            return centro_otimo._cli([a for a in sys.argv[1:] if a != "--centro"])
+        except Exception as e:
+            print("Centro ótimo indisponível: %s" % e)
             return 1
 
     # Modo TELEMETRIA ANA (§11/§35): inventário local + atualização incremental (--atualizar online). Sai.

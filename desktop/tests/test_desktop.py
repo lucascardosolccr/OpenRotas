@@ -2206,6 +2206,71 @@ def test_matriz_local_nao_resolvido_avisa():
 
 
 # ============================================================================
+#  CENTRO ÓTIMO — localização de facilidade (p-mediana / 1-centro).
+# ============================================================================
+def test_centro_otimo_geodesico():
+    from geo import centro_otimo as co
+    # Goiânia (central) deve bater São Paulo e Recife para atender Belém/POA/Rio/Manaus.
+    r = co.calcular("Goiânia/GO;São Paulo/SP;Recife/PE",
+                    destinos="Belém/PA;Porto Alegre/RS;Rio de Janeiro/RJ;Manaus/AM")
+    assert r["ok"] and r["modo"] == "geodesico"
+    assert len(r["candidatos"]) == 3 and len(r["destinos"]) == 4
+    assert r["melhor_soma"]["nome"] == "Goiânia" and r["melhor_max"]["nome"] == "Goiânia"
+    # soma/máx coerentes: o melhor por soma tem a menor soma do conjunto.
+    menor_soma = min(c["soma_km"] for c in r["candidatos"])
+    assert abs(r["melhor_soma"]["soma_km"] - menor_soma) < 0.5
+    assert "CENTRO ÓTIMO" in co.render_texto(r)
+
+def test_centro_otimo_self_dest():
+    # Sem destinos → candidatos são os destinos (o mais central do conjunto).
+    from geo import centro_otimo as co
+    r = co.calcular("São Paulo/SP;Rio de Janeiro/RJ;Brasília/DF;Fortaleza/CE")
+    assert r["ok"] and r.get("self_dest") and len(r["destinos"]) == 4
+    # distância do candidato a si mesmo é 0 → entra na soma sem quebrar.
+    assert all(c["soma_km"] >= 0 for c in r["candidatos"])
+
+def test_centro_otimo_osrm_cai_em_geodesico_sem_rede(monkeypatch):
+    monkeypatch.setenv("OPENROTAS_NO_NET", "1")
+    from geo import centro_otimo as co
+    r = co.calcular("Goiânia/GO;São Paulo/SP", destinos="Belém/PA;Porto Alegre/RS", usar_osrm=True)
+    assert r["ok"] and r["modo"] == "geodesico"
+
+def test_centro_otimo_avisa_ambiguo_e_nao_resolvido():
+    from geo import centro_otimo as co
+    r = co.calcular("Bom Jesus;CidadeInexistenteZZZ;São Paulo/SP", destinos="Rio de Janeiro/RJ")
+    assert r["ok"] and r["nao_resolvidos_candidatos"] == ["CidadeInexistenteZZZ"]
+    t = co.render_texto(r); h = co.construir_html(r)
+    assert "ambígua" in t and "não resolvido" in t.lower()
+    assert "ambígua" in h and "não resolvido" in h.lower()
+
+def test_centro_otimo_html_e_excel(tmp_path):
+    import openpyxl
+    from geo import centro_otimo as co
+    r = co.calcular("Goiânia/GO;São Paulo/SP;Brasília/DF", destinos="Belém/PA;Porto Alegre/RS;Recife/PE")
+    assert r["ok"]
+    h = co.construir_html(r)
+    assert h.startswith("<!doctype html>") and "Centro Ótimo" in h and "ork-theme-toggle" in h
+    out = tmp_path / "c.html"
+    assert co.gerar(out, r) == str(out) and out.exists()
+    xo = tmp_path / "c.xlsx"
+    assert co.exportar_excel(r, xo) == str(xo) and xo.exists()
+    nomes = openpyxl.load_workbook(xo).sheetnames
+    assert "Ranking" in nomes and "Distancias_km" in nomes
+
+def test_centro_otimo_menos_de_1_destino():
+    from geo import centro_otimo as co
+    assert co.calcular("ZzzNadaQqq")["ok"] is False
+
+def test_provisionamento_gera_centro_otimo(tmp_path, monkeypatch):
+    import sys as _sys
+    _sys.path.insert(0, "resources")
+    import provisionamento as prov
+    h = prov.gerar_centro_otimo("Goiânia/GO;São Paulo/SP", destinos="Belém/PA;Porto Alegre/RS")
+    assert h and os.path.exists(h)
+    assert prov.gerar_centro_otimo("ZzzCidadeInexistenteQqq") is None
+
+
+# ============================================================================
 #  QUALIDADE DE COORDENADAS — guarda anti-regressão do defeito Brasília/Vitória.
 # ============================================================================
 def test_coverage_ponto_no_corpo_helper():

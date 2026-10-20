@@ -234,6 +234,8 @@ class _App:
         ttk.Button(la2, text="Isócronas (alcance)…", command=self._on_isocronas).pack(side="left")
         ttk.Button(la2, text="Matriz origem↔destino…", command=self._on_matriz).pack(side="left", padx=8)
         ttk.Button(la2, text="Comparar rotas…", command=self._on_comparar).pack(side="left")
+        la3 = _linha(ana)
+        ttk.Button(la3, text="Centro ótimo…", command=self._on_centro).pack(side="left")
 
         # ------------------------------------------------------------- SEÇÃO: sistema / diagnóstico
         sis = _secao("Sistema, diagnóstico e pastas")
@@ -430,6 +432,21 @@ class _App:
                                    parent=self.root)
         if s:
             self._analise("Matriz O↔D", lambda ss=s: prov.gerar_matriz_od(ss))
+
+    def _on_centro(self):
+        from tkinter import simpledialog
+        cand = simpledialog.askstring("Centro ótimo — candidatos",
+                                      "Candidatos separados por ; (Cidade/UF):",
+                                      initialvalue="Goiânia/GO;São Paulo/SP;Brasília/DF",
+                                      parent=self.root)
+        if not cand:
+            return
+        dest = simpledialog.askstring("Centro ótimo — destinos",
+                                      "Destinos separados por ; (vazio = usar os candidatos):",
+                                      initialvalue="",
+                                      parent=self.root)
+        self._analise("Centro Ótimo",
+                      lambda c=cand, d=(dest or None): prov.gerar_centro_otimo(c, destinos=d))
 
     def _on_comparar(self):
         from tkinter import simpledialog

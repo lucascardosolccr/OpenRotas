@@ -486,6 +486,20 @@ def gerar_matriz_od(locais) -> str | None:
         return None
 
 
+def gerar_centro_otimo(candidatos, destinos=None) -> str | None:
+    """Gera o painel Centro Ótimo (HTML) em exports/ — melhor candidato por distância total e por
+    pior caso aos destinos (sem destinos, usa os próprios candidatos). None se nada resolve."""
+    try:
+        sys.path.insert(0, str(_AQUI.parent))
+        from geo import centro_otimo
+        r = centro_otimo.calcular(candidatos, destinos=destinos)
+        if not r.get("ok"):
+            return None
+        return centro_otimo.gerar(_pasta_saida("exports") / "centro_otimo.html", r)
+    except Exception:
+        return None
+
+
 def saude_nacional_texto(rapido: bool = True) -> str:
     """Relatório de SAÚDE NACIONAL dos dados (audit.saude_nacional): cobertura/qualidade das bases
     por área, como texto para a UI. `rapido=True` faz a checagem leve (schema/presença). Nunca
