@@ -111,7 +111,7 @@ def resolver_local(texto, reg=None) -> dict:
             return {"ok": False, "detalhe": "cidade não encontrada: %s" % texto, "candidatos": []}
         gc = sub["geocodigo"].astype(str).str.replace(r"\D", "", regex=True).str.zfill(7)
         ufs = [ca.UF_POR_CODIGO.get(int(c[:2])) for c in gc]
-        cand = [{"nome": str(sub["nome"].iloc[i]), "uf": ufs[i],
+        cand = [{"nome": str(sub["nome"].iloc[i]), "uf": ufs[i], "geocodigo": str(gc.iloc[i]),
                  "lon": float(sub["lon"].iloc[i]), "lat": float(sub["lat"].iloc[i])}
                 for i in range(len(sub))]
         if uf_q:
@@ -120,7 +120,7 @@ def resolver_local(texto, reg=None) -> dict:
                 cand = cand_uf
         escolhido = cand[0]
         return {"ok": True, "lon": escolhido["lon"], "lat": escolhido["lat"],
-                "nome": escolhido["nome"], "uf": escolhido["uf"],
+                "nome": escolhido["nome"], "uf": escolhido["uf"], "geocodigo": escolhido.get("geocodigo", ""),
                 "ambiguo": len(cand) > 1, "candidatos": cand}
     except Exception:
         logger.warning("[DOSSIE] resolução de %r falhou.", texto, exc_info=True)

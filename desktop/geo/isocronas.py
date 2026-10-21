@@ -153,6 +153,10 @@ def calcular(origem, faixas_km=_FAIXAS_PADRAO, usar_osrm: bool = False, osrm_url
         lats = df["lat"].to_numpy(dtype="float64")
         nomes = df["nome"].astype(str).tolist()
         ufs = ca._uf_do_geocodigo(df["geocodigo"]).tolist()
+        from geo import distancia
+        # CONSCIÊNCIA FLUVIAL: municípios de acesso só fluvial/isolado (sem estrada) — recebem o fator
+        # de sinuosidade FLUVIAL (~3×), não o rodoviário (uma estrada que não existe).
+        fluv_mask = np.array(distancia.mascara_acesso_fluvial(df["geocodigo"].astype(str).tolist()), dtype=bool)
         faixas = sorted(float(f) for f in faixas_km if float(f) > 0)
         if not faixas:
             faixas = list(_FAIXAS_PADRAO)
@@ -172,13 +176,11 @@ def calcular(origem, faixas_km=_FAIXAS_PADRAO, usar_osrm: bool = False, osrm_url
             # nunca reporta a reta crua. A reta permanece em `_reta` como piso. (isocronas.calcular)
             nao_ref = ~refinados
             if bool(nao_ref.any()):
-                from geo import distancia
-                est = distancia.estimar_rodoviaria_vetor(reta)
+                est = distancia.estimar_rodoviaria_vetor(reta, fluvial=fluv_mask)
                 dist = np.where(nao_ref, est, dist)
                 if modo == "geodesico":
                     modo = "estimado"
         idx = np.searchsorted(np.array(faixas), dist, side="left")   # 0..len-1 = faixa; len = fora
-        from geo import distancia
         bandas = []
         for i, ate in enumerate(faixas):
             sel = np.nonzero(idx == i)[0]
@@ -192,9 +194,11 @@ def calcular(origem, faixas_km=_FAIXAS_PADRAO, usar_osrm: bool = False, osrm_url
                            "ufs": ufset, "cumulativo": int(np.count_nonzero(idx <= i)),
                            "exemplos": exemplos, "tempo_min": tmin})
         alcancados = int(np.count_nonzero(idx < len(faixas)))
+        fluvial_alcancados = int(np.count_nonzero(fluv_mask & (idx < len(faixas))))
         base.update({
             "ok": True, "origem": o, "modo": modo, "faixas_km": [int(f) for f in faixas],
             "bandas": bandas, "total_municipios": int(len(lons)), "alcancados": alcancados,
+            "acesso_fluvial_alcancados": fluvial_alcancados,
             "_dist": dist, "_idx": idx, "_lons": lons, "_lats": lats, "_reta": reta,  # internos p/ o mapa
             "nota": ("Distância %s a partir de %s%s."
                      % (distancia.descricao_modo(modo), o["nome"],
@@ -231,6 +235,10 @@ def render_texto(r: dict) -> str:
     if o.get("coord_suspeita"):
         L.append("⚠ coordenada da origem suspeita (verifique a ordem lon,lat / se está no Brasil): %s"
                  % "; ".join(o["coord_suspeita"]))
+        L.append("")
+    if r.get("acesso_fluvial_alcancados"):
+        L.append("🛶 " + distancia.aviso_fluvial(r["acesso_fluvial_alcancados"])
+                 + " (alcançados; estimados por rio, por isso caem em faixas mais distantes).")
         L.append("")
     for b in r["bandas"]:
         _dur = distancia.formatar_duracao(b.get("tempo_min"))
@@ -276,6 +284,10 @@ def construir_html(r: dict) -> str:
         corpo.append("<p class='sub' style='margin:10px 2px 0;color:var(--warn,#b45309)'>"
                      "⚠ Coordenada da origem suspeita — verifique a ordem <b>lon,lat</b> e se está no "
                      "Brasil: %s.</p>" % html.escape("; ".join(o["coord_suspeita"])))
+    if r.get("acesso_fluvial_alcancados"):
+        corpo.append("<p class='sub' style='margin:10px 2px 0;color:var(--warn,#b45309)'>🛶 %s "
+                     "(alcançados; estimados por rio, caem em faixas mais distantes).</p>"
+                     % html.escape(distancia.aviso_fluvial(r["acesso_fluvial_alcancados"])))
     corpo.append("</section>")
     if tema is not None:
         # Mapa nacional colorido por faixa (anéis de alcance) + origem como waypoint.

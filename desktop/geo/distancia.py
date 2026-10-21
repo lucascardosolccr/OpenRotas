@@ -39,6 +39,51 @@ _FATOR_LONGO = 1.18          # ≥ 100 km (malha tronco, mais direta)
 _V_CURTA_KMH = 45.0          # < 50 km: acesso urbano/vicinal
 _V_LONGA_KMH = 65.0          # ≥ 50 km: malha tronco
 
+# [CONSCIÊNCIA FLUVIAL] Fator de sinuosidade FLUVIAL para municípios de acesso só fluvial/aéreo (sem
+# ligação rodoviária): o trajeto REAL é por rio, que meandra muito mais que estrada. A pesquisa de
+# circuidade do web registra ~3,1× a linha reta nas regiões amazônicas fluviais; usamos 3,0 (conservador).
+# Sem isto, o desktop estimava esses municípios por fator RODOVIÁRIO (~1,2×) — uma estrada que não existe.
+_FATOR_FLUVIAL = 3.0
+# Velocidade fluvial típica (barco/lancha regional) para o tempo estimado nesses trechos.
+_V_FLUVIAL_KMH = 22.0
+
+# Municípios de acesso SÓ fluvial (por RIO, sem ligação rodoviária), Códigos IBGE de 7 dígitos — base
+# oficial IBGE REGIC 2018 ("Ligações Rodoviárias e Hidroviárias"). São os 17 amazônicos (15 AM + 2 PA)
+# da lista do web; Fernando de Noronha/PE (2605459) foi DELIBERADAMENTE EXCLUÍDO: é ilha OCEÂNICA (acesso
+# aéreo/marítimo em mar aberto ≈ linha reta), e o fator de sinuosidade FLUVIAL (~3× por meandro de rio)
+# superestimaria muito o seu deslocamento. Para o rio amazônico o ~3× é fiel (circuidade observada ~3,1).
+_MUNICIPIOS_ACESSO_FLUVIAL = frozenset({
+    "1300029", "1300201", "1300409", "1300680", "1301605", "1302108", "1302207", "1302306",
+    "1302801", "1303007", "1303601", "1303908", "1304104", "1304237", "1304260", "1500701",
+    "1502509",
+})
+
+
+def _norm_ibge(cod) -> str:
+    """Normaliza um Código IBGE para 7 dígitos (só dígitos, zero-padding). '' se vazio/inválido."""
+    try:
+        d = "".join(ch for ch in str(cod or "") if ch.isdigit())
+    except Exception:
+        return ""
+    return d.zfill(7) if d else ""
+
+
+def municipio_acesso_fluvial(cod_ibge, conjunto=None) -> bool:
+    """O município (Código IBGE) consta na lista oficial de acesso só fluvial/isolado (sem ligação
+    rodoviária)? Retorna bool. `conjunto` injetável para teste. PURA (paridade com o web)."""
+    conjunto = _MUNICIPIOS_ACESSO_FLUVIAL if conjunto is None else conjunto
+    c = _norm_ibge(cod_ibge)
+    return bool(c) and c in (conjunto or frozenset())
+
+
+def mascara_acesso_fluvial(geocodigos, conjunto=None) -> list:
+    """Máscara booleana (lista) para um iterável de Códigos IBGE: True onde o município é de acesso
+    só fluvial/isolado. Para aplicar o fator fluvial a muitos municípios de uma vez. Nunca levanta."""
+    try:
+        return [municipio_acesso_fluvial(g, conjunto) for g in (geocodigos or [])]
+    except Exception:
+        return []
+
 
 def fator_desvio(reta_km) -> float:
     """Fator de desvio rodoviário (sinuosidade) para uma linha reta em km. Idêntico ao web.
@@ -53,22 +98,23 @@ def fator_desvio(reta_km) -> float:
     return _FATOR_LONGO
 
 
-def estimar_rodoviaria_km(reta_km) -> float:
-    """Estimativa ESCALAR da distância RODOVIÁRIA (km) a partir da linha reta. Piso = a própria reta
-    (fator ≥ 1). Entrada ≤ 0 ou inválida → 0,0. Nunca levanta."""
+def estimar_rodoviaria_km(reta_km, fluvial: bool = False) -> float:
+    """Estimativa ESCALAR da distância (km) a partir da linha reta. Piso = a própria reta (fator ≥ 1).
+    `fluvial=True` usa o fator de sinuosidade FLUVIAL (~3×, acesso só por rio) em vez do rodoviário.
+    Entrada ≤ 0 ou inválida → 0,0. Nunca levanta."""
     try:
         r = float(reta_km)
     except (TypeError, ValueError):
         return 0.0
     if r <= 0:
         return 0.0
-    return r * fator_desvio(r)
+    return r * (_FATOR_FLUVIAL if fluvial else fator_desvio(r))
 
 
-def estimar_rodoviaria_vetor(reta):
-    """Versão VETORIZADA (numpy) de estimar_rodoviaria_km — aplica o fator por faixa element-wise.
-    Aceita array/lista de linhas retas (km); devolve np.ndarray float64 (0,0 onde reta ≤ 0). Sem numpy
-    disponível, cai no map escalar (lista). Nunca levanta."""
+def estimar_rodoviaria_vetor(reta, fluvial=None):
+    """Versão VETORIZADA (numpy) de estimar_rodoviaria_km — fator por faixa element-wise. `fluvial` pode
+    ser None (tudo rodoviário), um bool (todo o vetor), ou uma máscara/array booleana por elemento
+    (fluvial onde True). Devolve np.ndarray float64 (0,0 onde reta ≤ 0). Sem numpy, cai no map escalar."""
     try:
         import numpy as np
         a = np.asarray(reta, dtype="float64")
@@ -77,24 +123,31 @@ def estimar_rodoviaria_vetor(reta):
         for ate, fat in reversed(_BANDAS):
             f = np.where(a < ate, fat, f)
         out = a * f
+        if fluvial is not None:
+            mask = np.asarray(fluvial, dtype=bool)
+            out = np.where(mask, a * _FATOR_FLUVIAL, out)   # fluvial sobrescreve o fator rodoviário
         return np.where(a > 0.0, out, 0.0)
     except Exception:
         try:
-            return [estimar_rodoviaria_km(x) for x in (reta or [])]
+            _fl = bool(fluvial) if not isinstance(fluvial, (list, tuple)) else False
+            return [estimar_rodoviaria_km(x, fluvial=_fl) for x in (reta or [])]
         except Exception:
             return []
 
 
-def estimar_tempo_min(km) -> float:
-    """Tempo estimado (minutos) para uma distância rodoviária em km, pelo mesmo modelo do web:
-    45 km/h abaixo de 50 km, 65 km/h acima. 0,0 para km ≤ 0 ou inválido. Nunca levanta."""
+def estimar_tempo_min(km, fluvial: bool = False) -> float:
+    """Tempo estimado (minutos) para uma distância em km. Rodoviário: 45 km/h < 50 km, 65 km/h acima
+    (modelo do web). `fluvial=True`: velocidade fluvial típica (~22 km/h). 0,0 para km ≤ 0. Nunca levanta."""
     try:
         d = float(km)
     except (TypeError, ValueError):
         return 0.0
     if d <= 0:
         return 0.0
-    v = _V_CURTA_KMH if d < 50.0 else _V_LONGA_KMH
+    if fluvial:
+        v = _V_FLUVIAL_KMH
+    else:
+        v = _V_CURTA_KMH if d < 50.0 else _V_LONGA_KMH
     return round((d / v) * 60.0, 1)
 
 
@@ -136,6 +189,19 @@ def rotulo_modo(modo) -> str:
 def descricao_modo(modo) -> str:
     """Frase descritiva do modo para a nota de rodapé dos relatórios."""
     return _DESCRICAO.get(str(modo), str(modo))
+
+
+def aviso_fluvial(n) -> str:
+    """Frase padrão de aviso para N município(s) de acesso fluvial/isolado, compartilhada pelos
+    relatórios (matriz/isócronas/centro). '' quando n ≤ 0."""
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        return ""
+    if n <= 0:
+        return ""
+    return ("%d município(s) de acesso SÓ fluvial/isolado (sem ligação rodoviária, IBGE REGIC) — a "
+            "distância é estimada por sinuosidade FLUVIAL (~%.0f×), não rodoviária." % (n, _FATOR_FLUVIAL))
 
 
 # ---------------------------------------------------------------------------

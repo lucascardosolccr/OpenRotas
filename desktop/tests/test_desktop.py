@@ -2480,6 +2480,65 @@ def test_repo_proximidade_corrige_longitude(repo):
 
 
 # ============================================================================
+#  CONSCIÊNCIA FLUVIAL — municípios de acesso só fluvial (rio) recebem o fator de
+#  sinuosidade FLUVIAL (~3×), não o rodoviário. Lista oficial IBGE REGIC (17 rios
+#  amazônicos; Fernando de Noronha, ilha oceânica, é EXCLUÍDO do ~3×). Paridade web.
+# ============================================================================
+def test_distancia_lista_fluvial_oficial():
+    from geo import distancia as d
+    assert d.municipio_acesso_fluvial("1300201") is True       # Atalaia do Norte/AM (rio)
+    assert d.municipio_acesso_fluvial("1302108") is True       # Japurá/AM (rio)
+    assert d.municipio_acesso_fluvial("2605459") is False      # Fernando de Noronha — ilha oceânica, NÃO rio
+    assert d.municipio_acesso_fluvial("3550308") is False      # São Paulo — rodoviário
+    assert d.municipio_acesso_fluvial("1.300.201") is True     # normaliza pontuação/zeros
+    assert d.municipio_acesso_fluvial("") is False and d.municipio_acesso_fluvial(None) is False
+    assert len(d._MUNICIPIOS_ACESSO_FLUVIAL) == 17
+
+def test_distancia_fator_fluvial():
+    from geo import distancia as d
+    # fluvial = reta × ~3 (muito maior que o rodoviário ~1,2); piso continua sendo a reta.
+    assert d.estimar_rodoviaria_km(100.0, fluvial=True) == 300.0
+    assert d.estimar_rodoviaria_km(100.0, fluvial=True) > d.estimar_rodoviaria_km(100.0)
+    assert d.estimar_rodoviaria_km(100.0, fluvial=True) >= 100.0
+    # vetor com máscara por elemento: só o 2º é fluvial.
+    import numpy as np
+    v = d.estimar_rodoviaria_vetor([100.0, 100.0], fluvial=[False, True])
+    assert abs(float(v[0]) - 118.0) < 0.1 and abs(float(v[1]) - 300.0) < 0.1
+    # máscara a partir de Códigos IBGE.
+    assert d.mascara_acesso_fluvial(["1300201", "3550308"]) == [True, False]
+    # tempo fluvial é mais lento (~22 km/h) que o rodoviário.
+    assert d.estimar_tempo_min(100.0, fluvial=True) > d.estimar_tempo_min(100.0)
+
+def test_matriz_fluvial_aplica_fator_e_sinaliza():
+    # Manaus ↔ Atalaia do Norte (acesso só por rio): a estimativa usa o fator FLUVIAL (~3× a reta) e o
+    # relatório sinaliza. Fernando de Noronha (ilha oceânica) NÃO entra no ~3× nem é marcado fluvial.
+    from geo import matriz_od
+    m = matriz_od.calcular("Manaus/AM;Atalaia do Norte/AM")
+    mg = matriz_od.calcular("Manaus/AM;Atalaia do Norte/AM", estimar=False)
+    assert m["resumo"]["acesso_fluvial"] == 1
+    assert abs(m["matriz"][0][1] / mg["matriz"][0][1] - 3.0) < 0.05      # ~3× a reta
+    assert "🛶" in matriz_od.render_texto(m) and "🛶" in matriz_od.construir_html(m)
+    f = matriz_od.calcular("Recife/PE;Fernando de Noronha/PE")
+    assert f["resumo"]["acesso_fluvial"] == 0                            # ilha oceânica não é "fluvial"
+    assert f["matriz"][0][1] / matriz_od.calcular("Recife/PE;Fernando de Noronha/PE",
+                                                  estimar=False)["matriz"][0][1] < 1.5   # fator rodoviário
+
+def test_centro_fluvial_sinaliza():
+    from geo import centro_otimo as co
+    r = co.calcular("Manaus/AM;Tefé/AM", destinos="Atalaia do Norte/AM;Tabatinga/AM")
+    assert any(d.get("acesso_fluvial") for d in r["destinos"]) or any(c.get("acesso_fluvial") for c in r["candidatos"])
+    assert "🛶" in co.render_texto(r) and "🛶" in co.construir_html(r)
+
+def test_isocronas_fluvial_recebe_fator():
+    # De Manaus, as faixas alcançam municípios fluviais; eles recebem o ~3× e são contados/sinalizados.
+    from geo import isocronas
+    r = isocronas.calcular("Manaus/AM", faixas_km=(300, 700, 1500, 3000))
+    assert "acesso_fluvial_alcancados" in r
+    if r["acesso_fluvial_alcancados"] > 0:                               # dependente da base, mas tipicamente >0
+        assert "🛶" in isocronas.render_texto(r)
+
+
+# ============================================================================
 #  QUALIDADE DE COORDENADAS — guarda anti-regressão do defeito Brasília/Vitória.
 # ============================================================================
 def test_coverage_ponto_no_corpo_helper():

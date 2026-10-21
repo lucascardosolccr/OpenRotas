@@ -103,11 +103,15 @@ def calcular(candidatos, destinos=None, usar_osrm: bool = False, osrm_url=None, 
             if rod is not None:
                 linhas = rod
                 modo = "rodoviario"
+        fluv_c = [bool(c.get("acesso_fluvial")) for c in cand]
+        fluv_d = [bool(d.get("acesso_fluvial")) for d in dest]
         if estimar and modo == "geodesico":
             # Sem OSRM: estima a distância rodoviária da linha reta (fator de sinuosidade do web), em vez
-            # da reta crua. A reta é o piso; cada valor vira estimativa realista. (centro_otimo.calcular)
+            # da reta crua. CONSCIÊNCIA FLUVIAL: o par candidato×destino com algum extremo de acesso só
+            # fluvial usa o fator FLUVIAL (~3×). A reta é o piso. (centro_otimo.calcular)
             from geo import distancia
-            linhas = [distancia.estimar_rodoviaria_vetor(row) for row in linhas]
+            linhas = [distancia.estimar_rodoviaria_vetor(row, fluvial=[fluv_c[i] or fd for fd in fluv_d])
+                      for i, row in enumerate(linhas)]
             modo = "estimado"
         out = []
         for i, c in enumerate(cand):
@@ -117,18 +121,23 @@ def calcular(candidatos, destinos=None, usar_osrm: bool = False, osrm_url=None, 
             out.append({"nome": c["nome"], "uf": c.get("uf", ""), "lon": c["lon"], "lat": c["lat"],
                         "ambiguo": bool(c.get("ambiguo")), "ufs_alt": c.get("ufs_alt", []),
                         "coord_suspeita": c.get("coord_suspeita", []),
+                        "acesso_fluvial": fluv_c[i],
                         "soma_km": round(soma, 1), "max_km": round(mx, 1),
                         "media_km": round(soma / len(row), 1) if row else 0.0,
                         "distancias": [round(v, 1) for v in row]})
         melhor_soma = min(out, key=lambda x: x["soma_km"])
         melhor_max = min(out, key=lambda x: x["max_km"])
+        # pior caso: o destino mais distante do melhor candidato por minimax — é fluvial? (p/ tempo correto)
+        _mm_dist = melhor_max.get("distancias") or []
+        _mm_fluv = bool(fluv_d[_mm_dist.index(max(_mm_dist))]) if _mm_dist else False
         base.update({
             "ok": True, "candidatos": out,
-            "destinos": [{"nome": p["nome"], "uf": p.get("uf", ""), "lon": p["lon"], "lat": p["lat"]} for p in dest],
+            "destinos": [{"nome": p["nome"], "uf": p.get("uf", ""), "lon": p["lon"], "lat": p["lat"],
+                          "acesso_fluvial": fluv_d[j]} for j, p in enumerate(dest)],
             "modo": modo, "self_dest": self_dest,
             "melhor_soma": {"nome": melhor_soma["nome"], "uf": melhor_soma["uf"], "soma_km": melhor_soma["soma_km"]},
             "melhor_max": {"nome": melhor_max["nome"], "uf": melhor_max["uf"], "max_km": melhor_max["max_km"],
-                           "max_min": _tempo_estimado(melhor_max["max_km"], modo)},
+                           "max_min": _tempo_estimado(melhor_max["max_km"], modo, fluvial=_mm_fluv)},
             "nota": ("Distância %s de %d candidato(s) a %d destino(s)%s."
                      % (_descricao_modo(modo), len(out), len(dest),
                         " (destinos = candidatos)" if self_dest else "")),
@@ -186,14 +195,15 @@ def _descricao_modo(modo) -> str:
         return str(modo)
 
 
-def _tempo_estimado(km, modo):
-    """Tempo estimado (min) para uma distância RODOVIÁRIA (modos 'estimado'/'rodoviario'), pelo modelo
-    do web (45/65 km/h). None no modo 'geodesico' — não se estima tempo de viagem a partir da reta pura."""
+def _tempo_estimado(km, modo, fluvial=False):
+    """Tempo estimado (min) para uma distância (modos 'estimado'/'rodoviario'), pelo modelo do web
+    (45/65 km/h), ou fluvial (~22 km/h) quando `fluvial`. None no modo 'geodesico' — não se estima
+    tempo de viagem a partir da reta pura."""
     if str(modo) == "geodesico":
         return None
     try:
         from geo import distancia
-        return distancia.estimar_tempo_min(km)
+        return distancia.estimar_tempo_min(km, fluvial=bool(fluvial))
     except Exception:
         return None
 
@@ -222,6 +232,11 @@ def _avisos_texto(r: dict, L: list) -> None:
     if susp:
         L.append("⚠ %d coordenada(s) suspeita(s) (verifique a ordem lon,lat / se está no Brasil): %s"
                  % (len(susp), "; ".join("%s (%s)" % (_rotulo(c), "; ".join(c.get("coord_suspeita", []))) for c in susp)))
+    flv = [p for p in (r["candidatos"] + r.get("destinos", [])) if p.get("acesso_fluvial")]
+    if flv:
+        from geo import distancia
+        nomes = sorted({_rotulo(p) for p in flv})
+        L.append("🛶 " + distancia.aviso_fluvial(len(nomes)) + " Local(is): " + ", ".join(nomes))
 
 
 # ----------------------------------------------------------------------------
@@ -245,8 +260,12 @@ def _dist_cd(cand, dest, usar_osrm, osrm_url, estimar: bool = True):
             linhas = [[float(v) for v in row] for row in rod]
             modo = "rodoviario"
     if estimar and modo == "geodesico":
+        # CONSCIÊNCIA FLUVIAL: par hub×destino com algum extremo de acesso só fluvial usa o fator FLUVIAL.
         from geo import distancia
-        linhas = [[float(distancia.estimar_rodoviaria_km(v)) for v in row] for row in linhas]
+        fluv_c = [bool(c.get("acesso_fluvial")) for c in cand]
+        fluv_d = [bool(d.get("acesso_fluvial")) for d in dest]
+        linhas = [[float(distancia.estimar_rodoviaria_km(v, fluvial=(fluv_c[i] or fluv_d[j])))
+                   for j, v in enumerate(row)] for i, row in enumerate(linhas)]
         modo = "estimado"
     return linhas, modo
 

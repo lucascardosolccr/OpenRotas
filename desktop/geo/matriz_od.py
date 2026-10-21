@@ -65,9 +65,16 @@ def _resolver_ponto(tok, reg):
             # matriz inteira para a cidade errada em silêncio; o usuário vê e pode especificar a UF.
             amb = bool(r.get("ambiguo"))
             ufs_alt = sorted({c.get("uf") for c in r.get("candidatos", []) if c.get("uf")}) if amb else []
+            gc = r.get("geocodigo", "")
+            fluv = False
+            try:
+                from geo import distancia
+                fluv = distancia.municipio_acesso_fluvial(gc)
+            except Exception:
+                fluv = False
             return {"ok": True, "lon": r["lon"], "lat": r["lat"],
-                    "nome": r.get("nome", s), "uf": r.get("uf", ""),
-                    "ambiguo": amb, "ufs_alt": ufs_alt}
+                    "nome": r.get("nome", s), "uf": r.get("uf", ""), "geocodigo": gc,
+                    "ambiguo": amb, "ufs_alt": ufs_alt, "acesso_fluvial": fluv}
         return {"ok": False, "consulta": s, "detalhe": r.get("detalhe", "não resolvido")}
     except Exception:
         return {"ok": False, "consulta": str(tok), "detalhe": "erro"}
@@ -140,12 +147,15 @@ def calcular(locais, usar_osrm: bool = False, osrm_url=None, reg=None, estimar: 
                 osrm_ok = True
         if estimar and not osrm_ok:
             # Sem OSRM: a matriz vira ESTIMATIVA rodoviária (linha reta × fator de sinuosidade), como o
-            # web — nunca a reta crua. A diagonal (i==i == 0) e o resumo passam a refletir a estimativa.
+            # web — nunca a reta crua. CONSCIÊNCIA FLUVIAL: um par com algum extremo de acesso só fluvial
+            # (sem estrada) usa o fator FLUVIAL (~3×), não o rodoviário — a estrada não existe ali.
             from geo import distancia
+            fluv = [bool(p.get("acesso_fluvial")) for p in pts]
             for i in range(n):
                 for j in range(n):
                     if i != j:
-                        M[i][j] = float(round(distancia.estimar_rodoviaria_km(M[i][j]), 1))
+                        _flv = fluv[i] or fluv[j]
+                        M[i][j] = float(round(distancia.estimar_rodoviaria_km(M[i][j], fluvial=_flv), 1))
             modo = "estimado"
         # Resumo (pares i<j).
         maxv = (-1.0, None); minv = (1e18, None); soma = 0.0; cnt = 0
@@ -162,20 +172,24 @@ def calcular(locais, usar_osrm: bool = False, osrm_url=None, reg=None, estimar: 
             if not pr[1]:
                 return None
             i, j = pr[1]
-            # tempo estimado só quando a distância é rodoviária (estimado/OSRM); da reta pura não se estima.
-            _mn = distancia.estimar_tempo_min(pr[0]) if modo != "geodesico" else None
+            # tempo estimado só quando a distância é rodoviária/estimada (não da reta pura). Velocidade
+            # FLUVIAL quando algum extremo é de acesso só fluvial (o trecho é por rio, mais lento).
+            _flv = bool(pts[i].get("acesso_fluvial") or pts[j].get("acesso_fluvial"))
+            _mn = distancia.estimar_tempo_min(pr[0], fluvial=_flv) if modo != "geodesico" else None
             return {"de": pts[i]["nome"], "para": pts[j]["nome"], "km": round(pr[0], 1), "min": _mn}
         base.update({
             "ok": True,
             "pontos": [{"nome": p["nome"], "uf": p.get("uf", ""), "lon": p["lon"], "lat": p["lat"],
                         "ambiguo": bool(p.get("ambiguo")), "ufs_alt": p.get("ufs_alt", []),
-                        "coord_suspeita": p.get("coord_suspeita", [])} for p in pts],
+                        "coord_suspeita": p.get("coord_suspeita", []),
+                        "acesso_fluvial": bool(p.get("acesso_fluvial"))} for p in pts],
             "matriz": M, "modo": modo,
             "resumo": {"n": n, "par_distante": _par(maxv), "par_proximo": _par(minv),
                        "media_km": round(soma / cnt, 1) if cnt else 0.0,
                        "diametro_km": round(maxv[0], 1) if maxv[1] else 0.0,
                        "ambiguos": sum(1 for p in pts if p.get("ambiguo")),
-                       "coord_suspeitas": sum(1 for p in pts if p.get("coord_suspeita"))},
+                       "coord_suspeitas": sum(1 for p in pts if p.get("coord_suspeita")),
+                       "acesso_fluvial": sum(1 for p in pts if p.get("acesso_fluvial"))},
             "nota": ("Distância %s entre %d pontos." % (distancia.descricao_modo(modo), n)),
         })
         if len(pts) < len(resol):
@@ -230,6 +244,12 @@ def render_texto(r: dict) -> str:
         L.append("⚠ %d coordenada(s) suspeita(s) (verifique a ordem lon,lat e se está no Brasil):" % len(susp))
         for p, mot in susp:
             L.append("    %s — %s" % (_rotulo(p), "; ".join(mot)))
+        L.append("")
+    flv = [p for p in pts if p.get("acesso_fluvial")]
+    if flv:
+        from geo import distancia
+        L.append("🛶 " + distancia.aviso_fluvial(len(flv)) + " Município(s): "
+                 + ", ".join(_rotulo(p) for p in flv))
         L.append("")
     cab = "      " + "".join("%8d" % (j + 1) for j in range(len(pts)))
     L.append(cab)
@@ -325,6 +345,13 @@ def construir_html(r: dict) -> str:
         corpo.append("<p class='sub' style='margin:10px 2px 0;color:var(--warn,#b45309)'>"
                      "⚠ %d coordenada(s) suspeita(s) — verifique a ordem <b>lon,lat</b> e se está no "
                      "Brasil: %s.</p>" % (len(susp), itens))
+    flv = [p for p in r["pontos"] if p.get("acesso_fluvial")]
+    if flv:
+        from geo import distancia
+        corpo.append("<p class='sub' style='margin:10px 2px 0;color:var(--warn,#b45309)'>🛶 %s "
+                     "Município(s): %s.</p>"
+                     % (html.escape(distancia.aviso_fluvial(len(flv))),
+                        html.escape(", ".join(_rotulo(p) for p in flv))))
     corpo.append("</section>")
     if tema is not None:
         # Mapa: os pontos como corredor/waypoints sobre o Brasil.
