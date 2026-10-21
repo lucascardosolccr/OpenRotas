@@ -21943,14 +21943,21 @@ def _diagnostico_imparcial(linhas):
     _ok = [l for l in (linhas or []) if l.get("Vencedor Distancia") in ("Aplicação", "Referência", "Empate")]
     if not _ok:
         return {}
+    # [COMPARA-JUSTA] Conjunto do CONFRONTO físico-válido: tira as linhas cuja distância de referência é
+    # IMPOSSÍVEL (menor que a linha reta). Elas não disputam o placar de DESLOCAMENTO — ali a referência
+    # não tem um número comparável. São contadas À PARTE (vitorias_ref_invalida): casos em que a aplicação
+    # é o ÚNICO número fisicamente válido. Separar as duas coisas é honestidade: "vencer um confronto de
+    # km" e "ser o único dado válido" são vitórias de naturezas diferentes — somá-las infla o placar.
+    _ok_rv = [l for l in _ok if not _ref_distancia_impossivel(l)]
+    _n_rinv = len(_ok) - len(_ok_rv)
     _app = _perfil_estudo(_ok, "app")
     # [COMPARA-JUSTA] O perfil da REFERÊNCIA calcula suas estatísticas de distância ignorando as
     # linhas fisicamente impossíveis (ver _perfil_estudo); cobertura e polos seguem íntegros.
     _ref = _perfil_estudo(_ok, "ref", excluir_ref_invalida=True)
 
-    _v_app = [l for l in _ok if l.get("Vencedor Distancia") == "Aplicação"]
-    _v_ref = [l for l in _ok if l.get("Vencedor Distancia") == "Referência"]
-    _emp = [l for l in _ok if l.get("Vencedor Distancia") == "Empate"]
+    _v_app = [l for l in _ok_rv if l.get("Vencedor Distancia") == "Aplicação"]
+    _v_ref = [l for l in _ok_rv if l.get("Vencedor Distancia") == "Referência"]
+    _emp = [l for l in _ok_rv if l.get("Vencedor Distancia") == "Empate"]
 
     # ---- consistência da vantagem do concorrente: Pareto das vitórias dele ----
     _consist = None
@@ -22030,9 +22037,7 @@ def _diagnostico_imparcial(linhas):
         # número bogus decidir o veredito — o espelho do erro que o app já neutraliza POR LINHA. Então o
         # total de CADA estudo é somado SÓ nas linhas com distância de referência válida (o MESMO conjunto
         # para os dois → apples-to-apples). As linhas inválidas já são vitória da app, contadas à parte.
-        _ok_rv = [l for l in _ok if not _ref_distancia_impossivel(l)]
-        _n_rinv = len(_ok) - len(_ok_rv)
-
+        # (_ok_rv / _n_rinv já definidos no topo — o MESMO conjunto do placar.)
         def _kmcand(_linhas, _campo):
             _s = 0.0
             for _l in _linhas:
@@ -22103,11 +22108,15 @@ def _diagnostico_imparcial(linhas):
 
     return {
         "perfil_app": _app, "perfil_ref": _ref,
+        # [COMPARA-JUSTA] O placar é o CONFRONTO DE DESLOCAMENTO sobre as linhas fisicamente válidas
+        # (total = _ok_rv); os percentuais usam esse denominador. As vitórias por referência inválida
+        # (app é o único número válido) são reportadas À PARTE — não inflam o % de confronto.
         "placar": {"aplicacao": len(_v_app), "concorrente": len(_v_ref), "empates": len(_emp),
-                   "total": len(_ok),
-                   "pct_aplicacao": round(100.0 * len(_v_app) / len(_ok), 1),
-                   "pct_concorrente": round(100.0 * len(_v_ref) / len(_ok), 1),
-                   "pct_empate": round(100.0 * len(_emp) / len(_ok), 1)},
+                   "total": len(_ok_rv),
+                   "pct_aplicacao": round(100.0 * len(_v_app) / len(_ok_rv), 1) if _ok_rv else 0.0,
+                   "pct_concorrente": round(100.0 * len(_v_ref) / len(_ok_rv), 1) if _ok_rv else 0.0,
+                   "pct_empate": round(100.0 * len(_emp) / len(_ok_rv), 1) if _ok_rv else 0.0,
+                   "vitorias_ref_invalida": _n_rinv, "total_comparado": len(_ok)},
         "consistencia": _consist, "geografia": _geo, "perguntas": _resp,
     }
 
@@ -59241,7 +59250,14 @@ if _secao == _SECOES[3]:   # tab_comparador
                             _s2.metric("⚔️ Concorrente venceu", f"{_pl['pct_concorrente']}%",
                                        f"{_pl['concorrente']} municípios")
                             _s3.metric("🤝 Empates", f"{_pl['pct_empate']}%", f"{_pl['empates']} municípios")
-                            _s4.metric("Total comparável", _pl["total"])
+                            _s4.metric("Confronto físico-válido", _pl["total"])
+                            if _pl.get("vitorias_ref_invalida"):
+                                st.caption(
+                                    f"➕ **{_pl['vitorias_ref_invalida']} município(s) à parte**: a referência "
+                                    f"reportou distância **fisicamente impossível** (menor que a linha reta) — a "
+                                    f"aplicação é o ÚNICO número válido ali. Isso é vitória de **validade do dado**, "
+                                    f"NÃO de confronto de km; por isso fica fora do placar acima (de "
+                                    f"{_pl.get('total_comparado', _pl['total'])} municípios comparados no total).")
 
                             st.markdown("##### 📋 Perfil dos DOIS estudos, lado a lado")
                             _pa, _pr = _di["perfil_app"], _di["perfil_ref"]

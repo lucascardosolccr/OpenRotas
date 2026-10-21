@@ -73,6 +73,22 @@ def test_perfil_ref_exclui_impossiveis_das_estatisticas_mas_preserva_cobertura()
     assert round(pa["km_candidato_total"] - pr["km_candidato_total"], 1) == 100.0  # app 100*10 - ref 90*10
 
 
+def test_placar_separa_vitorias_por_referencia_invalida():
+    # O placar de vitórias é o CONFRONTO físico-válido; as vitórias por referência impossível ficam À
+    # PARTE (vitória de VALIDADE do dado, não de km) e não entram no % do confronto.
+    val_app = _linha("AppVence", "SP", da=50.0, dr=90.0, reta_ref=40.0, insc=10)   # app < ref → app
+    val_ref = _linha("RefVence", "RJ", da=100.0, dr=70.0, reta_ref=50.0, insc=10)  # ref < app → ref
+    imp = _linha("Impossivel", "AM", da=200.0, dr=20.0, reta_ref=120.0, insc=10, inval="Sim")
+    d = m._diagnostico_imparcial([val_app, val_ref, imp])
+    pl = d["placar"]
+    assert pl["total"] == 2 and pl["total_comparado"] == 3
+    assert pl["aplicacao"] == 1 and pl["concorrente"] == 1
+    assert pl["vitorias_ref_invalida"] == 1          # a impossível não entra no confronto
+    assert pl["aplicacao"] + pl["concorrente"] + pl["empates"] == pl["total"]
+    # os percentuais usam o conjunto válido (2), não o total (3):
+    assert pl["pct_aplicacao"] == 50.0 and pl["pct_concorrente"] == 50.0
+
+
 def test_piso_geodesico_tambem_detecta_sem_rotulo():
     # Mesmo SEM o rótulo 'Vitoria por Ref Invalida', a rede de segurança (ref < linha reta) exclui a linha.
     val = _linha("Valida", "SP", da=100.0, dr=90.0, reta_ref=60.0, insc=10)
