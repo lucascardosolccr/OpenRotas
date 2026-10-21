@@ -2096,10 +2096,13 @@ def test_multimodal_html_e_gera(tmp_path):
 # ============================================================================
 #  ISÓCRONAS DE ALCANCE (§29) — municípios atingíveis por faixa de distância.
 # ============================================================================
-def test_isocronas_calcular_geodesico():
+def test_isocronas_calcular_estimado():
+    # [PARIDADE-WEB] Sem OSRM, o padrão agora ESTIMA a distância rodoviária a partir da linha reta
+    # (fator de sinuosidade do web), em vez de reportar a reta crua — a aplicação web nunca reporta a
+    # reta como se fosse a viagem. Modo 'estimado'; as mesmas invariantes de faixa/cumulativo se mantêm.
     from geo import isocronas
     r = isocronas.calcular((-46.63, -23.55), faixas_km=(100, 300, 600, 1000))
-    assert r["ok"] and r["modo"] == "geodesico"
+    assert r["ok"] and r["modo"] == "estimado"
     assert len(r["bandas"]) == 4 and r["total_municipios"] > 0
     cums = [b["cumulativo"] for b in r["bandas"]]
     assert cums == sorted(cums)                                   # cumulativo monotônico
@@ -2107,12 +2110,19 @@ def test_isocronas_calcular_geodesico():
     assert r["alcancados"] <= r["total_municipios"]
     assert r["bandas"][0]["municipios"] > 0                       # vizinhos imediatos de SP
     assert "ISÓCRONAS" in isocronas.render_texto(r)
+    # estimar=False mantém a LINHA RETA pura (piso físico): modo 'geodesico' e alcance MAIOR (reta < viária).
+    rg = isocronas.calcular((-46.63, -23.55), faixas_km=(100, 300, 600, 1000), estimar=False)
+    assert rg["ok"] and rg["modo"] == "geodesico"
+    assert rg["alcancados"] >= r["alcancados"]                    # a estimativa empurra municípios p/ além
 
-def test_isocronas_osrm_cai_em_geodesico_sem_rede(monkeypatch):
+def test_isocronas_osrm_cai_em_estimado_sem_rede(monkeypatch):
+    # Sem rede, o OSRM é pulado e o padrão cai na ESTIMATIVA rodoviária (não mais na reta crua).
     monkeypatch.setenv("OPENROTAS_NO_NET", "1")
     from geo import isocronas
     r = isocronas.calcular((-46.63, -23.55), usar_osrm=True)
-    assert r["ok"] and r["modo"] == "geodesico"                   # OSRM pulado sem rede
+    assert r["ok"] and r["modo"] == "estimado"                    # OSRM pulado → estimativa de sinuosidade
+    rg = isocronas.calcular((-46.63, -23.55), usar_osrm=True, estimar=False)
+    assert rg["ok"] and rg["modo"] == "geodesico"                 # escape honesto p/ a linha reta pura
 
 def test_isocronas_origem_por_nome():
     from geo import isocronas
@@ -2141,30 +2151,35 @@ def test_isocronas_origem_ambigua_avisa():
 # ============================================================================
 #  MATRIZ ORIGEM↔DESTINO (§29) — distâncias entre vários centros.
 # ============================================================================
-def test_matriz_calcular_geodesico():
+def test_matriz_calcular_estimado():
+    # [PARIDADE-WEB] Sem OSRM, a matriz vira ESTIMATIVA rodoviária (linha reta × sinuosidade), como o web;
+    # simetria e diâmetro continuam válidos. estimar=False recupera a linha reta pura (modo 'geodesico').
     from geo import matriz_od
     r = matriz_od.calcular([(-46.63, -23.55), (-43.20, -22.90), (-47.88, -15.79)])
-    assert r["ok"] and r["modo"] == "geodesico" and len(r["pontos"]) == 3
+    assert r["ok"] and r["modo"] == "estimado" and len(r["pontos"]) == 3
     M = r["matriz"]
     assert len(M) == 3 and all(len(row) == 3 for row in M)
     for i in range(3):
-        assert M[i][i] == 0.0
+        assert M[i][i] == 0.0                              # diagonal zero preservada
         for j in range(3):
             assert abs(M[i][j] - M[j][i]) < 0.2            # simétrica
     rs = r["resumo"]
     assert rs["par_distante"]["km"] >= rs["par_proximo"]["km"] > 0
     assert rs["diametro_km"] == rs["par_distante"]["km"]
     assert "MATRIZ ORIGEM" in matriz_od.render_texto(r)
+    # a estimativa é SEMPRE >= a linha reta (fator >= 1): o diâmetro estimado supera o geodésico.
+    rg = matriz_od.calcular([(-46.63, -23.55), (-43.20, -22.90), (-47.88, -15.79)], estimar=False)
+    assert rg["modo"] == "geodesico" and rs["diametro_km"] > rg["resumo"]["diametro_km"]
 
 def test_matriz_menos_de_2_pontos():
     from geo import matriz_od
     assert matriz_od.calcular([(-46.63, -23.55)])["ok"] is False
 
-def test_matriz_osrm_cai_em_geodesico_sem_rede(monkeypatch):
+def test_matriz_osrm_cai_em_estimado_sem_rede(monkeypatch):
     monkeypatch.setenv("OPENROTAS_NO_NET", "1")
     from geo import matriz_od
     r = matriz_od.calcular([(-46.63, -23.55), (-43.20, -22.90)], usar_osrm=True)
-    assert r["ok"] and r["modo"] == "geodesico"
+    assert r["ok"] and r["modo"] == "estimado"        # OSRM pulado sem rede → estimativa rodoviária
 
 def test_matriz_html_e_excel(tmp_path):
     import openpyxl
@@ -2208,18 +2223,27 @@ def test_matriz_local_nao_resolvido_avisa():
 # ============================================================================
 #  CENTRO ÓTIMO — localização de facilidade (p-mediana / 1-centro).
 # ============================================================================
-def test_centro_otimo_geodesico():
+def test_centro_otimo_estimado():
     from geo import centro_otimo as co
-    # Goiânia (central) deve bater São Paulo e Recife para atender Belém/POA/Rio/Manaus.
+    # [PARIDADE-WEB] Sem OSRM, o padrão ESTIMA a distância rodoviária (sinuosidade do web). A ESCOLHA do
+    # melhor candidato é a mesma da reta pura (Goiânia, central), mas os km ficam realistas.
     r = co.calcular("Goiânia/GO;São Paulo/SP;Recife/PE",
                     destinos="Belém/PA;Porto Alegre/RS;Rio de Janeiro/RJ;Manaus/AM")
-    assert r["ok"] and r["modo"] == "geodesico"
+    assert r["ok"] and r["modo"] == "estimado"
     assert len(r["candidatos"]) == 3 and len(r["destinos"]) == 4
     assert r["melhor_soma"]["nome"] == "Goiânia" and r["melhor_max"]["nome"] == "Goiânia"
     # soma/máx coerentes: o melhor por soma tem a menor soma do conjunto.
     menor_soma = min(c["soma_km"] for c in r["candidatos"])
     assert abs(r["melhor_soma"]["soma_km"] - menor_soma) < 0.5
     assert "CENTRO ÓTIMO" in co.render_texto(r)
+    # paridade de TEMPO com o web: o pior caso ganha um tempo estimado de viagem (modelo 45/65 km/h).
+    assert r["melhor_max"].get("max_min") is not None and r["melhor_max"]["max_min"] > 0
+    # estimar=False → linha reta pura (modo 'geodesico'), MESMO vencedor, km menores (reta < viária).
+    rg = co.calcular("Goiânia/GO;São Paulo/SP;Recife/PE",
+                     destinos="Belém/PA;Porto Alegre/RS;Rio de Janeiro/RJ;Manaus/AM", estimar=False)
+    assert rg["modo"] == "geodesico" and rg["melhor_soma"]["nome"] == "Goiânia"
+    assert r["melhor_soma"]["soma_km"] > rg["melhor_soma"]["soma_km"]
+    assert rg["melhor_max"].get("max_min") is None   # sem tempo a partir da reta pura (honesto)
 
 def test_centro_otimo_self_dest():
     # Sem destinos → candidatos são os destinos (o mais central do conjunto).
@@ -2229,11 +2253,11 @@ def test_centro_otimo_self_dest():
     # distância do candidato a si mesmo é 0 → entra na soma sem quebrar.
     assert all(c["soma_km"] >= 0 for c in r["candidatos"])
 
-def test_centro_otimo_osrm_cai_em_geodesico_sem_rede(monkeypatch):
+def test_centro_otimo_osrm_cai_em_estimado_sem_rede(monkeypatch):
     monkeypatch.setenv("OPENROTAS_NO_NET", "1")
     from geo import centro_otimo as co
     r = co.calcular("Goiânia/GO;São Paulo/SP", destinos="Belém/PA;Porto Alegre/RS", usar_osrm=True)
-    assert r["ok"] and r["modo"] == "geodesico"
+    assert r["ok"] and r["modo"] == "estimado"        # OSRM pulado sem rede → estimativa rodoviária
 
 def test_centro_otimo_avisa_ambiguo_e_nao_resolvido():
     from geo import centro_otimo as co
@@ -2324,6 +2348,55 @@ def test_centro_k_via_wrapper(tmp_path):
     h = prov.gerar_centro_otimo("Goiânia/GO;São Paulo/SP;Manaus/AM",
                                 destinos="Belém/PA;Rio de Janeiro/RJ;Fortaleza/CE", k=2)
     assert h and os.path.exists(h)
+
+
+# ============================================================================
+#  ESTIMATIVA DE DISTÂNCIA RODOVIÁRIA (geo.distancia) — PARIDADE COM O WEB.
+#  O desktop reportava a LINHA RETA crua no modo offline; o web nunca o faz —
+#  ele estima a viária pela reta × fator de sinuosidade (obter_fator_desvio_
+#  rodoviario). Este módulo traz o MESMO fator ao desktop. Testes PUROS.
+# ============================================================================
+def test_distancia_fator_paridade_com_web():
+    # Fatores IDÊNTICOS ao web: 1,45 (<5), 1,35 (<20), 1,25 (<100), 1,18 (>=100).
+    from geo import distancia as d
+    assert d.fator_desvio(4.9) == 1.45 and d.fator_desvio(5.0) == 1.35
+    assert d.fator_desvio(19.9) == 1.35 and d.fator_desvio(20.0) == 1.25
+    assert d.fator_desvio(99.9) == 1.25 and d.fator_desvio(100.0) == 1.18
+    assert d.fator_desvio(5000.0) == 1.18
+    assert d.fator_desvio("lixo") == 1.18            # defensivo: cai no fator conservador de longa
+
+def test_distancia_estimativa_escalar_e_piso():
+    from geo import distancia as d
+    # reta × fator, com a reta como PISO (fator >= 1 → estimativa nunca menor que a reta).
+    assert round(d.estimar_rodoviaria_km(100.0), 2) == 118.0
+    assert round(d.estimar_rodoviaria_km(10.0), 2) == 13.5
+    for r in (1.0, 7.0, 30.0, 120.0, 800.0):
+        assert d.estimar_rodoviaria_km(r) >= r        # nenhuma estrada é mais curta que a reta
+    assert d.estimar_rodoviaria_km(0) == 0.0 and d.estimar_rodoviaria_km(-3) == 0.0
+    assert d.estimar_rodoviaria_km(None) == 0.0       # defensivo
+
+def test_distancia_vetor_bate_escalar():
+    import numpy as np
+    from geo import distancia as d
+    retas = [0.0, 3.0, 10.0, 19.9, 20.0, 50.0, 99.9, 100.0, 400.0, -1.0]
+    v = d.estimar_rodoviaria_vetor(retas)
+    esc = [d.estimar_rodoviaria_km(x) for x in retas]
+    assert np.allclose(np.asarray(v, dtype="float64"), esc)   # vetorizado == escalar, faixa a faixa
+
+def test_distancia_tempo_modelo_web():
+    from geo import distancia as d
+    # 45 km/h abaixo de 50 km, 65 km/h acima (modelo do web).
+    assert d.estimar_tempo_min(45.0) == 60.0          # 45 km a 45 km/h = 60 min
+    assert d.estimar_tempo_min(65.0) == 60.0          # 65 km a 65 km/h = 60 min
+    assert d.estimar_tempo_min(0) == 0.0 and d.estimar_tempo_min(None) == 0.0
+
+def test_distancia_rotulos_de_modo():
+    from geo import distancia as d
+    assert d.rotulo_modo("estimado") == "estimado"
+    assert d.rotulo_modo("rodoviario") == "rodoviário"
+    assert d.rotulo_modo("geodesico") == "geodésico"
+    assert "sinuosidade" in d.descricao_modo("estimado")
+    assert "OSRM" in d.descricao_modo("rodoviario")
 
 
 # ============================================================================

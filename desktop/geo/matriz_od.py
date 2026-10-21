@@ -5,10 +5,11 @@ Dado um conjunto de locais (Cidade/UF ou lon,lat), monta a MATRIZ NxN de distân
 os pares — base para planejar alocação entre múltiplos centros ("qual par é o mais distante?",
 "quão perto estão entre si?").
 
-Alcance GEODÉSICO (haversine) por padrão — honesto e 100% offline. Com motor OSRM local/externo
-(--osrm) refina para distância RODOVIÁRIA real via /table (matriz completa numa só chamada,
-melhor-esforço), degradando para o geodésico se o motor não responder. Entrega dict + texto +
-HTML (heatmap da matriz + KPIs) + Excel. Puro/defensivo (numpy + stdlib): nunca levanta."""
+Distância por padrão ESTIMADA (modo 'estimado'): linha reta (haversine, offline) corrigida pelo fator
+de sinuosidade do web (geo.distancia) — PARIDADE com a aplicação web, que nunca reporta a reta crua.
+Com motor OSRM local/externo (--osrm) refina para distância RODOVIÁRIA real via /table (matriz completa
+numa só chamada, melhor-esforço). `--geodesico` força a linha reta pura (modo 'geodesico'). Entrega
+dict + texto + HTML (heatmap da matriz + KPIs) + Excel. Puro/defensivo (numpy + stdlib): nunca levanta."""
 from __future__ import annotations
 
 import sys
@@ -82,9 +83,13 @@ def _matriz_osrm(lons, lats, url, timeout=25):
         return None
 
 
-def calcular(locais, usar_osrm: bool = False, osrm_url=None, reg=None) -> dict:
+def calcular(locais, usar_osrm: bool = False, osrm_url=None, reg=None, estimar: bool = True) -> dict:
     """Matriz NxN de distâncias entre `locais` (lista ou 'A;B;C'). Devolve {ok, pontos, matriz,
-    modo, resumo:{par_distante, par_proximo, media_km, diametro_km}, nota}. Nunca levanta."""
+    modo, resumo:{par_distante, par_proximo, media_km, diametro_km}, nota}. Nunca levanta.
+
+    `estimar` (padrão True): sem OSRM, estima a distância RODOVIÁRIA a partir da linha reta pelo fator
+    de sinuosidade do web (modo 'estimado'), em paridade com a aplicação web, em vez de reportar a linha
+    reta crua. `estimar=False` mantém a linha reta pura (modo 'geodesico')."""
     base = {"ok": False, "pontos": [], "matriz": [], "modo": "geodesico", "resumo": {}, "nota": ""}
     try:
         import numpy as np
@@ -110,6 +115,7 @@ def calcular(locais, usar_osrm: bool = False, osrm_url=None, reg=None) -> dict:
             for j in range(n):
                 M[i][j] = float(round(row[j], 1))
         modo = "geodesico"
+        osrm_ok = False
         if usar_osrm:
             rod = _matriz_osrm(lons, lats, osrm_url or _osrm_url())
             if rod is not None:
@@ -119,6 +125,16 @@ def calcular(locais, usar_osrm: bool = False, osrm_url=None, reg=None) -> dict:
                         if v is not None:
                             M[i][j] = float(round(v, 1))
                 modo = "rodoviario"
+                osrm_ok = True
+        if estimar and not osrm_ok:
+            # Sem OSRM: a matriz vira ESTIMATIVA rodoviária (linha reta × fator de sinuosidade), como o
+            # web — nunca a reta crua. A diagonal (i==i == 0) e o resumo passam a refletir a estimativa.
+            from geo import distancia
+            for i in range(n):
+                for j in range(n):
+                    if i != j:
+                        M[i][j] = float(round(distancia.estimar_rodoviaria_km(M[i][j]), 1))
+            modo = "estimado"
         # Resumo (pares i<j).
         maxv = (-1.0, None); minv = (1e18, None); soma = 0.0; cnt = 0
         for i in range(n):
@@ -134,6 +150,7 @@ def calcular(locais, usar_osrm: bool = False, osrm_url=None, reg=None) -> dict:
                 return None
             i, j = pr[1]
             return {"de": pts[i]["nome"], "para": pts[j]["nome"], "km": round(pr[0], 1)}
+        from geo import distancia
         base.update({
             "ok": True,
             "pontos": [{"nome": p["nome"], "uf": p.get("uf", ""), "lon": p["lon"], "lat": p["lat"],
@@ -143,8 +160,7 @@ def calcular(locais, usar_osrm: bool = False, osrm_url=None, reg=None) -> dict:
                        "media_km": round(soma / cnt, 1) if cnt else 0.0,
                        "diametro_km": round(maxv[0], 1) if maxv[1] else 0.0,
                        "ambiguos": sum(1 for p in pts if p.get("ambiguo"))},
-            "nota": ("Distância %s entre %d pontos."
-                     % ("rodoviária (OSRM)" if modo == "rodoviario" else "geodésica (linha reta)", n)),
+            "nota": ("Distância %s entre %d pontos." % (distancia.descricao_modo(modo), n)),
         })
         if len(pts) < len(resol):
             base["nao_resolvidos"] = [r.get("consulta") for r in resol if not r.get("ok")]
@@ -166,11 +182,21 @@ def _rotulo(p) -> str:
     return "%s%s" % (p["nome"], ("/" + p["uf"]) if p.get("uf") else "")
 
 
+def _modo_rotulo(modo) -> str:
+    """Rótulo curto do modo da matriz ('rodoviário' | 'estimado' | 'geodésico'), via geo.distancia."""
+    try:
+        from geo import distancia
+        return distancia.rotulo_modo(modo)
+    except Exception:
+        return str(modo)
+
+
 def render_texto(r: dict) -> str:
     if not r.get("ok"):
         return "Matriz O↔D indisponível: %s" % r.get("detalhe", "erro")
     pts = r["pontos"]; M = r["matriz"]
-    L = ["MATRIZ ORIGEM↔DESTINO — OpenRotas", "=" * 60, "modo: %s · %d pontos" % (r["modo"], len(pts)), ""]
+    L = ["MATRIZ ORIGEM↔DESTINO — OpenRotas", "=" * 60,
+         "modo: %s · %d pontos" % (_modo_rotulo(r["modo"]), len(pts)), ""]
     for i, p in enumerate(pts):
         marca = "  ⚠ ambígua (há homônimas em %s)" % ", ".join(p.get("ufs_alt", [])) if p.get("ambiguo") else ""
         L.append("%2d. %s%s" % (i + 1, _rotulo(p), marca))
@@ -243,7 +269,7 @@ def construir_html(r: dict) -> str:
              "<div class='kpi'><div class='v'>%d</div><div class='l'>Pontos</div></div>" % rs.get("n", 0),
              "<div class='kpi'><div class='v'>%.0f km</div><div class='l'>Par mais distante</div></div>" % rs.get("diametro_km", 0),
              "<div class='kpi'><div class='v'>%.0f km</div><div class='l'>Distância média</div></div>" % rs.get("media_km", 0),
-             "<div class='kpi'><div class='v'>%s</div><div class='l'>Modo</div></div>" % ("rodoviário" if r["modo"] == "rodoviario" else "geodésico"),
+             "<div class='kpi'><div class='v'>%s</div><div class='l'>Modo</div></div>" % html.escape(_modo_rotulo(r["modo"])),
              "</div>"]
     if rs.get("par_distante"):
         pd = rs["par_distante"]; pp = rs["par_proximo"]
@@ -317,6 +343,7 @@ def gerar(caminho, r: dict) -> str | None:
 def _cli(argv=None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
     usar_osrm = "--osrm" in argv
+    estimar = "--geodesico" not in argv   # --geodesico força a linha reta pura (sem estimativa de sinuosidade)
     locais = None
     for a in argv:
         if a.startswith("--"):
@@ -325,9 +352,9 @@ def _cli(argv=None) -> int:
             locais = a
             break
     if not locais:
-        print('uso: --matriz "Cidade/UF;Cidade/UF;..." [--osrm] [--html] [--excel]')
+        print('uso: --matriz "Cidade/UF;Cidade/UF;..." [--osrm] [--geodesico] [--html] [--excel]')
         return 2
-    r = calcular(locais, usar_osrm=usar_osrm)
+    r = calcular(locais, usar_osrm=usar_osrm, estimar=estimar)
     print(render_texto(r))
     if r.get("ok") and ("--html" in argv or "--excel" in argv):
         try:

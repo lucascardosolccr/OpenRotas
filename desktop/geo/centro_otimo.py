@@ -12,11 +12,12 @@ de apoio?" por dois critérios clássicos, honestos e explicáveis:
 
 Sem lista de destinos, os próprios candidatos são os destinos (acha o mais CENTRAL do conjunto).
 
-Distância GEODÉSICA (haversine, vetorizada) por padrão — 100% offline e honesta. Com motor OSRM
-local/externo (--osrm) refina para distância RODOVIÁRIA via /table (uma chamada), degradando para o
-geodésico sem rede/motor (OPENROTAS_NO_NET). Reaproveita o resolvedor de nomes (com aviso de cidade
-ambígua / não resolvida, como a matriz e o dossiê). Entrega dict + texto + HTML (mapa hub→destinos +
-ranking) + Excel. Puro/defensivo (numpy + stdlib): nunca levanta."""
+Distância por padrão ESTIMADA (modo 'estimado'): linha reta (haversine, vetorizada, offline) corrigida
+pelo fator de sinuosidade do web (geo.distancia) — PARIDADE com a aplicação web. Com motor OSRM
+local/externo (--osrm) refina para distância RODOVIÁRIA via /table (uma chamada). `--geodesico` força a
+linha reta pura (modo 'geodesico'); a escolha do melhor candidato é a mesma, os km é que ficam realistas.
+Reaproveita o resolvedor de nomes (com aviso de cidade ambígua / não resolvida, como a matriz e o dossiê).
+Entrega dict + texto + HTML (mapa hub→destinos + ranking) + Excel. Puro/defensivo (numpy + stdlib): nunca levanta."""
 from __future__ import annotations
 
 import sys
@@ -63,11 +64,17 @@ def _resolver_lista(entrada, reg):
     return pts, nao
 
 
-def calcular(candidatos, destinos=None, usar_osrm: bool = False, osrm_url=None, reg=None) -> dict:
+def calcular(candidatos, destinos=None, usar_osrm: bool = False, osrm_url=None, reg=None,
+             estimar: bool = True) -> dict:
     """Melhor candidato por distância TOTAL e por PIOR CASO até os destinos. Devolve
     {ok, candidatos:[{nome,uf,lon,lat,soma_km,max_km,media_km,ambiguo,ufs_alt}], destinos:[...],
     melhor_soma, melhor_max, modo, nao_resolvidos_candidatos, nao_resolvidos_destinos, nota}.
-    Sem `destinos`, usa os próprios candidatos (acha o mais central). Nunca levanta."""
+    Sem `destinos`, usa os próprios candidatos (acha o mais central). Nunca levanta.
+
+    `estimar` (padrão True): sem OSRM, estima a distância RODOVIÁRIA a partir da linha reta pelo fator de
+    sinuosidade do web (modo 'estimado'), em paridade com a aplicação web. `estimar=False` mantém a linha
+    reta pura (modo 'geodesico'). A escolha do melhor candidato é a mesma em ambos (transforma monótona
+    por distância para os conjuntos típicos, de capitais), mas os km ficam realistas."""
     base = {"ok": False, "candidatos": [], "destinos": [], "melhor_soma": None,
             "melhor_max": None, "modo": "geodesico", "nota": ""}
     try:
@@ -96,6 +103,12 @@ def calcular(candidatos, destinos=None, usar_osrm: bool = False, osrm_url=None, 
             if rod is not None:
                 linhas = rod
                 modo = "rodoviario"
+        if estimar and modo == "geodesico":
+            # Sem OSRM: estima a distância rodoviária da linha reta (fator de sinuosidade do web), em vez
+            # da reta crua. A reta é o piso; cada valor vira estimativa realista. (centro_otimo.calcular)
+            from geo import distancia
+            linhas = [distancia.estimar_rodoviaria_vetor(row) for row in linhas]
+            modo = "estimado"
         out = []
         for i, c in enumerate(cand):
             row = [float(v) for v in linhas[i]]
@@ -113,10 +126,11 @@ def calcular(candidatos, destinos=None, usar_osrm: bool = False, osrm_url=None, 
             "destinos": [{"nome": p["nome"], "uf": p.get("uf", ""), "lon": p["lon"], "lat": p["lat"]} for p in dest],
             "modo": modo, "self_dest": self_dest,
             "melhor_soma": {"nome": melhor_soma["nome"], "uf": melhor_soma["uf"], "soma_km": melhor_soma["soma_km"]},
-            "melhor_max": {"nome": melhor_max["nome"], "uf": melhor_max["uf"], "max_km": melhor_max["max_km"]},
+            "melhor_max": {"nome": melhor_max["nome"], "uf": melhor_max["uf"], "max_km": melhor_max["max_km"],
+                           "max_min": _tempo_estimado(melhor_max["max_km"], modo)},
             "nota": ("Distância %s de %d candidato(s) a %d destino(s)%s."
-                     % ("rodoviária (OSRM)" if modo == "rodoviario" else "geodésica (linha reta)",
-                        len(out), len(dest), " (destinos = candidatos)" if self_dest else "")),
+                     % (_descricao_modo(modo), len(out), len(dest),
+                        " (destinos = candidatos)" if self_dest else "")),
         })
         return base
     except Exception:
@@ -153,6 +167,47 @@ def _rotulo(p) -> str:
     return "%s%s" % (p["nome"], ("/" + p["uf"]) if p.get("uf") else "")
 
 
+def _modo_rotulo(modo) -> str:
+    """Rótulo curto do modo ('rodoviário' | 'estimado' | 'geodésico'), via geo.distancia."""
+    try:
+        from geo import distancia
+        return distancia.rotulo_modo(modo)
+    except Exception:
+        return str(modo)
+
+
+def _descricao_modo(modo) -> str:
+    """Frase descritiva do modo para a nota de rodapé, via geo.distancia."""
+    try:
+        from geo import distancia
+        return distancia.descricao_modo(modo)
+    except Exception:
+        return str(modo)
+
+
+def _tempo_estimado(km, modo):
+    """Tempo estimado (min) para uma distância RODOVIÁRIA (modos 'estimado'/'rodoviario'), pelo modelo
+    do web (45/65 km/h). None no modo 'geodesico' — não se estima tempo de viagem a partir da reta pura."""
+    if str(modo) == "geodesico":
+        return None
+    try:
+        from geo import distancia
+        return distancia.estimar_tempo_min(km)
+    except Exception:
+        return None
+
+
+def _fmt_dur(minutos) -> str:
+    """Minutos → 'Xh YYmin' (ou 'YY min' abaixo de 1h). '' para None/0."""
+    try:
+        m = int(round(float(minutos)))
+    except (TypeError, ValueError):
+        return ""
+    if m <= 0:
+        return ""
+    return "%dh%02dmin" % (m // 60, m % 60) if m >= 60 else "%d min" % m
+
+
 def _avisos_texto(r: dict, L: list) -> None:
     ambs = [c for c in r["candidatos"] if c.get("ambiguo")]
     if ambs:
@@ -172,8 +227,9 @@ def _avisos_texto(r: dict, L: list) -> None:
 #  minimiza a soma (p-mediana) ou o pior caso (p-centro). Exato por enumeração
 #  quando viável (C pequeno), guloso (aproximação declarada) caso contrário.
 # ----------------------------------------------------------------------------
-def _dist_cd(cand, dest, usar_osrm, osrm_url):
-    """Matriz candidato×destino (km) como list[C][D] + modo. Geodésico (haversine) ou OSRM."""
+def _dist_cd(cand, dest, usar_osrm, osrm_url, estimar: bool = True):
+    """Matriz candidato×destino (km) como list[C][D] + modo. Geodésico (haversine), estimativa
+    rodoviária (sinuosidade, padrão sem OSRM) ou OSRM. `estimar=False` mantém a linha reta pura."""
     import numpy as np
     from geo import isocronas
     d_lons = np.array([p["lon"] for p in dest], dtype="float64")
@@ -185,6 +241,10 @@ def _dist_cd(cand, dest, usar_osrm, osrm_url):
         if rod is not None:
             linhas = [[float(v) for v in row] for row in rod]
             modo = "rodoviario"
+    if estimar and modo == "geodesico":
+        from geo import distancia
+        linhas = [[float(distancia.estimar_rodoviaria_km(v)) for v in row] for row in linhas]
+        modo = "estimado"
     return linhas, modo
 
 
@@ -255,11 +315,12 @@ def _montar_solucao(S, cand, dest, D):
             "max_km": round(mx, 1), "atribuicao": atribuicao}
 
 
-def calcular_k(candidatos, destinos=None, k: int = 2, usar_osrm: bool = False, osrm_url=None, reg=None) -> dict:
+def calcular_k(candidatos, destinos=None, k: int = 2, usar_osrm: bool = False, osrm_url=None, reg=None,
+               estimar: bool = True) -> dict:
     """Escolhe k hubs (dentre os candidatos) atendendo cada destino pelo hub mais próximo. Devolve
     {ok, k, modo, metodo('exato'|'guloso'), candidatos, destinos, solucao_soma, solucao_max,
     nao_resolvidos_*}. solucao_soma minimiza a SOMA (p-mediana); solucao_max minimiza o PIOR CASO
-    (p-centro). Sem destinos, usa os candidatos. Nunca levanta."""
+    (p-centro). Sem destinos, usa os candidatos. `estimar` como em calcular(). Nunca levanta."""
     base = {"ok": False, "k": int(k or 0), "modo": "geodesico"}
     try:
         reg = reg or _reg()
@@ -281,7 +342,7 @@ def calcular_k(candidatos, destinos=None, k: int = 2, usar_osrm: bool = False, o
             base["detalhe"] = "k deve ser >= 1"
             return base
         k = min(k, C)   # não há como escolher mais hubs do que candidatos disponíveis
-        D, modo = _dist_cd(cand, dest, usar_osrm, osrm_url)
+        D, modo = _dist_cd(cand, dest, usar_osrm, osrm_url, estimar=estimar)
         from math import comb
         exato = (C <= 22 and comb(C, k) <= 50000)
         metodo = "exato" if exato else "guloso"
@@ -300,7 +361,7 @@ def calcular_k(candidatos, destinos=None, k: int = 2, usar_osrm: bool = False, o
             "solucao_max": _montar_solucao(S_max, cand, dest, D),
             "nota": ("%d hub(s) por %s, distância %s, atendendo %d destino(s) pelo hub mais próximo%s."
                      % (k, "enumeração exata" if exato else "aproximação gulosa",
-                        "rodoviária (OSRM)" if modo == "rodoviario" else "geodésica (linha reta)",
+                        _descricao_modo(modo),
                         nd, " (destinos = candidatos)" if self_dest else "")),
         })
         return base
@@ -312,7 +373,7 @@ def calcular_k(candidatos, destinos=None, k: int = 2, usar_osrm: bool = False, o
 def _texto_k(r: dict) -> str:
     L = ["CENTRO ÓTIMO — %d HUBS — OpenRotas" % r["k"], "=" * 60,
          "modo: %s · método: %s · %d candidato(s) · %d destino(s)"
-         % (r["modo"], r["metodo"], len(r["candidatos"]), len(r["destinos"])), ""]
+         % (_modo_rotulo(r["modo"]), r["metodo"], len(r["candidatos"]), len(r["destinos"])), ""]
     for titulo, chave, met in (("MENOR DISTÂNCIA TOTAL (p-mediana)", "solucao_soma", "total_km"),
                                ("MENOR PIOR CASO (p-centro)", "solucao_max", "max_km")):
         s = r[chave]
@@ -344,7 +405,7 @@ def _html_k(r: dict, tema) -> str:
              "<div class='kpi'><div class='v'>%s</div><div class='l'>Método</div></div>"
              % ("exato" if r["metodo"] == "exato" else "guloso (aprox.)"),
              "<div class='kpi'><div class='v'>%s</div><div class='l'>Modo</div></div>"
-             % ("rodoviário" if r["modo"] == "rodoviario" else "geodésico"),
+             % html.escape(_modo_rotulo(r["modo"])),
              "</div>",
              "<p class='sub' style='margin:10px 2px 0'>Hubs por menor distância <b>total</b>: %s.</p>" % hubs_soma,
              "<p class='sub' style='margin:4px 2px 0'>Hubs por menor <b>pior caso</b>: %s.</p>" % hubs_max]
@@ -394,12 +455,14 @@ def render_texto(r: dict) -> str:
     if r.get("solucao_soma") is not None and "k" in r:
         return _texto_k(r)
     L = ["CENTRO ÓTIMO — OpenRotas", "=" * 60, "modo: %s · %d candidato(s) · %d destino(s)"
-         % (r["modo"], len(r["candidatos"]), len(r["destinos"])), ""]
+         % (_modo_rotulo(r["modo"]), len(r["candidatos"]), len(r["destinos"])), ""]
     ms, mm = r["melhor_soma"], r["melhor_max"]
     L.append("★ Menor distância TOTAL: %s%s — %.0f km somados"
              % (ms["nome"], ("/" + ms["uf"]) if ms.get("uf") else "", ms["soma_km"]))
-    L.append("★ Menor PIOR CASO:       %s%s — %.0f km no destino mais distante"
-             % (mm["nome"], ("/" + mm["uf"]) if mm.get("uf") else "", mm["max_km"]))
+    _dur = _fmt_dur(mm.get("max_min"))
+    L.append("★ Menor PIOR CASO:       %s%s — %.0f km no destino mais distante%s"
+             % (mm["nome"], ("/" + mm["uf"]) if mm.get("uf") else "", mm["max_km"],
+                (" (≈ %s de viagem)" % _dur) if _dur else ""))
     L.append("")
     L.append("Candidatos (ordenados por distância total; menor = melhor):")
     for c in sorted(r["candidatos"], key=lambda x: x["soma_km"]):
@@ -436,9 +499,10 @@ def construir_html(r: dict) -> str:
              "<div class='kpi'><div class='v'>%.0f km</div><div class='l'>Total (soma)</div></div>" % ms["soma_km"],
              "<div class='kpi'><div class='v'>%s%s</div><div class='l'>Menor pior caso</div></div>"
              % (html.escape(str(mm["nome"])), html.escape(("/" + mm["uf"]) if mm.get("uf") else "")),
-             "<div class='kpi'><div class='v'>%.0f km</div><div class='l'>Pior caso (máx.)</div></div>" % mm["max_km"],
+             "<div class='kpi'><div class='v'>%.0f km</div><div class='l'>Pior caso (máx.)%s</div></div>"
+             % (mm["max_km"], (" · ≈ %s" % html.escape(_fmt_dur(mm.get("max_min")))) if _fmt_dur(mm.get("max_min")) else ""),
              "<div class='kpi'><div class='v'>%s</div><div class='l'>Modo</div></div>"
-             % ("rodoviário" if r["modo"] == "rodoviario" else "geodésico"),
+             % html.escape(_modo_rotulo(r["modo"])),
              "</div>"]
     # Avisos (ambiguidade / não resolvidos) — mesma honestidade da matriz e do dossiê.
     avisos = []
@@ -550,6 +614,7 @@ def gerar(caminho, r: dict) -> str | None:
 def _cli(argv=None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
     usar_osrm = "--osrm" in argv
+    estimar = "--geodesico" not in argv   # --geodesico força a linha reta pura (sem estimativa de sinuosidade)
     destinos = None
     if "--destinos" in argv:
         j = argv.index("--destinos")
@@ -572,12 +637,12 @@ def _cli(argv=None) -> int:
             candidatos = a
             break
     if not candidatos:
-        print('uso: --centro "Cand/UF;Cand/UF;..." [--destinos "Dest/UF;..."] [--k N] [--osrm] [--html] [--excel]')
+        print('uso: --centro "Cand/UF;Cand/UF;..." [--destinos "Dest/UF;..."] [--k N] [--osrm] [--geodesico] [--html] [--excel]')
         return 2
     if k_val and k_val >= 2:
-        r = calcular_k(candidatos, destinos=destinos, k=k_val, usar_osrm=usar_osrm)
+        r = calcular_k(candidatos, destinos=destinos, k=k_val, usar_osrm=usar_osrm, estimar=estimar)
     else:
-        r = calcular(candidatos, destinos=destinos, usar_osrm=usar_osrm)
+        r = calcular(candidatos, destinos=destinos, usar_osrm=usar_osrm, estimar=estimar)
     print(render_texto(r))
     if r.get("ok") and ("--html" in argv or "--excel" in argv):
         try:

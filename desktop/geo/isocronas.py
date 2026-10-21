@@ -4,12 +4,13 @@
 Dado um ponto de origem (cidade/UF ou lon,lat), classifica TODOS os municípios reais do Brasil em
 FAIXAS de distância (ex.: ≤100, ≤300, ≤600, ≤1000 km) — respondendo "o que alcanço a partir daqui".
 
-Alcance por padrão GEODÉSICO (haversine, linha reta) — honesto e 100% offline, dos centroides
-municipais já instalados. Quando há um MOTOR OSRM local/externo, refina as distâncias dos
-candidatos para distância RODOVIÁRIA real (melhor-esforço, em lotes), degradando para o geodésico
-se o motor não responder. Entrega dict + texto + HTML (mapa nacional colorido por faixa + barras).
+Alcance por padrão ESTIMADO (modo 'estimado'): a linha reta (haversine, offline) dos centroides
+municipais é corrigida pelo fator de sinuosidade do web (geo.distancia) — PARIDADE com a aplicação web,
+que nunca classifica por linha reta crua. Quando há um MOTOR OSRM local/externo, refina as distâncias
+dos candidatos para distância RODOVIÁRIA real (melhor-esforço, em lotes); o restante usa a estimativa.
+`estimar=False` (CLI --geodesico) mantém a LINHA RETA pura (modo 'geodesico').
 
-Honesto (§71): sem motor, é distância em LINHA RETA (não rodoviária) — declarado no resultado.
+Honesto (§71): a estimativa é declarada no resultado; a linha reta permanece como PISO em `_reta`.
 Puro/defensivo (numpy + stdlib): nunca levanta."""
 from __future__ import annotations
 
@@ -117,10 +118,15 @@ def _distancias_osrm(olon, olat, lons, lats, url, cap=1500, chunk=90, timeout=20
         return None
 
 
-def calcular(origem, faixas_km=_FAIXAS_PADRAO, usar_osrm: bool = False, osrm_url=None, reg=None) -> dict:
+def calcular(origem, faixas_km=_FAIXAS_PADRAO, usar_osrm: bool = False, osrm_url=None, reg=None,
+             estimar: bool = True) -> dict:
     """Classifica os municípios do Brasil em faixas de distância a partir de `origem`. Devolve
     {ok, origem, modo, faixas_km, bandas:[{ate_km, municipios, ufs, cumulativo, exemplos}],
-    total_municipios, alcancados, nota}. Nunca levanta."""
+    total_municipios, alcancados, nota}. Nunca levanta.
+
+    `estimar` (padrão True): sem roteamento viário real (OSRM), estima a distância RODOVIÁRIA a partir
+    da linha reta pelo fator de sinuosidade do web (modo 'estimado') em vez de reportar a linha reta crua
+    — a paridade com a aplicação web. `estimar=False` mantém a linha reta pura (modo 'geodesico')."""
     base = {"ok": False, "origem": None, "modo": "geodesico", "faixas_km": list(faixas_km),
             "bandas": [], "total_municipios": 0, "alcancados": 0, "nota": ""}
     try:
@@ -143,13 +149,26 @@ def calcular(origem, faixas_km=_FAIXAS_PADRAO, usar_osrm: bool = False, osrm_url
         if not faixas:
             faixas = list(_FAIXAS_PADRAO)
         modo = "geodesico"
-        dist = _haversine_km(o["lon"], o["lat"], lons, lats)
+        reta = _haversine_km(o["lon"], o["lat"], lons, lats)   # linha reta (piso físico), sempre preservada
+        dist = reta.copy()
+        refinados = np.zeros(len(reta), dtype=bool)
         if usar_osrm:
             ref = _distancias_osrm(o["lon"], o["lat"], lons, lats, osrm_url or _osrm_url())
             if ref is not None:
                 m = ~np.isnan(ref)
-                dist = np.where(m, ref, dist)       # rodoviário onde refinado; geodésico no resto
+                dist = np.where(m, ref, dist)       # rodoviário real onde o OSRM refinou
+                refinados = m
                 modo = "rodoviario-parcial"
+        if estimar:
+            # Células ainda em LINHA RETA (não refinadas pelo OSRM) viram ESTIMATIVA rodoviária — o web
+            # nunca reporta a reta crua. A reta permanece em `_reta` como piso. (isocronas.calcular)
+            nao_ref = ~refinados
+            if bool(nao_ref.any()):
+                from geo import distancia
+                est = distancia.estimar_rodoviaria_vetor(reta)
+                dist = np.where(nao_ref, est, dist)
+                if modo == "geodesico":
+                    modo = "estimado"
         idx = np.searchsorted(np.array(faixas), dist, side="left")   # 0..len-1 = faixa; len = fora
         bandas = []
         for i, ate in enumerate(faixas):
@@ -162,13 +181,13 @@ def calcular(origem, faixas_km=_FAIXAS_PADRAO, usar_osrm: bool = False, osrm_url
                            "ufs": ufset, "cumulativo": int(np.count_nonzero(idx <= i)),
                            "exemplos": exemplos})
         alcancados = int(np.count_nonzero(idx < len(faixas)))
+        from geo import distancia
         base.update({
             "ok": True, "origem": o, "modo": modo, "faixas_km": [int(f) for f in faixas],
             "bandas": bandas, "total_municipios": int(len(lons)), "alcancados": alcancados,
-            "_dist": dist, "_idx": idx, "_lons": lons, "_lats": lats,   # internos p/ o mapa
+            "_dist": dist, "_idx": idx, "_lons": lons, "_lats": lats, "_reta": reta,  # internos p/ o mapa
             "nota": ("Distância %s a partir de %s%s."
-                     % ("rodoviária (parcial, OSRM) + geodésica" if modo != "geodesico"
-                        else "geodésica (linha reta)", o["nome"],
+                     % (distancia.descricao_modo(modo), o["nome"],
                         ("/" + o["uf"]) if o.get("uf") else "")),
         })
         return base
@@ -189,11 +208,12 @@ def render_texto(r: dict) -> str:
     if not r.get("ok"):
         return "Isócronas indisponíveis: %s" % r.get("detalhe", "erro")
     o = r["origem"]
+    from geo import distancia
     L = ["ISÓCRONAS DE ALCANCE — OpenRotas", "=" * 56,
          "origem: %s%s  (%.4f, %.4f)" % (o["nome"], ("/" + o["uf"]) if o.get("uf") else "",
                                          o["lon"], o["lat"]),
          "modo: %s · municípios no país: %d · alcançados (≤%d km): %d" %
-         (r["modo"], r["total_municipios"], r["faixas_km"][-1], r["alcancados"]), ""]
+         (distancia.rotulo_modo(r["modo"]), r["total_municipios"], r["faixas_km"][-1], r["alcancados"]), ""]
     if o.get("ambiguo"):
         L.append("⚠ origem ambígua: há homônimas em %s — usada a 1ª. Especifique a UF "
                  "(ex.: \"Cidade/UF\") para fixar a correta." % ", ".join(o.get("ufs_alt", [])))
@@ -221,6 +241,7 @@ def construir_html(r: dict) -> str:
         if tema is None:
             return "<!doctype html><html><head><meta charset='utf-8'></head><body><pre>%s</pre></body></html>" % html.escape(txt)
         return tema.documento("Isócronas de Alcance", "", "<p class='empty'>%s</p>" % html.escape(txt))
+    from geo import distancia
     o = r["origem"]
     corpo = ["<section class='card'><h2>Alcance a partir de %s%s</h2><div class='kpis'>"
              % (html.escape(str(o["nome"])), html.escape(("/" + o["uf"]) if o.get("uf") else "")),
@@ -228,7 +249,7 @@ def construir_html(r: dict) -> str:
              % (r["alcancados"], r["faixas_km"][-1]),
              "<div class='kpi'><div class='v'>%d</div><div class='l'>Total no país</div></div>" % r["total_municipios"],
              "<div class='kpi'><div class='v'>%s</div><div class='l'>Modo</div></div>"
-             % ("rodoviário+geo" if r["modo"] != "geodesico" else "geodésico"),
+             % html.escape(distancia.rotulo_modo(r["modo"])),
              "</div>"]
     if o.get("ambiguo"):
         corpo.append("<p class='sub' style='margin:10px 2px 0;color:var(--warn,#b45309)'>"
@@ -289,6 +310,7 @@ def gerar(caminho, r: dict) -> str | None:
 def _cli(argv=None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
     usar_osrm = "--osrm" in argv
+    estimar = "--geodesico" not in argv   # --geodesico força a linha reta pura (sem estimativa de sinuosidade)
     faixas = _FAIXAS_PADRAO
     origem = None
     for a in argv:
@@ -300,9 +322,9 @@ def _cli(argv=None) -> int:
         elif not a.startswith("--"):
             origem = a
     if not origem:
-        print('uso: --isocronas "Cidade/UF" | "lon,lat" [--faixas=100,300,600,1000] [--osrm] [--html]')
+        print('uso: --isocronas "Cidade/UF" | "lon,lat" [--faixas=100,300,600,1000] [--osrm] [--geodesico] [--html]')
         return 2
-    r = calcular(origem, faixas_km=faixas, usar_osrm=usar_osrm)
+    r = calcular(origem, faixas_km=faixas, usar_osrm=usar_osrm, estimar=estimar)
     print(render_texto(r))
     if r.get("ok") and "--html" in argv:
         try:
