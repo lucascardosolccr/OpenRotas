@@ -2398,6 +2398,49 @@ def test_distancia_rotulos_de_modo():
     assert "sinuosidade" in d.descricao_modo("estimado")
     assert "OSRM" in d.descricao_modo("rodoviario")
 
+def test_distancia_haversine_vs_planar():
+    # Haversine honesta: SP(-46.63,-23.55)→RJ(-43.17,-22.91) ~ 360 km em linha reta (não a planar inflada).
+    import numpy as np
+    from geo import distancia as d
+    km = float(d.haversine_km(-46.63, -23.55, -43.17, -22.91))
+    assert 350 <= km <= 375, km
+    # vetor: 1º elemento == escalar; o mesmo ponto dá 0.
+    v = d.haversine_km(-46.63, -23.55, np.array([-43.17, -46.63]), np.array([-22.91, -23.55]))
+    assert abs(float(v[0]) - km) < 0.5 and float(v[1]) < 0.1
+    # a planar (dlon²+dlat²)×111 INFLA a leste-oeste: a haversine é menor para um par E-W puro no Sul.
+    import math
+    lo0, la0, lo1, la1 = -51.0, -30.0, -48.0, -30.0   # 3° de longitude puros a 30°S
+    planar = math.hypot(lo1 - lo0, la1 - la0) * 111.0
+    hv = float(d.haversine_km(lo0, la0, lo1, la1))
+    assert hv < planar and hv == __import__("pytest").approx(3 * 111.0 * math.cos(math.radians(30)), rel=0.03)
+
+def test_distancia_valida_coordenada_br():
+    from geo import distancia as d
+    assert d.validar_coordenada_br(-46.63, -23.55) == []          # SP, plausível
+    assert d.validar_coordenada_br(-47.88, -15.79) == []          # Brasília, plausível
+    # troca lat/lon (usuário digitou lat,lon): lon=-23.55 (|<34|), lat=-46.63 (|>=34|) → sinalizado
+    assert d.validar_coordenada_br(-23.55, -46.63)
+    # fora do Brasil (Lisboa ~ -9.14, 38.7): |lat|>=34 e fora dos limites
+    assert d.validar_coordenada_br(-9.14, 38.7)
+    assert d.validar_coordenada_br(0.0, 0.0)                      # (0,0) ausente
+    assert d.validar_coordenada_br("x", "y")                      # não-numérico
+
+def test_matriz_sinaliza_coordenada_suspeita():
+    # Uma coordenada CRUA trocada (lat,lon) entra na matriz mas é SINALIZADA (não silenciada).
+    from geo import matriz_od
+    r = matriz_od.calcular([(-46.63, -23.55), (-23.55, -46.63)])   # 2º ponto está com lon,lat trocados
+    assert r["ok"] and r["resumo"]["coord_suspeitas"] == 1
+    assert any(p.get("coord_suspeita") for p in r["pontos"])
+    assert "suspeita" in matriz_od.render_texto(r).lower()
+    assert "suspeita" in matriz_od.construir_html(r).lower()
+
+def test_isocronas_sinaliza_origem_suspeita():
+    from geo import isocronas
+    r = isocronas.calcular("-23.55,-46.63", faixas_km=(100, 300))   # lon,lat trocados na origem
+    assert r["ok"] and r["origem"].get("coord_suspeita")
+    assert "suspeita" in isocronas.render_texto(r).lower()
+    assert "suspeita" in isocronas.construir_html(r).lower()
+
 
 # ============================================================================
 #  QUALIDADE DE COORDENADAS — guarda anti-regressão do defeito Brasília/Vitória.

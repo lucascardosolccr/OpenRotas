@@ -148,11 +148,12 @@ def _municipio_proximo(reg, lon, lat) -> dict:
     try:
         import numpy as np
         from audit import coverage_auditor as ca
+        from geo import distancia
         df = reg.carregar_parquet("municipios", colunas=["lon", "lat", "nome", "geocodigo"])
-        dlon = df["lon"].to_numpy(dtype="float64") - lon
-        dlat = df["lat"].to_numpy(dtype="float64") - lat
-        d2 = dlon * dlon + dlat * dlat
-        i = int(np.argmin(d2))
+        # Geodésica (haversine), não planar: a seleção do vizinho e o km ficam corretos (paridade web).
+        dist = distancia.haversine_km(lon, lat, df["lon"].to_numpy(dtype="float64"),
+                                      df["lat"].to_numpy(dtype="float64"))
+        i = int(np.argmin(dist))
         gc = str(df["geocodigo"].iloc[i])
         uf = None
         try:
@@ -160,7 +161,7 @@ def _municipio_proximo(reg, lon, lat) -> dict:
         except Exception:
             uf = None
         return {"nome": str(df["nome"].iloc[i]), "uf": uf or "?", "geocodigo": gc,
-                "dist_km": round(float(math.sqrt(d2[i])) * _GRAU_KM, 1)}
+                "dist_km": round(float(dist[i]), 1)}
     except Exception:
         logger.warning("[DOSSIE] município próximo falhou.", exc_info=True)
         return {"nome": "?", "uf": "?", "geocodigo": "", "dist_km": None}
@@ -170,14 +171,14 @@ def _ref_hidrografica(reg, lon, lat) -> dict:
     """Rio nomeado mais próximo (índice rios_nomeados). {nome, dist_km} ou {} se indisponível."""
     try:
         import numpy as np
+        from geo import distancia
         if not reg.existe("rios_nomeados"):
             return {}
         df = reg.carregar_parquet("rios_nomeados", colunas=["lat", "lon", "nome"])
-        dlon = df["lon"].to_numpy(dtype="float64") - lon
-        dlat = df["lat"].to_numpy(dtype="float64") - lat
-        d2 = dlon * dlon + dlat * dlat
-        i = int(np.argmin(d2))
-        return {"nome": str(df["nome"].iloc[i]), "dist_km": round(float(math.sqrt(d2[i])) * _GRAU_KM, 1)}
+        dist = distancia.haversine_km(lon, lat, df["lon"].to_numpy(dtype="float64"),
+                                      df["lat"].to_numpy(dtype="float64"))
+        i = int(np.argmin(dist))
+        return {"nome": str(df["nome"].iloc[i]), "dist_km": round(float(dist[i]), 1)}
     except Exception:
         return {}
 
@@ -186,9 +187,9 @@ def _estacao_proxima(lon, lat) -> dict:
     """Estação de telemetria local mais próxima, SE houver inventário local (telemetry store).
     Integra a telemetria ao dossiê (§30). {} quando não há inventário — honesto, sem inventar."""
     try:
-        import math as _m
         sys.path.insert(0, str(_AQUI.parent / "telemetry"))
         import ana_incremental as tel
+        from geo import distancia
         regs = tel.TelemetryStore().listar("estacoes")
         if not regs:
             return {}
@@ -208,13 +209,13 @@ def _estacao_proxima(lon, lat) -> dict:
                 rlon = float(_coord(r, "lon", "longitude"))
             except Exception:
                 continue
-            d = (rlon - lon) ** 2 + (rlat - lat) ** 2
+            d = float(distancia.haversine_km(lon, lat, rlon, rlat))   # geodésica em km (não planar)
             if md is None or d < md:
                 md, melhor = d, r
         if melhor is None:
             return {}
         nome = melhor.get("nome") or melhor.get("estacao") or melhor.get("codigo") or "?"
-        return {"estacao": str(nome), "dist_km": round(_m.sqrt(md) * _GRAU_KM, 1)}
+        return {"estacao": str(nome), "dist_km": round(md, 1)}
     except Exception:
         return {}
 

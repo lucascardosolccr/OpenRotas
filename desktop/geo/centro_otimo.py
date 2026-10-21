@@ -116,6 +116,7 @@ def calcular(candidatos, destinos=None, usar_osrm: bool = False, osrm_url=None, 
             mx = float(max(row)) if row else 0.0
             out.append({"nome": c["nome"], "uf": c.get("uf", ""), "lon": c["lon"], "lat": c["lat"],
                         "ambiguo": bool(c.get("ambiguo")), "ufs_alt": c.get("ufs_alt", []),
+                        "coord_suspeita": c.get("coord_suspeita", []),
                         "soma_km": round(soma, 1), "max_km": round(mx, 1),
                         "media_km": round(soma / len(row), 1) if row else 0.0,
                         "distancias": [round(v, 1) for v in row]})
@@ -219,6 +220,10 @@ def _avisos_texto(r: dict, L: list) -> None:
         L.append("⚠ Candidato(s) não resolvido(s) e fora da análise: %s" % ", ".join(str(x) for x in nrc))
     if nrd:
         L.append("⚠ Destino(s) não resolvido(s) e fora da análise: %s" % ", ".join(str(x) for x in nrd))
+    susp = [c for c in r["candidatos"] if c.get("coord_suspeita")]
+    if susp:
+        L.append("⚠ %d coordenada(s) suspeita(s) (verifique a ordem lon,lat / se está no Brasil): %s"
+                 % (len(susp), "; ".join("%s (%s)" % (_rotulo(c), "; ".join(c.get("coord_suspeita", []))) for c in susp)))
 
 
 # ----------------------------------------------------------------------------

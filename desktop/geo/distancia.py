@@ -124,3 +124,65 @@ def rotulo_modo(modo) -> str:
 def descricao_modo(modo) -> str:
     """Frase descritiva do modo para a nota de rodapé dos relatórios."""
     return _DESCRICAO.get(str(modo), str(modo))
+
+
+# ---------------------------------------------------------------------------
+#  HAVERSINE (geodésica honesta) — substitui a distância PLANAR (dlon²+dlat²) que
+#  ignora que 1° de longitude é MENOR que 1° de latitude em km (fator cos(lat) ~
+#  0,87–0,92 no Brasil). A planar distorce a seleção do vizinho mais próximo e
+#  infla a distância leste-oeste em até ~15% no Sul. O web usa haversine; isto
+#  traz a MESMA régua ao desktop (dossiê: município/rio/estação mais próximos).
+# ---------------------------------------------------------------------------
+_R_TERRA_KM = 6371.0
+
+
+def haversine_km(lon0, lat0, lons, lats):
+    """Distância geodésica (km) de UM ponto (lon0,lat0) a cada (lons,lats). Vetorizada (numpy) quando
+    `lons`/`lats` são arrays; escalar quando são números. Nunca levanta — erro → 0.0 / zeros."""
+    try:
+        import numpy as np
+        la1 = np.radians(float(lat0))
+        la2 = np.radians(np.asarray(lats, dtype="float64"))
+        dla = la2 - la1
+        dlo = np.radians(np.asarray(lons, dtype="float64") - float(lon0))
+        a = np.sin(dla / 2.0) ** 2 + np.cos(la1) * np.cos(la2) * np.sin(dlo / 2.0) ** 2
+        return 2.0 * _R_TERRA_KM * np.arcsin(np.sqrt(np.clip(a, 0.0, 1.0)))
+    except Exception:
+        import math
+        try:
+            la1 = math.radians(float(lat0)); la2 = math.radians(float(lats))
+            dlo = math.radians(float(lons) - float(lon0))
+            a = math.sin((la2 - la1) / 2.0) ** 2 + math.cos(la1) * math.cos(la2) * math.sin(dlo / 2.0) ** 2
+            return 2.0 * _R_TERRA_KM * math.asin(math.sqrt(max(0.0, min(1.0, a))))
+        except Exception:
+            return 0.0
+
+
+# ---------------------------------------------------------------------------
+#  VALIDAÇÃO DE COORDENADA (Brasil) — paridade com _validar_centroide_br do web.
+#  O desktop aceita 'lon,lat' cru (matriz/isócronas/centro) SEM checar nada; o erro
+#  mais comum é digitar 'lat,lon' TROCADO, ou um ponto fora do Brasil, e o relatório
+#  sair inteiro errado em silêncio. Aqui sinalizamos (não bloqueamos) os casos óbvios.
+# ---------------------------------------------------------------------------
+_BR_LAT_MIN, _BR_LAT_MAX = -33.8, 5.3       # limites continentais do Brasil (lat)
+_BR_LON_MIN, _BR_LON_MAX = -74.0, -34.8     # limites continentais do Brasil (lon)
+
+
+def validar_coordenada_br(lon, lat):
+    """Valida (lon,lat) como ponto plausível no Brasil. Devolve lista de MOTIVOS (vazia = ok). Detecta:
+    não-numérico, (0,0), troca lat/lon (|lat|>=34 ou |lon|<34) e fora dos limites continentais. PURA."""
+    try:
+        lo = float(lon); la = float(lat)
+    except (TypeError, ValueError):
+        return ["coordenada não numérica"]
+    r = []
+    if lo == 0.0 and la == 0.0:
+        r.append("coordenada em (0,0) — provável dado ausente")
+    if abs(la) >= 34.0:
+        r.append("|lat|≥34 — provável troca lat/lon (a latitude do Brasil não passa de ~34)")
+    if abs(lo) < 34.0:
+        r.append("|lon|<34 — provável troca lat/lon (a longitude do Brasil tem magnitude 34–74)")
+    if not (_BR_LAT_MIN <= la <= _BR_LAT_MAX and _BR_LON_MIN <= lo <= _BR_LON_MAX):
+        if "troca lat/lon" not in " ".join(r):   # não repete o diagnóstico quando o motivo já é a troca
+            r.append("fora dos limites continentais do Brasil")
+    return r

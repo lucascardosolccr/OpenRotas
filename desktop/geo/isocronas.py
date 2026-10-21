@@ -50,17 +50,25 @@ def _haversine_km(lon0, lat0, lons, lats):
 
 def _resolver_origem(origem, reg):
     """Aceita (lon,lat) | 'lon,lat' | 'Cidade/UF'. Devolve {ok,lon,lat,nome,uf} ou {ok:False}."""
+    def _susp(lo, la):
+        try:
+            from geo import distancia
+            return distancia.validar_coordenada_br(lo, la)
+        except Exception:
+            return []
     try:
         if isinstance(origem, (tuple, list)) and len(origem) >= 2:
-            return {"ok": True, "lon": float(origem[0]), "lat": float(origem[1]),
-                    "nome": "(%.4f, %.4f)" % (float(origem[0]), float(origem[1])), "uf": ""}
+            lo, la = float(origem[0]), float(origem[1])
+            return {"ok": True, "lon": lo, "lat": la, "nome": "(%.4f, %.4f)" % (lo, la), "uf": "",
+                    "coord_suspeita": _susp(lo, la)}
         s = str(origem or "").strip()
         # "lon,lat" numérico?
         if "," in s and "/" not in s:
             try:
                 a, b = s.split(",", 1)
-                return {"ok": True, "lon": float(a), "lat": float(b),
-                        "nome": "(%.4f, %.4f)" % (float(a), float(b)), "uf": ""}
+                lo, la = float(a), float(b)
+                return {"ok": True, "lon": lo, "lat": la, "nome": "(%.4f, %.4f)" % (lo, la), "uf": "",
+                        "coord_suspeita": _susp(lo, la)}
             except Exception:
                 pass
         from geo import dossie_rota
@@ -218,6 +226,10 @@ def render_texto(r: dict) -> str:
         L.append("⚠ origem ambígua: há homônimas em %s — usada a 1ª. Especifique a UF "
                  "(ex.: \"Cidade/UF\") para fixar a correta." % ", ".join(o.get("ufs_alt", [])))
         L.append("")
+    if o.get("coord_suspeita"):
+        L.append("⚠ coordenada da origem suspeita (verifique a ordem lon,lat / se está no Brasil): %s"
+                 % "; ".join(o["coord_suspeita"]))
+        L.append("")
     for b in r["bandas"]:
         L.append("  ≤ %-5d km: %5d municípios · %2d UFs · acum. %d"
                  % (b["ate_km"], b["municipios"], len(b["ufs"]), b["cumulativo"]))
@@ -256,6 +268,10 @@ def construir_html(r: dict) -> str:
                      "⚠ Origem ambígua: há homônimas em %s — usada a 1ª. "
                      "Especifique a UF (ex.: \"Cidade/UF\") para fixar a correta.</p>"
                      % html.escape(", ".join(o.get("ufs_alt", [])) or "outras UFs"))
+    if o.get("coord_suspeita"):
+        corpo.append("<p class='sub' style='margin:10px 2px 0;color:var(--warn,#b45309)'>"
+                     "⚠ Coordenada da origem suspeita — verifique a ordem <b>lon,lat</b> e se está no "
+                     "Brasil: %s.</p>" % html.escape("; ".join(o["coord_suspeita"])))
     corpo.append("</section>")
     if tema is not None:
         # Mapa nacional colorido por faixa (anéis de alcance) + origem como waypoint.

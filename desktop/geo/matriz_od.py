@@ -31,18 +31,30 @@ def _reg():
     return local_data.LocalDataRegistry(cfg.app_root(), cfg.user_data_dir() / "data_local")
 
 
+def _suspeita_coord(lon, lat):
+    """Motivos de suspeita (troca lat/lon, fora do Brasil, (0,0)) para uma coordenada CRUA do usuário —
+    via geo.distancia (paridade com _validar_centroide_br do web). [] quando plausível. Nunca levanta."""
+    try:
+        from geo import distancia
+        return distancia.validar_coordenada_br(lon, lat)
+    except Exception:
+        return []
+
+
 def _resolver_ponto(tok, reg):
-    """'lon,lat' | 'Cidade/UF' | (lon,lat) → {ok,lon,lat,nome,uf}."""
+    """'lon,lat' | 'Cidade/UF' | (lon,lat) → {ok,lon,lat,nome,uf[,coord_suspeita]}."""
     try:
         if isinstance(tok, (tuple, list)) and len(tok) >= 2:
-            return {"ok": True, "lon": float(tok[0]), "lat": float(tok[1]),
-                    "nome": "(%.3f,%.3f)" % (float(tok[0]), float(tok[1])), "uf": ""}
+            lo, la = float(tok[0]), float(tok[1])
+            return {"ok": True, "lon": lo, "lat": la, "nome": "(%.3f,%.3f)" % (lo, la), "uf": "",
+                    "coord_suspeita": _suspeita_coord(lo, la)}
         s = str(tok or "").strip()
         if "," in s and "/" not in s:
             try:
                 a, b = s.split(",", 1)
-                return {"ok": True, "lon": float(a), "lat": float(b),
-                        "nome": "(%.3f,%.3f)" % (float(a), float(b)), "uf": ""}
+                lo, la = float(a), float(b)
+                return {"ok": True, "lon": lo, "lat": la, "nome": "(%.3f,%.3f)" % (lo, la), "uf": "",
+                        "coord_suspeita": _suspeita_coord(lo, la)}
             except Exception:
                 pass
         from geo import dossie_rota
@@ -154,12 +166,14 @@ def calcular(locais, usar_osrm: bool = False, osrm_url=None, reg=None, estimar: 
         base.update({
             "ok": True,
             "pontos": [{"nome": p["nome"], "uf": p.get("uf", ""), "lon": p["lon"], "lat": p["lat"],
-                        "ambiguo": bool(p.get("ambiguo")), "ufs_alt": p.get("ufs_alt", [])} for p in pts],
+                        "ambiguo": bool(p.get("ambiguo")), "ufs_alt": p.get("ufs_alt", []),
+                        "coord_suspeita": p.get("coord_suspeita", [])} for p in pts],
             "matriz": M, "modo": modo,
             "resumo": {"n": n, "par_distante": _par(maxv), "par_proximo": _par(minv),
                        "media_km": round(soma / cnt, 1) if cnt else 0.0,
                        "diametro_km": round(maxv[0], 1) if maxv[1] else 0.0,
-                       "ambiguos": sum(1 for p in pts if p.get("ambiguo"))},
+                       "ambiguos": sum(1 for p in pts if p.get("ambiguo")),
+                       "coord_suspeitas": sum(1 for p in pts if p.get("coord_suspeita"))},
             "nota": ("Distância %s entre %d pontos." % (distancia.descricao_modo(modo), n)),
         })
         if len(pts) < len(resol):
@@ -208,6 +222,12 @@ def render_texto(r: dict) -> str:
     nr = r.get("nao_resolvidos") or []
     if nr:
         L.append("⚠ %d local(is) não resolvido(s) e FORA da matriz: %s" % (len(nr), ", ".join(str(x) for x in nr)))
+        L.append("")
+    susp = [(p, p.get("coord_suspeita")) for p in pts if p.get("coord_suspeita")]
+    if susp:
+        L.append("⚠ %d coordenada(s) suspeita(s) (verifique a ordem lon,lat e se está no Brasil):" % len(susp))
+        for p, mot in susp:
+            L.append("    %s — %s" % (_rotulo(p), "; ".join(mot)))
         L.append("")
     cab = "      " + "".join("%8d" % (j + 1) for j in range(len(pts)))
     L.append(cab)
@@ -290,6 +310,13 @@ def construir_html(r: dict) -> str:
         corpo.append("<p class='sub' style='margin:10px 2px 0;color:var(--warn,#b45309)'>"
                      "⚠ %d local(is) não resolvido(s) e fora da matriz: %s.</p>"
                      % (len(nr), html.escape(", ".join(str(x) for x in nr))))
+    susp = [p for p in r["pontos"] if p.get("coord_suspeita")]
+    if susp:
+        itens = "; ".join("<b>%s</b> (%s)" % (html.escape(_rotulo(p)),
+                          html.escape("; ".join(p.get("coord_suspeita", [])))) for p in susp)
+        corpo.append("<p class='sub' style='margin:10px 2px 0;color:var(--warn,#b45309)'>"
+                     "⚠ %d coordenada(s) suspeita(s) — verifique a ordem <b>lon,lat</b> e se está no "
+                     "Brasil: %s.</p>" % (len(susp), itens))
     corpo.append("</section>")
     if tema is not None:
         # Mapa: os pontos como corredor/waypoints sobre o Brasil.
