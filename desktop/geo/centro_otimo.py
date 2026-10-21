@@ -199,14 +199,12 @@ def _tempo_estimado(km, modo):
 
 
 def _fmt_dur(minutos) -> str:
-    """Minutos → 'Xh YYmin' (ou 'YY min' abaixo de 1h). '' para None/0."""
+    """Minutos → 'Xh YYmin' (via geo.distancia.formatar_duracao, compartilhado). '' para None/0."""
     try:
-        m = int(round(float(minutos)))
-    except (TypeError, ValueError):
+        from geo import distancia
+        return distancia.formatar_duracao(minutos)
+    except Exception:
         return ""
-    if m <= 0:
-        return ""
-    return "%dh%02dmin" % (m // 60, m % 60) if m >= 60 else "%d min" % m
 
 
 def _avisos_texto(r: dict, L: list) -> None:

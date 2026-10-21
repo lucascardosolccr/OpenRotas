@@ -178,6 +178,7 @@ def calcular(origem, faixas_km=_FAIXAS_PADRAO, usar_osrm: bool = False, osrm_url
                 if modo == "geodesico":
                     modo = "estimado"
         idx = np.searchsorted(np.array(faixas), dist, side="left")   # 0..len-1 = faixa; len = fora
+        from geo import distancia
         bandas = []
         for i, ate in enumerate(faixas):
             sel = np.nonzero(idx == i)[0]
@@ -185,11 +186,12 @@ def calcular(origem, faixas_km=_FAIXAS_PADRAO, usar_osrm: bool = False, osrm_url
             ordem = sel[np.argsort(dist[sel])] if sel.size else sel
             exemplos = ["%s/%s" % (nomes[j], ufs[j] if isinstance(ufs[j], str) else "?")
                         for j in ordem[:5].tolist()]
+            # tempo estimado p/ a BORDA da faixa (só quando a distância é rodoviária; da reta pura não).
+            tmin = distancia.estimar_tempo_min(ate) if modo != "geodesico" else None
             bandas.append({"ate_km": int(ate), "municipios": int(sel.size),
                            "ufs": ufset, "cumulativo": int(np.count_nonzero(idx <= i)),
-                           "exemplos": exemplos})
+                           "exemplos": exemplos, "tempo_min": tmin})
         alcancados = int(np.count_nonzero(idx < len(faixas)))
-        from geo import distancia
         base.update({
             "ok": True, "origem": o, "modo": modo, "faixas_km": [int(f) for f in faixas],
             "bandas": bandas, "total_municipios": int(len(lons)), "alcancados": alcancados,
@@ -231,8 +233,10 @@ def render_texto(r: dict) -> str:
                  % "; ".join(o["coord_suspeita"]))
         L.append("")
     for b in r["bandas"]:
-        L.append("  ≤ %-5d km: %5d municípios · %2d UFs · acum. %d"
-                 % (b["ate_km"], b["municipios"], len(b["ufs"]), b["cumulativo"]))
+        _dur = distancia.formatar_duracao(b.get("tempo_min"))
+        L.append("  ≤ %-5d km%s: %5d municípios · %2d UFs · acum. %d"
+                 % (b["ate_km"], (" (≈ %s)" % _dur) if _dur else "",
+                    b["municipios"], len(b["ufs"]), b["cumulativo"]))
         if b["exemplos"]:
             L.append("        mais próximos: %s" % ", ".join(b["exemplos"]))
     L.append("")
@@ -296,11 +300,14 @@ def construir_html(r: dict) -> str:
                     corpo.append("<section class='card'><h2>Mapa de alcance</h2>%s</section>" % m)
         except Exception:
             pass
-        # Barras: municípios por faixa.
+        # Barras: municípios por faixa (com tempo estimado até a borda, quando rodoviário/estimado).
         itens = [{"rotulo": "≤ %d km" % b["ate_km"], "valor": b["municipios"],
                   "classe": _CLASSES_FAIXA[i] if i < len(_CLASSES_FAIXA) else None,
-                  "dica": "≤ %d km: %d municípios em %d UFs (acum. %d)"
-                          % (b["ate_km"], b["municipios"], len(b["ufs"]), b["cumulativo"])}
+                  "dica": "≤ %d km%s: %d municípios em %d UFs (acum. %d)"
+                          % (b["ate_km"],
+                             (" (≈ %s)" % distancia.formatar_duracao(b.get("tempo_min")))
+                             if distancia.formatar_duracao(b.get("tempo_min")) else "",
+                             b["municipios"], len(b["ufs"]), b["cumulativo"])}
                  for i, b in enumerate(r["bandas"])]
         ch = tema.grafico_barras(itens, titulo="MUNICÍPIOS POR FAIXA DE DISTÂNCIA")
         if ch:

@@ -2441,6 +2441,43 @@ def test_isocronas_sinaliza_origem_suspeita():
     assert "suspeita" in isocronas.render_texto(r).lower()
     assert "suspeita" in isocronas.construir_html(r).lower()
 
+def test_distancia_formatar_duracao():
+    from geo import distancia as d
+    assert d.formatar_duracao(0) == "" and d.formatar_duracao(None) == ""
+    assert d.formatar_duracao(45) == "45 min"
+    assert d.formatar_duracao(60) == "1h00min"
+    assert d.formatar_duracao(125) == "2h05min"
+
+def test_matriz_tempo_no_par_distante():
+    # [PARIDADE-WEB · TEMPO] No modo estimado/rodoviário o par mais distante ganha tempo estimado; na
+    # linha reta pura (geodesico) não há tempo (não se estima viagem a partir da reta).
+    from geo import matriz_od
+    r = matriz_od.calcular("São Paulo/SP;Rio de Janeiro/RJ;Brasília/DF")       # default: estimado
+    assert r["modo"] == "estimado" and r["resumo"]["par_distante"].get("min") is not None
+    assert "≈" in matriz_od.render_texto(r) and "≈" in matriz_od.construir_html(r)
+    rg = matriz_od.calcular("São Paulo/SP;Rio de Janeiro/RJ;Brasília/DF", estimar=False)
+    assert rg["modo"] == "geodesico" and rg["resumo"]["par_distante"].get("min") is None
+
+def test_isocronas_tempo_por_faixa():
+    from geo import isocronas
+    r = isocronas.calcular("Brasília/DF", faixas_km=(100, 300, 600))           # default: estimado
+    assert r["modo"] == "estimado"
+    assert all(b.get("tempo_min") and b["tempo_min"] > 0 for b in r["bandas"])
+    assert "≈" in isocronas.render_texto(r)
+    rg = isocronas.calcular("Brasília/DF", faixas_km=(100, 300, 600), estimar=False)
+    assert all(b.get("tempo_min") is None for b in rg["bandas"])               # reta pura → sem tempo
+
+def test_repo_proximidade_corrige_longitude(repo):
+    # A correção cos(lat) AMPLIA a caixa a leste-oeste: num ponto do SUL, proximidade deve cobrir
+    # >= o que uma caixa de grau UNIFORME (sem a correção) cobriria. Prova a melhoria sem contagem fixa.
+    import math
+    from geo import repositorio
+    lon, lat, raio = -51.23, -30.03, 40.0        # Porto Alegre/RS (cos(30) ~ 0.87 → correção relevante)
+    r = repo.proximidade("drenagem", lon, lat, raio_km=raio)
+    rg = max(0.0, raio) / repositorio._GRAU_KM
+    naive = repo.intersecta_bbox("drenagem", lon - rg, lat - rg, lon + rg, lat + rg)   # caixa uniforme
+    assert r["total"] >= int(naive.size)         # a corrigida nunca cobre menos que a uniforme
+
 
 # ============================================================================
 #  QUALIDADE DE COORDENADAS — guarda anti-regressão do defeito Brasília/Vitória.

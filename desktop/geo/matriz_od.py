@@ -157,12 +157,14 @@ def calcular(locais, usar_osrm: bool = False, osrm_url=None, reg=None, estimar: 
                     maxv = (v, (i, j))
                 if v < minv[0]:
                     minv = (v, (i, j))
+        from geo import distancia
         def _par(pr):
             if not pr[1]:
                 return None
             i, j = pr[1]
-            return {"de": pts[i]["nome"], "para": pts[j]["nome"], "km": round(pr[0], 1)}
-        from geo import distancia
+            # tempo estimado só quando a distância é rodoviária (estimado/OSRM); da reta pura não se estima.
+            _mn = distancia.estimar_tempo_min(pr[0]) if modo != "geodesico" else None
+            return {"de": pts[i]["nome"], "para": pts[j]["nome"], "km": round(pr[0], 1), "min": _mn}
         base.update({
             "ok": True,
             "pontos": [{"nome": p["nome"], "uf": p.get("uf", ""), "lon": p["lon"], "lat": p["lat"],
@@ -236,9 +238,12 @@ def render_texto(r: dict) -> str:
     rs = r["resumo"]
     L.append("")
     if rs.get("par_distante"):
+        from geo import distancia
         pd = rs["par_distante"]; pp = rs["par_proximo"]
-        L.append("mais distante: %s ↔ %s (%.0f km) · mais próximo: %s ↔ %s (%.0f km) · média %.0f km"
-                 % (pd["de"], pd["para"], pd["km"], pp["de"], pp["para"], pp["km"], rs["media_km"]))
+        _dur = distancia.formatar_duracao(pd.get("min"))
+        L.append("mais distante: %s ↔ %s (%.0f km%s) · mais próximo: %s ↔ %s (%.0f km) · média %.0f km"
+                 % (pd["de"], pd["para"], pd["km"], (" ≈ " + _dur) if _dur else "",
+                    pp["de"], pp["para"], pp["km"], rs["media_km"]))
     L.append(r["nota"] + " (valores em km)")
     return "\n".join(L)
 
@@ -292,10 +297,13 @@ def construir_html(r: dict) -> str:
              "<div class='kpi'><div class='v'>%s</div><div class='l'>Modo</div></div>" % html.escape(_modo_rotulo(r["modo"])),
              "</div>"]
     if rs.get("par_distante"):
+        from geo import distancia
         pd = rs["par_distante"]; pp = rs["par_proximo"]
-        corpo.append("<p class='sub' style='margin:10px 2px 0'>Mais distante: <b>%s ↔ %s</b> (%.0f km) · "
+        _dur = distancia.formatar_duracao(pd.get("min"))
+        corpo.append("<p class='sub' style='margin:10px 2px 0'>Mais distante: <b>%s ↔ %s</b> (%.0f km%s) · "
                      "mais próximo: <b>%s ↔ %s</b> (%.0f km).</p>"
                      % (html.escape(pd["de"]), html.escape(pd["para"]), pd["km"],
+                        (" ≈ " + html.escape(_dur)) if _dur else "",
                         html.escape(pp["de"]), html.escape(pp["para"]), pp["km"]))
     ambs = [p for p in r["pontos"] if p.get("ambiguo")]
     if ambs:

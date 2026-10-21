@@ -98,6 +98,18 @@ def estimar_tempo_min(km) -> float:
     return round((d / v) * 60.0, 1)
 
 
+def formatar_duracao(minutos) -> str:
+    """Minutos → 'Xh YYmin' (ou 'YY min' abaixo de 1h). '' para None/0/inválido. Compartilhado por
+    matriz/isócronas/centro para falarem a mesma língua sobre tempo estimado."""
+    try:
+        m = int(round(float(minutos)))
+    except (TypeError, ValueError):
+        return ""
+    if m <= 0:
+        return ""
+    return "%dh%02dmin" % (m // 60, m % 60) if m >= 60 else "%d min" % m
+
+
 # ---------------------------------------------------------------------------
 #  Rótulos de MODO — compartilhados por matriz/isócronas/centro para que os três
 #  relatórios falem a MESMA língua sobre a procedência da distância.

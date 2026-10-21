@@ -128,10 +128,17 @@ class GeoIntelligenceRepository:
 
     def proximidade(self, camada: str, lon, lat, raio_km: float = 10.0) -> dict:
         """Feições cuja bbox está dentro de um quadrado de ~raio_km ao redor do ponto. Devolve
-        {camada, total, raio_km}. Aproximado (bbox + grau≈111km). Nunca levanta."""
+        {camada, total, raio_km}. Aproximado (bbox). CORREÇÃO cos(lat): 1° de longitude vale
+        ~111·cos(lat) km (no Brasil ~0,87–1,0× o de latitude), então a meia-largura E-W em graus
+        é AMPLIADA por 1/cos(lat) — sem isso, a caixa alcançaria só ~cos(lat)·raio_km a leste/oeste
+        (até ~13% a menos no Sul) e perderia feições. Nunca levanta."""
         try:
-            r = max(0.0, float(raio_km)) / _GRAU_KM
-            idx = self.intersecta_bbox(camada, lon - r, lat - r, lon + r, lat + r)
+            import math
+            r_lat = max(0.0, float(raio_km)) / _GRAU_KM
+            cosl = math.cos(math.radians(float(lat)))
+            cosl = cosl if cosl > 0.2 else 0.2          # salvaguarda numérica (não ocorre no Brasil)
+            r_lon = r_lat / cosl
+            idx = self.intersecta_bbox(camada, lon - r_lon, lat - r_lat, lon + r_lon, lat + r_lat)
             return {"camada": camada, "total": int(idx.size), "raio_km": raio_km}
         except Exception:
             return {"camada": camada, "total": 0, "raio_km": raio_km}
