@@ -249,16 +249,18 @@ def _osrm_url(conf=None):
         return None
 
 
-def geometria_osrm(coords, url=None, timeout: int = 20):
+def geometria_osrm(coords, url=None, timeout: int = 20, retornar_distancia: bool = False):
     """Busca a POLILINHA REAL da rota num servidor OSRM. Devolve lista [(lon,lat),...] ou None
-    (offline/sem servidor/erro). Best-effort — nunca levanta. Respeita OPENROTAS_NO_NET."""
+    (offline/sem servidor/erro). Com `retornar_distancia=True`, devolve (linha, dist_m, dur_s) — para o
+    sensor de circuidade medir a viária real. Best-effort — nunca levanta. Respeita OPENROTAS_NO_NET."""
     import os as _os
     import urllib.request
+    _vazio = (None, None, None) if retornar_distancia else None
     if _os.environ.get("OPENROTAS_NO_NET"):
-        return None
+        return _vazio
     url = url or _osrm_url()
     if not url or not coords or len(coords) < 2:
-        return None
+        return _vazio
     try:
         pontos = ";".join("%s,%s" % (c[0], c[1]) for c in coords)
         full = "%s/route/v1/driving/%s?overview=full&geometries=geojson" % (url, pontos)
@@ -266,10 +268,10 @@ def geometria_osrm(coords, url=None, timeout: int = 20):
         with urllib.request.urlopen(req, timeout=timeout) as r:
             texto = r.read().decode("utf-8", "replace")
         linha, dist, dur = _parse_osrm_geojson(texto)
-        return linha
+        return (linha, dist, dur) if retornar_distancia else linha
     except Exception:
         logger.info("[DOSSIE] OSRM indisponível para a rota real.", exc_info=True)
-        return None
+        return _vazio
 
 
 def _idx_corredor(repo, camada, coords, folga_graus):
@@ -338,14 +340,18 @@ def dossie(coords, folga_km: float = 3.0, usar_osrm: bool = False, osrm_url=None
     coords = [tuple(map(float, c)) for c in (coords or [])]
     if not coords:
         return {"erro": "rota vazia"}
+    o_in, d_in = coords[0], coords[-1]        # extremos de ENTRADA (p/ a reta do sensor de circuidade)
     rota_real = False
     pontos_osrm = 0
+    viaria_osrm_km = None
     if usar_osrm and len(coords) >= 2:
-        linha = geometria_osrm(coords, url=osrm_url)
+        linha, dist_m, _dur = geometria_osrm(coords, url=osrm_url, retornar_distancia=True)
         if linha and len(linha) >= 2:
             coords = [tuple(map(float, c)) for c in linha]
             rota_real = True
             pontos_osrm = len(coords)
+            if dist_m is not None:
+                viaria_osrm_km = float(dist_m) / 1000.0
     folga = max(0.0, float(folga_km)) / _GRAU_KM
     o, d = coords[0], coords[-1]
     dd = {
@@ -390,6 +396,41 @@ def dossie(coords, folga_km: float = 3.0, usar_osrm: bool = False, osrm_url=None
                              % (rios, dd["hidrografia"].get("navegaveis", 0)))
     if pontes > 0:
         dd["alertas"].append("%d ponte(s) no corredor." % pontes)
+    # SENSOR DE CIRCUIDADE (§ paridade web): viária ÷ reta. Só SINALIZA barreira/implausível; nunca decide.
+    # Viária real (OSRM) quando disponível; senão a estimativa (rodoviária ou fluvial ~3× quando um extremo
+    # é de acesso só por rio). Reta geodésica entre os extremos de ENTRADA.
+    try:
+        from geo import distancia
+        if len(coords) >= 2 or (o_in != d_in):
+            reta_km = float(distancia.haversine_km(o_in[0], o_in[1], d_in[0], d_in[1]))
+            gc_o = dd["origem"]["municipio"].get("geocodigo", "")
+            gc_d = dd["destino"]["municipio"].get("geocodigo", "")
+            fluv = distancia.municipio_acesso_fluvial(gc_o) or distancia.municipio_acesso_fluvial(gc_d)
+            if viaria_osrm_km is not None:
+                viaria_km, fonte = round(viaria_osrm_km, 1), "OSRM (rota real)"
+            else:
+                viaria_km, fonte = round(distancia.estimar_rodoviaria_km(reta_km, fluvial=fluv), 1), \
+                    ("estimativa fluvial (~3×)" if fluv else "estimativa rodoviária")
+            fator = round(viaria_km / reta_km, 2) if reta_km > 0 else None
+            # Impossível: só com rota REAL a viária pode vir menor que a reta (erro de dado/motor); a
+            # estimativa nunca é < reta (fator ≥ 1), então não dispara "impossível" falso.
+            impossivel = bool(rota_real and reta_km > 0.5 and viaria_km < reta_km * 0.98)
+            suspeita, nivel = distancia.circuidade_suspeita(fator, reta_km) if fator else (False, "")
+            dd["circuidade"] = {"reta_km": round(reta_km, 1), "viaria_km": viaria_km, "fator": fator,
+                                "fonte": fonte, "nivel": ("IMPOSSIVEL" if impossivel else nivel),
+                                "suspeita": bool(impossivel or suspeita), "fluvial": bool(fluv)}
+            if impossivel:
+                dd["alertas"].append("⚠ Circuidade IMPOSSÍVEL: a rota viária (%.0f km) é MENOR que a linha "
+                                     "reta (%.0f km) — fisicamente impossível; verifique o dado/motor."
+                                     % (viaria_km, reta_km))
+            elif nivel == "PROVAVEL_BARREIRA":
+                dd["alertas"].append("Circuidade %.2f× a linha reta (%.0f km) — provável BARREIRA física "
+                                     "(água/relevo)%s." % (fator, reta_km, " — acesso fluvial" if fluv else ""))
+            elif nivel == "INVESTIGAR":
+                dd["alertas"].append("Circuidade %.2f× a linha reta (%.0f km) — acima do usual para o "
+                                     "trecho; vale investigar (desvio/barreira)." % (fator, reta_km))
+    except Exception:
+        logger.info("[DOSSIE] sensor de circuidade indisponível.", exc_info=True)
     # Fontes/procedência (rastreabilidade).
     try:
         from catalog import fontes as _f
@@ -449,6 +490,12 @@ def render_texto(dd: dict) -> str:
              % (cam.get("hidrovias", {}).get("feicoes", 0), cam.get("eclusas", {}).get("feicoes", 0),
                 cam.get("complexos_portuarios", {}).get("feicoes", 0)))
     L.append("Ferroviário: %d cruzamento(s)" % cam.get("ferrovias", {}).get("feicoes", 0))
+    cir = dd.get("circuidade")
+    if cir and cir.get("fator"):
+        _niv = {"IMPOSSIVEL": " ⚠ IMPOSSÍVEL", "PROVAVEL_BARREIRA": " ⚠ provável barreira",
+                "INVESTIGAR": " ⚠ investigar"}.get(cir.get("nivel"), "")
+        L.append("Circuidade: %.2f× a linha reta (viária %.0f km · reta %.0f km · %s)%s"
+                 % (cir["fator"], cir["viaria_km"], cir["reta_km"], cir.get("fonte", ""), _niv))
     if dd.get("alertas"):
         L.append("")
         L.append("Alertas:")
@@ -586,6 +633,18 @@ def gerar_html(dd: dict, caminho) -> str | None:
                 P.append("<tr><td>%s</td><td class='num'>%d</td></tr>" % (html.escape(str(r["nome"])), r["trechos"]))
             P.append("</tbody></table>")
         P.append("</section>")
+        # Circuidade (viária ÷ reta) — sensor de barreira/implausível.
+        cir = dd.get("circuidade")
+        if cir and cir.get("fator"):
+            _niv = {"IMPOSSIVEL": "IMPOSSÍVEL (viária < reta)", "PROVAVEL_BARREIRA": "provável barreira física",
+                    "INVESTIGAR": "acima do usual — investigar"}.get(cir.get("nivel"), "dentro do esperado")
+            P.append("<section class='card'><h2>Circuidade (viária ÷ reta)</h2><div class='kpis'>"
+                     "<div class='kpi'><div class='v'>%.2f×</div><div class='l'>fator</div></div>"
+                     "<div class='kpi'><div class='v'>%.0f km</div><div class='l'>viária (%s)</div></div>"
+                     "<div class='kpi'><div class='v'>%.0f km</div><div class='l'>linha reta</div></div></div>"
+                     "<p class='%s' style='margin:8px 2px 0'>%s</p></section>"
+                     % (cir["fator"], cir["viaria_km"], html.escape(str(cir.get("fonte", ""))), cir["reta_km"],
+                        "alerta" if cir.get("suspeita") else "empty", html.escape(_niv)))
         # Camadas no corredor
         P.append("<section class='card'><h2>Feições no corredor</h2>")
         # Gráfico de barras (feições por camada disponível) — leitura rápida e interativa.

@@ -191,6 +191,31 @@ def descricao_modo(modo) -> str:
     return _DESCRICAO.get(str(modo), str(modo))
 
 
+# ---------------------------------------------------------------------------
+#  SENSOR DE CIRCUIDADE (viária ÷ reta) — espelho do web. Só SINALIZA barreira física/água ou dado
+#  implausível; JAMAIS decide. Banda por distância da reta (trechos curtos inflam naturalmente). A
+#  literatura (Ballou et al.) trata >~2× como provável barreira; o gatilho sobe em retas curtas.
+# ---------------------------------------------------------------------------
+_CIRCU_BARREIRA = 2.0                                   # ≥ 2,0 → provável barreira física/área de água
+_CIRCU_BANDA = ((2.2, 15.0), (1.8, 60.0), (1.6, None))  # (gatilho, reta até X km): curto=2,2; médio=1,8; longo=1,6
+
+
+def circuidade_suspeita(circuidade, reta_km):
+    """(suspeita: bool, nivel: 'PROVAVEL_BARREIRA' | 'INVESTIGAR' | '') — sensor do web, PURO e defensivo."""
+    try:
+        c = float(circuidade); r = float(reta_km)
+    except (TypeError, ValueError):
+        return (False, "")
+    if not (r > 0 and c >= 1.0):
+        return (False, "")
+    if c >= _CIRCU_BARREIRA:
+        return (True, "PROVAVEL_BARREIRA")
+    for gt, ate in _CIRCU_BANDA:
+        if ate is None or r < ate:
+            return (c >= gt, "INVESTIGAR" if c >= gt else "")
+    return (False, "")
+
+
 def aviso_fluvial(n) -> str:
     """Frase padrão de aviso para N município(s) de acesso fluvial/isolado, compartilhada pelos
     relatórios (matriz/isócronas/centro). '' quando n ≤ 0."""

@@ -2539,6 +2539,39 @@ def test_isocronas_fluvial_recebe_fator():
 
 
 # ============================================================================
+#  SENSOR DE CIRCUIDADE (viária ÷ reta) no dossiê — só SINALIZA barreira/implausível. Paridade web.
+# ============================================================================
+def test_circuidade_sensor_bandas():
+    from geo import distancia as d
+    assert d.circuidade_suspeita(2.5, 50) == (True, "PROVAVEL_BARREIRA")   # >= 2,0 em qualquer distância
+    assert d.circuidade_suspeita(1.9, 10) == (False, "")                   # curto: gatilho 2,2 → não
+    assert d.circuidade_suspeita(1.9, 30) == (True, "INVESTIGAR")          # médio: gatilho 1,8 → investigar
+    assert d.circuidade_suspeita(1.2, 200) == (False, "")                  # longo: gatilho 1,6 → não
+    assert d.circuidade_suspeita("x", 10) == (False, "")                   # defensivo
+    assert d.circuidade_suspeita(1.0, 0) == (False, "")                    # reta nula → nada
+
+def test_dossie_circuidade_rodoviaria_normal():
+    # Par rodoviário normal (SP→RJ): circuidade ~1,2× (fator de estimativa), SEM suspeita de barreira.
+    from geo import dossie_rota
+    dd, _ = dossie_rota.dossie_por_nomes("São Paulo/SP;Rio de Janeiro/RJ")
+    c = dd.get("circuidade")
+    assert c and c["fator"] and 1.1 <= c["fator"] <= 1.5
+    assert c["suspeita"] is False and c["nivel"] == ""
+    assert "Circuidade" in dossie_rota.render_texto(dd)
+
+def test_dossie_circuidade_fluvial_sinaliza_barreira():
+    # Par de acesso só fluvial (Manaus→Atalaia do Norte): a estimativa fluvial (~3×) dispara PROVÁVEL
+    # BARREIRA — o sensor corrobora a dependência de rio, mesmo offline (sem OSRM).
+    from geo import dossie_rota
+    dd, _ = dossie_rota.dossie_por_nomes("Manaus/AM;Atalaia do Norte/AM")
+    c = dd.get("circuidade")
+    assert c and c["fator"] >= 2.0 and c["nivel"] == "PROVAVEL_BARREIRA" and c["suspeita"] is True
+    assert c["fluvial"] is True
+    assert any("BARREIRA" in a for a in dd["alertas"])
+    assert "provável barreira" in dossie_rota.render_texto(dd)
+
+
+# ============================================================================
 #  QUALIDADE DE COORDENADAS — guarda anti-regressão do defeito Brasília/Vitória.
 # ============================================================================
 def test_coverage_ponto_no_corpo_helper():
@@ -2682,15 +2715,26 @@ def test_dossie_usa_rota_real_quando_osrm_responde(monkeypatch):
     from geo import dossie_rota as dr
     # polilinha "real" densa (simula OSRM), hugging um caminho diferente da reta
     fake = [(-46.63, -23.55), (-46.0, -23.2), (-44.5, -23.0), (-43.20, -22.90)]
-    monkeypatch.setattr(dr, "geometria_osrm", lambda coords, url=None: fake)
+    # a assinatura ganhou retornar_distancia → o dublê devolve (linha, dist_m, dur_s) quando pedido.
+    monkeypatch.setattr(dr, "geometria_osrm",
+                        lambda coords, url=None, retornar_distancia=False:
+                        (fake, 430000.0, 25200.0) if retornar_distancia else fake)
     dd = dr.dossie([(-46.63, -23.55), (-43.20, -22.90)], usar_osrm=True)
     assert dd["rota_real"] is True and dd["rota_pontos_osrm"] == 4
+    # a circuidade agora usa a viária REAL do OSRM (430 km) vs a reta (~360 km) → ~1,2×, sem barreira.
+    c = dd.get("circuidade")
+    assert c and c["fonte"].startswith("OSRM") and 1.1 <= c["fator"] <= 1.4 and c["suspeita"] is False
 
 def test_dossie_sem_osrm_degrada(monkeypatch):
     from geo import dossie_rota as dr
-    monkeypatch.setattr(dr, "geometria_osrm", lambda coords, url=None: None)
+    monkeypatch.setattr(dr, "geometria_osrm",
+                        lambda coords, url=None, retornar_distancia=False:
+                        (None, None, None) if retornar_distancia else None)
     dd = dr.dossie([(-46.63, -23.55), (-43.20, -22.90)], usar_osrm=True)
     assert dd["rota_real"] is False     # sem OSRM → corredor reta, honesto
+    # mesmo sem OSRM, a circuidade existe via ESTIMATIVA (fonte declarada), sem suspeita p/ par normal.
+    c = dd.get("circuidade")
+    assert c and "estimativa" in c["fonte"] and c["suspeita"] is False
 
 def test_lote_ler_pares_e_processar(tmp_path):
     import pandas as pd
