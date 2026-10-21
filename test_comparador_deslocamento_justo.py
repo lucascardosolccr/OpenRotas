@@ -89,6 +89,20 @@ def test_placar_separa_vitorias_por_referencia_invalida():
     assert pl["pct_aplicacao"] == 50.0 and pl["pct_concorrente"] == 50.0
 
 
+def test_pergunta_qualidade_da_referencia():
+    # Reenquadra o estudo: quão confiável é o dado da referência? 1 de 2 distâncias é impossível → 50%.
+    val = _linha("Valida", "SP", da=100.0, dr=90.0, reta_ref=60.0, insc=10)
+    imp = _linha("Impossivel", "AM", da=200.0, dr=20.0, reta_ref=120.0, insc=10, inval="Sim")
+    d = m._diagnostico_imparcial([val, imp])
+    q = next((p for p in d["perguntas"] if "QUALIDADE" in p["Pergunta"]), None)
+    assert q is not None
+    assert "50.0%" in q["Resposta"] and "1 de 2" in q["Resposta"]
+    # sem impossíveis → mensagem positiva
+    d2 = m._diagnostico_imparcial([val, _linha("V2", "RJ", da=100.0, dr=95.0, reta_ref=70.0, insc=5)])
+    q2 = next((p for p in d2["perguntas"] if "QUALIDADE" in p["Pergunta"]), None)
+    assert q2 is not None and "Nenhuma" in q2["Resposta"]
+
+
 def test_piso_geodesico_tambem_detecta_sem_rotulo():
     # Mesmo SEM o rótulo 'Vitoria por Ref Invalida', a rede de segurança (ref < linha reta) exclui a linha.
     val = _linha("Valida", "SP", da=100.0, dr=90.0, reta_ref=60.0, insc=10)

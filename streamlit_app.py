@@ -22105,6 +22105,27 @@ def _diagnostico_imparcial(linhas):
         _resp.append({"Pergunta": "Qual estudo usa MENOS locais de prova (menor custo operacional)?",
                       "Resposta": f"{_q5} ({_app['locais_de_prova']} × {_ref['locais_de_prova']} polos).",
                       "Base": "Contagem de polos distintos utilizados."})
+        # [COMPARA-JUSTA] A pergunta que reenquadra o estudo inteiro: quão CONFIÁVEL é o dado da
+        # referência? Uma distância menor que a linha reta é fisicamente impossível — nenhuma estrada
+        # é mais curta que o 'voo de pássaro'. Se a referência tem muitas assim, o confronto de km se
+        # dá sobre uma fração pequena do estudo, e o resto é "a aplicação é o único número válido".
+        _n_total_cmp = len(_ok)
+        if _n_total_cmp:
+            _pct_inv = round(100.0 * _n_rinv / _n_total_cmp, 1)
+            if _n_rinv:
+                _resp.append({
+                    "Pergunta": "Qual a QUALIDADE do dado da referência?",
+                    "Resposta": (f"⚠️ {_pct_inv}% das distâncias da referência são FISICAMENTE IMPOSSÍVEIS "
+                                 f"({_n_rinv} de {_n_total_cmp} municípios) — menores que a linha reta geodésica, "
+                                 f"que nenhuma estrada percorre. Nesses municípios a aplicação é o ÚNICO número "
+                                 f"válido; o confronto de km se dá nos {len(_ok_rv)} municípios restantes."),
+                    "Base": "Distância da referência < linha reta geodésica (WGS-84, erro < 1 mm)."})
+            else:
+                _resp.append({
+                    "Pergunta": "Qual a QUALIDADE do dado da referência?",
+                    "Resposta": ("✅ Nenhuma distância da referência é fisicamente impossível — todas respeitam "
+                                 "o piso geodésico. O confronto se dá sobre o estudo inteiro."),
+                    "Base": "Distância da referência ≥ linha reta geodésica em todos os municípios."})
 
     return {
         "perfil_app": _app, "perfil_ref": _ref,
