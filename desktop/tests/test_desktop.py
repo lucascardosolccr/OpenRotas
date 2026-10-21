@@ -1778,7 +1778,7 @@ def test_painel_tem_bloco_dossie():
 # ============================================================================
 #  COMPARAÇÃO DE ROTAS — ranqueia rotas candidatas por complexidade logística (desktop).
 # ============================================================================
-def _dd_cmp(travessias=0, pontes=0, trechos=0, naveg=0, ufs=("SP",), o="A", d="B", erro=False):
+def _dd_cmp(travessias=0, pontes=0, trechos=0, naveg=0, ufs=("SP",), o="A", d="B", erro=False, naveg_nome=0):
     """Dossiê SINTÉTICO (sem tocar nas bases) para testar a pontuação/ranking de forma determinística."""
     if erro:
         return {"erro": "x"}
@@ -1786,7 +1786,7 @@ def _dd_cmp(travessias=0, pontes=0, trechos=0, naveg=0, ufs=("SP",), o="A", d="B
         "origem": {"municipio": {"nome": o, "uf": (ufs[0] if ufs else "?")}},
         "destino": {"municipio": {"nome": d, "uf": (ufs[-1] if ufs else "?")}},
         "camadas": {"travessias": {"feicoes": travessias}, "pontes": {"feicoes": pontes}},
-        "hidrografia": {"trechos": trechos, "navegaveis": naveg},
+        "hidrografia": {"trechos": trechos, "navegaveis": naveg, "navegaveis_nomeados": naveg_nome},
         "travessia_territorial": {"ufs": list(ufs)},
         "pontos": 2,
     }
@@ -1799,6 +1799,18 @@ def test_comparar_pontuar_formula_e_erro():
     assert s == round(10 * 1 + 3 * 2 + 2 * 3 + 1 * 2 + 0.05 * 100, 2)
     assert dc.pontuar({"erro": "x"}) == (None, {})
     assert dc.pontuar({}) == (None, {})
+
+def test_comparar_pontuar_usa_navegavel_por_nome():
+    # A base pode trazer navegaveis=0 (desconhecido), mas um rio navegável reconhecido por NOME (ex.:
+    # Amazonas) DEVE pesar na complexidade — senão a rota que cruza o Amazonas pontua como se fosse seca.
+    from geo import dossie_comparativo as dc
+    s0, c0 = dc.pontuar(_dd_cmp(naveg=0, naveg_nome=0))
+    s1, c1 = dc.pontuar(_dd_cmp(naveg=0, naveg_nome=1))        # Amazonas reconhecido por nome
+    assert c0["rios_navegaveis"] == 0 and c1["rios_navegaveis"] == 1
+    assert s1 - s0 == 2.0                                      # peso 2,0 por rio navegável
+    # a base continua valendo quando é MAIOR que o reconhecido por nome (não regride).
+    _, c2 = dc.pontuar(_dd_cmp(naveg=3, naveg_nome=1))
+    assert c2["rios_navegaveis"] == 3
 
 def test_comparar_ranqueia_e_recomenda(monkeypatch):
     from geo import dossie_rota, dossie_comparativo as dc

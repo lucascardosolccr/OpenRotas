@@ -70,7 +70,10 @@ def pontuar(dossie: dict) -> tuple:
         comp = {
             "travessias": _feic("travessias"),
             "transicoes_uf": max(0, len(tt.get("ufs", []) or []) - 1),
-            "rios_navegaveis": int(h.get("navegaveis", 0) or 0),
+            # Navegáveis: a base vem ~86% 'desconhecido' e subconta (o Amazonas sai 0). Combinamos o
+            # flag da base com os grandes rios reconhecidos por NOME (hidrovias) — assim um corredor que
+            # cruza o Amazonas/Solimões PESA na complexidade, como deve (precisa de ponte/balsa/estrutura).
+            "rios_navegaveis": max(int(h.get("navegaveis", 0) or 0), int(h.get("navegaveis_nomeados", 0) or 0)),
             "pontes": _feic("pontes"),
             "trechos_rio": int(h.get("trechos", 0) or 0),
         }
