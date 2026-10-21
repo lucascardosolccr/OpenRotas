@@ -64,7 +64,7 @@ def _resolver_lista(entrada, reg):
     return pts, nao
 
 
-def calcular(candidatos, destinos=None, usar_osrm: bool = False, osrm_url=None, reg=None,
+def calcular(candidatos, destinos=None, usar_osrm=None, osrm_url=None, reg=None,
              estimar: bool = True) -> dict:
     """Melhor candidato por distância TOTAL e por PIOR CASO até os destinos. Devolve
     {ok, candidatos:[{nome,uf,lon,lat,soma_km,max_km,media_km,ambiguo,ufs_alt}], destinos:[...],
@@ -98,8 +98,10 @@ def calcular(candidatos, destinos=None, usar_osrm: bool = False, osrm_url=None, 
         # Matriz candidato×destino (km). Geodésico por padrão.
         linhas = [isocronas._haversine_km(c["lon"], c["lat"], d_lons, d_lats) for c in cand]
         modo = "geodesico"
-        if usar_osrm:
-            rod = _matriz_osrm_cd(cand, dest, osrm_url or _osrm_url())
+        from geo import dossie_rota as _dr
+        _use_osrm, _url_osrm = _dr.resolver_osrm(usar_osrm, osrm_url)
+        if _use_osrm:
+            rod = _matriz_osrm_cd(cand, dest, _url_osrm)
             if rod is not None:
                 linhas = rod
                 modo = "rodoviario"
@@ -246,16 +248,18 @@ def _avisos_texto(r: dict, L: list) -> None:
 #  quando viável (C pequeno), guloso (aproximação declarada) caso contrário.
 # ----------------------------------------------------------------------------
 def _dist_cd(cand, dest, usar_osrm, osrm_url, estimar: bool = True):
-    """Matriz candidato×destino (km) como list[C][D] + modo. Geodésico (haversine), estimativa
-    rodoviária (sinuosidade, padrão sem OSRM) ou OSRM. `estimar=False` mantém a linha reta pura."""
+    """Matriz candidato×destino (km) como list[C][D] + modo. OSRM local (AUTO/forçado), estimativa
+    rodoviária (sinuosidade, padrão sem OSRM) ou geodésico (estimar=False). Nunca levanta."""
     import numpy as np
     from geo import isocronas
+    from geo import dossie_rota as _dr
     d_lons = np.array([p["lon"] for p in dest], dtype="float64")
     d_lats = np.array([p["lat"] for p in dest], dtype="float64")
     linhas = [[float(v) for v in isocronas._haversine_km(c["lon"], c["lat"], d_lons, d_lats)] for c in cand]
     modo = "geodesico"
-    if usar_osrm:
-        rod = _matriz_osrm_cd(cand, dest, osrm_url or _osrm_url())
+    _use_osrm, _url_osrm = _dr.resolver_osrm(usar_osrm, osrm_url)
+    if _use_osrm:
+        rod = _matriz_osrm_cd(cand, dest, _url_osrm)
         if rod is not None:
             linhas = [[float(v) for v in row] for row in rod]
             modo = "rodoviario"
@@ -337,7 +341,7 @@ def _montar_solucao(S, cand, dest, D):
             "max_km": round(mx, 1), "atribuicao": atribuicao}
 
 
-def calcular_k(candidatos, destinos=None, k: int = 2, usar_osrm: bool = False, osrm_url=None, reg=None,
+def calcular_k(candidatos, destinos=None, k: int = 2, usar_osrm=None, osrm_url=None, reg=None,
                estimar: bool = True) -> dict:
     """Escolhe k hubs (dentre os candidatos) atendendo cada destino pelo hub mais próximo. Devolve
     {ok, k, modo, metodo('exato'|'guloso'), candidatos, destinos, solucao_soma, solucao_max,
@@ -635,8 +639,9 @@ def gerar(caminho, r: dict) -> str | None:
 
 def _cli(argv=None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
-    usar_osrm = "--osrm" in argv
-    estimar = "--geodesico" not in argv   # --geodesico força a linha reta pura (sem estimativa de sinuosidade)
+    geod = "--geodesico" in argv
+    usar_osrm = False if geod else (True if "--osrm" in argv else None)   # padrão AUTO (OSRM local se no ar)
+    estimar = not geod
     destinos = None
     if "--destinos" in argv:
         j = argv.index("--destinos")

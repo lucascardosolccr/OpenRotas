@@ -2163,6 +2163,43 @@ def test_isocronas_origem_ambigua_avisa():
 # ============================================================================
 #  MATRIZ ORIGEM↔DESTINO (§29) — distâncias entre vários centros.
 # ============================================================================
+def test_osrm_auto_resolver_osrm():
+    # Semântica do AUTO: None usa o OSRM local SE no ar; True força o configurado; False nunca.
+    from geo import dossie_rota as dr
+    import os
+    # None sem OSRM no ar → (False, None); respeita OPENROTAS_NO_NET.
+    assert dr.resolver_osrm(False) == (False, None)
+    os.environ["OPENROTAS_NO_NET"] = "1"
+    dr._OSRM_ATIVO_CACHE.update({"t": 0.0, "url": None})      # invalida cache
+    try:
+        assert dr.osrm_ativo() is None                        # sem rede → None
+        assert dr.resolver_osrm(None) == (False, None)
+    finally:
+        del os.environ["OPENROTAS_NO_NET"]
+
+def test_matriz_auto_usa_osrm_quando_no_ar(monkeypatch):
+    # [OSRM-AUTO] Com o OSRM local no ar, a matriz usa distância RODOVIÁRIA REAL por PADRÃO (sem flag) —
+    # o ponto que o usuário cobrava ("já que tem roteamento OSRM local"). Dubla a disponibilidade + o /table.
+    from geo import dossie_rota as dr, matriz_od
+    monkeypatch.setattr(dr, "osrm_ativo", lambda *a, **k: "http://localhost:5000")
+    # /table dublado: rodoviário ~1.35x a geodésica (determinístico, sem rede)
+    def _fake_table(lons, lats, url, **k):
+        from geo import isocronas
+        import numpy as np
+        n = len(lons)
+        M = [[0.0] * n for _ in range(n)]
+        for i in range(n):
+            row = isocronas._haversine_km(lons[i], lats[i], np.array(lons), np.array(lats))
+            for j in range(n):
+                M[i][j] = float(row[j]) * 1.35
+        return M
+    monkeypatch.setattr(matriz_od, "_matriz_osrm", _fake_table)
+    r = matriz_od.calcular([(-46.63, -23.55), (-43.20, -22.90)])   # SEM usar_osrm → AUTO
+    assert r["ok"] and r["modo"] == "rodoviario"                   # usou o OSRM local automaticamente
+    # usar_osrm=False continua forçando a estimativa (não toca no OSRM).
+    rf = matriz_od.calcular([(-46.63, -23.55), (-43.20, -22.90)], usar_osrm=False)
+    assert rf["modo"] == "estimado"
+
 def test_matriz_calcular_estimado():
     # [PARIDADE-WEB] Sem OSRM, a matriz vira ESTIMATIVA rodoviária (linha reta × sinuosidade), como o web;
     # simetria e diâmetro continuam válidos. estimar=False recupera a linha reta pura (modo 'geodesico').

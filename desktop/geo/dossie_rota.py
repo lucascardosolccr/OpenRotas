@@ -127,7 +127,7 @@ def resolver_local(texto, reg=None) -> dict:
         return {"ok": False, "detalhe": "erro ao resolver"}
 
 
-def dossie_por_nomes(locais, folga_km: float = 3.0, usar_osrm: bool = False, osrm_url=None):
+def dossie_por_nomes(locais, folga_km: float = 3.0, usar_osrm=None, osrm_url=None):
     """Dossiê a partir de NOMES de cidade (lista ou 'A;B;C'). Resolve cada um e chama dossie().
     Devolve (dossie_dict, resolucoes). Nunca levanta."""
     if isinstance(locais, str):
@@ -249,6 +249,51 @@ def _osrm_url(conf=None):
         return None
 
 
+_OSRM_ATIVO_CACHE = {"t": 0.0, "url": None}
+
+
+def osrm_ativo(timeout: float = 2.0, ttl: float = 30.0):
+    """URL de um OSRM local/configurado que RESPONDE agora (health-check OK), ou None. É o que permite as
+    ferramentas (matriz/isócronas/centro) USAREM o roteamento OSRM local POR PADRÃO quando ele está no ar —
+    em vez de cair sempre na estimativa de sinuosidade. Resultado CACHEADO por `ttl`s (evita health-check
+    repetido num mesmo lote). Respeita OPENROTAS_NO_NET. Nunca levanta."""
+    import os as _os
+    import time as _t
+    if _os.environ.get("OPENROTAS_NO_NET"):
+        return None
+    now = _t.time()
+    if (now - _OSRM_ATIVO_CACHE["t"]) < ttl:
+        return _OSRM_ATIVO_CACHE["url"]
+    url = _osrm_url()
+    ok = None
+    if url:
+        try:
+            import sys as _sys
+            _sys.path.insert(0, str(_AQUI.parent / "engines"))
+            import osrm_manager
+            if osrm_manager.health(url, timeout=timeout):
+                ok = url
+        except Exception:
+            ok = None
+    _OSRM_ATIVO_CACHE.update({"t": now, "url": ok})
+    return ok
+
+
+def resolver_osrm(usar_osrm, osrm_url=None):
+    """Decide SE e QUAL OSRM usar. `usar_osrm`: None = AUTO (usa o OSRM local se estiver no ar agora),
+    True = força (usa o configurado), False = nunca. Retorna (usar: bool, url|None). Nunca levanta."""
+    try:
+        if usar_osrm is None:
+            u = osrm_ativo()
+            return (u is not None, u)
+        if usar_osrm:
+            u = osrm_url or _osrm_url()
+            return (bool(u), u)
+    except Exception:
+        pass
+    return (False, None)
+
+
 def geometria_osrm(coords, url=None, timeout: int = 20, retornar_distancia: bool = False):
     """Busca a POLILINHA REAL da rota num servidor OSRM. Devolve lista [(lon,lat),...] ou None
     (offline/sem servidor/erro). Com `retornar_distancia=True`, devolve (linha, dist_m, dur_s) — para o
@@ -346,7 +391,7 @@ def _municipios_corredor(repo, reg, coords, folga_graus) -> dict:
         return {"n_municipios": 0, "ufs": []}
 
 
-def dossie(coords, folga_km: float = 3.0, usar_osrm: bool = False, osrm_url=None) -> dict:
+def dossie(coords, folga_km: float = 3.0, usar_osrm=None, osrm_url=None) -> dict:
     """Monta o DOSSIÊ completo da rota. `coords`=[(lon,lat),...] (≥1 ponto). Com `usar_osrm`,
     tenta obter a POLILINHA REAL da estrada (OSRM) e a usa como corredor; se não houver OSRM,
     degrada para a reta origem→destino e marca rota_real=False. Nunca levanta."""
@@ -359,8 +404,14 @@ def dossie(coords, folga_km: float = 3.0, usar_osrm: bool = False, osrm_url=None
     rota_real = False
     pontos_osrm = 0
     viaria_osrm_km = None
-    if usar_osrm and len(coords) >= 2:
-        linha, dist_m, _dur = geometria_osrm(coords, url=osrm_url, retornar_distancia=True)
+    # usar_osrm None = AUTO (usa o OSRM local se no ar); True força (geometria_osrm resolve a URL); False nunca.
+    if usar_osrm is None:
+        _url_osrm = osrm_ativo()
+        _use_osrm = _url_osrm is not None
+    else:
+        _use_osrm, _url_osrm = bool(usar_osrm), osrm_url
+    if _use_osrm and len(coords) >= 2:
+        linha, dist_m, _dur = geometria_osrm(coords, url=_url_osrm, retornar_distancia=True)
         if linha and len(linha) >= 2:
             coords = [tuple(map(float, c)) for c in linha]
             rota_real = True
@@ -769,7 +820,8 @@ def _cli(argv=None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
     dd = None
     # Modo por NOMES: --rota-nomes "São Paulo/SP;Rio de Janeiro/RJ"
-    usar_osrm = "--osrm" in argv
+    # padrão AUTO (None): usa o OSRM local se no ar; --osrm força; --sem-osrm desliga.
+    usar_osrm = False if "--sem-osrm" in argv else (True if "--osrm" in argv else None)
     osrm_url = None
     if "--osrm-url" in argv:
         j = argv.index("--osrm-url")

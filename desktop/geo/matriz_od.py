@@ -102,13 +102,14 @@ def _matriz_osrm(lons, lats, url, timeout=25):
         return None
 
 
-def calcular(locais, usar_osrm: bool = False, osrm_url=None, reg=None, estimar: bool = True) -> dict:
+def calcular(locais, usar_osrm=None, osrm_url=None, reg=None, estimar: bool = True) -> dict:
     """Matriz NxN de distâncias entre `locais` (lista ou 'A;B;C'). Devolve {ok, pontos, matriz,
     modo, resumo:{par_distante, par_proximo, media_km, diametro_km}, nota}. Nunca levanta.
 
-    `estimar` (padrão True): sem OSRM, estima a distância RODOVIÁRIA a partir da linha reta pelo fator
-    de sinuosidade do web (modo 'estimado'), em paridade com a aplicação web, em vez de reportar a linha
-    reta crua. `estimar=False` mantém a linha reta pura (modo 'geodesico')."""
+    `usar_osrm` (padrão None = AUTO): usa o roteamento OSRM LOCAL se ele estiver no ar — distância
+    RODOVIÁRIA real, melhor que a estimativa. True força o OSRM configurado; False nunca usa.
+    `estimar` (padrão True): sem OSRM, estima a distância rodoviária pela linha reta × fator de sinuosidade
+    do web (modo 'estimado'), em vez da reta crua. `estimar=False` mantém a linha reta pura ('geodesico')."""
     base = {"ok": False, "pontos": [], "matriz": [], "modo": "geodesico", "resumo": {}, "nota": ""}
     try:
         import numpy as np
@@ -135,8 +136,10 @@ def calcular(locais, usar_osrm: bool = False, osrm_url=None, reg=None, estimar: 
                 M[i][j] = float(round(row[j], 1))
         modo = "geodesico"
         osrm_ok = False
-        if usar_osrm:
-            rod = _matriz_osrm(lons, lats, osrm_url or _osrm_url())
+        from geo import dossie_rota as _dr
+        _use_osrm, _url_osrm = _dr.resolver_osrm(usar_osrm, osrm_url)
+        if _use_osrm:
+            rod = _matriz_osrm(lons, lats, _url_osrm)
             if rod is not None:
                 for i in range(n):
                     for j in range(n):
@@ -404,8 +407,10 @@ def gerar(caminho, r: dict) -> str | None:
 
 def _cli(argv=None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
-    usar_osrm = "--osrm" in argv
-    estimar = "--geodesico" not in argv   # --geodesico força a linha reta pura (sem estimativa de sinuosidade)
+    # padrão AUTO (None): usa o OSRM local se estiver no ar. --osrm força; --geodesico = reta pura.
+    geod = "--geodesico" in argv
+    usar_osrm = False if geod else (True if "--osrm" in argv else None)
+    estimar = not geod
     locais = None
     for a in argv:
         if a.startswith("--"):

@@ -126,7 +126,7 @@ def _distancias_osrm(olon, olat, lons, lats, url, cap=1500, chunk=90, timeout=20
         return None
 
 
-def calcular(origem, faixas_km=_FAIXAS_PADRAO, usar_osrm: bool = False, osrm_url=None, reg=None,
+def calcular(origem, faixas_km=_FAIXAS_PADRAO, usar_osrm=None, osrm_url=None, reg=None,
              estimar: bool = True) -> dict:
     """Classifica os municípios do Brasil em faixas de distância a partir de `origem`. Devolve
     {ok, origem, modo, faixas_km, bandas:[{ate_km, municipios, ufs, cumulativo, exemplos}],
@@ -164,8 +164,10 @@ def calcular(origem, faixas_km=_FAIXAS_PADRAO, usar_osrm: bool = False, osrm_url
         reta = _haversine_km(o["lon"], o["lat"], lons, lats)   # linha reta (piso físico), sempre preservada
         dist = reta.copy()
         refinados = np.zeros(len(reta), dtype=bool)
-        if usar_osrm:
-            ref = _distancias_osrm(o["lon"], o["lat"], lons, lats, osrm_url or _osrm_url())
+        from geo import dossie_rota as _dr
+        _use_osrm, _url_osrm = _dr.resolver_osrm(usar_osrm, osrm_url)
+        if _use_osrm:
+            ref = _distancias_osrm(o["lon"], o["lat"], lons, lats, _url_osrm)
             if ref is not None:
                 m = ~np.isnan(ref)
                 dist = np.where(m, ref, dist)       # rodoviário real onde o OSRM refinou
@@ -344,8 +346,9 @@ def gerar(caminho, r: dict) -> str | None:
 
 def _cli(argv=None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
-    usar_osrm = "--osrm" in argv
-    estimar = "--geodesico" not in argv   # --geodesico força a linha reta pura (sem estimativa de sinuosidade)
+    geod = "--geodesico" in argv
+    usar_osrm = False if geod else (True if "--osrm" in argv else None)   # padrão AUTO (OSRM local se no ar)
+    estimar = not geod
     faixas = _FAIXAS_PADRAO
     origem = None
     for a in argv:
