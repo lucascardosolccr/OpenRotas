@@ -23662,17 +23662,22 @@ def _estatisticas_comparacao(linhas, uf_para_regiao=None, limiar_empate_km=1.0):
     def _bloco(ls):
         n = len(ls)
         insc = sum(float(l.get("Inscritos") or 0) for l in ls)
-        _vd = [l.get("Vencedor Distancia") for l in ls]
+        # [COMPARA-JUSTA] O PLACAR é o CONFRONTO DE DESLOCAMENTO sobre as linhas fisicamente válidas.
+        # Linhas com distância de referência IMPOSSÍVEL (menor que a linha reta) saem do confronto — ali
+        # a referência não tem número comparável; a aplicação é o ÚNICO dado válido, e isso é contado À
+        # PARTE (vitorias_ref_invalida): vitória de VALIDADE do dado, não de km. Antes essas linhas eram
+        # somadas como vitórias da aplicação e inflavam o placar (mesmo erro que o veredito/perfil/placar
+        # do painel já corrigiram — mesma definição _ref_distancia_impossivel, tudo coerente). A ECONOMIA
+        # segue sobre `ls` (nessas linhas ela já é zero, neutralizada por linha em _comparar_alocacoes).
+        _ls_rv = [l for l in ls if not _ref_distancia_impossivel(l)]
+        _vd = [l.get("Vencedor Distancia") for l in _ls_rv]
         _venc_app = _vd.count("Aplicação")
         _venc_ref = _vd.count("Referência")
         _emp = _vd.count("Empate")
         _comp = _venc_app + _venc_ref + _emp
-        # [REF-INVÁLIDA → VITÓRIA DA APP] quantas vitórias da aplicação vêm de referência fisicamente
-        # inválida (distância < linha reta / colada nela). Já entram em _venc_app (o placar acima); contadas
-        # à parte para o placar explicar por que a aplicação venceu esses casos.
-        _vit_ref_inv = sum(1 for l in ls if str(l.get("Vitoria por Ref Invalida", "")) == "Sim")
+        _vit_ref_inv = sum(1 for l in ls if _ref_distancia_impossivel(l))
         _insc_vit_ref_inv = sum(float(l.get("Inscritos") or 0) for l in ls
-                                if str(l.get("Vitoria por Ref Invalida", "")) == "Sim")
+                                if _ref_distancia_impossivel(l))
         _mesmo = sum(1 for l in ls if l.get("Mesmo Destino") == "Sim")
         _difdest = sum(1 for l in ls if l.get("Mesmo Destino") == "Não")
         _insc_mesmo = sum(float(l.get("Inscritos") or 0) for l in ls if l.get("Mesmo Destino") == "Sim")

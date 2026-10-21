@@ -50,14 +50,21 @@ def test_ref_implausivel_colada_na_reta_vira_vitoria_da_app():
     assert r.get("Vitoria por Ref Invalida") == "Sim"
 
 
-def test_estatisticas_contam_vitorias_por_ref_invalida():
-    # uma vitória por ref inválida + uma vitória genuína da app → placar conta 2 vitórias, 1 por ref inválida
-    linhas = [_linha("Abaetetuba", 1.83, "Abaetetuba", 53.0, 42.40, insc=100),   # ref impossível → app vence
+def test_estatisticas_separam_vitorias_por_ref_invalida_do_confronto():
+    # [COMPARA-JUSTA] O PLACAR é o confronto de DESLOCAMENTO sobre linhas fisicamente válidas; a vitória
+    # por referência impossível NÃO entra nele (seria somar uma vitória de km que não houve — o número da
+    # referência é impossível). Ela é contada À PARTE (vitorias_ref_invalida): a aplicação é o único dado
+    # válido ali — vitória de VALIDADE, não de km. (Antes da 'compara-justa' ela entrava em venceu_app e
+    # inflava o placar; agora placar, veredito, perfil e este resumo usam a MESMA régua.)
+    linhas = [_linha("Abaetetuba", 1.83, "Abaetetuba", 53.0, 42.40, insc=100),   # ref impossível → à parte
               _linha("Y", 120.0, "X", 90.0, 80.0, insc=50)]                       # app já menor (genuína)
     cmp = m._comparar_alocacoes(linhas)
     st = m._estatisticas_comparacao(cmp)
     br = st["brasil"]
-    assert br["venceu_app"] == 2
+    assert br["venceu_app"] == 1          # só a vitória GENUÍNA de confronto entra no placar
     assert br["venceu_ref"] == 0
-    assert br["vitorias_ref_invalida"] == 1
+    assert br["comparaveis"] == 1         # o confronto tem 1 município físico-válido (o impossível saiu)
+    assert br["vitorias_ref_invalida"] == 1          # contada à parte
     assert br["inscritos_vitorias_ref_invalida"] == 100
+    # a linha impossível continua sendo, no detalhe, vitória da aplicação (ela tem o único número válido):
+    assert [r for r in cmp if r["Origem"] == "MunTeste"][0]["Vencedor Distancia"] == "Aplicação"
