@@ -28947,48 +28947,67 @@ _CACHOEIRAS_PRINCIPAIS = {
     "cachoeira de lajeado": {"rio": "tocantins", "tipo": "cachoeira", "bloqueio_total": True},
 }
 
+def _norm_rio_nav(s):
+    """Normaliza nome de rio para casar: sem acento, minúsculo, hífen/ponto→espaço, espaços colapsados."""
+    import unicodedata
+    _n = "".join(ch for ch in unicodedata.normalize("NFD", str(s or "").lower())
+                 if unicodedata.category(ch) != "Mn")
+    return " ".join(_n.replace("-", " ").replace(".", " ").split())
+
+
+# [FLUVIAL-NAVEGAVEL-FIX] O conjunto-fonte _RIOS_NAVEGAVEIS_BR tem nomes ACENTUADOS (Paraná, Parnaíba,
+# Itajaí…), mas a classificação normaliza o nome de entrada (tira acento) — então rios acentuados NUNCA
+# casavam com a lista autoritativa e caíam na heurística fraca (ex.: "Rio Solimões" dava só 25/100).
+# Normalizamos o conjunto UMA vez com a MESMA régua do input e acrescentamos o Solimões (tronco do
+# Amazonas acima de Manaus), que faltava. Derivado; a fonte acentuada permanece legível acima.
+_RIOS_NAVEGAVEIS_NORM = frozenset(
+    [_norm_rio_nav(_x) for _x in _RIOS_NAVEGAVEIS_BR] + ["solimoes", "rio solimoes"])
+
+# Corpo d'água PEQUENO (não navegável) — testado ANTES das heurísticas de tamanho, senão "Riacho
+# Grande"/"Córrego Grande" casariam "grande" e viriam como navegáveis.
+_RIO_PEQUENO_IND = ("riacho", "riachinho", "corrego", "correginho", "arroio", "sanga", "sanguinha", "grota")
+
+
 def _rio_e_navegavel(nome_rio):
-    """[FLUVIAL-NAVEGAVEL - 435ª] Classifica se um rio é potencialmente navegável.
-    Baseado em lista de rios navegáveis conhecidos + heurísticas de nome/tamanho.
-    Retorna (bool, confidence_score 0-100, detalhes)."""
+    """[FLUVIAL-NAVEGAVEL - 435ª; corrigido] Classifica se um rio é potencialmente navegável, a partir
+    da lista autoritativa (ANA/ANTAQ, NORMALIZADA sem acento) + heurísticas de nome. Devolve
+    (bool, confiança 0-100, detalhe). PURO/determinístico.
+
+    Correções: (1) a lista autoritativa agora casa rios ACENTUADOS (antes nunca casavam, pois o input é
+    normalizado e a lista não era — o Solimões, por exemplo, caía na heurística fraca); (2) o teste de
+    corpo d'água PEQUENO vem ANTES das heurísticas de tamanho ('Riacho Grande' é riacho apesar do
+    'grande'); (3) o match parcial exige PALAVRA INTEIRA (evita 'una' casar dentro de 'laguna') e nome
+    conhecido com >= 4 letras."""
     if not nome_rio:
         return False, 0, "sem nome"
-
-    import unicodedata
-    _nome_norm = "".join(ch for ch in unicodedata.normalize("NFD", str(nome_rio).lower())
-                         if unicodedata.category(ch) != "Mn")
-    _nome_norm = _nome_norm.replace("-", " ").replace(".", "").strip()
-    
-    # Check exact match in known navigable rivers
-    if _nome_norm in _RIOS_NAVEGAVEIS_BR:
-        return True, 95, "rio navegavel conhecido (ANA/ANTAQ)"
-    
-    # Check partial match (river is part of known navigable river)
-    for _rio_conhecido in _RIOS_NAVEGAVEIS_BR:
-        if _rio_conhecido in _nome_norm or _nome_norm in _rio_conhecido:
-            return True, 75, f"parte de rio navegavel conhecido ({_rio_conhecido})"
-    
-    # Heuristics for large rivers (size indicators in name)
-    _indicadores_grande = ["grande", "grandi", "principal", "principal", "maior", "mae", "mãe"]
-    for _ind in _indicadores_grande:
-        if _ind in _nome_norm:
-            return True, 50, f"indicador de rio grande ({_ind})"
-    
-    # Coastal/estuary indicators
-    if any(x in _nome_norm for x in ["baia", "baía", "estuario", "estuário", "foz", "delta", "laguna", "laguna"]):
-        return True, 60, "corpo d'agua costeiro/estuário"
-    
-    # Lake/coastal lagoon indicators
-    if any(x in _nome_norm for x in ["lagoa", "lago", "laguna"]):
-        return True, 40, "lagoa/lago (navegacao limitada)"
-    
-    # Small stream indicators (likely NOT navigable)
-    _indicadores_pequeno = ["riacho", "riachinho", "corrego", "correginho", "arroio", "arroio", "sanga", "sanguinha", "grota", "grota"]
-    for _ind in _indicadores_pequeno:
+    _nome_norm = _norm_rio_nav(nome_rio)
+    if not _nome_norm:
+        return False, 0, "sem nome"
+    _tokens = set(_nome_norm.split())
+    # 1) Corpo d'água pequeno → NÃO navegável (antes de qualquer heurística de tamanho).
+    for _ind in _RIO_PEQUENO_IND:
         if _ind in _nome_norm:
             return False, 90, f"corpo d'agua pequeno ({_ind})"
-    
-    # Default: unknown, assume potentially navigable but low confidence
+    # 2) Match EXATO na lista autoritativa (normalizada).
+    if _nome_norm in _RIOS_NAVEGAVEIS_NORM:
+        return True, 95, "rio navegavel conhecido (ANA/ANTAQ)"
+    # 3) Match por PALAVRA INTEIRA: nome conhecido aparece como sequência de palavras no input
+    #    (ex.: 'amazonas' em 'rio amazonas'); fronteira de palavra evita falso positivo de substring.
+    _pad = " %s " % _nome_norm
+    for _k in _RIOS_NAVEGAVEIS_NORM:
+        if len(_k) >= 4 and (" %s " % _k) in _pad:
+            return True, 85, f"parte de rio navegavel conhecido ({_k})"
+    # 4) Indicadores de rio grande (palavra inteira).
+    for _ind in ("grande", "principal", "maior", "mae"):
+        if _ind in _tokens:
+            return True, 50, f"indicador de rio grande ({_ind})"
+    # 5) Costeiro/estuário.
+    if any(_x in _nome_norm for _x in ("baia", "estuario", "foz", "delta")):
+        return True, 60, "corpo d'agua costeiro/estuario"
+    # 6) Lago/lagoa (navegação limitada).
+    if any(_x in _nome_norm for _x in ("lagoa", "lago", "laguna")):
+        return True, 40, "lagoa/lago (navegacao limitada)"
+    # 7) Desconhecido — assumido potencialmente navegável, baixa confiança.
     return True, 25, "desconhecido - assumido potencialmente navegavel"
 
 
