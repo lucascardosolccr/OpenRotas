@@ -21810,7 +21810,7 @@ def _ref_distancia_impossivel(l) -> bool:
         return False
 
 
-def _perfil_estudo(linhas, lado="app", parse_tempo=None):
+def _perfil_estudo(linhas, lado="app", parse_tempo=None, excluir_ref_invalida=False):
     """[PERFIL - 166ª geração] PERFIL AUTÔNOMO de um estudo — como se ele existisse sozinho.
 
     ── O BURACO QUE ISTO FECHA ──
@@ -21846,13 +21846,22 @@ def _perfil_estudo(linhas, lado="app", parse_tempo=None):
             "sinu": (float(l["Sinuosidade Aplicacao"])
                      if lado == "app" and l.get("Sinuosidade Aplicacao") not in (None, "") else None),
             "tipo": str(l.get("Tipo de Distancia", "")) if lado == "app" else "",
+            "_imp": bool(excluir_ref_invalida and lado == "ref" and _ref_distancia_impossivel(l)),
         })
     if not _dados:
         return {}
 
+    # [COMPARA-JUSTA] Distâncias de referência FISICAMENTE IMPOSSÍVEIS (menores que a linha reta) não
+    # entram nas ESTATÍSTICAS de distância (média/mediana/máx/desvio/total/faixas) — seriam médias de
+    # números que nenhuma estrada percorre, exatamente o que inflava o confronto. As CONTAGENS de
+    # cobertura (municípios/candidatos/polos) e os campos não-distância seguem íntegros: a referência
+    # cobre esses municípios, só reportou a distância errada. Transparência explícita nas chaves
+    # municipios_distancia_valida / distancias_invalidas_excluidas.
+    _dados_dist = [x for x in _dados if not x.get("_imp")] or _dados
+
     import numpy as np
-    _dd = np.array([x["dist"] for x in _dados], dtype=float)
-    _ww = np.array([max(x["insc"], 1.0) for x in _dados], dtype=float)
+    _dd = np.array([x["dist"] for x in _dados_dist], dtype=float)
+    _ww = np.array([max(x["insc"], 1.0) for x in _dados_dist], dtype=float)
     _cand = int(sum(x["insc"] for x in _dados))
     _polos = {x["polo"] for x in _dados if x["polo"] and x["polo"] != "—"}
 
@@ -21868,7 +21877,7 @@ def _perfil_estudo(linhas, lado="app", parse_tempo=None):
     _faixas = {}
     for _lim, _rot in ((50, "≤50 km"), (100, "50-100 km"), (200, "100-200 km"),
                        (400, "200-400 km"), (10 ** 9, ">400 km")):
-        _sel = [x for x in _dados if x["dist"] <= _lim]
+        _sel = [x for x in _dados_dist if x["dist"] <= _lim]
         _faixas[_rot] = int(sum(x["insc"] for x in _sel))
     _ant = 0
     for _k in list(_faixas):
@@ -21877,7 +21886,7 @@ def _perfil_estudo(linhas, lado="app", parse_tempo=None):
         _ant = _v
 
     _por_uf = {}
-    for x in _dados:
+    for x in _dados_dist:
         _a = _por_uf.setdefault(x["uf"], {"UF": x["uf"], "municipios": 0, "candidatos": 0, "_km": 0.0, "_w": 0.0})
         _a["municipios"] += 1
         _a["candidatos"] += int(x["insc"])
@@ -21894,6 +21903,8 @@ def _perfil_estudo(linhas, lado="app", parse_tempo=None):
     return {
         "estudo": "Nossa aplicação" if lado == "app" else "Estudo concorrente",
         "municipios": len(_dados), "candidatos": _cand,
+        "municipios_distancia_valida": len(_dados_dist),
+        "distancias_invalidas_excluidas": len(_dados) - len(_dados_dist),
         "locais_de_prova": len(_polos),
         "dist_media_km": round(float(np.average(_dd, weights=_ww)), 1),
         "dist_mediana_km": round(_med, 1),
@@ -21933,7 +21944,9 @@ def _diagnostico_imparcial(linhas):
     if not _ok:
         return {}
     _app = _perfil_estudo(_ok, "app")
-    _ref = _perfil_estudo(_ok, "ref")
+    # [COMPARA-JUSTA] O perfil da REFERÊNCIA calcula suas estatísticas de distância ignorando as
+    # linhas fisicamente impossíveis (ver _perfil_estudo); cobertura e polos seguem íntegros.
+    _ref = _perfil_estudo(_ok, "ref", excluir_ref_invalida=True)
 
     _v_app = [l for l in _ok if l.get("Vencedor Distancia") == "Aplicação"]
     _v_ref = [l for l in _ok if l.get("Vencedor Distancia") == "Referência"]
@@ -22030,6 +22043,13 @@ def _diagnostico_imparcial(linhas):
             return _s
         _tot_app = _kmcand(_ok_rv, "Distancia Aplicacao")
         _tot_ref = _kmcand(_ok_rv, "Distancia Referencia")
+        # O 'deslocamento total' dos DOIS perfis passa a refletir o MESMO conjunto válido: sem isso, a
+        # soma da referência (sobre menos municípios) pareceria menor por artefato de amostra, e subtrair
+        # as duas linhas da tabela daria um número que contradiz o veredito. Agora tabela == veredito.
+        if _app:
+            _app["km_candidato_total"] = round(_tot_app, 1)
+        if _ref:
+            _ref["km_candidato_total"] = round(_tot_ref, 1)
         _q1 = "A NOSSA aplicação" if _tot_app <= _tot_ref else "O ESTUDO CONCORRENTE"
         _dif = abs(_tot_app - _tot_ref)
         _base1 = ("Soma de (distância × candidatos) nos municípios com distância de referência "
@@ -59230,6 +59250,8 @@ if _secao == _SECOES[3]:   # tab_comparador
                                 for _k, _rot in (("municipios", "Municípios atendidos"),
                                                  ("candidatos", "Candidatos atendidos"),
                                                  ("locais_de_prova", "Locais de prova utilizados"),
+                                                 ("distancias_invalidas_excluidas",
+                                                  "↳ c/ distância impossível (fora das médias)"),
                                                  ("dist_media_km", "Distância média (km)"),
                                                  ("dist_mediana_km", "Distância mediana (km)"),
                                                  ("dist_minima_km", "Distância mínima (km)"),

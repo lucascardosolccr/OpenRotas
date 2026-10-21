@@ -54,6 +54,25 @@ def test_sem_impossiveis_todas_as_linhas_contam():
     assert "fora do confronto" not in p["Base"]
 
 
+def test_perfil_ref_exclui_impossiveis_das_estatisticas_mas_preserva_cobertura():
+    # A REFERÊNCIA reporta 1 distância válida (90, reta 60) e 1 impossível (20, reta 120). O PERFIL dela
+    # deve: (a) calcular média/máx SÓ sobre a válida; (b) preservar a cobertura (2 municípios, polos);
+    # (c) expor quantas foram excluídas; (d) o 'deslocamento total' da tabela bate com o veredito.
+    val = _linha("Valida", "SP", da=100.0, dr=90.0, reta_ref=60.0, insc=10)
+    imp = _linha("Impossivel", "AM", da=200.0, dr=20.0, reta_ref=120.0, insc=10, inval="Sim")
+    d = m._diagnostico_imparcial([val, imp])
+    pr, pa = d["perfil_ref"], d["perfil_app"]
+    # (a) média da ref só sobre a válida (90), não contaminada pela impossível (20):
+    assert pr["dist_media_km"] == 90.0 and pr["dist_maxima_km"] == 90.0
+    # (b) cobertura preservada: a ref cobre os 2 municípios e seus polos (só reportou distância errada):
+    assert pr["municipios"] == 2 and pr["locais_de_prova"] == 2
+    # (c) transparência:
+    assert pr["municipios_distancia_valida"] == 1 and pr["distancias_invalidas_excluidas"] == 1
+    assert pa["distancias_invalidas_excluidas"] == 0   # a app não tem linhas impossíveis
+    # (d) o 'deslocamento total' dos dois perfis é o do MESMO conjunto válido → subtrair bate o veredito:
+    assert round(pa["km_candidato_total"] - pr["km_candidato_total"], 1) == 100.0  # app 100*10 - ref 90*10
+
+
 def test_piso_geodesico_tambem_detecta_sem_rotulo():
     # Mesmo SEM o rótulo 'Vitoria por Ref Invalida', a rede de segurança (ref < linha reta) exclui a linha.
     val = _linha("Valida", "SP", da=100.0, dr=90.0, reta_ref=60.0, insc=10)
