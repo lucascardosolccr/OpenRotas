@@ -230,26 +230,58 @@ _RIOS_NAVEGAVEIS_NORM = frozenset({
 })
 
 
-def rio_navegavel_por_nome(nome) -> bool:
-    """Reconhece um GRANDE rio navegável pelo nome (supre a lacuna 'desconhecido' da base). Normaliza
-    (sem acento, minúsculo), casa por PALAVRA INTEIRA (≥4 letras) com a lista curada. PURA/defensiva."""
+# Barragens/hidrelétricas MAIORES que interrompem a navegação de passagem em rios que, pelo nome, são
+# navegáveis. Curado a partir de _BARRAGENS_PRINCIPAIS do web, restrito aos casos consagrados e corretos
+# (evita entradas duvidosas da lista do web). Chave = rio normalizado; valor = usinas que bloqueiam.
+_RIOS_COM_BARRAGEM = {
+    "parana": ["Itaipu"],
+    "xingu": ["Belo Monte"],
+    "tocantins": ["Tucuruí", "Estreito", "Lajeado"],
+    "madeira": ["Jirau", "Santo Antônio"],
+    "sao francisco": ["Sobradinho", "Três Marias", "Xingó"],
+    "teles pires": ["Teles Pires", "São Manoel", "Sinop"],
+}
+
+
+def _norm_rio(nome) -> str:
+    """Nome de rio normalizado: sem acento, minúsculo, espaços colapsados. '' em falha."""
     try:
         import unicodedata
         s = unicodedata.normalize("NFKD", str(nome or "")).encode("ascii", "ignore").decode("ascii")
-        s = " ".join(s.lower().split())
+        return " ".join(s.lower().split())
     except Exception:
+        return ""
+
+
+def _casa_rio(s, chave) -> bool:
+    """`s` (nome normalizado) corresponde ao rio `chave`? Nome composto (ex.: 'sao francisco') casa só
+    se `s` FOR a chave ou TERMINAR nela — assim 'sao francisco falso' (outro rio) NÃO casa. Nome simples
+    casa por PALAVRA INTEIRA (≥4 letras). Evita falso-positivo por prefixo/substring."""
+    if not s or not chave:
         return False
+    if " " in chave:
+        return s == chave or s.endswith(" " + chave)
+    return len(chave) >= 4 and chave in s.split()
+
+
+def barragens_do_rio(nome) -> list:
+    """Usinas MAIORES que interrompem a navegação de passagem no rio `nome` (lista de nomes), ou [] se
+    nenhuma conhecida. Casa como rio_navegavel_por_nome (sem falso-positivo por prefixo). PURA/defensiva."""
+    s = _norm_rio(nome)
+    for rio, usinas in _RIOS_COM_BARRAGEM.items():
+        if _casa_rio(s, rio):
+            return list(usinas)
+    return []
+
+
+def rio_navegavel_por_nome(nome) -> bool:
+    """Reconhece um GRANDE rio navegável pelo nome (supre a lacuna 'desconhecido' da base). Normaliza
+    (sem acento, minúsculo) e casa com a lista curada por PALAVRA INTEIRA / frase ao FIM do nome — assim
+    'Rio São Francisco' casa mas 'Rio São Francisco Falso' (outro rio) não. PURA/defensiva."""
+    s = _norm_rio(nome)
     if not s:
         return False
-    # frase multi-palavra (ex.: "sao francisco") casa como substring delimitada; nome simples casa palavra.
-    palavras = set(s.split())
-    for nav in _RIOS_NAVEGAVEIS_NORM:
-        if " " in nav:
-            if nav in s:
-                return True
-        elif len(nav) >= 4 and nav in palavras:
-            return True
-    return False
+    return any(_casa_rio(s, nav) for nav in _RIOS_NAVEGAVEIS_NORM)
 
 
 def aviso_fluvial(n) -> str:

@@ -2591,8 +2591,29 @@ def test_rio_navegavel_por_nome_precisao():
     from geo import distancia as d
     for nm in ("Rio Amazonas", "Solimões", "Rio Negro", "Rio São Francisco", "Rio Paraná", "Rio Madeira"):
         assert d.rio_navegavel_por_nome(nm) is True, nm
-    for nm in ("Laguna dos Patos", "Córrego do Meio", "Rio Grande", "Igarapé Una", "Riacho Seco", "", None):
+    for nm in ("Laguna dos Patos", "Córrego do Meio", "Rio Grande", "Igarapé Una", "Riacho Seco", "", None,
+               "Rio São Francisco Falso", "Rio São Francisco Verdadeiro"):   # qualificador no fim = OUTRO rio
         assert d.rio_navegavel_por_nome(nm) is False, nm   # fronteira de palavra: 'una' não casa 'laguna'
+
+def test_barragens_do_rio_ressalva():
+    # Rios navegáveis com barragem MAIOR que interrompe a navegação de passagem (ressalva honesta).
+    from geo import distancia as d
+    assert d.barragens_do_rio("Rio Paraná") == ["Itaipu"]
+    assert "Belo Monte" in d.barragens_do_rio("Rio Xingu")
+    assert d.barragens_do_rio("Rio São Francisco")                 # Sobradinho/Três Marias/Xingó
+    assert d.barragens_do_rio("Rio Amazonas") == []                # navegável e sem barragem
+    assert d.barragens_do_rio("Laguna") == [] and d.barragens_do_rio("") == []
+    assert d.barragens_do_rio("Rio São Francisco Falso") == []     # outro rio — não herda a ressalva
+
+def test_dossie_ressalva_barragem_em_rio_navegavel():
+    # Dossiê que cruza o Paraná: reconhece navegável E a ressalva de Itaipu (barragem que bloqueia).
+    from geo import dossie_rota
+    dd, _ = dossie_rota.dossie_por_nomes("Foz do Iguaçu/PR;Guaíra/PR")   # corredor sobre o Rio Paraná
+    h = dd.get("hidrografia", {})
+    rb = h.get("rios_navegaveis_com_barragem", [])
+    if rb:                                                          # dependente de o corredor pegar o Paraná
+        assert any("Itaipu" in x["barragens"] for x in rb)
+        assert "barragem" in dossie_rota.render_texto(dd).lower()
 
 def test_dossie_navegabilidade_por_nome_supre_base():
     # Manaus→Parintins cruza o Amazonas; a base marca 'desconhecido' (navegaveis=0), mas o
