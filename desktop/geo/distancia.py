@@ -216,6 +216,42 @@ def circuidade_suspeita(circuidade, reta_km):
     return (False, "")
 
 
+# ---------------------------------------------------------------------------
+#  NAVEGABILIDADE POR NOME — a base de drenagem traz ~86% dos trechos como "desconhecido"; um corredor
+#  que cruza o Amazonas/Solimões/Paraná sai com "0 navegáveis". Reconhecer os GRANDES rios navegáveis
+#  pelo NOME (fonte: hidrovias oficiais ANTAQ/DNIT) supre essa lacuna. Lista CURADA e conservadora (só
+#  rios inequivocamente navegáveis), casada por PALAVRA INTEIRA (fronteira de espaço, ≥4 letras) para
+#  não dar falso-positivo por substring ('una' em 'laguna'). Espelha o classificador corrigido do web.
+_RIOS_NAVEGAVEIS_NORM = frozenset({
+    "amazonas", "solimoes", "negro", "madeira", "tapajos", "xingu", "tocantins", "araguaia",
+    "parana", "paranaiba", "paraguai", "tiete", "sao francisco", "parnaiba", "uruguai", "jacui",
+    "guaiba", "purus", "jurua", "japura", "branco", "guapore", "mamore", "teles pires", "juruena",
+    "paranapanema", "ribeira de iguape", "itajai", "doce", "jequitinhonha", "ica", "madre de dios",
+})
+
+
+def rio_navegavel_por_nome(nome) -> bool:
+    """Reconhece um GRANDE rio navegável pelo nome (supre a lacuna 'desconhecido' da base). Normaliza
+    (sem acento, minúsculo), casa por PALAVRA INTEIRA (≥4 letras) com a lista curada. PURA/defensiva."""
+    try:
+        import unicodedata
+        s = unicodedata.normalize("NFKD", str(nome or "")).encode("ascii", "ignore").decode("ascii")
+        s = " ".join(s.lower().split())
+    except Exception:
+        return False
+    if not s:
+        return False
+    # frase multi-palavra (ex.: "sao francisco") casa como substring delimitada; nome simples casa palavra.
+    palavras = set(s.split())
+    for nav in _RIOS_NAVEGAVEIS_NORM:
+        if " " in nav:
+            if nav in s:
+                return True
+        elif len(nav) >= 4 and nav in palavras:
+            return True
+    return False
+
+
 def aviso_fluvial(n) -> str:
     """Frase padrão de aviso para N município(s) de acesso fluvial/isolado, compartilhada pelos
     relatórios (matriz/isócronas/centro). '' quando n ≤ 0."""

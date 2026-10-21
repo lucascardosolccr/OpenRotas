@@ -2572,6 +2572,30 @@ def test_dossie_circuidade_fluvial_sinaliza_barreira():
 
 
 # ============================================================================
+#  NAVEGABILIDADE POR NOME — supre a lacuna 'desconhecido' (~86%) da base de drenagem
+#  reconhecendo os grandes rios navegáveis pelo nome. Precisão (sem falso-positivo).
+# ============================================================================
+def test_rio_navegavel_por_nome_precisao():
+    from geo import distancia as d
+    for nm in ("Rio Amazonas", "Solimões", "Rio Negro", "Rio São Francisco", "Rio Paraná", "Rio Madeira"):
+        assert d.rio_navegavel_por_nome(nm) is True, nm
+    for nm in ("Laguna dos Patos", "Córrego do Meio", "Rio Grande", "Igarapé Una", "Riacho Seco", "", None):
+        assert d.rio_navegavel_por_nome(nm) is False, nm   # fronteira de palavra: 'una' não casa 'laguna'
+
+def test_dossie_navegabilidade_por_nome_supre_base():
+    # Manaus→Parintins cruza o Amazonas; a base marca 'desconhecido' (navegaveis=0), mas o
+    # reconhecimento por nome recupera o Rio Amazonas como navegável.
+    from geo import dossie_rota
+    dd, _ = dossie_rota.dossie_por_nomes("Manaus/AM;Parintins/AM")
+    h = dd.get("hidrografia", {})
+    assert h.get("navegaveis_nomeados", 0) >= 1
+    assert any("Amazonas" in n for n in h.get("rios_navegaveis_nome", []))
+    # cada rio nomeado carrega a tag navegavel; e o texto expõe a lista por nome.
+    assert all("navegavel" in r for r in h.get("rios_nomeados", []))
+    assert "navegáveis reconhecidos por nome" in dossie_rota.render_texto(dd)
+
+
+# ============================================================================
 #  QUALIDADE DE COORDENADAS — guarda anti-regressão do defeito Brasília/Vitória.
 # ============================================================================
 def test_coverage_ponto_no_corpo_helper():

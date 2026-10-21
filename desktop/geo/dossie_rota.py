@@ -287,12 +287,16 @@ def _idx_corredor(repo, camada, coords, folga_graus):
 
 
 def _detalhe_rios(repo, reg, idx) -> dict:
-    """A partir dos índices de drenagem no corredor, extrai nomes/navegabilidade/regime (§29)."""
-    out = {"trechos": int(getattr(idx, "size", 0)), "navegaveis": 0, "rios_nomeados": [], "regimes": {}}
+    """A partir dos índices de drenagem no corredor, extrai nomes/navegabilidade/regime (§29).
+    A navegabilidade da base vem ~86% 'desconhecido'; por isso complementamos reconhecendo os GRANDES
+    rios navegáveis pelo NOME (geo.distancia.rio_navegavel_por_nome) — senão o Amazonas sairia '0 navegáveis'."""
+    out = {"trechos": int(getattr(idx, "size", 0)), "navegaveis": 0, "rios_nomeados": [], "regimes": {},
+           "navegaveis_nomeados": 0, "rios_navegaveis_nome": []}
     if getattr(idx, "size", 0) == 0:
         return out
     try:
         import numpy as np
+        from geo import distancia
         df = repo.atributos("drenagem", ["nome", "navegavel", "regime"])
         if df is None:
             return out
@@ -306,7 +310,13 @@ def _detalhe_rios(repo, reg, idx) -> dict:
             nomes = sub[cnome].dropna().astype(str)
             nomes = nomes[nomes.str.strip() != ""]
             vc = nomes.value_counts().head(15)
-            out["rios_nomeados"] = [{"nome": k, "trechos": int(v)} for k, v in vc.items()]
+            # tag de navegabilidade POR NOME em cada rio nomeado (supre a lacuna 'desconhecido' da base).
+            out["rios_nomeados"] = [{"nome": k, "trechos": int(v),
+                                     "navegavel": bool(distancia.rio_navegavel_por_nome(k))}
+                                    for k, v in vc.items()]
+            navs = [r["nome"] for r in out["rios_nomeados"] if r["navegavel"]]
+            out["rios_navegaveis_nome"] = navs
+            out["navegaveis_nomeados"] = len(navs)
         creg = _col(sub, "regime")
         if creg:
             out["regimes"] = {str(k): int(v) for k, v in sub[creg].dropna().astype(str).value_counts().head(6).items()}
@@ -480,9 +490,12 @@ def render_texto(dd: dict) -> str:
         L.append("UFs no corredor: %s (%d municípios)" % (", ".join(tt["ufs"]), tt.get("n_municipios", 0)))
     h = dd.get("hidrografia", {})
     L.append("")
-    L.append("Hidrografia: %d trechos de rio no corredor · %d navegáveis" % (h.get("trechos", 0), h.get("navegaveis", 0)))
+    L.append("Hidrografia: %d trechos de rio no corredor · %d navegáveis (base)" % (h.get("trechos", 0), h.get("navegaveis", 0)))
+    if h.get("navegaveis_nomeados"):
+        L.append("  Rios navegáveis reconhecidos por nome (hidrovias): %s" % ", ".join(h.get("rios_navegaveis_nome", [])))
     if h.get("rios_nomeados"):
-        L.append("  Principais rios: " + ", ".join("%s(%d)" % (r["nome"], r["trechos"]) for r in h["rios_nomeados"][:8]))
+        L.append("  Principais rios: " + ", ".join("%s(%d)%s" % (r["nome"], r["trechos"], " ⚓" if r.get("navegavel") else "")
+                                                   for r in h["rios_nomeados"][:8]))
     cam = dd.get("camadas", {})
     L.append("Transposições: %d ponte(s) · %d travessia(s)/balsa(s)"
              % (cam.get("pontes", {}).get("feicoes", 0), cam.get("travessias", {}).get("feicoes", 0)))
@@ -627,10 +640,14 @@ def gerar_html(dd: dict, caminho) -> str | None:
                  "<div class='kpi'><div class='v'>%d</div><div class='l'>trechos de rio</div></div>"
                  "<div class='kpi'><div class='v'>%d</div><div class='l'>navegáveis</div></div></div>"
                  % (h.get("trechos", 0), h.get("navegaveis", 0)))
+        if h.get("navegaveis_nomeados"):
+            P.append("<p class='sub' style='margin:2px 2px 8px'>Rios navegáveis reconhecidos por nome "
+                     "(hidrovias): <b>%s</b>.</p>" % html.escape(", ".join(h.get("rios_navegaveis_nome", []))))
         if h.get("rios_nomeados"):
-            P.append("<table><thead><tr><th>Rio</th><th class='num'>trechos</th></tr></thead><tbody>")
+            P.append("<table><thead><tr><th>Rio</th><th class='num'>trechos</th><th>navegável</th></tr></thead><tbody>")
             for r in h["rios_nomeados"]:
-                P.append("<tr><td>%s</td><td class='num'>%d</td></tr>" % (html.escape(str(r["nome"])), r["trechos"]))
+                P.append("<tr><td>%s</td><td class='num'>%d</td><td>%s</td></tr>"
+                         % (html.escape(str(r["nome"])), r["trechos"], "⚓ sim" if r.get("navegavel") else "—"))
             P.append("</tbody></table>")
         P.append("</section>")
         # Circuidade (viária ÷ reta) — sensor de barreira/implausível.
