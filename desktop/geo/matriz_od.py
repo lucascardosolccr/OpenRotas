@@ -137,7 +137,10 @@ def calcular(locais, usar_osrm=None, osrm_url=None, reg=None, estimar: bool = Tr
         modo = "geodesico"
         osrm_ok = False
         from geo import dossie_rota as _dr
+        from geo import distancia
+        fluv = [bool(p.get("acesso_fluvial")) for p in pts]
         _use_osrm, _url_osrm = _dr.resolver_osrm(usar_osrm, osrm_url)
+        osrm_fill = [[False] * n for _ in range(n)]
         if _use_osrm:
             rod = _matriz_osrm(lons, lats, _url_osrm)
             if rod is not None:
@@ -146,14 +149,24 @@ def calcular(locais, usar_osrm=None, osrm_url=None, reg=None, estimar: bool = Tr
                         v = rod[i][j] if i < len(rod) and j < len(rod[i]) else None
                         if v is not None:
                             M[i][j] = float(round(v, 1))
+                            osrm_fill[i][j] = True
                 modo = "rodoviario"
                 osrm_ok = True
-        if estimar and not osrm_ok:
+        if osrm_ok and estimar:
+            # Células que o OSRM NÃO roteou (sem estrada: ilha/fluvial → /table devolve null) ficavam com a
+            # LINHA RETA crua. Agora caem na ESTIMATIVA (fluvial-aware), não na reta — honesto p/ a Amazônia.
+            caiu = False
+            for i in range(n):
+                for j in range(n):
+                    if i != j and not osrm_fill[i][j]:
+                        M[i][j] = float(round(distancia.estimar_rodoviaria_km(M[i][j], fluvial=(fluv[i] or fluv[j])), 1))
+                        caiu = True
+            if caiu:
+                modo = "rodoviario-parcial"
+        elif estimar and not osrm_ok:
             # Sem OSRM: a matriz vira ESTIMATIVA rodoviária (linha reta × fator de sinuosidade), como o
             # web — nunca a reta crua. CONSCIÊNCIA FLUVIAL: um par com algum extremo de acesso só fluvial
             # (sem estrada) usa o fator FLUVIAL (~3×), não o rodoviário — a estrada não existe ali.
-            from geo import distancia
-            fluv = [bool(p.get("acesso_fluvial")) for p in pts]
             for i in range(n):
                 for j in range(n):
                     if i != j:

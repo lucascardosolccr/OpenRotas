@@ -2213,6 +2213,24 @@ def test_matriz_auto_usa_osrm_quando_no_ar(monkeypatch):
     rf = matriz_od.calcular([(-46.63, -23.55), (-43.20, -22.90)], usar_osrm=False)
     assert rf["modo"] == "estimado"
 
+def test_matriz_osrm_celula_sem_rota_cai_na_estimativa(monkeypatch):
+    # [OSRM-PARCIAL] Quando o /table devolve NULL para um par (ilha/fluvial sem estrada), a célula não pode
+    # ficar com a LINHA RETA crua — cai na ESTIMATIVA (fluvial-aware). Modo vira 'rodoviario-parcial'.
+    from geo import dossie_rota as dr, matriz_od
+    monkeypatch.setattr(dr, "osrm_ativo", lambda *a, **k: "http://localhost:5000")
+    def _fake_table(lons, lats, url, **k):
+        # 2x2: par 0-1 roteado (real), par com índice 1 para 0 NULL (sem rota) — simula trecho sem estrada.
+        return [[0.0, 120.0], [None, 0.0]]
+    monkeypatch.setattr(matriz_od, "_matriz_osrm", _fake_table)
+    r = matriz_od.calcular([(-46.63, -23.55), (-43.20, -22.90)])
+    assert r["ok"] and r["modo"] == "rodoviario-parcial"       # teve rota real E célula estimada
+    assert r["matriz"][0][1] == 120.0                          # célula roteada pelo OSRM
+    # a célula NULL (1→0) não é a reta crua: recebeu a estimativa (reta × fator ≥ 1,18) > reta geodésica.
+    import numpy as np
+    from geo import isocronas
+    reta10 = float(isocronas._haversine_km(-43.20, -22.90, np.array([-46.63]), np.array([-23.55]))[0])
+    assert r["matriz"][1][0] > reta10 * 1.1
+
 def test_matriz_calcular_estimado():
     # [PARIDADE-WEB] Sem OSRM, a matriz vira ESTIMATIVA rodoviária (linha reta × sinuosidade), como o web;
     # simetria e diâmetro continuam válidos. estimar=False recupera a linha reta pura (modo 'geodesico').
@@ -2584,6 +2602,18 @@ def test_matriz_fluvial_aplica_fator_e_sinaliza():
     assert f["resumo"]["acesso_fluvial"] == 0                            # ilha oceânica não é "fluvial"
     assert f["matriz"][0][1] / matriz_od.calcular("Recife/PE;Fernando de Noronha/PE",
                                                   estimar=False)["matriz"][0][1] < 1.5   # fator rodoviário
+
+def test_centro_osrm_celula_sem_rota_cai_na_estimativa(monkeypatch):
+    # [OSRM-PARCIAL] No centro ótimo, se o /table não roteia UM par (ilha/fluvial), antes a matriz INTEIRA
+    # era descartada (caía tudo na estimativa). Agora usa o OSRM real onde há e estima só a célula sem rota.
+    from geo import dossie_rota as dr, centro_otimo as co
+    monkeypatch.setattr(dr, "osrm_ativo", lambda *a, **k: "http://localhost:5000")
+    # _matriz_osrm_cd dublado: 2 candidatos × 2 destinos; um par (cand0→dest1) sem rota (None).
+    monkeypatch.setattr(co, "_matriz_osrm_cd", lambda cand, dest, url: [[100.0, None], [120.0, 90.0]])
+    r = co.calcular("Manaus/AM;Belém/PA", destinos="Santarém/PA;Macapá/AP")
+    assert r["ok"] and r["modo"] == "rodoviario-parcial"       # real onde há + estimativa na célula sem rota
+    c0 = next(c for c in r["candidatos"] if c["distancias"][0] == 100.0)  # usou o OSRM real (100)
+    assert c0["distancias"][1] > 0                             # a célula None virou estimativa (não 0/reta crua)
 
 def test_centro_fluvial_sinaliza():
     from geo import centro_otimo as co

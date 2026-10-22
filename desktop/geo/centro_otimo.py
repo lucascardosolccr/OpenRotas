@@ -95,26 +95,14 @@ def calcular(candidatos, destinos=None, usar_osrm=None, osrm_url=None, reg=None,
         d_lons = np.array([p["lon"] for p in dest], dtype="float64")
         d_lats = np.array([p["lat"] for p in dest], dtype="float64")
         from geo import isocronas
-        # Matriz candidato×destino (km). Geodésico por padrão.
-        linhas = [isocronas._haversine_km(c["lon"], c["lat"], d_lons, d_lats) for c in cand]
-        modo = "geodesico"
         from geo import dossie_rota as _dr
-        _use_osrm, _url_osrm = _dr.resolver_osrm(usar_osrm, osrm_url)
-        if _use_osrm:
-            rod = _matriz_osrm_cd(cand, dest, _url_osrm)
-            if rod is not None:
-                linhas = rod
-                modo = "rodoviario"
+        # Matriz candidato×destino: linha reta (piso) → OSRM local onde houver → estimativa onde faltar.
+        reta = [[float(v) for v in isocronas._haversine_km(c["lon"], c["lat"], d_lons, d_lats)] for c in cand]
         fluv_c = [bool(c.get("acesso_fluvial")) for c in cand]
         fluv_d = [bool(d.get("acesso_fluvial")) for d in dest]
-        if estimar and modo == "geodesico":
-            # Sem OSRM: estima a distância rodoviária da linha reta (fator de sinuosidade do web), em vez
-            # da reta crua. CONSCIÊNCIA FLUVIAL: o par candidato×destino com algum extremo de acesso só
-            # fluvial usa o fator FLUVIAL (~3×). A reta é o piso. (centro_otimo.calcular)
-            from geo import distancia
-            linhas = [distancia.estimar_rodoviaria_vetor(row, fluvial=[fluv_c[i] or fd for fd in fluv_d])
-                      for i, row in enumerate(linhas)]
-            modo = "estimado"
+        _use_osrm, _url_osrm = _dr.resolver_osrm(usar_osrm, osrm_url)
+        rod = _matriz_osrm_cd(cand, dest, _url_osrm) if _use_osrm else None
+        linhas, modo = _combinar_osrm(reta, rod, fluv_c, fluv_d, estimar)
         out = []
         for i, c in enumerate(cand):
             row = [float(v) for v in linhas[i]]
@@ -150,9 +138,40 @@ def calcular(candidatos, destinos=None, usar_osrm=None, osrm_url=None, reg=None,
         return base
 
 
+def _combinar_osrm(reta, rod, fluv_c, fluv_d, estimar):
+    """Combina a matriz geodésica `reta` (C×D, km) com a rodoviária OSRM `rod` (pode ter None por par):
+    usa o OSRM onde há valor; onde é None (sem estrada) cai na ESTIMATIVA fluvial-aware (se estimar) ou na
+    reta crua. Devolve (linhas, modo) com modo rodoviario | rodoviario-parcial | estimado | geodesico."""
+    from geo import distancia
+    out = []
+    algum_osrm = algum_fallback = False
+    for i, row in enumerate(reta):
+        nr = []
+        for j, r in enumerate(row):
+            v = rod[i][j] if (rod is not None and i < len(rod) and j < len(rod[i])) else None
+            if v is not None:
+                nr.append(float(v)); algum_osrm = True
+            elif estimar:
+                nr.append(float(distancia.estimar_rodoviaria_km(r, fluvial=(fluv_c[i] or fluv_d[j]))))
+                algum_fallback = True
+            else:
+                nr.append(float(r))
+        out.append(nr)
+    if algum_osrm and algum_fallback:
+        modo = "rodoviario-parcial"
+    elif algum_osrm:
+        modo = "rodoviario"
+    elif estimar:
+        modo = "estimado"
+    else:
+        modo = "geodesico"
+    return out, modo
+
+
 def _matriz_osrm_cd(cand, dest, url):
     """Matriz RODOVIÁRIA candidato×destino via OSRM /table completo (candidatos+destinos), fatiada.
-    None em falha/sem rede. Nunca levanta."""
+    None em falha/sem rede TOTAL. Preserva células None individuais (par sem rota: ilha/fluvial) — o
+    chamador as completa com a estimativa, em vez de descartar TODA a matriz real. Nunca levanta."""
     try:
         from geo import matriz_od
         lons = [p["lon"] for p in cand] + [p["lon"] for p in dest]
@@ -166,9 +185,7 @@ def _matriz_osrm_cd(cand, dest, url):
             row = []
             for j in range(nd):
                 v = full[i][nc + j] if i < len(full) and (nc + j) < len(full[i]) else None
-                if v is None:
-                    return None
-                row.append(float(v))
+                row.append(float(v) if v is not None else None)   # preserva None (sem rota nesse par)
             out.append(row)
         return out
     except Exception:
@@ -255,23 +272,12 @@ def _dist_cd(cand, dest, usar_osrm, osrm_url, estimar: bool = True):
     from geo import dossie_rota as _dr
     d_lons = np.array([p["lon"] for p in dest], dtype="float64")
     d_lats = np.array([p["lat"] for p in dest], dtype="float64")
-    linhas = [[float(v) for v in isocronas._haversine_km(c["lon"], c["lat"], d_lons, d_lats)] for c in cand]
-    modo = "geodesico"
+    reta = [[float(v) for v in isocronas._haversine_km(c["lon"], c["lat"], d_lons, d_lats)] for c in cand]
+    fluv_c = [bool(c.get("acesso_fluvial")) for c in cand]
+    fluv_d = [bool(d.get("acesso_fluvial")) for d in dest]
     _use_osrm, _url_osrm = _dr.resolver_osrm(usar_osrm, osrm_url)
-    if _use_osrm:
-        rod = _matriz_osrm_cd(cand, dest, _url_osrm)
-        if rod is not None:
-            linhas = [[float(v) for v in row] for row in rod]
-            modo = "rodoviario"
-    if estimar and modo == "geodesico":
-        # CONSCIÊNCIA FLUVIAL: par hub×destino com algum extremo de acesso só fluvial usa o fator FLUVIAL.
-        from geo import distancia
-        fluv_c = [bool(c.get("acesso_fluvial")) for c in cand]
-        fluv_d = [bool(d.get("acesso_fluvial")) for d in dest]
-        linhas = [[float(distancia.estimar_rodoviaria_km(v, fluvial=(fluv_c[i] or fluv_d[j])))
-                   for j, v in enumerate(row)] for i, row in enumerate(linhas)]
-        modo = "estimado"
-    return linhas, modo
+    rod = _matriz_osrm_cd(cand, dest, _url_osrm) if _use_osrm else None
+    return _combinar_osrm(reta, rod, fluv_c, fluv_d, estimar)   # OSRM onde houver; estimativa onde faltar
 
 
 def _aval_subset(D, S, nd):
