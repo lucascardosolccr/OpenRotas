@@ -236,12 +236,21 @@ def _parse_osrm_geojson(texto):
 
 
 def _osrm_url(conf=None):
-    """URL do OSRM a usar: osrm.url da config (modo external/docker) ou None."""
+    """URL do OSRM local a usar. Prioridade:
+      1. OSRM_URL do AMBIENTE — o launcher o injeta quando SOBE o motor local (nativo 'auto'/'local',
+         Docker ou externo). É o elo que faltava: sem ler isto, o motor que o app sobe automaticamente
+         ficava INVISÍVEL para as ferramentas (matriz/isócronas/centro/dossiê) e elas caíam na estimativa;
+      2. osrm.url da config nos modos que SERVEM local (external/docker/auto/local) — default localhost:5000;
+      3. OSRM_URL legado da config;  senão None. Nunca levanta."""
     try:
+        import os as _os
+        env = str(_os.environ.get("OSRM_URL", "") or "").strip()
+        if env:
+            return env.rstrip("/")
         import desktop_config as cfg
         conf = conf if conf is not None else cfg.carregar_config_usuario()
         oc = dict((conf or {}).get("osrm") or {})
-        if str(oc.get("mode", "")).lower() in ("external", "docker"):
+        if str(oc.get("mode", "")).lower() in ("external", "docker", "auto", "local"):
             return str(oc.get("url") or "http://localhost:5000").rstrip("/")
         u = str((conf or {}).get("OSRM_URL") or "").strip()
         return u.rstrip("/") or None

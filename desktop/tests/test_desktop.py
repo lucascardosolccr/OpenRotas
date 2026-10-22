@@ -2177,6 +2177,19 @@ def test_osrm_auto_resolver_osrm():
     finally:
         del os.environ["OPENROTAS_NO_NET"]
 
+def test_osrm_url_le_ambiente_e_modo_nativo(monkeypatch):
+    # [ATIVAÇÃO AUTOMÁTICA] O launcher sobe o motor local (nativo 'auto'/'local') e injeta OSRM_URL no
+    # ambiente. _osrm_url DEVE enxergar isso (era o elo que faltava) e reconhecer os modos que servem local.
+    from geo import dossie_rota as dr
+    monkeypatch.delenv("OSRM_URL", raising=False)
+    # modo nativo 'auto'/'local' na config → reconhecido (default localhost:5000 / url configurada)
+    assert dr._osrm_url({"osrm": {"mode": "auto"}}) == "http://localhost:5000"
+    assert dr._osrm_url({"osrm": {"mode": "local", "url": "http://127.0.0.1:5000"}}) == "http://127.0.0.1:5000"
+    assert dr._osrm_url({"osrm": {"mode": "off"}}) is None
+    # OSRM_URL do ambiente tem PRIORIDADE (motor que o launcher subiu nesta sessão)
+    monkeypatch.setenv("OSRM_URL", "http://localhost:5000/")
+    assert dr._osrm_url({"osrm": {"mode": "off"}}) == "http://localhost:5000"
+
 def test_matriz_auto_usa_osrm_quando_no_ar(monkeypatch):
     # [OSRM-AUTO] Com o OSRM local no ar, a matriz usa distância RODOVIÁRIA REAL por PADRÃO (sem flag) —
     # o ponto que o usuário cobrava ("já que tem roteamento OSRM local"). Dubla a disponibilidade + o /table.
