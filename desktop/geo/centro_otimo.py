@@ -369,6 +369,31 @@ def _guloso(D, C, nd, k, criterio):
     return chosen
 
 
+def _busca_local_troca(D, C, nd, k, criterio, S, max_sweeps: int = 40):
+    """Busca local por TROCA (interchange / Teitz-Bart): a cada passo tenta trocar um hub escolhido
+    por um candidato de fora e aceita a troca que mais reduz o critério; repete até não melhorar (ou
+    o teto de sweeps). Refina o guloso em direção ao ótimo e NUNCA piora (só aceita melhora).
+    Determinístico. Devolve o melhor conjunto de hubs encontrado."""
+    S = list(S)
+    if not S or k >= C:                              # nada a trocar (todos os candidatos já são hubs)
+        return S
+    atual = _val(D, S, nd, criterio)
+    for _ in range(max_sweeps):
+        dentro = set(S)
+        fora = [c for c in range(C) if c not in dentro]
+        melhor_S, melhor = None, atual
+        for i in range(len(S)):
+            for c in fora:
+                cand_S = S[:i] + [c] + S[i + 1:]
+                v = _val(D, cand_S, nd, criterio)
+                if v < melhor - 1e-9:
+                    melhor, melhor_S = v, cand_S
+        if melhor_S is None:                         # nenhum vizinho de troca melhora → ótimo local
+            break
+        S, atual = melhor_S, melhor
+    return S
+
+
 def _montar_solucao(S, cand, dest, D):
     nd = len(dest)
     total, mx, atrib = _aval_subset(D, S, nd)
@@ -416,8 +441,10 @@ def calcular_k(candidatos, destinos=None, k: int = 2, usar_osrm=None, osrm_url=N
             S_soma = _exato(D, C, nd, k, "soma")
             S_max = _exato(D, C, nd, k, "max")
         else:
-            S_soma = _guloso(D, C, nd, k, "soma")
-            S_max = _guloso(D, C, nd, k, "max")
+            # Guloso + busca local por troca: o guloso dá o ponto de partida; a troca o refina em
+            # direção ao ótimo (melhor alocação dos hubs → menor distância total/pior caso).
+            S_soma = _busca_local_troca(D, C, nd, k, "soma", _guloso(D, C, nd, k, "soma"))
+            S_max = _busca_local_troca(D, C, nd, k, "max", _guloso(D, C, nd, k, "max"))
         base.update({
             "ok": True, "k": k, "modo": modo, "metodo": metodo, "self_dest": self_dest,
             "candidatos": [{"nome": c["nome"], "uf": c.get("uf", ""), "lon": c["lon"], "lat": c["lat"],

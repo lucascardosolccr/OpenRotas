@@ -2619,6 +2619,38 @@ def test_centro_k_guloso_para_muitos_candidatos():
     r = co.calcular_k(";".join(caps), destinos="Belém/PA;Rio de Janeiro/RJ;Fortaleza/CE;Manaus/AM", k=3)
     assert r["ok"] and r["metodo"] == "guloso" and len(r["solucao_soma"]["hubs"]) == 3
 
+def test_busca_local_troca_nunca_piora_e_alcanca_otimo():
+    # A busca local por troca (interchange) refina o guloso: NUNCA piora e, em instâncias pequenas,
+    # costuma alcançar o ótimo exato. Instância fabricada em que o guloso erra e a troca conserta.
+    from geo import centro_otimo as co
+    # 4 candidatos × 4 destinos; distâncias escolhidas p/ o guloso k=2 prender num hub subótimo.
+    D = [
+        [0, 0, 50, 50],    # cand 0: ótimo p/ destinos 0,1
+        [9, 9, 9, 9],      # cand 1: "meião" que o guloso adiciona primeiro (menor custo isolado)
+        [50, 50, 0, 0],    # cand 2: ótimo p/ destinos 2,3
+        [40, 40, 40, 40],
+    ]
+    C, nd, k = 4, 4, 2
+    g = co._guloso(D, C, nd, k, "soma")
+    s = co._busca_local_troca(D, C, nd, k, "soma", list(g))
+    ex = co._exato(D, C, nd, k, "soma")
+    assert co._val(D, s, nd, "soma") <= co._val(D, g, nd, "soma") + 1e-9   # nunca piora
+    assert abs(co._val(D, s, nd, "soma") - co._val(D, ex, nd, "soma")) < 1e-6  # alcança o ótimo
+    assert set(s) == {0, 2}                                                # hubs ótimos
+
+def test_busca_local_troca_fuzz_nunca_piora():
+    # Propriedade: sobre instâncias aleatórias, a troca nunca piora o guloso (em soma e pior caso).
+    import random
+    from geo import centro_otimo as co
+    rnd = random.Random(314)
+    for _ in range(150):
+        C = rnd.randint(4, 8); nd = rnd.randint(3, 9); k = rnd.randint(1, min(3, C))
+        D = [[rnd.uniform(1, 100) for _ in range(nd)] for _ in range(C)]
+        for crit in ("soma", "max"):
+            g = co._guloso(D, C, nd, k, crit)
+            s = co._busca_local_troca(D, C, nd, k, crit, list(g))
+            assert co._val(D, s, nd, crit) <= co._val(D, g, nd, crit) + 1e-9
+
 def test_centro_k_html_e_excel(tmp_path):
     import openpyxl
     from geo import centro_otimo as co
