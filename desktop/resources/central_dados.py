@@ -636,6 +636,12 @@ class _App:
                 elif tipo == "motor_status":
                     _noar = bool((dado or {}).get("local_no_ar"))
                     _txt = "Motor de rotas: %s" % (dado or {}).get("detalhe", "?")
+                    # Diz, em uma linha, o que as ANÁLISES (matriz/isócronas/centro/dossiê) vão usar de fato:
+                    # distância rodoviária real (OSRM local no ar) ou estimativa de sinuosidade. É o que muda
+                    # o número que o usuário vê, então vale explicitar além do status do motor em si.
+                    _fmodo = (dado or {}).get("ferramentas_modo")
+                    if _fmodo:
+                        _txt += "\nAnálises usam: %s" % _fmodo
                     self.estado_motor.config(text=_txt, foreground=("#1a7f4b" if _noar else "#9a6700"))
                 elif tipo == "update_status":
                     d = dado or {}

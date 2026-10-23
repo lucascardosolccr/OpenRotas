@@ -341,12 +341,23 @@ def test_assinatura_detecta_arquivo(reg):
 
 def test_offline_pronto_estrutura(reg):
     off = reg.offline_pronto()
-    assert off["geocodificacao_hidro_local"] is True      # bases embarcadas presentes
-    assert off["roteamento_local"] is False               # sem grafo OSRM local aqui
-    assert off["pronto"] is False and "osrm_brasil" in " ".join(off["faltam"])
+    assert off["geocodificacao_hidro_local"] is True      # bases embarcadas sempre presentes
+    # roteamento_local/pronto refletem a presença REAL do grafo (alguns ambientes já o trazem).
+    # Testar a invariante (== existe(osrm_brasil)) torna o teste portável sem afrouxar a honestidade:
+    # quando o grafo falta, 'faltam' tem de dizê-lo.
+    tem = reg.existe("osrm_brasil")
+    assert off["roteamento_local"] is bool(tem)
+    assert off["pronto"] is bool(tem)
+    if not tem:
+        assert "osrm_brasil" in " ".join(off["faltam"])
 
-def test_osrm_brasil_e_opcional_ausente(reg):
-    assert reg.existe("osrm_brasil") is False
+def test_osrm_brasil_e_opcional(reg):
+    # osrm_brasil (grafo) é um recurso OPCIONAL: pode ou não estar no ambiente, mas nunca é
+    # essencial (os essenciais são as bases embarcadas, sempre presentes). Invariante de
+    # classificação — portável, não assume ausência num ambiente que já traga o grafo.
+    g = next(d for d in local_data.CATALOGO if d.chave == "osrm_brasil")
+    assert g.essencial is False
+    assert reg.essenciais_ok() is True
 
 def test_local_data_assinatura_familia_osrm(tmp_path):
     # Correção: assinatura() deve medir a FAMÍLIA '<base>.osrm.*' (o MLD não tem arquivo-base),
@@ -408,10 +419,16 @@ def test_rm_status_lista_recursos():
     assert mun["instalado"] is True and mun["estado"] == rm.OK and mun["obrigatorio"] is True
     assert mun["modulo"]  # cada recurso sabe qual módulo o usa
 
-def test_rm_osrm_opcional_ausente():
+def test_rm_osrm_opcional():
     g = next(r for r in rm.status() if r["chave"] == "osrm_brasil")
+    # Classificação (invariante): provisionável e NÃO obrigatório.
     assert g["tipo"] == "provisionável" and g["obrigatorio"] is False
-    assert g["instalado"] is False and g["estado"] == rm.OPCIONAL_AUSENTE
+    # Estado reflete o ambiente real: instalado → estado diferente de OPCIONAL_AUSENTE;
+    # ausente → OPCIONAL_AUSENTE. Portável (alguns ambientes já trazem o grafo).
+    if g["instalado"]:
+        assert g["estado"] != rm.OPCIONAL_AUSENTE
+    else:
+        assert g["estado"] == rm.OPCIONAL_AUSENTE
 
 def test_rm_verificar_essenciais_ok():
     v = rm.verificar()
@@ -419,7 +436,10 @@ def test_rm_verificar_essenciais_ok():
 
 def test_rm_provisionar_sem_url_e_noop():
     r = rm.provisionar_grafo({})
-    assert r["ok"] is False  # sem graph_url, nada a baixar
+    # Sem graph_url/graph_path não há o que baixar. Se o grafo JÁ está instalado, garantir_grafo
+    # devolve o caminho existente (no-op bem-sucedido); se não está, ok=False. Portável.
+    g = next(x for x in rm.status() if x["chave"] == "osrm_brasil")
+    assert r["ok"] is bool(g["instalado"])
 
 def test_rm_resumo_ambiente_texto():
     txt = rm.resumo_ambiente()
@@ -822,10 +842,16 @@ def test_prov_inventario_estrutura():
     assert inv["resumo"]["total"] >= 1
     # as bases essenciais estão instaladas neste repo (reassembladas) → nenhum obrigatório falta
     assert isinstance(inv["resumo"]["faltam_obrigatorios"], list)
-    assert "osrm_brasil" in inv["resumo"]["faltam_opcionais"]   # grafo ausente aqui
+    # osrm_brasil é opcional: aparece em faltam_opcionais sse e só se o grafo não está instalado.
+    # Invariante portável (alguns ambientes já trazem o grafo).
+    assert ("osrm_brasil" in inv["resumo"]["faltam_opcionais"]) == (not prov.grafo_instalado())
 
-def test_prov_grafo_instalado_falso_aqui():
-    assert prov.grafo_instalado() is False
+def test_prov_grafo_instalado_reflete_a_pasta():
+    # grafo_instalado() é um bool coerente com a pasta de dados real: True quando há a família MLD
+    # essencial completa (ou um arquivo-base avulso), False caso contrário. A cobertura exata da
+    # detecção (família incompleta, base avulso) está nos testes isolados com tmp_path abaixo; aqui
+    # só garantimos que no ambiente real a resposta é booleana e não levanta. Portável.
+    assert isinstance(prov.grafo_instalado(), bool)
 
 def test_prov_grafo_instalado_exige_familia_mld_completa(tmp_path, monkeypatch):
     # Robustez: 'instalado' só é True com um grafo MLD COMPLETO. Uma extração PARCIAL não pode
@@ -1058,6 +1084,8 @@ def test_prov_status_motor_rotas_local_no_ar(monkeypatch):
     st = prov.status_motor_rotas(conf={"osrm": {"mode": "auto", "port": 5000}})
     assert st["local_no_ar"] is True and st["usando_publico"] is False
     assert "NO AR" in st["detalhe"] and "127.0.0.1:5000" in st["url_local"]
+    # Com o motor no ar, as ANÁLISES usam distância rodoviária real (não estimativa).
+    assert "rodoviário" in st["ferramentas_modo"].lower()
 
 def test_prov_status_motor_rotas_cai_no_publico(monkeypatch):
     # Motor NÃO responde → usando público; a mensagem explica (não é falha silenciosa).
@@ -1065,8 +1093,11 @@ def test_prov_status_motor_rotas_cai_no_publico(monkeypatch):
     st_off = prov.status_motor_rotas(conf={"osrm": {"mode": "off"}})
     assert st_off["local_no_ar"] is False and st_off["usando_publico"] is True
     assert "desligado" in st_off["detalhe"]
+    assert "estim" in st_off["ferramentas_modo"].lower()
     st_on = prov.status_motor_rotas(conf={"osrm": {"mode": "auto"}})
     assert st_on["usando_publico"] is True and "público" in st_on["detalhe"]
+    # Sem motor local no ar, as ferramentas do desktop caem na ESTIMATIVA (não no OSRM público).
+    assert "estim" in st_on["ferramentas_modo"].lower()
 
 def test_prov_roteamento_local_ativo(tmp_path):
     assert prov.roteamento_local_ativo(conf={"osrm": {"mode": "off"}}) is False
@@ -1198,8 +1229,13 @@ def test_manifesto_cobre_catalogo_completo():
     assert rec["drenagem"]["obrigatorio"] is True and rec["rodovias"]["obrigatorio"] is True
 
 def test_painel_tem_bloco_dados_completos():
+    # A seção "Dados completos (Brasil inteiro)" existe sempre. Seu CONTEÚDO é honesto em qualquer
+    # ambiente: sem o grafo instalado, orienta baixá-lo pela Central de Dados; com o grafo presente,
+    # confirma a instalação. Testar a invariante (uma das duas formas) torna o teste portável —
+    # passa com ou sem o grafo no ambiente — sem afrouxar o que importa (o bloco é honesto).
     h = painel.construir_html()
-    assert "Dados completos" in h and "Central de Dados" in h
+    assert "Dados completos" in h
+    assert ("Central de Dados" in h) or ("Grafo de roteamento do Brasil instalado" in h)
 
 
 # ============================================================================
@@ -1234,10 +1270,17 @@ def test_auditoria_completa_estrutura_e_camadas():
     r = laudo["resumo"]
     assert r["dimensoes"] == r["ok"] + r["parciais"] + r["ausentes"]
 
-def test_auditoria_grafo_ausente_e_honesto():
-    # o grafo OSRM não está instalado neste ambiente → AUSENTE (não mascarado como OK)
+def test_auditoria_grafo_honesto():
+    # Honestidade do laudo do grafo, em QUALQUER ambiente: o status é AUSENTE se e só se o grafo
+    # não está instalado; se estiver instalado, o status é OK/PARCIAL — nunca mascara o estado real
+    # como o oposto. (Testar a invariante torna o teste portável: alguns ambientes de CI já trazem o
+    # grafo; o que importa é que o laudo diga a verdade sobre o estado que encontrou.)
     laudo = ca.auditar(rapido=True)
-    assert laudo["grafo"]["instalado"] is False and laudo["grafo"]["status"] == "AUSENTE"
+    g = laudo["grafo"]
+    if g["instalado"]:
+        assert g["status"] in ("OK", "PARCIAL")
+    else:
+        assert g["status"] == "AUSENTE"
 
 def test_auditoria_presenca_uf_camada_ausente(tmp_path):
     # registry isolado sem bases → camada não instalada vira AUSENTE, sem levantar
@@ -2964,10 +3007,15 @@ def test_saude_cobertura_ok(saude):
     integ = next(x for x in saude["dimensoes"] if x["nome"] == "Integridade geométrica")
     assert integ["status"] == "OK"
 
-def test_saude_offline_parcial_sem_grafo(saude):
-    # sem o grafo OSRM instalado aqui, a prontidão offline é PARCIAL (honesto)
+def test_saude_offline_honesta(saude):
+    # Prontidão offline honesta em QUALQUER ambiente: OK quando tudo (grafo incluído) está pronto,
+    # PARCIAL caso contrário — e, quando PARCIAL, o motivo é explicado (menção ao grafo). Testar a
+    # invariante torna o teste portável (alguns ambientes já têm o grafo instalado) sem perder o que
+    # importa: um estado PARCIAL nunca é silencioso.
     off = next(x for x in saude["dimensoes"] if x["nome"] == "Prontidão offline")
-    assert off["status"] == "PARCIAL" and "grafo" in (off["resumo"] + off["detalhe"]).lower()
+    assert off["status"] in ("OK", "PARCIAL")
+    if off["status"] == "PARCIAL":
+        assert "grafo" in (off["resumo"] + off["detalhe"]).lower()
 
 def test_saude_render_e_html(saude):
     from audit import saude_nacional as sn

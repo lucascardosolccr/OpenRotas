@@ -236,6 +236,10 @@ def status_motor_rotas(conf: dict | None = None) -> dict:
             no_ar = False
         out["local_no_ar"] = no_ar
         out["usando_publico"] = not no_ar
+        # Modo das FERRAMENTAS do desktop (matriz/isócronas/centro/dossiê): com o OSRM local no ar elas
+        # usam distância RODOVIÁRIA real; sem ele, caem na ESTIMATIVA de sinuosidade (NÃO no OSRM público —
+        # isso vale só para a visão web embarcada). Deixa explícito o que o usuário vai obter nas análises.
+        out["ferramentas_modo"] = "rodoviário local (OSRM)" if no_ar else "estimado (sinuosidade)"
         if no_ar:
             out["detalhe"] = "motor local NO AR em %s — rotas rápidas e offline ✓" % url
         elif modo in ("local", "auto", "docker"):
