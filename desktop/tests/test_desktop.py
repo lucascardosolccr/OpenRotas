@@ -2110,6 +2110,7 @@ def test_painel_executivo_html():
     h = pe.construir_html()
     assert h.startswith("<!doctype html>") and "Painel Executivo" in h and tema.MARCA in h
     assert "Estados (UFs)" in h and "Feições multimodais" in h
+    assert "Motor de rotas" in h                     # modo do roteamento no panorama executivo
     assert "COBERTURA NACIONAL POR UF" in h          # mapa coroplético embutido
     assert "ork-theme-toggle" in h and "prefers-color-scheme" in h
 

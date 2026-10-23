@@ -104,6 +104,15 @@ def _dados() -> dict:
         d["saude"] = sn.diagnostico(rapido=True)
     except Exception:
         pass
+    try:
+        from resources import provisionamento as _prov
+        d["motor"] = _prov.status_motor_rotas()
+    except Exception:
+        try:
+            import provisionamento as _prov
+            d["motor"] = _prov.status_motor_rotas()
+        except Exception:
+            d["motor"] = None
     return d
 
 
@@ -123,12 +132,23 @@ def construir_html() -> str:
         off_txt = "parcial"
     else:
         off_txt = "—"
+    # Motor de rotas: o que as ANÁLISES vão usar — rodoviário local real (OSRM no ar) × estimativa.
+    # É a distinção que mais pesa na paridade com o web (que sempre roteia de verdade), então entra
+    # no panorama executivo. Reusa status_motor_rotas() (mesma fonte da Central de Dados).
+    mot = d.get("motor") or {}
+    if mot.get("local_no_ar"):
+        motor_txt = "rodoviário local"
+    elif mot.get("ferramentas_modo"):
+        motor_txt = "estimado"
+    else:
+        motor_txt = "—"
     corpo = ["<section class='card'><h2>Panorama</h2><div class='kpis'>",
              _kpi("%s/27" % d["ufs"], "Estados (UFs)"),
              _kpi(_num_br(d["municipios"]), "Municípios"),
              _kpi(_num_br(d["feicoes"]), "Feições multimodais"),
              _kpi(d["classes"], "Classes multimodais"),
              _kpi(off_txt, "Prontidão offline"),
+             _kpi(motor_txt, "Motor de rotas"),
              "</div></section>",
              _bloco_mapa(tema)]
     # Saúde dos dados (proporção das dimensões).
