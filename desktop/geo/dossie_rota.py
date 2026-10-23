@@ -561,6 +561,16 @@ def dossie(coords, folga_km: float = 3.0, usar_osrm=None, osrm_url=None) -> dict
             dd["circuidade"] = {"reta_km": round(reta_km, 1), "viaria_km": viaria_km, "fator": fator,
                                 "fonte": fonte, "nivel": ("IMPOSSIVEL" if impossivel else nivel),
                                 "suspeita": bool(impossivel or suspeita), "fluvial": bool(fluv)}
+            # DOR LOGÍSTICA (paridade web): índice executivo 0-100 do esforço de atender o destino,
+            # combinando os sinais já medidos aqui — distância viária, sinuosidade, balsa e isolamento.
+            # Não decide rota; é leitura de dificuldade. Balsa = corredor com travessia(s) detectada(s).
+            tem_balsa = bool(travessias and travessias > 0)
+            dor = distancia.indice_dor_logistica(viaria_km, reta_km, tem_balsa=tem_balsa, fluvial=fluv)
+            dd["dor_logistica"] = {"indice": dor, "nivel": distancia.dor_logistica_nivel(dor),
+                                   "balsa": tem_balsa, "fluvial": bool(fluv)}
+            if dor >= 67.0:
+                dd["alertas"].append("Dor logística ALTA (%.0f/100) — destino difícil/custoso de atender "
+                                     "(distância, sinuosidade, balsa e/ou isolamento)." % dor)
             if impossivel:
                 dd["alertas"].append("⚠ Circuidade IMPOSSÍVEL: a rota viária (%.0f km) é MENOR que a linha "
                                      "reta (%.0f km) — fisicamente impossível; verifique o dado/motor."
@@ -644,6 +654,11 @@ def render_texto(dd: dict) -> str:
                 "INVESTIGAR": " ⚠ investigar"}.get(cir.get("nivel"), "")
         L.append("Circuidade: %.2f× a linha reta (viária %.0f km · reta %.0f km · %s)%s"
                  % (cir["fator"], cir["viaria_km"], cir["reta_km"], cir.get("fonte", ""), _niv))
+    dor = dd.get("dor_logistica")
+    if dor and dor.get("indice") is not None:
+        _sinais = [s for s, on in (("balsa", dor.get("balsa")), ("acesso fluvial", dor.get("fluvial"))) if on]
+        _sufx = (" · " + ", ".join(_sinais)) if _sinais else ""
+        L.append("Dor logística: %.0f/100 (%s)%s" % (dor["indice"], dor.get("nivel", ""), _sufx))
     if dd.get("alertas"):
         L.append("")
         L.append("Alertas:")
@@ -801,6 +816,19 @@ def gerar_html(dd: dict, caminho) -> str | None:
                      "<p class='%s' style='margin:8px 2px 0'>%s</p></section>"
                      % (cir["fator"], cir["viaria_km"], html.escape(str(cir.get("fonte", ""))), cir["reta_km"],
                         "alerta" if cir.get("suspeita") else "empty", html.escape(_niv)))
+        # Dor logística (índice executivo 0-100) — paridade com o web; leitura de dificuldade do destino.
+        dor = dd.get("dor_logistica")
+        if dor and dor.get("indice") is not None:
+            _sinais = [s for s, on in (("balsa", dor.get("balsa")), ("acesso fluvial", dor.get("fluvial"))) if on]
+            _nota = ("sinais: " + ", ".join(_sinais)) if _sinais else "sem balsa/isolamento"
+            _alto = float(dor["indice"]) >= 67.0
+            P.append("<section class='card'><h2>Dor logística (esforço de atendimento)</h2><div class='kpis'>"
+                     "<div class='kpi'><div class='v'>%.0f/100</div><div class='l'>índice</div></div>"
+                     "<div class='kpi'><div class='v'>%s</div><div class='l'>nível</div></div></div>"
+                     "<p class='%s' style='margin:8px 2px 0'>Combina distância, sinuosidade, balsa e "
+                     "isolamento (REGIC) — %s. Não decide rota; mede dificuldade.</p></section>"
+                     % (float(dor["indice"]), html.escape(str(dor.get("nivel", ""))),
+                        "alerta" if _alto else "empty", html.escape(_nota)))
         # Camadas no corredor
         P.append("<section class='card'><h2>Feições no corredor</h2>")
         # Gráfico de barras (feições por camada disponível) — leitura rápida e interativa.

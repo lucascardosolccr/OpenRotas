@@ -2718,6 +2718,30 @@ def test_circuidade_sensor_bandas():
     assert d.circuidade_suspeita("x", 10) == (False, "")                   # defensivo
     assert d.circuidade_suspeita(1.0, 0) == (False, "")                    # reta nula → nada
 
+def test_indice_dor_logistica_paridade_web():
+    from geo import distancia as d
+    # Mesmos pesos/gatilhos do web: distância 30% (ref 1500), sinuosidade 25% (1,4→3,0×), balsa 25%,
+    # isolamento 20%. Caso saturado: dv=1000/lr=300 (sin satura 100), com balsa e fluvial.
+    assert d.indice_dor_logistica(1000, 300, tem_balsa=True, fluvial=True) == 90.0
+    # Rodoviário curto sem complicação → dor baixa (só distância e sinuosidade leve).
+    assert d.indice_dor_logistica(100, 70) == 2.4
+    # Balsa sozinha pesa 25 pontos; isolamento sozinho pesa 20.
+    assert d.indice_dor_logistica(0, 0, tem_balsa=True) == 25.0
+    assert d.indice_dor_logistica(0, 0, fluvial=True) == 20.0
+    # Defensivo: entradas inválidas não levantam e contribuem 0 no seu eixo.
+    assert d.indice_dor_logistica(None, None) == 0.0
+    assert d.indice_dor_logistica("x", 70) == 0.0
+    # Clampeado em [0, 100].
+    assert 0.0 <= d.indice_dor_logistica(99999, 1, tem_balsa=True, fluvial=True) <= 100.0
+
+def test_dor_logistica_nivel():
+    from geo import distancia as d
+    assert d.dor_logistica_nivel(10) == "BAIXA"
+    assert d.dor_logistica_nivel(50) == "MÉDIA"
+    assert d.dor_logistica_nivel(90) == "ALTA"
+    assert d.dor_logistica_nivel(67) == "ALTA" and d.dor_logistica_nivel(34) == "MÉDIA"
+    assert d.dor_logistica_nivel("x") == ""
+
 def test_dossie_circuidade_rodoviaria_normal():
     # Par rodoviário normal (SP→RJ): circuidade ~1,2× (fator de estimativa), SEM suspeita de barreira.
     from geo import dossie_rota
@@ -2737,6 +2761,29 @@ def test_dossie_circuidade_fluvial_sinaliza_barreira():
     assert c["fluvial"] is True
     assert any("BARREIRA" in a for a in dd["alertas"])
     assert "provável barreira" in dossie_rota.render_texto(dd)
+
+def test_dossie_dor_logistica_presente_e_coerente():
+    # O dossiê expõe a 'dor logística' (0-100) a partir dos sinais já medidos. Par rodoviário curto e
+    # limpo (Campinas→Ribeirão Preto, sem travessia no corredor nem isolamento) → dor BAIXA, sem balsa
+    # nem fluvial; o render de texto mostra a linha. (balsa reflete o MESMO sinal de travessia no
+    # corredor que o dossiê já usa no alerta 'possível dependência aquática'.)
+    from geo import dossie_rota
+    dd, _ = dossie_rota.dossie_por_nomes("Campinas/SP;Ribeirão Preto/SP")
+    dl = dd.get("dor_logistica")
+    assert dl and 0.0 <= dl["indice"] <= 100.0
+    assert dl["nivel"] in ("BAIXA", "MÉDIA", "ALTA")
+    assert dl["balsa"] is False and dl["fluvial"] is False
+    assert dl["nivel"] == "BAIXA"                       # par tronco rodoviário não é destino "difícil"
+    assert "Dor logística" in dossie_rota.render_texto(dd)
+
+def test_dossie_dor_logistica_fluvial_alta():
+    # Par de acesso só fluvial (Manaus→Atalaia do Norte): distância longa + sinuosidade ~3× + isolamento
+    # REGIC → dor ALTA, com alerta correspondente. Mede dificuldade (não decide rota), mesmo offline.
+    from geo import dossie_rota
+    dd, _ = dossie_rota.dossie_por_nomes("Manaus/AM;Atalaia do Norte/AM")
+    dl = dd.get("dor_logistica")
+    assert dl and dl["fluvial"] is True and dl["nivel"] == "ALTA" and dl["indice"] >= 67.0
+    assert any("Dor logística ALTA" in a for a in dd["alertas"])
 
 
 # ============================================================================

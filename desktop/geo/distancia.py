@@ -217,6 +217,53 @@ def circuidade_suspeita(circuidade, reta_km):
 
 
 # ---------------------------------------------------------------------------
+#  DOR LOGÍSTICA — índice 0-100 de quão difícil/custoso é atender um destino, combinando sinais
+#  que o desktop JÁ mede: distância rodoviária (30%), sinuosidade viária/reta (25%), dependência de
+#  balsa (25%) e acesso fluvial/isolado REGIC (20%). Espelha _indice_dor_logistica do web (mesmos
+#  pesos, gatilhos e saturação) para dar ao operador o MESMO sinal executivo, agora offline. PURO.
+_DOR_PESOS = (0.30, 0.25, 0.25, 0.20)          # (distância, sinuosidade, balsa, isolamento)
+_DOR_SIN_MIN, _DOR_SIN_MAX = 1.4, 3.0          # sinuosidade abaixo de 1,4 não pontua; satura em 3,0×
+_DOR_DIST_MAX_REF = 1500.0                     # distância de referência p/ normalizar o eixo distância
+
+
+def indice_dor_logistica(dist_viaria, linha_reta, tem_balsa=False, fluvial=False,
+                         dist_max_ref=_DOR_DIST_MAX_REF):
+    """Índice 0-100 de 'dor logística' de um destino. Combina distância rodoviária (normalizada por
+    dist_max_ref), sinuosidade (viária/reta acima de 1,4×, saturando em 3,0×), dependência de balsa e
+    acesso fluvial/isolado. PURO e defensivo — entradas inválidas contribuem com 0 no seu eixo."""
+    def _f(v, d=0.0):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return d
+    dv, lr = _f(dist_viaria), _f(linha_reta)
+    ref = _f(dist_max_ref, _DOR_DIST_MAX_REF) or _DOR_DIST_MAX_REF
+    if lr > 0 and dv > 0:
+        c_sin = min(100.0, max(0.0, (dv / lr - _DOR_SIN_MIN) / (_DOR_SIN_MAX - _DOR_SIN_MIN) * 100.0))
+    else:
+        c_sin = 0.0
+    c_dist = min(100.0, max(0.0, (dv / ref) * 100.0)) if dv > 0 else 0.0
+    c_balsa = 100.0 if tem_balsa else 0.0
+    c_isol = 100.0 if fluvial else 0.0
+    p_dist, p_sin, p_balsa, p_isol = _DOR_PESOS
+    dor = p_dist * c_dist + p_sin * c_sin + p_balsa * c_balsa + p_isol * c_isol
+    return round(max(0.0, min(100.0, dor)), 1)
+
+
+def dor_logistica_nivel(dor) -> str:
+    """Rótulo do índice de dor: 'BAIXA' (<34), 'MÉDIA' (<67), 'ALTA' (≥67). '' em falha."""
+    try:
+        d = float(dor)
+    except (TypeError, ValueError):
+        return ""
+    if d >= 67.0:
+        return "ALTA"
+    if d >= 34.0:
+        return "MÉDIA"
+    return "BAIXA"
+
+
+# ---------------------------------------------------------------------------
 #  NAVEGABILIDADE POR NOME — a base de drenagem traz ~86% dos trechos como "desconhecido"; um corredor
 #  que cruza o Amazonas/Solimões/Paraná sai com "0 navegáveis". Reconhecer os GRANDES rios navegáveis
 #  pelo NOME (fonte: hidrovias oficiais ANTAQ/DNIT) supre essa lacuna. Lista CURADA e conservadora (só
