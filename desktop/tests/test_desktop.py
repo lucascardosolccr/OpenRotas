@@ -2436,6 +2436,28 @@ def test_centro_otimo_estimado():
     assert r["melhor_soma"]["soma_km"] > rg["melhor_soma"]["soma_km"]
     assert rg["melhor_max"].get("max_min") is None   # sem tempo a partir da reta pura (honesto)
 
+def test_perfil_atendimento_percentis_e_cobertura():
+    from geo import centro_otimo as co
+    p = co.perfil_atendimento([100, 200, 50, 400, 700])
+    assert p["n"] == 5 and p["max_km"] == 700.0 and p["media_km"] == 290.0
+    assert p["p50_km"] == 200.0 and p["p90_km"] == 700.0        # nearest-rank sobre 5 valores
+    cob = {c["ate_km"]: (c["n"], c["pct"]) for c in p["cobertura"]}
+    assert cob[150.0] == (2, 40.0) and cob[300.0] == (3, 60.0) and cob[600.0] == (4, 80.0)
+    # defensivo: vazio e entradas inválidas não levantam
+    assert co.perfil_atendimento([])["n"] == 0
+    assert co.perfil_atendimento([None, "x", 120])["n"] == 1
+
+def test_centro_otimo_inclui_perfil_de_atendimento():
+    from geo import centro_otimo as co
+    r = co.calcular("Goiânia/GO;São Paulo/SP;Recife/PE",
+                    destinos="Belém/PA;Porto Alegre/RS;Rio de Janeiro/RJ;Manaus/AM")
+    perf = r["melhor_soma"].get("perfil")
+    assert perf and perf["n"] == 4 and perf["p90_km"] >= perf["p50_km"]
+    assert perf["max_km"] >= perf["p90_km"] and len(perf["cobertura"]) == 3
+    assert r["melhor_max"].get("perfil")                        # ambos os recomendados têm perfil
+    assert "perfil de atendimento" in co.render_texto(r)
+    assert "Perfil de atendimento" in co.construir_html(r)
+
 def test_centro_otimo_self_dest():
     # Sem destinos → candidatos são os destinos (o mais central do conjunto).
     from geo import centro_otimo as co

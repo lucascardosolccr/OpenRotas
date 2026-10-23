@@ -125,9 +125,11 @@ def calcular(candidatos, destinos=None, usar_osrm=None, osrm_url=None, reg=None,
             "destinos": [{"nome": p["nome"], "uf": p.get("uf", ""), "lon": p["lon"], "lat": p["lat"],
                           "acesso_fluvial": fluv_d[j]} for j, p in enumerate(dest)],
             "modo": modo, "self_dest": self_dest,
-            "melhor_soma": {"nome": melhor_soma["nome"], "uf": melhor_soma["uf"], "soma_km": melhor_soma["soma_km"]},
+            "melhor_soma": {"nome": melhor_soma["nome"], "uf": melhor_soma["uf"], "soma_km": melhor_soma["soma_km"],
+                            "perfil": perfil_atendimento(melhor_soma.get("distancias"))},
             "melhor_max": {"nome": melhor_max["nome"], "uf": melhor_max["uf"], "max_km": melhor_max["max_km"],
-                           "max_min": _tempo_estimado(melhor_max["max_km"], modo, fluvial=_mm_fluv)},
+                           "max_min": _tempo_estimado(melhor_max["max_km"], modo, fluvial=_mm_fluv),
+                           "perfil": perfil_atendimento(melhor_max.get("distancias"))},
             "nota": ("Distância %s de %d candidato(s) a %d destino(s)%s."
                      % (_descricao_modo(modo), len(out), len(dest),
                         " (destinos = candidatos)" if self_dest else "")),
@@ -136,6 +138,38 @@ def calcular(candidatos, destinos=None, usar_osrm=None, osrm_url=None, reg=None,
     except Exception:
         logger.warning("[CENTRO] cálculo falhou.", exc_info=True)
         return base
+
+
+def perfil_atendimento(distancias, limiares=(150.0, 300.0, 600.0)) -> dict:
+    """Perfil de atendimento de um hub aos seus destinos, a partir da lista de distâncias (km): além
+    da média e do máximo, os percentis p50/p90 (metade/90% dos destinos estão a até X km) e a COBERTURA
+    acumulada por faixa (quantos destinos em ≤150/300/600 km). Dá a leitura de EQUIDADE do ponto — não
+    só o pior caso. PURO/defensivo. {n, media_km, p50_km, p90_km, max_km, cobertura:[{ate_km,n,pct}]}."""
+    vals = []
+    for v in (distancias or []):
+        try:
+            vals.append(float(v))
+        except (TypeError, ValueError):
+            pass
+    n = len(vals)
+    if n == 0:
+        return {"n": 0, "media_km": 0.0, "p50_km": 0.0, "p90_km": 0.0, "max_km": 0.0, "cobertura": []}
+    s = sorted(vals)
+
+    def _pct(p):
+        import math
+        k = max(0, min(n - 1, int(math.ceil(p / 100.0 * n)) - 1))   # nearest-rank (robusto p/ n pequeno)
+        return round(s[k], 1)
+    cob = []
+    for t in limiares:
+        try:
+            tf = float(t)
+        except (TypeError, ValueError):
+            continue
+        c = sum(1 for v in s if v <= tf)
+        cob.append({"ate_km": tf, "n": c, "pct": round(100.0 * c / n, 1)})
+    return {"n": n, "media_km": round(sum(s) / n, 1), "p50_km": _pct(50), "p90_km": _pct(90),
+            "max_km": round(s[-1], 1), "cobertura": cob}
 
 
 def _combinar_osrm(reta, rod, fluv_c, fluv_d, estimar):
@@ -495,6 +529,15 @@ def render_texto(r: dict) -> str:
     L.append("★ Menor PIOR CASO:       %s%s — %.0f km no destino mais distante%s"
              % (mm["nome"], ("/" + mm["uf"]) if mm.get("uf") else "", mm["max_km"],
                 (" (≈ %s de viagem)" % _dur) if _dur else ""))
+    perf = ms.get("perfil") or {}
+    if perf.get("n"):
+        L.append("   perfil de atendimento (hub de menor distância total): metade dos destinos a ≤ %.0f km "
+                 "(p50), 90%% a ≤ %.0f km (p90), média %.0f km, máx %.0f km"
+                 % (perf["p50_km"], perf["p90_km"], perf["media_km"], perf["max_km"]))
+        cobs = " · ".join("≤%.0f km: %d (%.0f%%)" % (c["ate_km"], c["n"], c["pct"])
+                          for c in perf.get("cobertura", []))
+        if cobs:
+            L.append("   cobertura acumulada: " + cobs)
     L.append("")
     L.append("Candidatos (ordenados por distância total; menor = melhor):")
     for c in sorted(r["candidatos"], key=lambda x: x["soma_km"]):
@@ -542,6 +585,21 @@ def construir_html(r: dict) -> str:
     for a in avisos:
         corpo.append("<p class='sub' style='margin:8px 2px 0;color:var(--warn,#b45309)'>%s</p>" % html.escape(a))
     corpo.append("</section>")
+    # Perfil de atendimento do hub de menor distância total (equidade: p50/p90 + cobertura por faixa).
+    perf = ms.get("perfil") or {}
+    if perf.get("n"):
+        kpis = ["<div class='kpi'><div class='v'>%.0f km</div><div class='l'>p50 (metade dos destinos)</div></div>" % perf["p50_km"],
+                "<div class='kpi'><div class='v'>%.0f km</div><div class='l'>p90 (90%% dos destinos)</div></div>" % perf["p90_km"],
+                "<div class='kpi'><div class='v'>%.0f km</div><div class='l'>Média</div></div>" % perf["media_km"],
+                "<div class='kpi'><div class='v'>%.0f km</div><div class='l'>Máximo</div></div>" % perf["max_km"]]
+        cob = "".join("<div class='kpi'><div class='v'>%d <span class='sub'>(%.0f%%)</span></div>"
+                      "<div class='l'>destinos ≤ %.0f km</div></div>" % (c["n"], c["pct"], c["ate_km"])
+                      for c in perf.get("cobertura", []))
+        corpo.append("<section class='card'><h2>Perfil de atendimento (hub de menor distância total)</h2>"
+                     "<div class='kpis'>%s</div><div class='kpis' style='margin-top:8px'>%s</div>"
+                     "<p class='sub' style='margin:8px 2px 0'>Leitura de equidade: não só o pior caso, mas "
+                     "como as distâncias se distribuem entre os %d destinos.</p></section>"
+                     % ("".join(kpis), cob, perf["n"]))
     if tema is not None:
         # Mapa: municípios ao fundo + estrela do melhor candidato (soma) a cada destino.
         try:
@@ -626,6 +684,18 @@ def exportar_excel(r: dict, caminho) -> str | None:
         with pd.ExcelWriter(str(pth), engine="openpyxl") as xw:
             df.to_excel(xw, sheet_name="Ranking", index=False)
             det.to_excel(xw, sheet_name="Distancias_km")
+            # Perfil de atendimento do hub de menor distância total (equidade: p50/p90 + cobertura).
+            perf = (r.get("melhor_soma") or {}).get("perfil") or {}
+            if perf.get("n"):
+                prows = [{"indicador": "destinos", "valor": perf["n"]},
+                         {"indicador": "p50 (km)", "valor": perf["p50_km"]},
+                         {"indicador": "p90 (km)", "valor": perf["p90_km"]},
+                         {"indicador": "média (km)", "valor": perf["media_km"]},
+                         {"indicador": "máximo (km)", "valor": perf["max_km"]}]
+                for c in perf.get("cobertura", []):
+                    prows.append({"indicador": "destinos ≤ %.0f km" % c["ate_km"],
+                                  "valor": "%d (%.0f%%)" % (c["n"], c["pct"])})
+                pd.DataFrame(prows).to_excel(xw, sheet_name="Perfil_atendimento", index=False)
         return str(pth)
     except Exception:
         logger.warning("[CENTRO] falha ao exportar Excel.", exc_info=True)
