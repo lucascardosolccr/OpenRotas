@@ -389,7 +389,7 @@ _AJUDA = """OpenRotas Desktop — uso:
   OpenRotas.exe --rotas-nacionais   testa corredores inter-UF nas 5 regiões (cobertura distribuída)
   OpenRotas.exe --fontes [--md] catálogo de fontes/procedência (§33); --md salva o Markdown
   OpenRotas.exe --mapa-cobertura [--rota "A/UF;B/UF"]   Mapa de Cobertura (opcional: sobrepõe a rota)
-  OpenRotas.exe --dossie-lote entrada.xlsx [saida.xlsx] [--osrm]   lote de dossiês → Excel consolidado
+  OpenRotas.exe --dossie-lote entrada.xlsx [saida.xlsx]   lote de dossiês → Excel (Resumo Executivo + detalhe)
   OpenRotas.exe --saude-nacional [--html]   painel único "Saúde dos Dados Nacionais" (§39)
   OpenRotas.exe --integridade   audita defeitos geométricos das camadas (inválidas/fora do Brasil)
   OpenRotas.exe --dossie "lon,lat;lon,lat" [--html] [--excel]   dossiê completo da rota (todos os dados)
@@ -399,8 +399,8 @@ _AJUDA = """OpenRotas Desktop — uso:
   OpenRotas.exe --conectividade [rodovias|ferrovias|drenagem]   grafo topológico e componentes (§43)
   OpenRotas.exe --grafo-multimodal [--html]   conectividade entre modais (hubs + transposições + matriz)
   OpenRotas.exe --isocronas "Cidade/UF" [--faixas=100,300,600,1000] [--html]   alcance por faixas de distância
-  OpenRotas.exe --matriz "Cidade/UF;Cidade/UF;..." [--html] [--excel]   matriz de distâncias origem↔destino
-  OpenRotas.exe --centro "Cand/UF;Cand/UF;..." [--destinos "Dest/UF;..."] [--k N] [--html] [--excel]   melhor ponto de apoio (--k N = N hubs, p-mediana/p-centro)
+  OpenRotas.exe --matriz "Cidade/UF;Cidade/UF;..." [--html] [--excel]   matriz de distâncias + roteiro milk-run
+  OpenRotas.exe --centro "Cand/UF;Cand/UF;..." [--destinos "Dest/UF;..."] [--k N] [--html] [--excel]   melhor ponto de apoio (+ perfil p50/p90/cobertura; --k N = N hubs)
   OpenRotas.exe --telemetria-ana [--atualizar]   telemetria local + atualização incremental (§35)
   OpenRotas.exe --auditoria --relatorio   salva o Relatório de Cobertura Nacional (.md) em exports/
   OpenRotas.exe --recursos      status dos recursos (Gerenciador de Recursos)
@@ -415,6 +415,9 @@ _AJUDA = """OpenRotas Desktop — uso:
   OpenRotas.exe --telemetria    mostra o resumo do perfil de execução local (§42)
   OpenRotas.exe --versao        mostra a versão instalada
   OpenRotas.exe --help          esta ajuda
+Roteamento das análises (dossiê, lote, matriz, centro, isócronas, comparar): por padrão AUTO — usa o
+OSRM LOCAL se estiver no ar (distância rodoviária real) e, se não, a estimativa de sinuosidade. Força
+com --osrm; desliga com --geodesico (linha reta) ou --sem-osrm.
 Flags auxiliares: --silencioso (diagnóstico sem imprimir)."""
 
 
