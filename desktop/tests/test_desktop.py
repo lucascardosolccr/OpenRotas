@@ -2332,6 +2332,40 @@ def test_matriz_menos_de_2_pontos():
     from geo import matriz_od
     assert matriz_od.calcular([(-46.63, -23.55)])["ok"] is False
 
+def test_sequenciar_ordem_otima_e_2opt():
+    from geo import matriz_od as mo
+    # Pontos numa linha (0,10,20,30): ordem ótima aberta a partir de 0 é 0,1,2,3 (total 30).
+    xs = [0, 10, 20, 30]
+    M = [[abs(a - b) for b in xs] for a in xs]
+    r = mo.sequenciar(M)
+    assert r["ordem"] == [0, 1, 2, 3] and r["distancia_total_km"] == 30.0
+    assert r["distancia_por_perna"] == [10.0, 10.0, 10.0]
+    # Caso que o 2-opt precisa consertar (vizinho mais próximo guloso erraria o fecho): 0,1,3,2.
+    xs2 = [0, 1, 100, 2]
+    M2 = [[abs(a - b) for b in xs2] for a in xs2]
+    r2 = mo.sequenciar(M2)
+    assert r2["ordem"] == [0, 1, 3, 2] and r2["distancia_total_km"] == 100.0
+    # Ciclo fechado (volta à origem) soma a perna de retorno.
+    rc = mo.sequenciar(M, retornar_origem=True)
+    assert rc["distancia_total_km"] == 60.0 and len(rc["distancia_por_perna"]) == 4
+
+def test_sequenciar_defensivo():
+    from geo import matriz_od as mo
+    assert mo.sequenciar([]) == {"ordem": [], "distancia_total_km": 0.0, "distancia_por_perna": []}
+    assert mo.sequenciar([[0]])["ordem"] == [0]
+    assert mo.sequenciar("x")["ordem"] == []                  # entrada inválida não levanta
+    assert mo.sequenciar([[0, 1], [1, 0], [2, 3]])["ordem"] == [0, 1, 2]   # não-quadrada → identidade
+
+def test_matriz_inclui_roteiro_sugerido():
+    from geo import matriz_od as mo
+    r = mo.calcular([(-46.63, -23.55), (-43.20, -22.90), (-47.88, -15.79), (-49.27, -25.43)],
+                    usar_osrm=False)
+    seq = r.get("sequencia")
+    assert seq and seq["ordem"][0] == 0 and sorted(seq["ordem"]) == [0, 1, 2, 3]
+    assert seq["distancia_total_km"] > 0 and len(seq["distancia_por_perna"]) == 3
+    assert "Roteiro sugerido" in mo.render_texto(r)
+    assert "Roteiro sugerido (milk-run)" in mo.construir_html(r)
+
 def test_matriz_osrm_cai_em_estimado_sem_rede(monkeypatch):
     monkeypatch.setenv("OPENROTAS_NO_NET", "1")
     from geo import matriz_od

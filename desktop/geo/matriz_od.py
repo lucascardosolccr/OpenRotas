@@ -208,6 +208,10 @@ def calcular(locais, usar_osrm=None, osrm_url=None, reg=None, estimar: bool = Tr
                        "acesso_fluvial": sum(1 for p in pts if p.get("acesso_fluvial"))},
             "nota": ("Distância %s entre %d pontos." % (distancia.descricao_modo(modo), n)),
         })
+        # Roteiro de visita sugerido (milk-run) sobre a MESMA matriz — útil quando os pontos são
+        # paradas de um trajeto. Heurística de apoio; não decide a rota.
+        if n >= 2:
+            base["sequencia"] = sequenciar(M, retornar_origem=False)
         if len(pts) < len(resol):
             base["nao_resolvidos"] = [r.get("consulta") for r in resol if not r.get("ok")]
         return base
@@ -235,6 +239,60 @@ def _modo_rotulo(modo) -> str:
         return distancia.rotulo_modo(modo)
     except Exception:
         return str(modo)
+
+
+def sequenciar(matriz, retornar_origem=False) -> dict:
+    """Ordem de visita (quase) ótima para N paradas (milk-run) a partir de uma MATRIZ de distâncias
+    NxN — a MESMA que calcular() produz, logo RODOVIÁRIA real quando o OSRM local está no ar (melhor
+    que o web, que sequencia só sobre a linha reta). Vizinho-mais-próximo a partir do ponto 0 +
+    melhoria 2-opt. PURO e defensivo. Retorna {ordem:[idx], distancia_total_km, distancia_por_perna}.
+    `retornar_origem=True` fecha o ciclo (volta ao ponto inicial)."""
+    vazio = {"ordem": [], "distancia_total_km": 0.0, "distancia_por_perna": []}
+    try:
+        M = [[float(x) for x in linha] for linha in (matriz or [])]
+    except (TypeError, ValueError):
+        return dict(vazio)
+    n = len(M)
+    if n == 0:
+        return dict(vazio)
+    if n == 1:
+        return {"ordem": [0], "distancia_total_km": 0.0, "distancia_por_perna": []}
+    if any(len(linha) != n for linha in M):          # matriz não-quadrada → não arrisca
+        return {"ordem": list(range(n)), "distancia_total_km": 0.0, "distancia_por_perna": []}
+
+    def _total(seq):
+        t = sum(M[seq[i]][seq[i + 1]] for i in range(len(seq) - 1))
+        if retornar_origem and len(seq) > 1:
+            t += M[seq[-1]][seq[0]]
+        return t
+    # construção gulosa: vizinho mais próximo a partir de 0
+    visit = [False] * n
+    ordem = [0]
+    visit[0] = True
+    for _ in range(n - 1):
+        u = ordem[-1]
+        nxt, best = -1, float("inf")
+        for v in range(n):
+            if not visit[v] and M[u][v] < best:
+                best, nxt = M[u][v], v
+        ordem.append(nxt)
+        visit[nxt] = True
+    # melhoria 2-opt (reversão de segmentos) — mesmo esquema do web
+    it, melhorou = 0, True
+    while melhorou and it < 80:
+        melhorou = False
+        it += 1
+        base_t = _total(ordem)
+        for i in range(1, n - 1):
+            for k in range(i + 1, n):
+                nova = ordem[:i] + ordem[i:k + 1][::-1] + ordem[k + 1:]
+                nv = _total(nova)
+                if nv < base_t - 1e-9:
+                    ordem, base_t, melhorou = nova, nv, True
+    pernas = [round(float(M[ordem[i]][ordem[i + 1]]), 1) for i in range(n - 1)]
+    if retornar_origem and n > 1:
+        pernas.append(round(float(M[ordem[-1]][ordem[0]]), 1))
+    return {"ordem": ordem, "distancia_total_km": round(sum(pernas), 1), "distancia_por_perna": pernas}
 
 
 def render_texto(r: dict) -> str:
@@ -280,6 +338,12 @@ def render_texto(r: dict) -> str:
         L.append("mais distante: %s ↔ %s (%.0f km%s) · mais próximo: %s ↔ %s (%.0f km) · média %.0f km"
                  % (pd["de"], pd["para"], pd["km"], (" ≈ " + _dur) if _dur else "",
                     pp["de"], pp["para"], pp["km"], rs["media_km"]))
+    seq = r.get("sequencia")
+    if seq and len(seq.get("ordem", [])) >= 2:
+        nomes = " → ".join(_rotulo(pts[o]) for o in seq["ordem"])
+        L.append("")
+        L.append("Roteiro sugerido (vizinho + 2-opt, %s): %s" % (_modo_rotulo(r["modo"]), nomes))
+        L.append("  distância total do roteiro: %.0f km" % seq.get("distancia_total_km", 0.0))
     L.append(r["nota"] + " (valores em km)")
     return "\n".join(L)
 
@@ -369,6 +433,17 @@ def construir_html(r: dict) -> str:
                      % (html.escape(distancia.aviso_fluvial(len(flv))),
                         html.escape(", ".join(_rotulo(p) for p in flv))))
     corpo.append("</section>")
+    # Roteiro sugerido (milk-run): ordem de visita de menor distância sobre a matriz.
+    seq = r.get("sequencia")
+    if seq and len(seq.get("ordem", [])) >= 2:
+        nomes = " → ".join("<b>%s</b>" % html.escape(_rotulo(r["pontos"][o])) for o in seq["ordem"])
+        corpo.append("<section class='card'><h2>Roteiro sugerido (milk-run)</h2>"
+                     "<p>Ordem de visita de menor distância (vizinho-mais-próximo + 2-opt) sobre a "
+                     "matriz %s: %s.</p>"
+                     "<p class='sub' style='margin:8px 2px 0'>Distância total do roteiro: "
+                     "<b>%.0f km</b>. Heurística de apoio ao planejamento — não substitui a decisão "
+                     "de rota.</p></section>"
+                     % (html.escape(_modo_rotulo(r["modo"])), nomes, seq.get("distancia_total_km", 0.0)))
     if tema is not None:
         # Mapa: os pontos como corredor/waypoints sobre o Brasil.
         try:
@@ -401,6 +476,16 @@ def exportar_excel(r: dict, caminho) -> str | None:
         pth.parent.mkdir(parents=True, exist_ok=True)
         with pd.ExcelWriter(str(pth), engine="openpyxl") as xw:
             df.to_excel(xw, sheet_name="Matriz_km")
+            # Roteiro sugerido (milk-run) numa aba própria: ordem de visita + km por perna.
+            seq = r.get("sequencia")
+            if seq and len(seq.get("ordem", [])) >= 2:
+                ordem = seq["ordem"]
+                pernas = seq.get("distancia_por_perna", [])
+                rows = []
+                for pos, idx in enumerate(ordem):
+                    km = pernas[pos - 1] if 0 < pos <= len(pernas) else None
+                    rows.append({"ordem": pos + 1, "parada": rot[idx], "km_desde_a_anterior": km})
+                pd.DataFrame(rows).to_excel(xw, sheet_name="Roteiro", index=False)
         return str(pth)
     except Exception:
         logger.warning("[MATRIZ] falha ao exportar Excel.", exc_info=True)
