@@ -3008,9 +3008,14 @@ def test_lote_ler_pares_e_processar(tmp_path):
     assert r["ok"] and r["linhas"] == 2 and os.path.exists(r["saida"])
     import openpyxl
     wb = openpyxl.load_workbook(out)
-    assert "Rotas" in wb.sheetnames
+    assert "Rotas" in wb.sheetnames and "Resumo Executivo" in wb.sheetnames   # duas abas
     ws = wb["Rotas"]
     assert ws.max_row == 3        # cabeçalho + 2 rotas
+    cab = [c.value for c in ws[1]]
+    # colunas novas de distância/dificuldade (paridade web) presentes no detalhe
+    for col in ("reta_km", "viaria_km", "circuidade_fator", "dor_logistica", "dor_nivel", "acesso_fluvial"):
+        assert col in cab, col
+    assert isinstance(r.get("resumo"), dict) and r["resumo"]["total"] == 2
 
 def test_lote_coords_e_sem_pares(tmp_path):
     from geo import dossie_lote as dl
@@ -3018,6 +3023,30 @@ def test_lote_coords_e_sem_pares(tmp_path):
     assert dl._coords_de("São Paulo") is None
     r = dl.processar_lote(tmp_path / "naoexiste.xlsx")
     assert r["ok"] is False
+
+def test_lote_agregar_e_narrativa():
+    from geo import dossie_lote as dl
+    linhas = [
+        {"destino_municipio": "Manaus/AM", "viaria_km": 900, "dor_logistica": 85, "dor_nivel": "ALTA",
+         "acesso_fluvial": True, "travessias": 2, "ufs_corredor": "AM"},
+        {"destino_municipio": "Santos/SP", "viaria_km": 80, "dor_logistica": 20, "dor_nivel": "BAIXA",
+         "acesso_fluvial": False, "travessias": 1, "ufs_corredor": "SP"},
+        {"destino_municipio": "Goiânia/GO", "viaria_km": 200, "dor_logistica": 30, "dor_nivel": "BAIXA",
+         "acesso_fluvial": False, "travessias": 0, "ufs_corredor": "GO, DF"},
+        {"origem": "x", "destino": "y", "erro": "falha"},   # linha de erro NÃO entra no agregado
+    ]
+    agg = dl._agregar_lote(linhas)
+    assert agg["total"] == 4 and agg["ok"] == 3 and agg["erros"] == 1
+    assert agg["n_balsa"] == 2 and agg["n_fluvial"] == 1 and agg["n_dor_alta"] == 1
+    assert agg["dist_max"] == 900.0 and agg["dor_max"] == 85.0
+    assert agg["pior_destino"] == "Manaus/AM" and agg["pior_dor"] == 85.0
+    assert agg["uf_top"] in ("AM", "SP", "GO", "DF")   # alguma UF presente domina (empate=qualquer)
+    narr = dl._narrativa_lote(agg)
+    assert "4 rota(s)" in narr and "Manaus/AM" in narr and "ALTA" in narr
+    assert dl._narrativa_lote({"total": 0}) == "Nenhuma rota válida para resumir."
+    # defensivo: sem linhas não levanta e zera os eixos
+    vazio = dl._agregar_lote([])
+    assert vazio["total"] == 0 and vazio["dist_media"] is None and vazio["pior_dor"] is None
 
 def test_mapa_cobertura_sobrepoe_rota():
     from audit import coverage_map as cm

@@ -366,7 +366,7 @@ def relatorio_diagnostico() -> str:
         return "Falha ao gerar o diagnóstico: %s: %s" % (type(e).__name__, e)
 
 
-def processar_dossie_lote(caminho_in, progresso=None, usar_osrm: bool = False) -> dict:
+def processar_dossie_lote(caminho_in, progresso=None, usar_osrm=None) -> dict:
     """Processa uma PLANILHA de pares origem→destino (CSV/XLSX) e grava um dossiê consolidado em
     exports/. Repassa `progresso` (por par). Devolve {ok, linhas, erros, saida, detalhe}. Nunca
     levanta."""
