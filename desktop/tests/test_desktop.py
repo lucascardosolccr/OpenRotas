@@ -2379,6 +2379,63 @@ def test_sequenciar_defensivo():
     assert mo.sequenciar("x")["ordem"] == []                  # entrada inválida não levanta
     assert mo.sequenciar([[0, 1], [1, 0], [2, 3]])["ordem"] == [0, 1, 2]   # não-quadrada → identidade
 
+def test_sequenciar_propriedades_fuzz():
+    # Invariantes sobre matrizes simétricas aleatórias: a saída é SEMPRE uma permutação válida de
+    # 0..n-1, o total é >= 0, e o 2-opt NUNCA piora a construção gulosa (vizinho mais próximo).
+    import random
+    from geo import matriz_od as mo
+    rnd = random.Random(20261023)
+    for _ in range(200):
+        n = rnd.randint(2, 9)
+        pts = [(rnd.uniform(0, 100), rnd.uniform(0, 100)) for _ in range(n)]
+        M = [[((pts[i][0] - pts[j][0]) ** 2 + (pts[i][1] - pts[j][1]) ** 2) ** 0.5
+              for j in range(n)] for i in range(n)]
+        r = mo.sequenciar(M)
+        assert sorted(r["ordem"]) == list(range(n))              # permutação válida
+        assert r["distancia_total_km"] >= -1e-9                  # total não-negativo
+        assert len(r["distancia_por_perna"]) == n - 1
+        # nearest-neighbor puro (ordem gulosa a partir de 0) nunca é melhor que o resultado 2-opt.
+        # Comparação SEM arredondamento dos dois lados (o total reportado arredonda por perna).
+        visit = [False] * n; nn = [0]; visit[0] = True
+        for _k in range(n - 1):
+            u = nn[-1]; best, nx = float("inf"), -1
+            for v in range(n):
+                if not visit[v] and M[u][v] < best:
+                    best, nx = M[u][v], v
+            nn.append(nx); visit[nx] = True
+        tot_nn = sum(M[nn[i]][nn[i + 1]] for i in range(n - 1))
+        tot_2opt = sum(M[r["ordem"][i]][r["ordem"][i + 1]] for i in range(n - 1))
+        assert tot_2opt <= tot_nn + 1e-9
+
+def test_indice_dor_logistica_propriedades_fuzz():
+    # Invariantes: sempre em [0,100]; monotônico não-decrescente ao ligar balsa e ao ligar fluvial.
+    import random
+    from geo import distancia as d
+    rnd = random.Random(7)
+    for _ in range(300):
+        dv = rnd.uniform(0, 3000); lr = rnd.uniform(0, 2500)
+        base = d.indice_dor_logistica(dv, lr, tem_balsa=False, fluvial=False)
+        assert 0.0 <= base <= 100.0
+        assert d.indice_dor_logistica(dv, lr, tem_balsa=True, fluvial=False) >= base - 1e-9
+        assert d.indice_dor_logistica(dv, lr, tem_balsa=False, fluvial=True) >= base - 1e-9
+
+def test_perfil_atendimento_propriedades_fuzz():
+    # Invariantes: p50 <= p90 <= max; cobertura monotônica não-decrescente na faixa; pct em [0,100].
+    import random
+    from geo import centro_otimo as co
+    rnd = random.Random(99)
+    for _ in range(200):
+        n = rnd.randint(1, 40)
+        ds = [rnd.uniform(0, 2000) for _ in range(n)]
+        limiares = (100, 300, 600, 1200)
+        p = co.perfil_atendimento(ds, limiares=limiares)
+        assert p["p50_km"] <= p["p90_km"] + 1e-9 <= p["max_km"] + 1e-9
+        cob = p["cobertura"]
+        for a, b in zip(cob, cob[1:]):
+            assert a["n"] <= b["n"] and 0.0 <= a["pct"] <= 100.0   # cobertura cresce com a faixa
+        for c in cob:                                              # cada faixa conta exatamente os ≤ limiar
+            assert c["n"] == sum(1 for x in ds if x <= c["ate_km"])
+
 def test_matriz_inclui_roteiro_sugerido():
     from geo import matriz_od as mo
     r = mo.calcular([(-46.63, -23.55), (-43.20, -22.90), (-47.88, -15.79), (-49.27, -25.43)],
