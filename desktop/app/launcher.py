@@ -411,6 +411,7 @@ _AJUDA = """OpenRotas Desktop — uso:
   OpenRotas.exe --central       abre a Central de Dados (baixar o Brasil inteiro com 1 clique)
   OpenRotas.exe --provisionar-grafo   baixa o grafo OSRM do Brasil (prepara o offline; sem Docker)
   OpenRotas.exe --benchmark     mede o OSRM local × público (evidência de desempenho, §9/§29)
+  OpenRotas.exe --status-roteamento   mostra o motor ativo e amostra reta × estimativa × OSRM real (§29)
   OpenRotas.exe --telemetria    mostra o resumo do perfil de execução local (§42)
   OpenRotas.exe --versao        mostra a versão instalada
   OpenRotas.exe --help          esta ajuda
@@ -757,6 +758,16 @@ def main() -> int:
             return centro_otimo._cli([a for a in sys.argv[1:] if a != "--centro"])
         except Exception as e:
             print("Centro ótimo indisponível: %s" % e)
+            return 1
+
+    # Modo STATUS DE ROTEAMENTO (§29): mostra o motor ativo e amostra reta × estimativa × OSRM real. Sai.
+    if "--status-roteamento" in sys.argv:
+        try:
+            from geo import dossie_rota
+            print(dossie_rota.render_diagnostico_roteamento(dossie_rota.diagnostico_roteamento()))
+            return 0
+        except Exception as e:
+            print("Diagnóstico de roteamento indisponível: %s" % e)
             return 1
 
     # Modo TELEMETRIA ANA (§11/§35): inventário local + atualização incremental (--atualizar online). Sai.

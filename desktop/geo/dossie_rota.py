@@ -258,6 +258,73 @@ def _osrm_url(conf=None):
         return None
 
 
+_PARES_DIAG_PADRAO = (
+    ("São Paulo/SP", "Rio de Janeiro/RJ"),     # tronco movimentado
+    ("Brasília/DF", "Goiânia/GO"),             # curto, sudeste/centro
+    ("Manaus/AM", "Belém/PA"),                 # longa distância norte
+    ("Porto Alegre/RS", "Florianópolis/SC"),   # sul
+)
+
+
+def diagnostico_roteamento(pares=None) -> dict:
+    """[EVIDÊNCIA/DIAGNÓSTICO] Mostra, em UM lugar, qual motor de roteamento o desktop vai usar agora e,
+    numa AMOSTRA de pares cidade→cidade, a distância que CADA modo dá: linha reta (piso), estimativa de
+    sinuosidade e — quando o OSRM local está no ar — a rodoviária REAL. É a prova concreta do ganho de ligar
+    o OSRM local (e de que a ativação automática chegou às ferramentas). Devolve
+    {osrm_url, osrm_ativo, modo_padrao, amostra:[{de,para,reta_km,estimado_km,real_km,ganho_vs_estimativa_pct}]}.
+    Nunca levanta; sem OSRM no ar, real_km=None e o diagnóstico ainda mostra reta × estimativa."""
+    out = {"osrm_url": None, "osrm_ativo": False, "modo_padrao": "estimado", "amostra": []}
+    try:
+        url = _osrm_url()
+        ativo = osrm_ativo()
+        out["osrm_url"] = url
+        out["osrm_ativo"] = ativo is not None
+        out["modo_padrao"] = "rodoviário (OSRM local)" if ativo else "estimado (sem OSRM local)"
+        from geo import matriz_od
+        for a, b in (pares or _PARES_DIAG_PADRAO):
+            try:
+                _geo = matriz_od.calcular([a, b], usar_osrm=False, estimar=False)   # linha reta pura
+                _est = matriz_od.calcular([a, b], usar_osrm=False, estimar=True)     # estimativa sinuosidade
+                reta = _geo["matriz"][0][1] if _geo.get("ok") and len(_geo["matriz"]) > 1 else None
+                est = _est["matriz"][0][1] if _est.get("ok") and len(_est["matriz"]) > 1 else None
+                real = None
+                if ativo:
+                    _rr = matriz_od.calcular([a, b], usar_osrm=None)   # AUTO: usa o OSRM local detectado
+                    if _rr.get("ok") and str(_rr.get("modo", "")).startswith("rodoviario") and len(_rr["matriz"]) > 1:
+                        real = _rr["matriz"][0][1]
+                ganho = (round((est - real) / est * 100.0, 1) if (real is not None and est) else None)
+                out["amostra"].append({"de": a, "para": b, "reta_km": reta, "estimado_km": est,
+                                       "real_km": real, "ganho_vs_estimativa_pct": ganho})
+            except Exception:
+                continue
+    except Exception:
+        logger.warning("[DIAG-ROTA] diagnóstico de roteamento falhou.", exc_info=True)
+    return out
+
+
+def render_diagnostico_roteamento(d: dict) -> str:
+    L = ["DIAGNÓSTICO DE ROTEAMENTO — OpenRotas Desktop", "=" * 56,
+         "Motor padrão agora: %s" % d.get("modo_padrao", "?"),
+         "OSRM local: %s%s" % (("NO AR ✓ " if d.get("osrm_ativo") else "não detectado "),
+                               ("(%s)" % d["osrm_url"]) if d.get("osrm_url") else "(nenhuma URL configurada)"),
+         ""]
+    if not d.get("osrm_ativo"):
+        L.append("Para usar a distância RODOVIÁRIA real, instale o mapa do Brasil e ative o roteamento")
+        L.append("local pela Central de Dados — o app liga o motor e as ferramentas passam a usá-lo sozinhas.")
+        L.append("")
+    L.append("Amostra (km):  reta (piso) · estimada (sinuosidade) · real (OSRM, se no ar)")
+    for a in d.get("amostra", []):
+        _real = ("%.0f" % a["real_km"]) if a.get("real_km") is not None else "—"
+        _ganho = (" · OSRM %.1f%% menor que a estimativa" % a["ganho_vs_estimativa_pct"]) \
+            if a.get("ganho_vs_estimativa_pct") is not None else ""
+        L.append("  %-26s → %-22s reta %6s · est %6s · real %6s%s"
+                 % (a["de"], a["para"],
+                    ("%.0f" % a["reta_km"]) if a.get("reta_km") is not None else "—",
+                    ("%.0f" % a["estimado_km"]) if a.get("estimado_km") is not None else "—",
+                    _real, _ganho))
+    return "\n".join(L)
+
+
 _OSRM_ATIVO_CACHE = {"t": 0.0, "url": None}
 
 

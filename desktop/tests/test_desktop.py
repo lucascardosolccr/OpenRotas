@@ -2163,6 +2163,39 @@ def test_isocronas_origem_ambigua_avisa():
 # ============================================================================
 #  MATRIZ ORIGEM↔DESTINO (§29) — distâncias entre vários centros.
 # ============================================================================
+def test_diagnostico_roteamento_offline():
+    # [EVIDÊNCIA] Sem OSRM no ar: modo padrão 'estimado', amostra traz reta < estimada (fator ≥ 1) e real=None.
+    from geo import dossie_rota as dr
+    import os
+    os.environ.pop("OSRM_URL", None)
+    dr._OSRM_ATIVO_CACHE.update({"t": 0.0, "url": None})
+    d = dr.diagnostico_roteamento([("São Paulo/SP", "Rio de Janeiro/RJ")])
+    assert d["osrm_ativo"] is False and "estimado" in d["modo_padrao"]
+    a = d["amostra"][0]
+    assert a["de"] == "São Paulo/SP" and a["real_km"] is None
+    assert a["reta_km"] and a["estimado_km"] and a["estimado_km"] >= a["reta_km"]   # estimativa ≥ reta
+    txt = dr.render_diagnostico_roteamento(d)
+    assert "DIAGNÓSTICO DE ROTEAMENTO" in txt and "não detectado" in txt
+
+def test_diagnostico_roteamento_com_osrm(monkeypatch):
+    # Com OSRM no ar (dublado), a amostra traz real_km e o ganho % vs a estimativa.
+    from geo import dossie_rota as dr, matriz_od
+    monkeypatch.setattr(dr, "osrm_ativo", lambda *a, **k: "http://localhost:5000")
+    def _fake_table(lons, lats, url, **k):
+        import numpy as np
+        from geo import isocronas
+        n = len(lons); M = [[0.0] * n for _ in range(n)]
+        for i in range(n):
+            row = isocronas._haversine_km(lons[i], lats[i], np.array(lons), np.array(lats))
+            for j in range(n):
+                M[i][j] = float(row[j]) * 1.2        # rodoviária real = 1,2× a reta (< estimativa ~1,25)
+        return M
+    monkeypatch.setattr(matriz_od, "_matriz_osrm", _fake_table)
+    d = dr.diagnostico_roteamento([("São Paulo/SP", "Rio de Janeiro/RJ")])
+    assert d["osrm_ativo"] is True and "rodoviário" in d["modo_padrao"]
+    a = d["amostra"][0]
+    assert a["real_km"] is not None and a["ganho_vs_estimativa_pct"] is not None
+
 def test_osrm_auto_resolver_osrm():
     # Semântica do AUTO: None usa o OSRM local SE no ar; True força o configurado; False nunca.
     from geo import dossie_rota as dr
