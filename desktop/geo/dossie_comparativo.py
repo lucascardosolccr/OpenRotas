@@ -97,11 +97,14 @@ def _rotulo(dd: dict, fallback: str) -> str:
     return fallback
 
 
-def comparar(rotas, folga_km: float = 3.0, usar_osrm: bool = False, osrm_url=None, nomes=None) -> dict:
+def comparar(rotas, folga_km: float = 3.0, usar_osrm=None, osrm_url=None, nomes=None) -> dict:
     """Compara várias rotas candidatas. `rotas` = lista em que cada item é uma lista de coords
     [(lon,lat),...] OU uma string de nomes 'Cidade/UF;Cidade/UF'. `nomes` (opcional) rotula cada
-    rota. Devolve {gerado_em, rotas:[{rotulo,score,componentes,dossie,ok}], recomendada, criterios}.
-    Ordena por score crescente (a 1ª é a mais simples). Nunca levanta."""
+    rota. Devolve {gerado_em, rotas:[{rotulo,score,componentes,dor_logistica,dossie,ok}], recomendada,
+    criterios}. Ordena por score crescente (a 1ª é a mais simples). Nunca levanta.
+    `usar_osrm` segue o padrão das demais ferramentas: None=AUTO (usa o OSRM local se no ar → distância
+    rodoviária real nos dossiês), True força, False nunca — assim a comparação também aproveita o motor
+    local auto-iniciado."""
     from geo import dossie_rota as dr
     rotas = list(rotas or [])
     nomes = list(nomes or [])
@@ -117,6 +120,7 @@ def comparar(rotas, folga_km: float = 3.0, usar_osrm: bool = False, osrm_url=Non
             logger.warning("[COMPARATIVO] dossiê da rota %r falhou.", fallback, exc_info=True)
             dd = {"erro": "dossiê falhou"}
         score, comp = pontuar(dd)
+        _dl = (dd.get("dor_logistica") or {}) if isinstance(dd, dict) else {}
         itens.append({
             "indice_original": i,
             "rotulo": _rotulo(dd, fallback),
@@ -124,6 +128,10 @@ def comparar(rotas, folga_km: float = 3.0, usar_osrm: bool = False, osrm_url=Non
             "ok": score is not None,
             "score": score,
             "componentes": comp,
+            # Leitura COMPLEMENTAR (não entra no score/ranking): dificuldade de atendimento do destino
+            # (distância/sinuosidade/balsa/isolamento). Complexidade = risco estrutural; dor = esforço.
+            "dor_logistica": _dl.get("indice"),
+            "dor_nivel": _dl.get("nivel", ""),
             "dossie": dd,
         })
     # Ordena: rotas válidas por score crescente (empate → menos pontos de rota, depois ordem
@@ -170,6 +178,8 @@ def render_texto(cmp: dict) -> str:
         L.append("        balsas=%d · UFs(transições)=%d · rios naveg.=%d · pontes=%d · trechos rio=%d"
                  % (c.get("travessias", 0), c.get("transicoes_uf", 0), c.get("rios_navegaveis", 0),
                     c.get("pontes", 0), c.get("trechos_rio", 0)))
+        if it.get("dor_logistica") is not None:
+            L.append("        dor logística: %.0f/100 (%s)" % (it["dor_logistica"], it.get("dor_nivel", "")))
     L.append("")
     if cmp.get("recomendada"):
         L.append("RECOMENDADA (menor complexidade logística): %s" % cmp["recomendada"])
@@ -247,20 +257,21 @@ def gerar_html(cmp: dict, caminho) -> str | None:
         P.append("<section class='card'><table><thead><tr>"
                  "<th>#</th><th>Rota</th><th class='num'>Score</th><th class='num'>Balsas</th>"
                  "<th class='num'>UFs↹</th><th class='num'>Rios naveg.</th><th class='num'>Pontes</th>"
-                 "<th class='num'>Trechos rio</th></tr></thead><tbody>")
+                 "<th class='num'>Trechos rio</th><th class='num'>Dor log.</th></tr></thead><tbody>")
         for pos, it in enumerate(rotas, start=1):
             if not it["ok"]:
-                P.append("<tr><td>%d</td><td>%s</td><td class='num' colspan='6'><span class='empty'>indisponível</span></td></tr>"
+                P.append("<tr><td>%d</td><td>%s</td><td class='num' colspan='7'><span class='empty'>indisponível</span></td></tr>"
                          % (pos, html.escape(str(it["rotulo"]))))
                 continue
             c = it["componentes"]
             cls = " class='best'" if pos == 1 else ""
+            _dor = ("%.0f" % it["dor_logistica"]) if it.get("dor_logistica") is not None else "—"
             P.append("<tr%s><td>%d</td><td>%s</td><td class='num'>%.2f</td><td class='num'>%d</td>"
                      "<td class='num'>%d</td><td class='num'>%d</td><td class='num'>%d</td>"
-                     "<td class='num'>%d</td></tr>"
+                     "<td class='num'>%d</td><td class='num'>%s</td></tr>"
                      % (cls, pos, html.escape(str(it["rotulo"])), it["score"],
                         c.get("travessias", 0), c.get("transicoes_uf", 0), c.get("rios_navegaveis", 0),
-                        c.get("pontes", 0), c.get("trechos_rio", 0)))
+                        c.get("pontes", 0), c.get("trechos_rio", 0), _dor))
         P.append("</tbody></table></section>")
         cr = cmp.get("criterios", {})
         P.append("<section class='card'><div class='score'>Pesos (quanto maior, mais pesa contra): "
@@ -295,6 +306,8 @@ def exportar_excel(cmp: dict, caminho) -> str | None:
                 "Rios_navegaveis": c.get("rios_navegaveis", "") if it.get("ok") else "",
                 "Pontes": c.get("pontes", "") if it.get("ok") else "",
                 "Trechos_rio": c.get("trechos_rio", "") if it.get("ok") else "",
+                "Dor_logistica": it.get("dor_logistica") if it.get("ok") else "",
+                "Dor_nivel": it.get("dor_nivel", "") if it.get("ok") else "",
                 "Status": "ok" if it.get("ok") else "indisponível",
             })
         pth = Path(caminho)
@@ -313,9 +326,15 @@ def _parse_coords(texto):
 
 def _cli(argv=None) -> int:
     """CLI: rotas separadas por '||'. Coords: 'lon,lat;lon,lat || lon,lat;lon,lat'. Nomes:
-    --nomes "Cidade/UF;Cidade/UF || Cidade/UF;Cidade/UF". [--html] [--excel] [--osrm]."""
+    --nomes "Cidade/UF;Cidade/UF || Cidade/UF;Cidade/UF". [--html] [--excel] [--osrm|--geodesico]."""
     argv = argv if argv is not None else sys.argv[1:]
-    usar_osrm = "--osrm" in argv
+    # AUTO por padrão (usa o OSRM local se no ar); --osrm força; --geodesico/--sem-osrm desliga.
+    if "--osrm" in argv:
+        usar_osrm = True
+    elif ("--geodesico" in argv) or ("--sem-osrm" in argv):
+        usar_osrm = False
+    else:
+        usar_osrm = None
     por_nomes = "--nomes" in argv
     # coleta o argumento "payload": o 1º token que contém '||' ou (';' e ',').
     payload = None

@@ -1821,11 +1821,12 @@ def test_painel_tem_bloco_dossie():
 # ============================================================================
 #  COMPARAÇÃO DE ROTAS — ranqueia rotas candidatas por complexidade logística (desktop).
 # ============================================================================
-def _dd_cmp(travessias=0, pontes=0, trechos=0, naveg=0, ufs=("SP",), o="A", d="B", erro=False, naveg_nome=0):
+def _dd_cmp(travessias=0, pontes=0, trechos=0, naveg=0, ufs=("SP",), o="A", d="B", erro=False, naveg_nome=0,
+           dor=None):
     """Dossiê SINTÉTICO (sem tocar nas bases) para testar a pontuação/ranking de forma determinística."""
     if erro:
         return {"erro": "x"}
-    return {
+    dd = {
         "origem": {"municipio": {"nome": o, "uf": (ufs[0] if ufs else "?")}},
         "destino": {"municipio": {"nome": d, "uf": (ufs[-1] if ufs else "?")}},
         "camadas": {"travessias": {"feicoes": travessias}, "pontes": {"feicoes": pontes}},
@@ -1833,6 +1834,10 @@ def _dd_cmp(travessias=0, pontes=0, trechos=0, naveg=0, ufs=("SP",), o="A", d="B
         "travessia_territorial": {"ufs": list(ufs)},
         "pontos": 2,
     }
+    if dor is not None:
+        from geo import distancia as _d
+        dd["dor_logistica"] = {"indice": dor, "nivel": _d.dor_logistica_nivel(dor)}
+    return dd
 
 def test_comparar_pontuar_formula_e_erro():
     from geo import dossie_comparativo as dc
@@ -1875,6 +1880,24 @@ def test_comparar_ranqueia_e_recomenda(monkeypatch):
     assert "Campinas" in cmp["recomendada"]
     txt = dc.render_texto(cmp)
     assert "COMPARAÇÃO DE ROTAS" in txt and "RECOMENDADA" in txt
+
+def test_comparar_expoe_dor_logistica_complementar(monkeypatch):
+    # A comparação traz a dor logística de cada rota (leitura COMPLEMENTAR; não muda o ranking por
+    # complexidade). Colhida do dossiê de cada rota; aparece no dict, no texto e na tabela HTML.
+    from geo import dossie_rota, dossie_comparativo as dc
+    fila = [_dd_cmp(travessias=0, ufs=("SP",), o="SP", d="Campinas", dor=12),
+            _dd_cmp(travessias=3, ufs=("AM",), o="Manaus", d="Tefé", dor=88)]
+    estado = {"i": 0}
+    monkeypatch.setattr(dossie_rota, "dossie",
+                        lambda c, **k: fila[estado.__setitem__("i", estado["i"] + 1) or estado["i"] - 1])
+    cmp = dc.comparar([[(0, 0), (1, 1)], [(2, 2), (3, 3)]])
+    dres = {it["rotulo"]: (it.get("dor_logistica"), it.get("dor_nivel")) for it in cmp["rotas"]}
+    assert any(v == (12, "BAIXA") for v in dres.values())
+    assert any(v == (88, "ALTA") for v in dres.values())
+    assert "dor logística" in dc.render_texto(cmp)
+    import tempfile, os as _os
+    h = dc.gerar_html(cmp, _os.path.join(tempfile.mkdtemp(), "c.html"))
+    assert "Dor log." in open(h, encoding="utf-8").read()
 
 def test_comparar_rota_invalida_sai_do_ranking(monkeypatch):
     from geo import dossie_rota, dossie_comparativo as dc

@@ -390,7 +390,7 @@ def processar_dossie_lote(caminho_in, progresso=None, usar_osrm=None) -> dict:
         return {"ok": False, "linhas": 0, "erros": 0, "saida": None, "detalhe": "erro: %s" % e}
 
 
-def comparar_rotas(rotas, nomes=None, usar_osrm: bool = False) -> dict:
+def comparar_rotas(rotas, nomes=None, usar_osrm=None) -> dict:
     """Compara rotas candidatas (cada item = coords [(lon,lat),...] OU 'Cidade/UF;Cidade/UF') por
     complexidade logística e grava HTML + Excel em exports/ com timestamp. Devolve
     {ok, recomendada, validas, total, html, excel, detalhe}. Nunca levanta."""
